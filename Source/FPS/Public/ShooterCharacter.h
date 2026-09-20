@@ -6,8 +6,10 @@
 #include <GameFramework/SpringArmComponent.h>
 #include <Camera/CameraComponent.h>
 #include "GameFramework/Character.h"
+#include "CombatComponent.h"
 #include "ShooterCharacter.generated.h"
 
+class UCombatComponent;
 
 UCLASS()
 class FPS_API AShooterCharacter : public ACharacter
@@ -23,6 +25,8 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UCombatComponent> Combat;
 
 	//1st preson view(arms)
 	UPROPERTY(VisibleAnywhere)
