@@ -376,3 +376,11 @@ FileOpenOrder/
 *.sdf
 *.sln.docstates
 *.vcxproj.user
+
+# Content: only track FPS
+Content/*
+!Content/FPS/
+!Content/FPS/**
+Content/__ExternalActors__/
+Content/__ExternalObjects__/
+*_BuiltData.uasset
