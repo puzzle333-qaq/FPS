@@ -10,6 +10,9 @@
 #include "ShooterCharacter.generated.h"
 
 class UCombatComponent;
+class UCameraComponent;
+class USpringArmComponent;
+class UInputAction;
 
 UCLASS()
 class FPS_API AShooterCharacter : public ACharacter
@@ -18,6 +21,7 @@ class FPS_API AShooterCharacter : public ACharacter
 
 public:
 	AShooterCharacter();
+
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 protected:
@@ -25,6 +29,14 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+
+	void Input_CycleWeapon();
+	void Input_ReloadWeapon();
+	void Input_FireWeapon_Pressed();
+	void Input_FireWeapon_Released();
+	void Input_Aim_Pressed();
+	void Input_Aim_Released();
+
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UCombatComponent> Combat;
 
@@ -37,4 +49,16 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
+
+	UPROPERTY(EditAnywhere,Category = "FPS|Input")
+	TObjectPtr<UInputAction> CycleWeaponAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> FireWeaponAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> ReloadWeaponAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> AimWeaponAction;
 };
