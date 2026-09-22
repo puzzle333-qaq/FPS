@@ -56,6 +56,16 @@ void AShooterCharacter::BeginPlay()
 	
 }
 
+void AShooterCharacter::BeginDestroy()
+{
+	Super::BeginDestroy();
+
+	if (IsValid(Combat))
+	{
+		Combat->DestroyInventory();
+	}
+}
+
 
 void AShooterCharacter::Tick(float DeltaTime)
 {
@@ -78,11 +88,30 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 }
 
+void AShooterCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	if (IsValid(Combat))
+	{
+		Combat->SpawnInventory();
+	}
+}
+
 FName AShooterCharacter::GetWeaponAttachPoint_Implementation(const FGameplayTag& WeaponType) const
 {
 	checkf(Combat, TEXT("Combat component is missing"));
 	checkf(Combat->WeaponData, TEXT("No WeaponData Asset - Please Fill out BP_ShooterCharacter"));
 	return Combat->WeaponData->GripPoints.FindChecked(WeaponType);
+}
+
+USkeletalMeshComponent* AShooterCharacter::GetMesh1P_Implementation() const
+{
+	return Mesh1P;
+}
+
+USkeletalMeshComponent* AShooterCharacter::GetMesh3P_Implementation() const
+{
+	return GetMesh();
 }
 
 void AShooterCharacter::Input_CycleWeapon()

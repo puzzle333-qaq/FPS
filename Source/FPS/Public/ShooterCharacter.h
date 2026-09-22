@@ -25,13 +25,18 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void PossessedBy(AController* NewController) override;
 
 	/** PlayerInterface */
 	virtual FName GetWeaponAttachPoint_Implementation(const FGameplayTag& WeaponType)const override;
+	virtual USkeletalMeshComponent* GetMesh1P_Implementation() const override;
+	virtual USkeletalMeshComponent* GetMesh3P_Implementation() const override;
 	/** PlayerInterface */
+
+	virtual void BeginPlay() override;
+	virtual void BeginDestroy() override;
 protected:
 	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
 
 private:
 
