@@ -38,6 +38,9 @@ public:
 protected:
 	// Called when the game starts or when spawned
 
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly , Category = "FPS|Combat")
+	TObjectPtr<UCombatComponent> Combat;
+
 private:
 
 	void Input_CycleWeapon();
@@ -47,8 +50,6 @@ private:
 	void Input_Aim_Pressed();
 	void Input_Aim_Released();
 
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UCombatComponent> Combat;
 
 	//1st preson view(arms)
 	UPROPERTY(VisibleAnywhere)
