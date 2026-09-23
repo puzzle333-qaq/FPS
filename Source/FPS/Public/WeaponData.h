@@ -55,5 +55,7 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly , Category = "FPS|Weapon Data|Third Person")
 	TMap<FGameplayTag, FPlayerAnim> ThirdPersonAnims;
+
+
 	
 };

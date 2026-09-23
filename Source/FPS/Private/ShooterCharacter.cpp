@@ -8,7 +8,7 @@
 #include "GameFramework/SpringArmComponent.h"
 
 #include "WeaponData.h"
-
+#include "Weapon/Weapon.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h" 
 #include "InputActionValue.h"
@@ -48,12 +48,15 @@ AShooterCharacter::AShooterCharacter()
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
 	Combat->SetIsReplicated(true);
+
+	DefaultFOV = 90.f;
 }
 
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	
+	FirstPersonCamera->SetFieldOfView(DefaultFOV);
 }
 
 void AShooterCharacter::BeginDestroy()
@@ -66,11 +69,44 @@ void AShooterCharacter::BeginDestroy()
 	}
 }
 
+FRotator AShooterCharacter::GetFixedAimRotation() const
+{
+	FRotator AimRotation = GetBaseAimRotation();
+	if (AimRotation.Pitch > 90.f && !IsLocallyControlled())
+	{	
+		// map pitch form [270,360) to [-90,0]
+		const FVector2D InRange(270.f, 360.f);
+		const FVector2D OutRange(-90.f, 0.f);
+		AimRotation.Pitch = FMath::GetMappedRangeValueClamped(InRange, OutRange, AimRotation.Pitch);
+	}
+
+	return AimRotation;
+
+}
+
 
 void AShooterCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	CalculateFABRIKSocket();
+
+}
+
+void AShooterCharacter::CalculateFABRIKSocket()
+{
+	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon)) return;
+	FABRIK_SocketTransform = Combat->CurrentWeapon->GetMesh3P()->GetSocketTransform("FABRIK", RTS_World);
+	FVector OutLocation;
+	FRotator OutRotation;
+	GetMesh()->TransformToBoneSpace(
+		"hand_r",
+		FABRIK_SocketTransform.GetLocation(),
+		FABRIK_SocketTransform.GetRotation().Rotator(),
+		OutLocation,
+		OutRotation);
+	FABRIK_SocketTransform.SetLocation(OutLocation);
+	FABRIK_SocketTransform.SetRotation(OutRotation.Quaternion());
 }
 
 void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -137,11 +173,14 @@ void AShooterCharacter::Input_FireWeapon_Released()
 void AShooterCharacter::Input_Aim_Pressed()
 {
 	Combat->Initiate_Aim_Pressed();
+	OnAim(true);
 }
 
 void AShooterCharacter::Input_Aim_Released()
 {
 	Combat->Initiate_Aim_Released();
+	OnAim(false);
 }
+
 
 

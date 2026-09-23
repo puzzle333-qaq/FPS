@@ -35,11 +35,27 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void BeginDestroy() override;
+
+	UFUNCTION(BlueprintCallable)
+	FRotator GetFixedAimRotation()const;
+
+	UPROPERTY(BlueprintReadOnly,Category = "FPS|FABRIK")
+	FTransform FABRIK_SocketTransform;
+
 protected:
 	// Called when the game starts or when spawned
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly , Category = "FPS|Combat")
 	TObjectPtr<UCombatComponent> Combat;
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnAim(bool bIsAiming);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
+	float DefaultFOV;
+
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)
+	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
 private:
 
@@ -50,16 +66,15 @@ private:
 	void Input_Aim_Pressed();
 	void Input_Aim_Released();
 
+	void CalculateFABRIKSocket();
 
 	//1st preson view(arms)
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Mesh", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USkeletalMeshComponent> Mesh1P;
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USpringArmComponent> SpringArm;
 
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
 	UPROPERTY(EditAnywhere,Category = "FPS|Input")
 	TObjectPtr<UInputAction> CycleWeaponAction;

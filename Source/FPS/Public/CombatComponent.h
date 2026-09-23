@@ -36,9 +36,10 @@ public:
 	UPROPERTY(BlueprintReadOnly,Replicated)
 	bool bAiming;
 
-protected:
 	UPROPERTY(Transient, BlueprintReadOnly , ReplicatedUsing = OnRep_CurrentWeapon)
 	TObjectPtr<AWeapon> CurrentWeapon;	
+protected:
+
 	virtual void BeginPlay() override;
 private:	
 

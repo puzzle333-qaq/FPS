@@ -25,6 +25,8 @@ AWeapon::AWeapon()
 	Mesh3P->CastShadow = true;
 	Mesh3P->SetupAttachment(Mesh1P);
 	Mesh3P->SetHiddenInGame(true);
+
+	AimFeildOfView = 60.f;
 }
 
 void AWeapon::OnRep_Instigator()
