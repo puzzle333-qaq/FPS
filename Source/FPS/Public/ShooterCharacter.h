@@ -7,6 +7,7 @@
 #include <Camera/CameraComponent.h>
 #include "GameFramework/Character.h"
 #include "CombatComponent.h"
+#include "ShooterType/ShooterType.h"
 #include "Interface/PlayerInterface.h"
 #include "ShooterCharacter.generated.h"
 
@@ -42,6 +43,9 @@ public:
 	UPROPERTY(BlueprintReadOnly,Category = "FPS|FABRIK")
 	FTransform FABRIK_SocketTransform;
 
+	UFUNCTION(BlueprintCallable)
+	bool HasCurrentWeapon() const;
+
 protected:
 	// Called when the game starts or when spawned
 
@@ -57,6 +61,16 @@ protected:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|TurnInPlace")
+	float AO_Yaw;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Strafing")
+	float MovementOffsetYaw;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|TurnInPlace")
+	ETurningInPlace TurningStatus;
+
+
 private:
 
 	void Input_CycleWeapon();
@@ -67,6 +81,13 @@ private:
 	void Input_Aim_Released();
 
 	void CalculateFABRIKSocket();
+	void CalculateTurnInPlaceParameters(float DeltaTime);
+	void TurnInPlace(float DeltaTime);
+
+	FRotator StartingAimRotation;
+
+	float InterpAO_Yaw;
+
 
 	//1st preson view(arms)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Mesh", meta = (AllowPrivateAccess = "true"))
