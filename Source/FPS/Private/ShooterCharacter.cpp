@@ -10,8 +10,10 @@
 #include "WeaponData.h"
 #include "Weapon/Weapon.h"
 #include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h" 
+#include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/KismetMathLibrary.h"
 
 
 
@@ -50,7 +52,7 @@ AShooterCharacter::AShooterCharacter()
 	Combat->SetIsReplicated(true);
 
 	DefaultFOV = 90.f;
-	TuringStatus = ETurningInPlace::NotTurning;
+	TurningStatus = ETurningInPlace::NotTurning;
 }
 
 void AShooterCharacter::BeginPlay()
@@ -101,7 +103,7 @@ void AShooterCharacter::Tick(float DeltaTime)
 
 }
 
-void AShooterCharacter::CalculateTurnInPlaceParameters()
+void AShooterCharacter::CalculateTurnInPlaceParameters(float DeltaTime)
 {
 	FVector Velocity = GetVelocity();
 	Velocity.Z = 0.f;
@@ -112,7 +114,7 @@ void AShooterCharacter::CalculateTurnInPlaceParameters()
 	{
 		FRotator CurrentAimRotation(0.f, GetBaseAimRotation().Yaw, 0.f);
 		//StartingAimRotation initially set in beginplay
-		FRotator DeltaAimRotation = UKismetMathLibrary::NormalizeDeltaRotator(CurrentAimRotation, StartingAimRotation);
+		FRotator DeltaAimRotation = UKismetMathLibrary::NormalizedDeltaRotator(CurrentAimRotation, StartingAimRotation);
 		AO_Yaw = DeltaAimRotation.Yaw;
 
 		if (TurningStatus == ETurningInPlace::NotTurning)
@@ -127,13 +129,13 @@ void AShooterCharacter::CalculateTurnInPlaceParameters()
 	if (Speed > 0.f || bIsInAir)
 	{
 		StartingAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
-		AO_Yaw = O.f;
+		AO_Yaw = 0.f;
 
 		FRotator AimRotation = GetBaseAimRotation();
 		FRotator MovementRotation = UKismetMathLibrary::MakeRotFromX(GetVelocity());
 
 		MovementOffsetYaw = UKismetMathLibrary::NormalizedDeltaRotator(MovementRotation, AimRotation).Yaw;
-		TurningStatus = ETuringInPlace::NotTurning;
+		TurningStatus = ETurningInPlace::NotTurning;
 	}
 	
 	AO_Yaw *= -1.f;
@@ -144,19 +146,19 @@ void AShooterCharacter::TurnInPlace(float DeltaTime)
 {
 	if (AO_Yaw > 90.f)
 	{
-		TurningStates = ETurningInPlace::Right;
+		TurningStatus = ETurningInPlace::Right;
 	}
 	else if (AO_Yaw < -90.f)
 	{
-		TurningStates = ETurningInPlace::Left;
+		TurningStatus = ETurningInPlace::Left;
 	}
-	if (TurningStatus != ETurningInpalce::NotTurning)//are turning
+	if (TurningStatus != ETurningInPlace::NotTurning)//are turning
 	{
 		InterpAO_Yaw = FMath::FInterpTo(InterpAO_Yaw, 0.f, DeltaTime, 4.0f);
 		AO_Yaw = InterpAO_Yaw;
 		if (FMath::Abs(AO_Yaw) < 5.f)
 		{
-			TurningInPlace = ETurningInpace::NotTurning;
+			TurningStatus = ETurningInPlace::NotTurning;
 			StartingAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
 		}
 	}
