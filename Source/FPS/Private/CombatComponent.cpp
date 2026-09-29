@@ -12,6 +12,8 @@ UCombatComponent::UCombatComponent()
 
 	PrimaryComponentTick.bCanEverTick = true;
 
+	TraceLength = 20'000;
+
 }
 
 
@@ -108,6 +110,10 @@ void UCombatComponent::Local_FireWeapon()
 	{
 		AnimInstance1P->Montage_Play(Montage1P);
 	}
+
+	FHitResult Hit;
+	CurrentWeapon->WeaponTrace(Hit,TraceLength);
+
 	Server_FireWeapon();
 }
 
