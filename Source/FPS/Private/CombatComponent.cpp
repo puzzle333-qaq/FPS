@@ -1,6 +1,10 @@
 #include "CombatComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/Weapon.h"
+#include "WeaponData.h"
+#include "Interface/PlayerInterface.h"
+#include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 
 
 UCombatComponent::UCombatComponent()
@@ -82,13 +86,58 @@ void UCombatComponent::Initiate_CycleWeapon()
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("Initiate FireWeapon Pressed"),false);
+	Local_FireWeapon();
 }
 
 void UCombatComponent::Initiate_FireWeapon_Released()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("Initiate FireWeapon Released"), false);
+	
 }
+
+void UCombatComponent::Local_FireWeapon()
+{
+	if (!IsValid(WeaponData) || !IsValid(CurrentWeapon))
+	{
+		return;
+	}
+
+	UAnimMontage* Montage1P = WeaponData->FirstPersonMontages.FindChecked(CurrentWeapon->WeaponType).FireMontage;
+	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+	UAnimInstance* AnimInstance1P = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+	if (IsValid(Montage1P) && IsValid(AnimInstance1P))
+	{
+		AnimInstance1P->Montage_Play(Montage1P);
+	}
+	Server_FireWeapon();
+}
+
+void UCombatComponent::Server_FireWeapon_Implementation()
+{
+	Multicast_FireWeapon();
+}
+
+void UCombatComponent::Multicast_FireWeapon_Implementation()
+{
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwningPawn) || OwningPawn->IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (!IsValid(WeaponData) || !IsValid(CurrentWeapon))
+	{
+		return;
+	}
+
+	UAnimMontage* Montage3P = WeaponData->ThirdPersonMontages.FindChecked(CurrentWeapon->WeaponType).FireMontage;
+	USkeletalMeshComponent* Mesh3P = IPlayerInterface::Execute_GetMesh3P(OwningPawn);
+	UAnimInstance* AnimInstance3P = IsValid(Mesh3P) ? Mesh3P->GetAnimInstance() : nullptr;
+	if (IsValid(Montage3P) && IsValid(AnimInstance3P))
+	{
+		AnimInstance3P->Montage_Play(Montage3P);
+	}
+}
+
 
 void UCombatComponent::Initiate_ReloadWeapon()
 {
@@ -112,10 +161,14 @@ void UCombatComponent::Server_Aim_Implementation(bool bPressed)
 	Local_Aim(bPressed);
 }
 
+
+
 void UCombatComponent::Local_Aim(bool bPressed)
 {
 	bAiming = bPressed;
 }
+
+
 
 AWeapon* UCombatComponent::SpawnWeapon(TSubclassOf<AWeapon> WeaponClass) const
 {

@@ -25,6 +25,7 @@ public:
 	void Initiate_Aim_Pressed();
 	void Initiate_Aim_Released();
 
+
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly, Category = "FPS|Weapon")
 	TObjectPtr<UWeaponData> WeaponData;
 
@@ -44,7 +45,6 @@ protected:
 private:	
 
 
-
 	UFUNCTION()
 	void OnRep_CurrentWeapon(AWeapon* LastWeapon);
 
@@ -59,5 +59,13 @@ private:
 	UFUNCTION(Server,Reliable)
 	void Server_Aim(bool bPressed);
 
+	UFUNCTION(Server, Reliable)
+	void Server_FireWeapon();
+
+	UFUNCTION(NetMulticast,Reliable)
+	void Multicast_FireWeapon();
+	
 	void Local_Aim(bool bPressed);
+
+	void Local_FireWeapon();
 };
