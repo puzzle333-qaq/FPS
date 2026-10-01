@@ -31,12 +31,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Trace")
 	float TraceRadius;
 
-
+	void Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal,TEnumAsByte<EPhysicalSurface>ImpactSurfaceType,bool bIsFirstPerson);
 
 protected:
 	virtual void BeginPlay() override;
 
-
+	UFUNCTION(BlueprintImplementableEvent)
+	void FireEffect(const FVector& ImpactPoint, const FVector& ImpactNormal, EPhysicalSurface ImpactSurfaceType, bool bIsFirstPerson);
 
 
 private:

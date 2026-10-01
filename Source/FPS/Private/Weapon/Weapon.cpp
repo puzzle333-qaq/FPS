@@ -103,10 +103,16 @@ void AWeapon::WeaponTrace(FHitResult& OutHit, float TraceLength)
 		FCollisionShape::MakeSphere(TraceRadius),
 		QueryParams,
 		ResponseParams);
-
+	/*
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceSingle(GetWorld(), Start, End, TraceRadius, EDrawDebugTrace::ForDuration, bHit, OutHit, FLinearColor::Green, FLinearColor::Red, 5.f);
-#endif
+#endif*/
+}
+
+void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson)
+{
+	//Local fire stuff
+	FireEffect(ImpactPoint, ImpactNormal, ImpactSurfaceType, bIsFirstPerson);
 }
 
 void AWeapon::BeginPlay()
