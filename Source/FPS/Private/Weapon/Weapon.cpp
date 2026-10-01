@@ -103,10 +103,21 @@ void AWeapon::WeaponTrace(FHitResult& OutHit, float TraceLength)
 		FCollisionShape::MakeSphere(TraceRadius),
 		QueryParams,
 		ResponseParams);
-	/*
+
+	// A miss leaves ImpactPoint at the origin. TraceEnd is the far point of the sweep.
+	if (!bHit)
+	{
+		OutHit.Location = End;
+		OutHit.ImpactPoint = End;
+		OutHit.Normal = -EyesWorldDirection;
+		OutHit.ImpactNormal = -EyesWorldDirection;
+		OutHit.Distance = TraceLength;
+		OutHit.Time = 1.f;
+	}
+	
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceSingle(GetWorld(), Start, End, TraceRadius, EDrawDebugTrace::ForDuration, bHit, OutHit, FLinearColor::Green, FLinearColor::Red, 5.f);
-#endif*/
+#endif
 }
 
 void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson)
