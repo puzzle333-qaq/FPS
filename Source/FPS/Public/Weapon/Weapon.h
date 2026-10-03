@@ -7,6 +7,15 @@
 #include "GameplayTagContainer.h"
 #include "Weapon.generated.h"
 
+enum EPhysicalSurface : int;
+
+UENUM(BlueprintType)
+enum class EFireType : uint8
+{
+	Single UMETA(DisplayName = "Single"),
+	Automatic UMETA(DisplayName = "Automatic")
+};
+
 UCLASS()
 class FPS_API AWeapon : public AActor
 {
@@ -27,6 +36,12 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
 	float AimFeildOfView;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
+	EFireType FireType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
+	float FireTime;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Trace")
 	float TraceRadius;

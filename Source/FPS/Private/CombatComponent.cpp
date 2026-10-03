@@ -6,6 +6,7 @@
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
+#include "TimerManager.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 
 
@@ -16,6 +17,8 @@ UCombatComponent::UCombatComponent()
 
 	TraceLength = 20'000;
 
+	bTriggerPressed = false;
+	bAiming = false;
 }
 
 
@@ -90,12 +93,13 @@ void UCombatComponent::Initiate_CycleWeapon()
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
+	bTriggerPressed = true;
 	Local_FireWeapon();
 }
 
 void UCombatComponent::Initiate_FireWeapon_Released()
 {
-	
+	bTriggerPressed = false;
 }
 
 void UCombatComponent::Local_FireWeapon()
@@ -119,8 +123,25 @@ void UCombatComponent::Local_FireWeapon()
 	EPhysicalSurface ImpactSurfaceType = Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType1;
 	CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, true);
 
+	GetWorld()->GetTimerManager().SetTimer(FireTimer, this, &ThisClass::FireTimerFinished, CurrentWeapon->FireTime);
+
 	Server_FireWeapon(Hit);
 }
+
+
+void UCombatComponent::FireTimerFinished()
+{
+	if (!IsValid(CurrentWeapon))
+	{
+		return;
+	}
+
+	if (bTriggerPressed && CurrentWeapon->FireType == EFireType::Automatic)
+	{
+		Local_FireWeapon();
+	}
+}
+
 
 void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 {
