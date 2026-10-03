@@ -114,10 +114,10 @@ void AWeapon::WeaponTrace(FHitResult& OutHit, float TraceLength)
 		OutHit.Distance = TraceLength;
 		OutHit.Time = 1.f;
 	}
-	
+	/*
 #if ENABLE_DRAW_DEBUG
 	DrawDebugSphereTraceSingle(GetWorld(), Start, End, TraceRadius, EDrawDebugTrace::ForDuration, bHit, OutHit, FLinearColor::Green, FLinearColor::Red, 5.f);
-#endif
+#endif*/
 }
 
 void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson)
