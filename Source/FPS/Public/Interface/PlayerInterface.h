@@ -14,9 +14,7 @@ class UPlayerInterface : public UInterface
 	GENERATED_BODY()
 };
 
-/**
- * 
- */
+
 class FPS_API IPlayerInterface
 {
 	GENERATED_BODY()
@@ -32,4 +30,8 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
 	USkeletalMeshComponent* GetMesh3P() const;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
+	void WeaponReplicated();
+
 };
