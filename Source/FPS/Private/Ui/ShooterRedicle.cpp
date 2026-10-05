@@ -6,6 +6,7 @@
 #include "CombatComponent.h"
 #include "Interface/PlayerInterface.h"
 #include "ShooterCharacter.h"
+#include "Components/Image.h"
 #include "Weapon/Weapon.h"
 
 void UShooterRedicle::NativeOnInitialized()
@@ -63,10 +64,24 @@ void UShooterRedicle::OnWeaponFirstReplicated(AWeapon* Weapon)
 
 void UShooterRedicle::OnReticleChanged(UMaterialInstanceDynamic* ReticleMaterialInst)
 {
-	//Set the Material on the reticle widget to the dun mat inst
+	CurrentRedicle_DynMatInst = ReticleMaterialInst;
+
+	FSlateBrush Brush;
+	Brush.SetResourceObject(ReticleMaterialInst);
+	if(IsValid(Image_Redicle))
+	{
+		Image_Redicle->SetBrush(Brush);
+	}
 }
 
 void UShooterRedicle::OnAmmoCounterChanged(UMaterialInstanceDynamic * AmmoCounterDynamicMaterialInst, int32 RoundsCurrent, int32 RoundsMax)
 {
+	CurrentAmmoCounter_DynMatInst = AmmoCounterDynamicMaterialInst;
 
+	FSlateBrush Brush;
+	Brush.SetResourceObject(AmmoCounterDynamicMaterialInst);
+	if (IsValid(Image_AmmoCounter))
+	{
+		Image_AmmoCounter->SetBrush(Brush);
+	}
 }
