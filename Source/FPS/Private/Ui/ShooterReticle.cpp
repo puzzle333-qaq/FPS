@@ -28,35 +28,24 @@ void UShooterReticle::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
-	ResolveReticleImage();
+	APlayerController* OwningPlayer = GetOwningPlayer();
+	if (!IsValid(OwningPlayer)) return;
 
-	GetOwningPlayer()->OnPossessedPawnChanged.AddDynamic(this, &ThisClass::OnPossessedPawnChanged);
+	OwningPlayer->OnPossessedPawnChanged.AddDynamic(this, &ThisClass::OnPossessedPawnChanged);
 
-	AShooterCharacter* ShooterCharacter = Cast<AShooterCharacter>(GetOwningPlayer()->GetPawn());
+	AShooterCharacter* ShooterCharacter = Cast<AShooterCharacter>(OwningPlayer->GetPawn());
 	if (!IsValid(ShooterCharacter)) return;
 
 	OnPossessedPawnChanged(nullptr, ShooterCharacter);
 
-	if (ShooterCharacter->HasWeaponFirstReplicated())
+	AWeapon* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(ShooterCharacter);
+	if (IsValid(Weapon))
 	{
-		AWeapon* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(ShooterCharacter);
-		if (IsValid(Weapon))
-		{
-			OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
-		}
+		OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
 	}
 	else
 	{
 		ShooterCharacter->OnWeaponFirstReplicated.AddDynamic(this, &ThisClass::OnWeaponFirstReplicated);
-	}
-
-	if (ShooterCharacter->HasAuthority())
-	{
-		AWeapon* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(ShooterCharacter);
-		if (IsValid(Weapon))
-		{
-			OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
-		}
 	}
 }
 
@@ -72,15 +61,21 @@ void UShooterReticle::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 	{
 		OldPawnCombat->OnReticleChanged.RemoveDynamic(this, &ThisClass::OnReticleChanged);
 	}
+
 	UCombatComponent* NewPawnCombat = UCombatComponent::FindCombatComponent(NewPawn);
 	if (IsValid(NewPawnCombat))
 	{
 		NewPawnCombat->OnReticleChanged.AddDynamic(this, &ThisClass::OnReticleChanged);
+		if (IsValid(NewPawnCombat->CurrentWeapon))
+		{
+			OnReticleChanged(NewPawnCombat->CurrentWeapon->GetReticleDynamicMaterialInstance());
+		}
 	}
 }
 
 void UShooterReticle::OnWeaponFirstReplicated(AWeapon* Weapon)
 {
+	if (!IsValid(Weapon)) return;
 	OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
 }
 

@@ -250,38 +250,43 @@ void AShooterCharacter::WeaponReplicated_Implementation()
 
 AWeapon* AShooterCharacter::GetCurrentWeapon_Implementation()
 {
-	return Combat->CurrentWeapon;
+	return IsValid(Combat) ? Combat->CurrentWeapon : nullptr;
+}
+
+int32 AShooterCharacter::GetReserveAmmo_Implementation() const
+{
+	return IsValid(Combat) ? Combat->CurrentReserveAmmo : 0;
 }
 
 void AShooterCharacter::Input_CycleWeapon()
 {
-	Combat->Initiate_CycleWeapon();
+	if (IsValid(Combat)) Combat->Initiate_CycleWeapon();
 }
 
 void AShooterCharacter::Input_ReloadWeapon()
 {
-	Combat->Initiate_ReloadWeapon();
+	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon();
 }
 
 void AShooterCharacter::Input_FireWeapon_Pressed()
 {
-	Combat->Initiate_FireWeapon_Pressed();
+	if (IsValid(Combat)) Combat->Initiate_FireWeapon_Pressed();
 }
 
 void AShooterCharacter::Input_FireWeapon_Released()
 {
-	Combat->Initiate_FireWeapon_Released();
+	if (IsValid(Combat)) Combat->Initiate_FireWeapon_Released();
 }
 
 void AShooterCharacter::Input_Aim_Pressed()
 {
-	Combat->Initiate_Aim_Pressed();
+	if (IsValid(Combat)) Combat->Initiate_Aim_Pressed();
 	OnAim(true);
 }
 
 void AShooterCharacter::Input_Aim_Released()
 {
-	Combat->Initiate_Aim_Released();
+	if (IsValid(Combat)) Combat->Initiate_Aim_Released();
 	OnAim(false);
 }
 

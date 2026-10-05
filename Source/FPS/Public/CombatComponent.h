@@ -55,6 +55,7 @@ public:
 	FCurrentReserveAmmoChanged OnCurrentReserveAmmoChanged;
 
 	void InitializeWeaponWidget();
+	void NotifyAmmoChanged();
 
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentReserveAmmo)
 	int32 CurrentReserveAmmo;
@@ -97,6 +98,10 @@ private:
 	void Local_Aim(bool bPressed);
 
 	void Local_FireWeapon();
+	void ApplyReload();
+
+	UFUNCTION(Server, Reliable)
+	void Server_ReloadWeapon();
 
 	UFUNCTION()
 	void OnRep_CurrentReserveAmmo();

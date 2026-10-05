@@ -17,7 +17,7 @@ void AShooterPlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
-	if (IsValid(Subsystem))
+	if (IsValid(Subsystem) && ShooterIMC)
 	{
 		Subsystem->AddMappingContext(ShooterIMC, 0);
 	}
@@ -28,10 +28,24 @@ void AShooterPlayerController::SetupInputComponent()
 	Super::SetupInputComponent();
 
 	UEnhancedInputComponent* ShooterInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
-	ShooterInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::Input_Move);
-	ShooterInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ThisClass::Input_Look);
-	ShooterInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ThisClass::Input_Jump);
-	ShooterInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ThisClass::Input_Crouch);
+	if (!IsValid(ShooterInputComponent)) return;
+
+	if (MoveAction)
+	{
+		ShooterInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::Input_Move);
+	}
+	if (LookAction)
+	{
+		ShooterInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ThisClass::Input_Look);
+	}
+	if (JumpAction)
+	{
+		ShooterInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ThisClass::Input_Jump);
+	}
+	if (CrouchAction)
+	{
+		ShooterInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ThisClass::Input_Crouch);
+	}
 
 
 

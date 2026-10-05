@@ -20,15 +20,20 @@ AWeapon::AWeapon()
 	Mesh1P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 	Mesh1P->bReceivesDecals = false;
 	Mesh1P->CastShadow = false;
-	Mesh1P->SetHiddenInGame(true);
+	Mesh1P->SetHiddenInGame(false);
+	Mesh1P->SetOnlyOwnerSee(true);
+	Mesh1P->SetOwnerNoSee(false);
 	SetRootComponent(Mesh1P);
 
 	Mesh3P = CreateDefaultSubobject<USkeletalMeshComponent>("Mesh3P");
-	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	// Always tick so listen-server owner still gets a valid Muzzle socket for 3P tracers.
+	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 	Mesh3P->bReceivesDecals = false;
 	Mesh3P->CastShadow = true;
 	Mesh3P->SetupAttachment(Mesh1P);
-	Mesh3P->SetHiddenInGame(true);
+	Mesh3P->SetHiddenInGame(false);
+	Mesh3P->SetOnlyOwnerSee(false);
+	Mesh3P->SetOwnerNoSee(true);
 
 	AimFeildOfView = 60.f;
 	TraceRadius = 5.f;
@@ -134,10 +139,14 @@ void AWeapon::WeaponTrace(FHitResult& OutHit, float TraceLength)
 
 void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson)
 {
-	
 	FireEffect(ImpactPoint, ImpactNormal, ImpactSurfaceType, bIsFirstPerson);
 
-	if (GetInstigator()->IsLocallyControlled())
+	// Predicted mag decrement happens only on the owning first-person fire path.
+	// Third-person multicast is FX only; otherwise listen-server ammo is deducted twice.
+	if (!bIsFirstPerson) return;
+
+	APawn* InstigatorPawn = GetInstigator();
+	if (IsValid(InstigatorPawn) && InstigatorPawn->IsLocallyControlled())
 	{
 		Ammo = FMath::Clamp(Ammo - 1, 0, MagCapacity);
 		++Sequence;
@@ -151,12 +160,11 @@ void AWeapon::Auth_Fire()
 
 void AWeapon::Rep_Fire(int32 AuthAmmo)
 {
-	if (GetInstigator()->IsLocallyControlled())
-	{
-		Ammo = AuthAmmo;
-		--Sequence;
-		Ammo -= Sequence;
-	}
+	APawn* InstigatorPawn = GetInstigator();
+	if (!IsValid(InstigatorPawn) || !InstigatorPawn->IsLocallyControlled()) return;
+
+	Sequence = FMath::Max(Sequence - 1, 0);
+	Ammo = FMath::Clamp(AuthAmmo - Sequence, 0, MagCapacity);
 }
 
 void AWeapon::BeginPlay()
@@ -169,8 +177,12 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
 {
 	if (!IsValid(OwningPawn)) return;
 
-	const bool bLocal = OwningPawn->IsLocallyControlled();
-	Mesh1P->SetHiddenInGame(!bLocal, true);
-	Mesh3P->SetHiddenInGame(bLocal, true);
+	// HiddenInGame hides attached Niagara (tracers). Owner-see flags hide only the gun mesh.
+	Mesh1P->SetHiddenInGame(false);
+	Mesh3P->SetHiddenInGame(false);
+	Mesh1P->SetOnlyOwnerSee(true);
+	Mesh1P->SetOwnerNoSee(false);
+	Mesh3P->SetOnlyOwnerSee(false);
+	Mesh3P->SetOwnerNoSee(true);
 }
 
