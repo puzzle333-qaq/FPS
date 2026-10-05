@@ -7,6 +7,8 @@
 #include "GameplayTagContainer.h"
 #include "PlayerInterface.generated.h"
 
+class AWeapon;
+
 // This class does not need to be modified.
 UINTERFACE(MinimalAPI)
 class UPlayerInterface : public UInterface
@@ -33,5 +35,8 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
 	void WeaponReplicated();
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
+	AWeapon* GetCurrentWeapon();
 
 };

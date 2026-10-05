@@ -7,6 +7,8 @@
 #include "ShooterRedicle.generated.h"
 
 class UImage;
+class UMaterialInstanceDynamic;
+class AWeapon;
 UCLASS()
 class FPS_API UShooterRedicle : public UUserWidget
 {
@@ -32,4 +34,9 @@ private:
 	UFUNCTION()
 	void OnWeaponFirstReplicated(AWeapon* Weapon);
 
+	UFUNCTION()
+	void OnReticleChanged(UMaterialInstanceDynamic* ReticleMaterialInst);
+
+	UFUNCTION()
+	void OnAmmoCounterChanged(UMaterialInstanceDynamic* AmmoCounterDynamicMaterialInst, int32 RoundsCurrent, int32 RoundsMax);
 };

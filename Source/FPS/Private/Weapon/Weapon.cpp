@@ -56,6 +56,24 @@ USkeletalMeshComponent* AWeapon::GetMesh3P() const
 	return Mesh3P;
 }
 
+UMaterialInstanceDynamic* AWeapon::GetReticleDynamicMaterialInstance() 
+{
+	if (!IsValid(DynMatInst_Reticle))
+	{
+		DynMatInst_Reticle = UMaterialInstanceDynamic::Create(ReticleMaterial, this);
+	}
+	return DynMatInst_Reticle;
+}
+
+UMaterialInstanceDynamic* AWeapon::GetAmmoCounterDynamicMaterialInstance() 
+{
+	if (!IsValid(DynMatInst_AmmoCounter))
+	{
+		DynMatInst_AmmoCounter = UMaterialInstanceDynamic::Create(AmmoCounterMaterial, this);
+	}
+	return DynMatInst_AmmoCounter;
+}
+
 void AWeapon::AttachToOwingPawn() const
 {
 	APawn* OwningPawn = GetInstigator();

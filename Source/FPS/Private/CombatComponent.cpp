@@ -41,6 +41,8 @@ void UCombatComponent::SpawnInventory()
 	if (Inventory.Num() > 0)
 	{
 		Equip(Inventory[0]);
+
+		InitializeWeaponWidget();
 	}
 }
 
@@ -52,6 +54,15 @@ void UCombatComponent::DestroyInventory()
 		{
 			Weapon->Destroy();
 		}
+	}
+}
+
+void UCombatComponent::InitializeWeaponWidget()
+{
+	if (IsValid(CurrentWeapon))
+	{
+		OnReticleChanged.Broadcast(CurrentWeapon->GetReticleDynamicMaterialInstance());
+		OnAmmoCounterChanged.Broadcast(CurrentWeapon->GetAmmoCounterDynamicMaterialInstance(), CurrentWeapon->Ammo, CurrentWeapon->MagCapacity);
 	}
 }
 
@@ -67,6 +78,7 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 	if (!IsValid(CurrentWeapon))return;
 	CurrentWeapon->AttachToOwingPawn();
 	IPlayerInterface::Execute_WeaponReplicated(GetOwner());
+	InitializeWeaponWidget();
 }
 
 
