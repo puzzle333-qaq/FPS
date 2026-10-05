@@ -4,13 +4,14 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "ShooterRedicle.generated.h"
+#include "ShooterReticle.generated.h"
 
 class UImage;
 class UMaterialInstanceDynamic;
 class AWeapon;
+
 UCLASS()
-class FPS_API UShooterRedicle : public UUserWidget
+class FPS_API UShooterReticle : public UUserWidget
 {
 	GENERATED_BODY()
 public:
@@ -18,15 +19,10 @@ public:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UImage> Image_Redicle;
-
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UImage> Image_AmmoCounter;
-
+	TObjectPtr<UImage> Image_Reticle;
 
 private:
-	TWeakObjectPtr<UMaterialInstanceDynamic> CurrentRedicle_DynMatInst;
-	TWeakObjectPtr<UMaterialInstanceDynamic> CurrentAmmoCounter_DynMatInst;
+	TWeakObjectPtr<UMaterialInstanceDynamic> CurrentReticle_DynMatInst;
 
 	UFUNCTION()
 	void OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
@@ -36,7 +32,4 @@ private:
 
 	UFUNCTION()
 	void OnReticleChanged(UMaterialInstanceDynamic* ReticleMaterialInst);
-
-	UFUNCTION()
-	void OnAmmoCounterChanged(UMaterialInstanceDynamic* AmmoCounterDynamicMaterialInst, int32 RoundsCurrent, int32 RoundsMax);
 };

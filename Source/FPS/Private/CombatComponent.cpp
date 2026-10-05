@@ -62,7 +62,6 @@ void UCombatComponent::InitializeWeaponWidget()
 	if (IsValid(CurrentWeapon))
 	{
 		OnReticleChanged.Broadcast(CurrentWeapon->GetReticleDynamicMaterialInstance());
-		OnAmmoCounterChanged.Broadcast(CurrentWeapon->GetAmmoCounterDynamicMaterialInstance(), CurrentWeapon->Ammo, CurrentWeapon->MagCapacity);
 	}
 }
 

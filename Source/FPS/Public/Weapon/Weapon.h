@@ -30,7 +30,6 @@ public:
 	USkeletalMeshComponent* GetMesh1P() const;
 	USkeletalMeshComponent* GetMesh3P() const;
 	UMaterialInstanceDynamic* GetReticleDynamicMaterialInstance();
-	UMaterialInstanceDynamic* GetAmmoCounterDynamicMaterialInstance();
 
 
 
@@ -90,12 +89,6 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UMaterialInterface> ReticleMaterial;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UMaterialInterface> AmmoCounterMaterial;
-
 	UPROPERTY()
-	TObjectPtr<UMaterialInstanceDynamic>DynMatInst_Reticle;
-
-	UPROPERTY()
-	TObjectPtr<UMaterialInstanceDynamic>DynMatInst_AmmoCounter;
+	TObjectPtr<UMaterialInstanceDynamic> DynMatInst_Reticle;
 };

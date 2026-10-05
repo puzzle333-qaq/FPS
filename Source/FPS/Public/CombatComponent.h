@@ -8,7 +8,6 @@ class UWeaponData;
 class AWeapon;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FReticleChanged, UMaterialInstanceDynamic*, ReticleMaterialInst);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAmmoCounterChanged, UMaterialInstanceDynamic*, AmmoCounterDynamicMaterialInst,int32,RoundsCurrent,int32,RoundsMax);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class FPS_API UCombatComponent : public UActorComponent
@@ -33,9 +32,6 @@ public:
 
 	UPROPERTY(BlueprintAssignable)
 	FReticleChanged OnReticleChanged;
-
-	UPROPERTY(BlueprintAssignable)
-	FAmmoCounterChanged OnAmmoCounterChanged;
 
 
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly, Category = "FPS|Weapon")

@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "Ui/ShooterRedicle.h"
+#include "Ui/ShooterReticle.h"
 
 #include "CombatComponent.h"
 #include "Interface/PlayerInterface.h"
@@ -9,7 +9,7 @@
 #include "Components/Image.h"
 #include "Weapon/Weapon.h"
 
-void UShooterRedicle::NativeOnInitialized()
+void UShooterReticle::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
@@ -26,62 +26,53 @@ void UShooterRedicle::NativeOnInitialized()
 		if (IsValid(Weapon))
 		{
 			OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
-			OnAmmoCounterChanged(Weapon->GetAmmoCounterDynamicMaterialInstance(), Weapon->Ammo, Weapon->MagCapacity);
 		}
 	}
 	else
 	{
 		ShooterCharacter->OnWeaponFirstReplicated.AddDynamic(this, &ThisClass::OnWeaponFirstReplicated);
 	}
+
+	if (ShooterCharacter->HasAuthority())
+	{
+		AWeapon* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(ShooterCharacter);
+		if (!IsValid(Weapon)) return;
+		OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
+	}
 }
 
-void UShooterRedicle::NativeTick(const FGeometry & MyGeometry, float InDeltaTime)
+void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 }
 
-void UShooterRedicle::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
+void UShooterReticle::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 {
 	UCombatComponent* OldPawnCombat = UCombatComponent::FindCombatComponent(OldPawn);
-	if(IsValid(OldPawnCombat))
+	if (IsValid(OldPawnCombat))
 	{
 		OldPawnCombat->OnReticleChanged.RemoveDynamic(this, &ThisClass::OnReticleChanged);
-		OldPawnCombat->OnAmmoCounterChanged.RemoveDynamic(this, &ThisClass::OnAmmoCounterChanged);
 	}
 	UCombatComponent* NewPawnCombat = UCombatComponent::FindCombatComponent(NewPawn);
 	if (IsValid(NewPawnCombat))
 	{
 		NewPawnCombat->OnReticleChanged.AddDynamic(this, &ThisClass::OnReticleChanged);
-		NewPawnCombat->OnAmmoCounterChanged.AddDynamic(this, &ThisClass::OnAmmoCounterChanged);
 	}
 }
 
-void UShooterRedicle::OnWeaponFirstReplicated(AWeapon* Weapon)
+void UShooterReticle::OnWeaponFirstReplicated(AWeapon* Weapon)
 {
 	OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
-	OnAmmoCounterChanged(Weapon->GetAmmoCounterDynamicMaterialInstance(), Weapon->Ammo, Weapon->MagCapacity);
 }
 
-void UShooterRedicle::OnReticleChanged(UMaterialInstanceDynamic* ReticleMaterialInst)
+void UShooterReticle::OnReticleChanged(UMaterialInstanceDynamic* ReticleMaterialInst)
 {
-	CurrentRedicle_DynMatInst = ReticleMaterialInst;
+	CurrentReticle_DynMatInst = ReticleMaterialInst;
 
 	FSlateBrush Brush;
 	Brush.SetResourceObject(ReticleMaterialInst);
-	if(IsValid(Image_Redicle))
+	if (IsValid(Image_Reticle))
 	{
-		Image_Redicle->SetBrush(Brush);
-	}
-}
-
-void UShooterRedicle::OnAmmoCounterChanged(UMaterialInstanceDynamic * AmmoCounterDynamicMaterialInst, int32 RoundsCurrent, int32 RoundsMax)
-{
-	CurrentAmmoCounter_DynMatInst = AmmoCounterDynamicMaterialInst;
-
-	FSlateBrush Brush;
-	Brush.SetResourceObject(AmmoCounterDynamicMaterialInst);
-	if (IsValid(Image_AmmoCounter))
-	{
-		Image_AmmoCounter->SetBrush(Brush);
+		Image_Reticle->SetBrush(Brush);
 	}
 }
