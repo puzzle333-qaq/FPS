@@ -26,6 +26,9 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 {
 	CurrentWeapon = Weapon;
 	CurrentWeapon->AttachToOwingPawn();
+
+	CurrentReserveAmmo = ReserveAmmo.FindChecked(CurrentWeapon->WeaponType);
+	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, Weapon->Ammo);
 }
 
 void UCombatComponent::SpawnInventory()
@@ -36,6 +39,7 @@ void UCombatComponent::SpawnInventory()
 	{
 		AWeapon* Weapon = SpawnWeapon(WeaponClass);
 		Inventory.AddUnique(Weapon);
+		ReserveAmmo.Add(Weapon->WeaponType, Weapon->StartingCarriedAmmo);
 	}
 
 	if (Inventory.Num() > 0)
@@ -95,7 +99,9 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
 	DOREPLIFETIME(UCombatComponent, Inventory);
 	DOREPLIFETIME(UCombatComponent, CurrentWeapon);
-	DOREPLIFETIME_CONDITION(UCombatComponent,bAiming,COND_SkipOwner)
+	DOREPLIFETIME_CONDITION(UCombatComponent, bAiming, COND_SkipOwner);
+
+	DOREPLIFETIME_CONDITION(UCombatComponent, CurrentReserveAmmo, COND_OwnerOnly);
 }
 
 void UCombatComponent::Initiate_CycleWeapon()
@@ -143,6 +149,14 @@ void UCombatComponent::Local_FireWeapon()
 	GetWorld()->GetTimerManager().SetTimer(FireTimer, this, &ThisClass::FireTimerFinished, CurrentWeapon->FireTime);
 
 	Server_FireWeapon(Hit);
+}
+
+void UCombatComponent::OnRep_CurrentReserveAmmo()
+{
+	if (IsValid(CurrentWeapon))
+	{
+		OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo);
+	}
 }
 
 

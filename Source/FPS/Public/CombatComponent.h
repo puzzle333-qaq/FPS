@@ -2,12 +2,15 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
 #include "CombatComponent.generated.h"
 
 class UWeaponData;
 class AWeapon;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FReticleChanged, UMaterialInstanceDynamic*, ReticleMaterialInst);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCurrentReserveAmmoChanged, int32, RoundsInServe, int32, RoundsInWeapon);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class FPS_API UCombatComponent : public UActorComponent
@@ -48,7 +51,16 @@ public:
 	UPROPERTY(Transient, BlueprintReadOnly , ReplicatedUsing = OnRep_CurrentWeapon)
 	TObjectPtr<AWeapon> CurrentWeapon;	
 
+	UPROPERTY(BlueprintAssignable)
+	FCurrentReserveAmmoChanged OnCurrentReserveAmmoChanged;
+
 	void InitializeWeaponWidget();
+
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentReserveAmmo)
+	int32 CurrentReserveAmmo;
+
+
+
 protected:
 
 	virtual void BeginPlay() override;
@@ -57,6 +69,7 @@ protected:
 	float TraceLength;
 private:	
 
+	TMap<FGameplayTag, int32> ReserveAmmo;
 	bool bTriggerPressed;
 	FTimerHandle FireTimer;
 	void FireTimerFinished();
@@ -84,4 +97,7 @@ private:
 	void Local_Aim(bool bPressed);
 
 	void Local_FireWeapon();
+
+	UFUNCTION()
+	void OnRep_CurrentReserveAmmo();
 };

@@ -9,9 +9,26 @@
 #include "Components/Image.h"
 #include "Weapon/Weapon.h"
 
+UImage* UShooterReticle::ResolveReticleImage()
+{
+	if (IsValid(Image_Reticle))
+	{
+		return Image_Reticle;
+	}
+
+	Image_Reticle = Cast<UImage>(GetWidgetFromName(TEXT("Image_Reticle")));
+	if (!IsValid(Image_Reticle))
+	{
+		Image_Reticle = Cast<UImage>(GetWidgetFromName(TEXT("Image_Redicle")));
+	}
+	return Image_Reticle;
+}
+
 void UShooterReticle::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+
+	ResolveReticleImage();
 
 	GetOwningPlayer()->OnPossessedPawnChanged.AddDynamic(this, &ThisClass::OnPossessedPawnChanged);
 
@@ -36,8 +53,10 @@ void UShooterReticle::NativeOnInitialized()
 	if (ShooterCharacter->HasAuthority())
 	{
 		AWeapon* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(ShooterCharacter);
-		if (!IsValid(Weapon)) return;
-		OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
+		if (IsValid(Weapon))
+		{
+			OnReticleChanged(Weapon->GetReticleDynamicMaterialInstance());
+		}
 	}
 }
 
@@ -68,11 +87,8 @@ void UShooterReticle::OnWeaponFirstReplicated(AWeapon* Weapon)
 void UShooterReticle::OnReticleChanged(UMaterialInstanceDynamic* ReticleMaterialInst)
 {
 	CurrentReticle_DynMatInst = ReticleMaterialInst;
-
-	FSlateBrush Brush;
-	Brush.SetResourceObject(ReticleMaterialInst);
-	if (IsValid(Image_Reticle))
+	if (UImage* ReticleImage = ResolveReticleImage())
 	{
-		Image_Reticle->SetBrush(Brush);
+		ReticleImage->SetBrushResourceObject(ReticleMaterialInst);
 	}
 }
