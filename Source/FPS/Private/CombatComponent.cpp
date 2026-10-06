@@ -505,6 +505,12 @@ AWeapon* UCombatComponent::SpawnWeapon(TSubclassOf<AWeapon> WeaponClass) const
 	SpawnInfo.Owner = OwningActor;
 	SpawnInfo.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	return GetWorld()->SpawnActor<AWeapon>(WeaponClass, SpawnInfo);
+	AWeapon* Weapon = GetWorld()->SpawnActor<AWeapon>(WeaponClass, SpawnInfo);
+	if (IsValid(Weapon))
+	{
+		Weapon->SetActorHiddenInGame(true);
+		Weapon->WeaponStatus = EWeaponStatus::UnEquipped;
+	}
+	return Weapon;
 }
 

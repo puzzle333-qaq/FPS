@@ -2,6 +2,7 @@
 
 
 #include "Weapon/Weapon.h"
+#include "CombatComponent.h"
 #include "FPSTraceChannels.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -44,7 +45,21 @@ AWeapon::AWeapon()
 void AWeapon::OnRep_Instigator()
 {
 	Super::OnRep_Instigator();
-	AttachToOwingPawn();
+
+	// Authority never runs this. Clients used to attach every replicated gun, so the
+	// holstered rifle showed up beside the equipped pistol. Only the current weapon attaches.
+	APawn* OwningPawn = GetInstigator();
+	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(OwningPawn);
+	if (IsValid(Combat) && Combat->CurrentWeapon == this)
+	{
+		SetActorHiddenInGame(false);
+		AttachToOwingPawn();
+		return;
+	}
+
+	DetachFromPawn();
+	SetActorHiddenInGame(true);
+	WeaponStatus = EWeaponStatus::UnEquipped;
 }
 
 USkeletalMeshComponent* AWeapon::GetMesh1P() const
