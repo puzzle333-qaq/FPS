@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Engine/Texture2D.h"
 #include "ReserveAmmo.generated.h"
 
 class UTextBlock;
@@ -31,7 +32,7 @@ private:
 	void OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
 
 	UFUNCTION()
-	void OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon, UMaterialInterface* WeaponIconMaterial);
+	void OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon, UTexture2D* WeaponIcon);
 
 	UFUNCTION()
 	void OnWeaponFirstReplicated(AWeapon* Weapon);

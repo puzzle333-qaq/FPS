@@ -72,16 +72,11 @@ void UReserveAmmo::RefreshAmmoFromPawn(APawn* Pawn)
 	OnCurrentReserveAmmoChanged(Combat->CurrentReserveAmmo, Combat->CurrentWeapon->Ammo, Combat->CurrentWeapon->WeaponIcon);
 }
 
-void UReserveAmmo::OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon, UMaterialInterface* WeaponIconMaterial)
+void UReserveAmmo::OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon, UTexture2D* WeaponIcon)
 {
-	if (IsValid(WeaponIconMaterial))
+	if (IsValid(Image_WeaponIcon) && IsValid(WeaponIcon))
 	{
-		FSlateBrush Brush;
-		Brush.SetResourceObject(WeaponIconMaterial);
-		if (IsValid(Image_WeaponIcon))
-		{
-			Image_WeaponIcon->SetBrush(Brush);
-		}
+		Image_WeaponIcon->SetBrushFromTexture(WeaponIcon);
 	}
 	if (IsValid(Text_Ammo))
 	{

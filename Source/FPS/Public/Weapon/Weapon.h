@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
+#include "Engine/Texture2D.h"
 #include "Weapon.generated.h"
 
 class UMaterialInstanceDynamic;
@@ -51,8 +52,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Trace")
 	float TraceRadius;
 
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Icon")
-	TObjectPtr<UMaterialInterface>WeaponIcon;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Icon")
+	TObjectPtr<UTexture2D> WeaponIcon;
 
 	void Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal,TEnumAsByte<EPhysicalSurface>ImpactSurfaceType,bool bIsFirstPerson);
 	void Auth_Fire();
