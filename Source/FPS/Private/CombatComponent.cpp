@@ -38,7 +38,7 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 		CurrentReserveAmmo = CurrentWeapon->StartingCarriedAmmo;
 		ReserveAmmo.Add(CurrentWeapon->WeaponType, CurrentReserveAmmo);
 	}
-
+	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 	NotifyAmmoChanged();
 }
 
@@ -85,7 +85,7 @@ void UCombatComponent::InitializeWeaponWidget()
 void UCombatComponent::NotifyAmmoChanged()
 {
 	if (!IsValid(CurrentWeapon)) return;
-	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo);
+	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 }
 
 void UCombatComponent::BeginPlay()
@@ -178,7 +178,7 @@ void UCombatComponent::OnRep_CurrentReserveAmmo()
 {
 	if (IsValid(CurrentWeapon))
 	{
-		OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo);
+		OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 	}
 }
 
@@ -216,10 +216,13 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 	if (!IsValid(CurrentWeapon)) return;
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
-	if (IsValid(OwningPawn) && OwningPawn->IsLocallyControlled())
+	const bool bLocal = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
+	if (bLocal)
 	{
 		CurrentWeapon->Rep_Fire(AuthAmmo);
 		NotifyAmmoChanged();
+		// Owning machine already played first-person FireEffect in Local_FireWeapon.
+		return;
 	}
 
 	if (!IsValid(WeaponData))

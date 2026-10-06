@@ -10,7 +10,7 @@ class AWeapon;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FReticleChanged, UMaterialInstanceDynamic*, ReticleMaterialInst);
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCurrentReserveAmmoChanged, int32, RoundsInServe, int32, RoundsInWeapon);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCurrentReserveAmmoChanged, int32, RoundsInServe, int32, RoundsInWeapon, UMaterialInterface*, WeaponIconMaterial);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class FPS_API UCombatComponent : public UActorComponent

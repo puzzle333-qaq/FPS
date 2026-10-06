@@ -31,7 +31,7 @@ private:
 	void OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
 
 	UFUNCTION()
-	void OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon);
+	void OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon, UMaterialInterface* WeaponIconMaterial);
 
 	UFUNCTION()
 	void OnWeaponFirstReplicated(AWeapon* Weapon);

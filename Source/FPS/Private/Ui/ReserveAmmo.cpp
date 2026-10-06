@@ -69,11 +69,20 @@ void UReserveAmmo::RefreshAmmoFromPawn(APawn* Pawn)
 	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(Pawn);
 	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon)) return;
 
-	OnCurrentReserveAmmoChanged(Combat->CurrentReserveAmmo, Combat->CurrentWeapon->Ammo);
+	OnCurrentReserveAmmoChanged(Combat->CurrentReserveAmmo, Combat->CurrentWeapon->Ammo, Combat->CurrentWeapon->WeaponIcon);
 }
 
-void UReserveAmmo::OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon)
+void UReserveAmmo::OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon, UMaterialInterface* WeaponIconMaterial)
 {
+	if (IsValid(WeaponIconMaterial))
+	{
+		FSlateBrush Brush;
+		Brush.SetResourceObject(WeaponIconMaterial);
+		if (IsValid(Image_WeaponIcon))
+		{
+			Image_WeaponIcon->SetBrush(Brush);
+		}
+	}
 	if (IsValid(Text_Ammo))
 	{
 		FText AmmoText = FText::Format(NSLOCTEXT("AmmoText", "AmmoKey", "{0}/{1}"), RoundsInWeapon, RoundsInServe);

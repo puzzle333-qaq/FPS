@@ -20,20 +20,15 @@ AWeapon::AWeapon()
 	Mesh1P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 	Mesh1P->bReceivesDecals = false;
 	Mesh1P->CastShadow = false;
-	Mesh1P->SetHiddenInGame(false);
-	Mesh1P->SetOnlyOwnerSee(true);
-	Mesh1P->SetOwnerNoSee(false);
+	Mesh1P->SetHiddenInGame(true);
 	SetRootComponent(Mesh1P);
 
 	Mesh3P = CreateDefaultSubobject<USkeletalMeshComponent>("Mesh3P");
-	// Always tick so listen-server owner still gets a valid Muzzle socket for 3P tracers.
-	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 	Mesh3P->bReceivesDecals = false;
 	Mesh3P->CastShadow = true;
 	Mesh3P->SetupAttachment(Mesh1P);
-	Mesh3P->SetHiddenInGame(false);
-	Mesh3P->SetOnlyOwnerSee(false);
-	Mesh3P->SetOwnerNoSee(true);
+	Mesh3P->SetHiddenInGame(true);
 
 	AimFeildOfView = 60.f;
 	TraceRadius = 5.f;
@@ -177,12 +172,8 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
 {
 	if (!IsValid(OwningPawn)) return;
 
-	// HiddenInGame hides attached Niagara (tracers). Owner-see flags hide only the gun mesh.
-	Mesh1P->SetHiddenInGame(false);
-	Mesh3P->SetHiddenInGame(false);
-	Mesh1P->SetOnlyOwnerSee(true);
-	Mesh1P->SetOwnerNoSee(false);
-	Mesh3P->SetOnlyOwnerSee(false);
-	Mesh3P->SetOwnerNoSee(true);
+	const bool bLocal = OwningPawn->IsLocallyControlled();
+	Mesh1P->SetHiddenInGame(!bLocal, true);
+	Mesh3P->SetHiddenInGame(bLocal, true);
 }
 
