@@ -66,19 +66,55 @@ UMaterialInstanceDynamic* AWeapon::GetReticleDynamicMaterialInstance()
 	return DynMatInst_Reticle;
 }
 
-void AWeapon::AttachToOwingPawn() const
+void AWeapon::CaptureAuthoredMeshRelative()
+{
+	if (bCapturedAuthoredRelative) return;
+
+	AuthoredMesh1PRelative = Mesh1P->GetRelativeTransform();
+	AuthoredMesh3PRelative = Mesh3P->GetRelativeTransform();
+	bCapturedAuthoredRelative = true;
+}
+
+void AWeapon::AttachToOwingPawn()
 {
 	APawn* OwningPawn = GetInstigator();
 	if (!IsValid(OwningPawn) || !OwningPawn->Implements<UPlayerInterface>()) return;
 
+	CaptureAuthoredMeshRelative();
 	SetMeshVisibility(OwningPawn);
 
 	const FName AttachPoint = IPlayerInterface::Execute_GetWeaponAttachPoint(OwningPawn, WeaponType);
 	USkeletalMeshComponent* PawnMesh1P = IPlayerInterface::Execute_GetMesh1P(OwningPawn);
 	USkeletalMeshComponent* PawnMesh3P = IPlayerInterface::Execute_GetMesh3P(OwningPawn);
+	if (!IsValid(PawnMesh1P) || !IsValid(PawnMesh3P)) return;
 
-	Mesh1P->AttachToComponent(PawnMesh1P, FAttachmentTransformRules::KeepRelativeTransform, AttachPoint);
-	Mesh3P->AttachToComponent(PawnMesh3P, FAttachmentTransformRules::KeepRelativeTransform, AttachPoint);
+	// Snap onto this weapon's grip socket, then put back the offset authored on the mesh.
+	// KeepRelativeTransform leaves a holstered gun parented to the previous socket.
+	const FAttachmentTransformRules SnapRules = FAttachmentTransformRules::SnapToTargetNotIncludingScale;
+	Mesh1P->AttachToComponent(PawnMesh1P, SnapRules, AttachPoint);
+	Mesh1P->SetRelativeTransform(AuthoredMesh1PRelative);
+
+	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	Mesh3P->AttachToComponent(PawnMesh3P, SnapRules, AttachPoint);
+	Mesh3P->SetRelativeTransform(AuthoredMesh3PRelative);
+	Mesh3P->RefreshBoneTransforms();
+}
+
+void AWeapon::DetachFromPawn()
+{
+	if (IsValid(Mesh3P))
+	{
+		Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+		if (Mesh3P->GetAttachParent())
+		{
+			Mesh3P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+		}
+	}
+
+	if (IsValid(Mesh1P) && Mesh1P->GetAttachParent())
+	{
+		Mesh1P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+	}
 }
 
 void AWeapon::WeaponTrace(FHitResult& OutHit, float TraceLength)

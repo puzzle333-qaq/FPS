@@ -109,4 +109,15 @@ private:
 
 	int32 AdvanceWeaponIndex();
 	int32 LocalWeaponIndex;
+
+	void Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson);
+	void ApplyEquippedWeaponAnim(AWeapon* Weapon);
+	void PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson);
+	void OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	UFUNCTION(Server,Reliable)
+	void Server_CycleWeapon(int32 WeaponIndex);
+
+	UFUNCTION(NetMulticast,Reliable)
+	void Multicast_CycleWeapon(int32 WeaponIndex);
 };

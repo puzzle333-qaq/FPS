@@ -45,7 +45,8 @@ public:
 
 
 
-	void AttachToOwingPawn() const;
+	void AttachToOwingPawn();
+	void DetachFromPawn();
 	void WeaponTrace(FHitResult& OutHit, float TraceLength);
 
 	UPROPERTY(EditAnywhere,BlueprintReadOnly , Category = "FPS|WeaponType")
@@ -100,6 +101,11 @@ private:
 
 
 	void SetMeshVisibility(APawn* OwningPawn) const;
+	void CaptureAuthoredMeshRelative();
+
+	FTransform AuthoredMesh1PRelative = FTransform::Identity;
+	FTransform AuthoredMesh3PRelative = FTransform::Identity;
+	bool bCapturedAuthoredRelative = false;
 
 	int32 Sequence;
 

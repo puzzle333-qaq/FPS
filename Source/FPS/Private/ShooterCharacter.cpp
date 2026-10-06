@@ -172,17 +172,29 @@ void AShooterCharacter::TurnInPlace(float DeltaTime)
 void AShooterCharacter::CalculateFABRIKSocket()
 {
 	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon)) return;
-	FABRIK_SocketTransform = Combat->CurrentWeapon->GetMesh3P()->GetSocketTransform("FABRIK", RTS_World);
+
+	USkeletalMeshComponent* WeaponMesh = Combat->CurrentWeapon->GetMesh3P();
+	if (!IsValid(WeaponMesh) || !WeaponMesh->DoesSocketExist(TEXT("FABRIK")))
+	{
+		FABRIK_SocketTransform = FTransform::Identity;
+		return;
+	}
+
+	// A hidden third-person gun does not tick, so force a pose before reading the grip.
+	WeaponMesh->RefreshBoneTransforms();
+
+	const FTransform SocketWorld = WeaponMesh->GetSocketTransform(TEXT("FABRIK"), RTS_World);
 	FVector OutLocation;
 	FRotator OutRotation;
 	GetMesh()->TransformToBoneSpace(
-		"hand_r",
-		FABRIK_SocketTransform.GetLocation(),
-		FABRIK_SocketTransform.GetRotation().Rotator(),
+		TEXT("hand_r"),
+		SocketWorld.GetLocation(),
+		SocketWorld.Rotator(),
 		OutLocation,
 		OutRotation);
 	FABRIK_SocketTransform.SetLocation(OutLocation);
 	FABRIK_SocketTransform.SetRotation(OutRotation.Quaternion());
+	FABRIK_SocketTransform.SetScale3D(FVector::OneVector);
 }
 
 

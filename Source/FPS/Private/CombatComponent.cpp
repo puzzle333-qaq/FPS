@@ -4,7 +4,9 @@
 #include "WeaponData.h"
 #include "Interface/PlayerInterface.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "UObject/UnrealType.h"
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
@@ -28,8 +30,18 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 {
 	if (!IsValid(Weapon)) return;
 
+	if (IsValid(CurrentWeapon) && CurrentWeapon != Weapon)
+	{
+		CurrentWeapon->DetachFromPawn();
+		CurrentWeapon->SetActorHiddenInGame(true);
+		CurrentWeapon->WeaponStatus = EWeaponStatus::UnEquipped;
+	}
+
 	CurrentWeapon = Weapon;
+	CurrentWeapon->SetActorHiddenInGame(false);
+	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 	CurrentWeapon->AttachToOwingPawn();
+	ApplyEquippedWeaponAnim(CurrentWeapon);
 
 	if (const int32* FoundReserve = ReserveAmmo.Find(CurrentWeapon->WeaponType))
 	{
@@ -99,8 +111,18 @@ void UCombatComponent::BeginPlay()
 
 void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 {
+	if (IsValid(LastWeapon) && LastWeapon != CurrentWeapon)
+	{
+		LastWeapon->DetachFromPawn();
+		LastWeapon->SetActorHiddenInGame(true);
+		LastWeapon->WeaponStatus = EWeaponStatus::UnEquipped;
+	}
+
 	if (!IsValid(CurrentWeapon))return;
+
+	CurrentWeapon->SetActorHiddenInGame(false);
 	CurrentWeapon->AttachToOwingPawn();
+	ApplyEquippedWeaponAnim(CurrentWeapon);
 	IPlayerInterface::Execute_WeaponReplicated(GetOwner());
 	InitializeWeaponWidget();
 }
@@ -127,14 +149,149 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
 void UCombatComponent::Initiate_CycleWeapon()
 {
-	if (!IsValid(CurrentWeapon))return;	
-	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling)return;
+	if (!IsValid(CurrentWeapon)) return;
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
+	if (Inventory.Num() < 2) return;
 
-	AdvanceWeaponIndex();
-
-	//Local CycleWeapon
-	//Serve CycleWeapon
+	const int32 NextIndex = AdvanceWeaponIndex();
+	Local_CycleWeapon(NextIndex, true);
+	Server_CycleWeapon(NextIndex);
 }
+
+void UCombatComponent::Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson)
+{
+	if (!Inventory.IsValidIndex(WeaponIndex)) return;
+
+	AWeapon* NextWeapon = Inventory[WeaponIndex];
+	if (!IsValid(NextWeapon)) return;
+
+	if (NextWeapon != CurrentWeapon)
+	{
+		Equip(NextWeapon);
+	}
+
+	PlayEquipMontage(NextWeapon, bFirstPerson);
+}
+
+void UCombatComponent::ApplyEquippedWeaponAnim(AWeapon* Weapon)
+{
+	if (!IsValid(Weapon) || !IsValid(WeaponData)) return;
+
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
+
+	auto ApplyToMesh = [Weapon, this](USkeletalMeshComponent* Mesh, bool bFirstPerson)
+	{
+		if (!IsValid(Mesh)) return;
+		UAnimInstance* AnimInstance = Mesh->GetAnimInstance();
+		if (!IsValid(AnimInstance)) return;
+
+		const TMap<FGameplayTag, FPlayerAnim>& Anims = bFirstPerson
+			? WeaponData->FirstPersonAnims
+			: WeaponData->ThirdPersonAnims;
+		const FPlayerAnim* WeaponAnim = Anims.Find(Weapon->WeaponType);
+		if (!WeaponAnim) return;
+
+		// ABP_FirstPerson spells this CurrenrAnim. ABP_ThirdPerson uses CurrentAnim.
+		const FName PropertyName = bFirstPerson ? TEXT("CurrenrAnim") : TEXT("CurrentAnim");
+		FStructProperty* AnimProperty = FindFProperty<FStructProperty>(AnimInstance->GetClass(), PropertyName);
+		if (!AnimProperty || AnimProperty->Struct != FPlayerAnim::StaticStruct()) return;
+
+		AnimProperty->CopyCompleteValue(AnimProperty->ContainerPtrToValuePtr<void>(AnimInstance), WeaponAnim);
+	};
+
+	ApplyToMesh(IPlayerInterface::Execute_GetMesh1P(Owner), true);
+	ApplyToMesh(IPlayerInterface::Execute_GetMesh3P(Owner), false);
+}
+
+void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
+{
+	if (!IsValid(Weapon) || !IsValid(WeaponData)) return;
+
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
+
+	const TMap<FGameplayTag, FMontageData>& ViewMontages = bFirstPerson
+		? WeaponData->FirstPersonMontages
+		: WeaponData->ThirdPersonMontages;
+
+	const FMontageData* MontageData = ViewMontages.Find(Weapon->WeaponType);
+	UAnimMontage* EquipMontage = (MontageData && IsValid(MontageData->EquipMontage)) ? MontageData->EquipMontage.Get() : nullptr;
+	if (!IsValid(EquipMontage))
+	{
+		if (const FMontageData* SharedData = WeaponData->WeaponMontages.Find(Weapon->WeaponType))
+		{
+			EquipMontage = SharedData->EquipMontage;
+		}
+	}
+
+	USkeletalMeshComponent* Mesh = bFirstPerson
+		? IPlayerInterface::Execute_GetMesh1P(Owner)
+		: IPlayerInterface::Execute_GetMesh3P(Owner);
+	UAnimInstance* AnimInstance = IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr;
+	// Mesh1P is the arms skeleton. The assigned equip clips use the full-body mannequin
+	// skeleton. Montage_Play still runs that pair; rejecting it is what silenced 1P.
+	if (!IsValid(AnimInstance) || !IsValid(EquipMontage)) return;
+
+	const float PlayedLength = AnimInstance->Montage_Play(EquipMontage);
+	if (PlayedLength <= 0.f) return;
+
+	if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(EquipMontage))
+	{
+		MontageInstance->bEnableAutoBlendOut = true;
+	}
+
+	FOnMontageEnded EndDelegate;
+	EndDelegate.BindUObject(this, &UCombatComponent::OnEquipMontageEnded);
+	AnimInstance->Montage_SetEndDelegate(EndDelegate, EquipMontage);
+	Weapon->WeaponStatus = EWeaponStatus::Cycling;
+}
+
+void UCombatComponent::OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling)
+	{
+		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+	}
+}
+
+void UCombatComponent::Server_CycleWeapon_Implementation(int32 WeaponIndex)
+{
+	if (!Inventory.IsValidIndex(WeaponIndex)) return;
+
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	const bool bListenServerOwner = GetNetMode() == NM_ListenServer && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
+	LocalWeaponIndex = WeaponIndex;
+
+	// Listen-server host already equipped and played the 1P montage in Initiate_CycleWeapon.
+	if (!bListenServerOwner)
+	{
+		AWeapon* NextWeapon = Inventory[WeaponIndex];
+		if (IsValid(NextWeapon) && NextWeapon != CurrentWeapon)
+		{
+			Equip(NextWeapon);
+		}
+	}
+
+	Multicast_CycleWeapon(WeaponIndex);
+}
+
+void UCombatComponent::Multicast_CycleWeapon_Implementation(int32 WeaponIndex)
+{
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwningPawn) || OwningPawn->IsLocallyControlled())
+	{
+		// Owner already played the 1P montage. Re-entering Local_CycleWeapon from here
+		// calls Server_CycleWeapon again and overflows the listen-server stack.
+		return;
+	}
+
+	LocalWeaponIndex = WeaponIndex;
+	Local_CycleWeapon(WeaponIndex, false);
+}
+
+
+
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
