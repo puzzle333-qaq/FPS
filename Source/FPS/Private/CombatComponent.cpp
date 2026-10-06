@@ -19,6 +19,8 @@ UCombatComponent::UCombatComponent()
 
 	bTriggerPressed = false;
 	bAiming = false;
+
+	LocalWeaponIndex = 0;
 }
 
 
@@ -125,7 +127,13 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
 void UCombatComponent::Initiate_CycleWeapon()
 {
-	GEngine->AddOnScreenDebugMessage(-1,5.f,FColor::Cyan,TEXT("Initiate CycleWeapon"), false);
+	if (!IsValid(CurrentWeapon))return;	
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling)return;
+
+	AdvanceWeaponIndex();
+
+	//Local CycleWeapon
+	//Serve CycleWeapon
 }
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
@@ -180,6 +188,16 @@ void UCombatComponent::OnRep_CurrentReserveAmmo()
 	{
 		OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 	}
+}
+
+int32 UCombatComponent::AdvanceWeaponIndex()
+{
+	if (Inventory.Num() >= 2)
+	{
+		LocalWeaponIndex = (LocalWeaponIndex + 1) % Inventory.Num();
+		
+	}
+	return LocalWeaponIndex;
 }
 
 

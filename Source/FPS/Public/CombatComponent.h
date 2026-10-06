@@ -106,4 +106,7 @@ private:
 
 	UFUNCTION()
 	void OnRep_CurrentReserveAmmo();
+
+	int32 AdvanceWeaponIndex();
+	int32 LocalWeaponIndex;
 };

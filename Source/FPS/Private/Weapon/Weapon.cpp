@@ -38,6 +38,7 @@ AWeapon::AWeapon()
 	Ammo = 5;
 	StartingCarriedAmmo = 10;
 	Sequence = 0;
+	WeaponStatus = EWeaponStatus::UnEquipped;
 }
 
 void AWeapon::OnRep_Instigator()
