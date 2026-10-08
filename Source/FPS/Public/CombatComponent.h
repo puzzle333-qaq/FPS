@@ -6,6 +6,8 @@
 #include "Engine/Texture2D.h"
 #include "CombatComponent.generated.h"
 
+class UAnimInstance;
+class UAnimMontage;
 class UWeaponData;
 class AWeapon;
 
@@ -33,6 +35,11 @@ public:
 	void Initiate_ReloadWeapon();
 	void Initiate_Aim_Pressed();
 	void Initiate_Aim_Released();
+
+	// Moves rounds from reserve into the magazine. Reload input does not call this.
+	// A montage notify calls it at the insert frame.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
+	bool ApplyReload();
 
 	UPROPERTY(BlueprintAssignable)
 	FReticleChanged OnReticleChanged;
@@ -99,11 +106,15 @@ private:
 	void Local_Aim(bool bPressed);
 
 	void Local_FireWeapon();
-	bool ApplyReload();
-	void PlayReloadMontage(bool bFirstPerson);
+	bool GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const;
+	bool PlayReloadMontage(bool bFirstPerson);
+	void OnReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 	UFUNCTION(Server, Reliable)
 	void Server_ReloadWeapon();
+
+	UFUNCTION(Server, Reliable)
+	void Server_EndReload();
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_ReloadWeapon();
