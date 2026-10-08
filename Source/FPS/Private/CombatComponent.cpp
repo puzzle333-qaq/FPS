@@ -367,16 +367,17 @@ int32 UCombatComponent::AdvanceWeaponIndex()
 
 void UCombatComponent::FireTimerFinished()
 {
-	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	if (!IsValid(CurrentWeapon))
 	{
 		return;
 	}
 
-	if (CurrentWeapon->Ammo == 0 && CurrentReserveAmmo > 0 && CurrentWeapon->WeaponStatus != EWeaponStatus::Firing && OwningPawn->IsLocallyControlled())
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	// Empty mag starts the same reload as the reload key. ApplyReload here fills the
+	// magazine immediately and never plays the montage.
+	if (CurrentWeapon->Ammo == 0 && CurrentReserveAmmo > 0 && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled())
 	{
-		ApplyReload();
-		Server_ReloadWeapon();
+		Initiate_ReloadWeapon();
 		return;
 	}
 
