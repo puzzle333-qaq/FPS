@@ -401,6 +401,11 @@ void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 	if (MinInterval > 0.f && Now < ServerNextFireTime) return;
 	ServerNextFireTime = Now + MinInterval;
 
+	if (IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>())
+	{
+		IPlayerInterface::Execute_DoDamage(Hit.GetActor(), 0.f, GetOwner());
+	}
+
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bListenServerOwner = GetNetMode() == NM_ListenServer && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
 	if (!bListenServerOwner)

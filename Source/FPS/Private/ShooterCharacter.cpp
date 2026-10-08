@@ -277,9 +277,25 @@ void AShooterCharacter::Notify_ReloadWeapon_Implementation()
 bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* DamageInstigator)
 {
 	//Change Health by damage amout
-	//play hit react montage(multicast react)
 	//calculate whether or not damage leathal
+
+	const int32 MontageSelection = FMath::RandRange(0, HitReacts.Num() - 1);
+	Multicast_HitReact(MontageSelection);
+
 	return false;
+}
+
+
+
+void AShooterCharacter::Multicast_HitReact_Implementation(int32 MontageIndex)
+{
+	if (GetNetMode() != NM_DedicatedServer && !IsLocallyControlled())
+	{
+		if (HitReacts.IsValidIndex(MontageIndex))
+		{
+			GetMesh()->GetAnimInstance()->Montage_Play(HitReacts[MontageIndex]);
+		}
+	}
 }
 
 void AShooterCharacter::Input_CycleWeapon()

@@ -59,6 +59,9 @@ public:
 	FWeaponFirstReplicated OnWeaponFirstReplicated;
 
 	bool HasWeaponFirstReplicated() const { return bWeaponFirstReplicated; }
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
+	TArray<TObjectPtr<UAnimMontage>> HitReacts;
 protected:
 	// Called when the game starts or when spawned
 
@@ -82,6 +85,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|TurnInPlace")
 	ETurningInPlace TurningStatus;
+	
+	UFUNCTION(NetMulticast,Reliable)
+	void Multicast_HitReact(int32 MontageIndex);
 
 
 private:
