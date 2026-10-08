@@ -34,7 +34,6 @@ public:
 	void Initiate_FireWeapon_Released();
 	void Initiate_ReloadWeapon();
 	void Initiate_Aim_Pressed();
-	void Initiate_Aim_Released();
 
 	void Notify_ReloadWeapon();
 
@@ -83,6 +82,7 @@ private:
 	TMap<FGameplayTag, int32> ReserveAmmo;
 	bool bTriggerPressed;
 	FTimerHandle FireTimer;
+	float ServerNextFireTime = 0.f;
 	void FireTimerFinished();
 
 	UFUNCTION()

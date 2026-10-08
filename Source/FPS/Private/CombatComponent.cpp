@@ -319,6 +319,7 @@ void UCombatComponent::Local_FireWeapon()
 		return;
 	}
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+	if (GetWorld()->GetTimerManager().IsTimerActive(FireTimer)) return;
 
 	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
 	{
@@ -382,6 +383,11 @@ void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 {
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+
+	const float Now = GetWorld()->GetTimeSeconds();
+	const float MinInterval = FMath::Max(0.f, CurrentWeapon->FireTime - 0.02f);
+	if (MinInterval > 0.f && Now < ServerNextFireTime) return;
+	ServerNextFireTime = Now + MinInterval;
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bListenServerOwner = GetNetMode() == NM_ListenServer && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
@@ -506,6 +512,17 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson)
 	const float PlayedLength = AnimInstance->Montage_Play(ReloadMontage);
 	if (PlayedLength <= 0.f) return false;
 
+	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+	{
+		UAnimMontage* WeaponReloadMontage = WeaponMontageData->ReloadMontage;
+		USkeletalMeshComponent* WeaponMesh = bFirstPerson ? CurrentWeapon->GetMesh1P() : CurrentWeapon->GetMesh3P();
+		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
+		if (IsValid(WeaponReloadMontage) && IsValid(WeaponAnim))
+		{
+			WeaponAnim->Montage_Play(WeaponReloadMontage);
+		}
+	}
+
 	// The owner's 1P montage owns the Reloading lock. The 3P montage is only what other people see.
 	if (bFirstPerson)
 	{
@@ -588,14 +605,9 @@ void UCombatComponent::Multicast_ReloadWeapon_Implementation()
 
 void UCombatComponent::Initiate_Aim_Pressed()
 {
-	Local_Aim(true);
-	Server_Aim(true);
-}
-
-void UCombatComponent::Initiate_Aim_Released()
-{
-	Local_Aim(false);
-	Server_Aim(false);
+	const bool bNextAim = !bAiming;
+	Local_Aim(bNextAim);
+	Server_Aim(bNextAim);
 }
 
 void UCombatComponent::Notify_ReloadWeapon()

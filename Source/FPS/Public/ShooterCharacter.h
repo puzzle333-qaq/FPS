@@ -90,7 +90,6 @@ private:
 	void Input_FireWeapon_Pressed();
 	void Input_FireWeapon_Released();
 	void Input_Aim_Pressed();
-	void Input_Aim_Released();
 
 	void CalculateFABRIKSocket();
 	void CalculateTurnInPlaceParameters(float DeltaTime);

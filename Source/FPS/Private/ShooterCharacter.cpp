@@ -210,7 +210,6 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_FireWeapon_Pressed);
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_FireWeapon_Released);
 	ShooterInputComponent->BindAction(AimWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_Aim_Pressed);
-	ShooterInputComponent->BindAction(AimWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_Aim_Released);
 	ShooterInputComponent->BindAction(ReloadWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_ReloadWeapon);
 
 }
@@ -297,14 +296,9 @@ void AShooterCharacter::Input_FireWeapon_Released()
 
 void AShooterCharacter::Input_Aim_Pressed()
 {
-	if (IsValid(Combat)) Combat->Initiate_Aim_Pressed();
-	OnAim(true);
-}
-
-void AShooterCharacter::Input_Aim_Released()
-{
-	if (IsValid(Combat)) Combat->Initiate_Aim_Released();
-	OnAim(false);
+	if (!IsValid(Combat)) return;
+	Combat->Initiate_Aim_Pressed();
+	OnAim(Combat->bAiming);
 }
 
 
