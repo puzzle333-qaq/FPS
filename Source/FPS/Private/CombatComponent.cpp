@@ -367,10 +367,19 @@ int32 UCombatComponent::AdvanceWeaponIndex()
 
 void UCombatComponent::FireTimerFinished()
 {
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	if (!IsValid(CurrentWeapon))
 	{
 		return;
 	}
+
+	if (CurrentWeapon->Ammo == 0 && CurrentReserveAmmo > 0 && CurrentWeapon->WeaponStatus != EWeaponStatus::Firing && OwningPawn->IsLocallyControlled())
+	{
+		ApplyReload();
+		Server_ReloadWeapon();
+		return;
+	}
+
 
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 

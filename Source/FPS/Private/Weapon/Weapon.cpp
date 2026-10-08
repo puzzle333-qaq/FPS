@@ -196,7 +196,10 @@ void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal
 	if (IsValid(InstigatorPawn) && InstigatorPawn->IsLocallyControlled())
 	{
 		Ammo = FMath::Clamp(Ammo - 1, 0, MagCapacity);
-		++Sequence;
+		if (!GetInstigator()->HasAuthority())
+		{
+			++Sequence;
+		}
 	}
 }
 
@@ -208,7 +211,7 @@ void AWeapon::Auth_Fire()
 void AWeapon::Rep_Fire(int32 AuthAmmo)
 {
 	APawn* InstigatorPawn = GetInstigator();
-	if (!IsValid(InstigatorPawn) || !InstigatorPawn->IsLocallyControlled()) return;
+	if (!IsValid(InstigatorPawn) || !InstigatorPawn->IsLocallyControlled() && !GetInstigator()->HasAuthority()) return;
 
 	Sequence = FMath::Max(Sequence - 1, 0);
 	Ammo = FMath::Clamp(AuthAmmo - Sequence, 0, MagCapacity);
