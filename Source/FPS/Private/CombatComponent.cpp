@@ -298,8 +298,8 @@ void UCombatComponent::Multicast_CycleWeapon_Implementation(int32 WeaponIndex)
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
 	if (!IsValid(CurrentWeapon))return;
-	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	bTriggerPressed = true;
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 
 	if (CurrentWeapon->Ammo > 0)
 	{
@@ -531,6 +531,24 @@ void UCombatComponent::OnReloadMontageEnded(UAnimMontage* Montage, bool bInterru
 	}
 }
 
+
+void UCombatComponent::Client_ReloadWeapon_Implementation(int32 NewWeaponAmmo, int32 NewCarryAmmo)
+{
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(CurrentWeapon) || !IsValid(OwningPawn) || !OwningPawn->IsLocallyControlled()) return;
+
+	CurrentWeapon->Ammo = NewWeaponAmmo;
+	CurrentReserveAmmo = NewCarryAmmo;
+	ReserveAmmo.Add(CurrentWeapon->WeaponType, NewCarryAmmo);
+	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+	NotifyAmmoChanged();
+
+	if (bTriggerPressed && CurrentWeapon->Ammo > 0)
+	{
+		Local_FireWeapon();
+	}
+}
+
 void UCombatComponent::Server_ReloadWeapon_Implementation()
 {
 	if (!IsValid(CurrentWeapon)) return;
@@ -578,6 +596,26 @@ void UCombatComponent::Initiate_Aim_Released()
 {
 	Local_Aim(false);
 	Server_Aim(false);
+}
+
+void UCombatComponent::Notify_ReloadWeapon()
+{
+	if (!IsValid(CurrentWeapon)) return;
+	// Client RPCs only run when invoked with authority. A 1P notify on a remote client
+	// must not call Client_ReloadWeapon; the server's 3P notify sends the result.
+	if (GetOwnerRole() != ROLE_Authority) return;
+
+	const int32 EmptySpace = CurrentWeapon->MagCapacity - CurrentWeapon->Ammo;
+	const int32 AmountToRefill = FMath::Min(EmptySpace, CurrentReserveAmmo);
+	if (AmountToRefill > 0)
+	{
+		CurrentWeapon->Ammo += AmountToRefill;
+		CurrentReserveAmmo -= AmountToRefill;
+		ReserveAmmo.Add(CurrentWeapon->WeaponType, CurrentReserveAmmo);
+	}
+
+	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+	Client_ReloadWeapon(CurrentWeapon->Ammo, CurrentReserveAmmo);
 }
 
 void UCombatComponent::Server_Aim_Implementation(bool bPressed)

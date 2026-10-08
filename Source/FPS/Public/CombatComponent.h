@@ -36,6 +36,8 @@ public:
 	void Initiate_Aim_Pressed();
 	void Initiate_Aim_Released();
 
+	void Notify_ReloadWeapon();
+
 	// Moves rounds from reserve into the magazine. Reload input does not call this.
 	// A montage notify calls it at the insert frame.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
@@ -112,6 +114,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_ReloadWeapon();
+
+	UFUNCTION(Client,Reliable)
+	void Client_ReloadWeapon(int32 NewWeaponAmmo, int32 NewCarryAmmo);
 
 	UFUNCTION(Server, Reliable)
 	void Server_EndReload();

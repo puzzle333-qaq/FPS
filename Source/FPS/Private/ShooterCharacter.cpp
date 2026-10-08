@@ -270,6 +270,11 @@ int32 AShooterCharacter::GetReserveAmmo_Implementation() const
 	return IsValid(Combat) ? Combat->CurrentReserveAmmo : 0;
 }
 
+void AShooterCharacter::Notify_ReloadWeapon_Implementation()
+{
+	Combat->Notify_ReloadWeapon();
+}
+
 void AShooterCharacter::Input_CycleWeapon()
 {
 	if (IsValid(Combat)) Combat->Initiate_CycleWeapon();
