@@ -40,6 +40,7 @@ public:
 	virtual AWeapon* GetCurrentWeapon_Implementation() override;
 	virtual int32 GetReserveAmmo_Implementation() const override;
 	virtual void Notify_ReloadWeapon_Implementation() override;
+	virtual bool DoDamage_Implementation(float DamageAmout,AActor* DamageInstigator) override;
 	/** PlayerInterface */
 
 	virtual void BeginPlay() override;

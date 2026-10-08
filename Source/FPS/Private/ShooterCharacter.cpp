@@ -274,6 +274,14 @@ void AShooterCharacter::Notify_ReloadWeapon_Implementation()
 	Combat->Notify_ReloadWeapon();
 }
 
+bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* DamageInstigator)
+{
+	//Change Health by damage amout
+	//play hit react montage(multicast react)
+	//calculate whether or not damage leathal
+	return false;
+}
+
 void AShooterCharacter::Input_CycleWeapon()
 {
 	if (IsValid(Combat)) Combat->Initiate_CycleWeapon();
