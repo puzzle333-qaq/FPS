@@ -427,45 +427,79 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->Ammo >= CurrentWeapon->MagCapacity) return;
 	if (CurrentReserveAmmo <= 0) return;
+	if (!ApplyReload()) return;
 
-	ApplyReload();
+	PlayReloadMontage(true);
 	Server_ReloadWeapon();
 }
 
-void UCombatComponent::ApplyReload()
+bool UCombatComponent::ApplyReload()
 {
-	if (!IsValid(CurrentWeapon)) return;
+	if (!IsValid(CurrentWeapon)) return false;
 
 	const int32 Needed = CurrentWeapon->MagCapacity - CurrentWeapon->Ammo;
 	const int32 Taken = FMath::Min(Needed, CurrentReserveAmmo);
-	if (Taken <= 0) return;
+	if (Taken <= 0) return false;
 
 	CurrentWeapon->Ammo += Taken;
 	CurrentReserveAmmo -= Taken;
 	ReserveAmmo.Add(CurrentWeapon->WeaponType, CurrentReserveAmmo);
 	NotifyAmmoChanged();
+	return true;
+}
 
-	if (!IsValid(WeaponData)) return;
-	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
+void UCombatComponent::PlayReloadMontage(bool bFirstPerson)
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
+
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner)) return;
+
+	const TMap<FGameplayTag, FMontageData>& ViewMontages = bFirstPerson
+		? WeaponData->FirstPersonMontages
+		: WeaponData->ThirdPersonMontages;
+	const FMontageData* MontageData = ViewMontages.Find(CurrentWeapon->WeaponType);
+	if (!MontageData) return;
+
+	UAnimMontage* ReloadMontage = MontageData->ReloadMontage;
+	USkeletalMeshComponent* Mesh = bFirstPerson
+		? IPlayerInterface::Execute_GetMesh1P(Owner)
+		: IPlayerInterface::Execute_GetMesh3P(Owner);
+	UAnimInstance* AnimInstance = IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr;
+	if (IsValid(ReloadMontage) && IsValid(AnimInstance))
 	{
-		UAnimMontage* ReloadMontage = MontageData->ReloadMontage;
-		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
-		UAnimInstance* AnimInstance1P = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
-		if (IsValid(ReloadMontage) && IsValid(AnimInstance1P))
-		{
-			AnimInstance1P->Montage_Play(ReloadMontage);
-		}
+		AnimInstance->Montage_Play(ReloadMontage);
 	}
 }
 
 void UCombatComponent::Server_ReloadWeapon_Implementation()
 {
+	if (!IsValid(CurrentWeapon)) return;
+
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bListenServerOwner = GetNetMode() == NM_ListenServer && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
+	// Listen-server host already moved ammo in Initiate_ReloadWeapon. A mag-full check here
+	// would skip the multicast, so other clients would never see that reload.
 	if (!bListenServerOwner)
 	{
-		ApplyReload();
+		if (CurrentWeapon->Ammo >= CurrentWeapon->MagCapacity) return;
+		if (CurrentReserveAmmo <= 0) return;
+		if (!ApplyReload()) return;
 	}
+
+	Multicast_ReloadWeapon();
+}
+
+void UCombatComponent::Multicast_ReloadWeapon_Implementation()
+{
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwningPawn) || OwningPawn->IsLocallyControlled())
+	{
+		// Owner already played the 1P montage. Re-entering ApplyReload from here adds ammo again.
+		return;
+	}
+
+	PlayReloadMontage(false);
 }
 
 void UCombatComponent::Initiate_Aim_Pressed()

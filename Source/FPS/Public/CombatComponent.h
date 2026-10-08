@@ -99,10 +99,14 @@ private:
 	void Local_Aim(bool bPressed);
 
 	void Local_FireWeapon();
-	void ApplyReload();
+	bool ApplyReload();
+	void PlayReloadMontage(bool bFirstPerson);
 
 	UFUNCTION(Server, Reliable)
 	void Server_ReloadWeapon();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_ReloadWeapon();
 
 	UFUNCTION()
 	void OnRep_CurrentReserveAmmo();
