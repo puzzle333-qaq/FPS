@@ -300,6 +300,9 @@ void UCombatComponent::Initiate_FireWeapon_Pressed()
 	if (!IsValid(CurrentWeapon))return;
 	bTriggerPressed = true;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+	// The burst continues from FireTimerFinished while this timer is still the active callback.
+	// Gating Local_FireWeapon on IsTimerActive stops that next shot.
+	if (GetWorld()->GetTimerManager().IsTimerActive(FireTimer)) return;
 
 	if (CurrentWeapon->Ammo > 0)
 	{
@@ -319,7 +322,6 @@ void UCombatComponent::Local_FireWeapon()
 		return;
 	}
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
-	if (GetWorld()->GetTimerManager().IsTimerActive(FireTimer)) return;
 
 	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
 	{
@@ -512,14 +514,19 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson)
 	const float PlayedLength = AnimInstance->Montage_Play(ReloadMontage);
 	if (PlayedLength <= 0.f) return false;
 
-	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+	// The gun reload moves the magazine on the weapon mesh. Play it only on the
+	// owning first-person mesh; the third-person gun leaves the magazine floating.
+	if (bFirstPerson)
 	{
-		UAnimMontage* WeaponReloadMontage = WeaponMontageData->ReloadMontage;
-		USkeletalMeshComponent* WeaponMesh = bFirstPerson ? CurrentWeapon->GetMesh1P() : CurrentWeapon->GetMesh3P();
-		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
-		if (IsValid(WeaponReloadMontage) && IsValid(WeaponAnim))
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
 		{
-			WeaponAnim->Montage_Play(WeaponReloadMontage);
+			UAnimMontage* WeaponReloadMontage = WeaponMontageData->ReloadMontage;
+			USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
+			UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
+			if (IsValid(WeaponReloadMontage) && IsValid(WeaponAnim))
+			{
+				WeaponAnim->Montage_Play(WeaponReloadMontage);
+			}
 		}
 	}
 
