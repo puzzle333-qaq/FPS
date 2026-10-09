@@ -5,6 +5,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
 #include "GameFramework/SpringArmComponent.h"
 
 #include "WeaponData.h"
@@ -50,6 +51,9 @@ AShooterCharacter::AShooterCharacter()
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
 	Combat->SetIsReplicated(true);
+
+	Stats = CreateDefaultSubobject<UStatsComponent>("Stats");
+	Stats->SetIsReplicated(true);
 
 	DefaultFOV = 90.f;
 	TurningStatus = ETurningInPlace::NotTurning;

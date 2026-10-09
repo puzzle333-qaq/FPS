@@ -7,6 +7,7 @@
 #include <Camera/CameraComponent.h>
 #include "GameFramework/Character.h"
 #include "CombatComponent.h"
+#include "Stats/StatsComponent.h"
 #include "ShooterType/ShooterType.h"
 #include "Interface/PlayerInterface.h"
 #include "ShooterCharacter.generated.h"
@@ -63,7 +64,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
 	TArray<TObjectPtr<UAnimMontage>> HitReacts;
 protected:
-	// Called when the game starts or when spawned
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Health")
+	TObjectPtr<UStatsComponent>Stats;
+
+
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly , Category = "FPS|Combat")
 	TObjectPtr<UCombatComponent> Combat;
