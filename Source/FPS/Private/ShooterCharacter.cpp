@@ -280,8 +280,10 @@ void AShooterCharacter::Notify_ReloadWeapon_Implementation()
 
 bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* DamageInstigator)
 {
-	//Change Health by damage amout
-	//calculate whether or not damage leathal
+	if (!IsValid(Stats))return false;
+
+	Stats->ChangeHealthByAmout(-DamageAmout, DamageInstigator);
+	//calculate whether or not damage lethal
 
 	const int32 MontageSelection = FMath::RandRange(0, HitReacts.Num() - 1);
 	Multicast_HitReact(MontageSelection);

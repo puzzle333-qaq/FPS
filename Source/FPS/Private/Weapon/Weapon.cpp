@@ -34,12 +34,14 @@ AWeapon::AWeapon()
 	AimFeildOfView = 60.f;
 	TraceRadius = 5.f;
 	FireTime = 0.1f;
+	Damage = 15.f;
 
 	MagCapacity = 10;
 	Ammo = 5;
 	StartingCarriedAmmo = 10;
 	Sequence = 0;
 	WeaponStatus = EWeaponStatus::UnEquipped;
+
 }
 
 void AWeapon::OnRep_Instigator()

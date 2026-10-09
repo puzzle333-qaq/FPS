@@ -11,6 +11,9 @@ UStatsComponent::UStatsComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 	DeathState = EDeathState::NotDead;
 	SetIsReplicatedByDefault(true);
+
+	Health = 100.f;
+	MaxHealth = 100.f;
 	
 
 }
@@ -25,7 +28,7 @@ void UStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 bool UStatsComponent::ChangeHealthByAmout(float Amout, AActor* Instigator)
 {
 	float OldValue = Health;
-	Health = FMath::Clamp(Health * Amout, 0.f, MaxHealth);
+	Health = FMath::Clamp(Health + Amout, 0.f, MaxHealth);
 	OnHealthChanged.Broadcast(this, OldValue, Health, Instigator);
 	return false;
 }
