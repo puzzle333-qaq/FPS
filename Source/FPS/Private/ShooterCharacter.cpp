@@ -10,6 +10,7 @@
 #include "Components/CapsuleComponent.h"
 #include "WeaponData.h"
 #include "Weapon/Weapon.h"
+#include "Weapon/SniperScopeComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
@@ -87,6 +88,12 @@ AShooterCharacter::AShooterCharacter()
 
 void AShooterCharacter::BeginPlay()
 {
+	if (GetNetMode() != NM_DedicatedServer && !FindComponentByClass<USniperScopeComponent>())
+	{
+		USniperScopeComponent* Scope = NewObject<USniperScopeComponent>(this, TEXT("SniperScope"));
+		Scope->RegisterComponent();
+	}
+
 	Super::BeginPlay();
 
 	// A Blueprint collision override is applied after the constructor. Set the weapon channel again here.
@@ -142,6 +149,11 @@ void AShooterCharacter::Tick(float DeltaTime)
 	CalculateTurnInPlaceParameters(DeltaTime);
 	CalculateFABRIKSocket();
 	UpdateAimSocketAlignment(DeltaTime);
+
+	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
+	{
+		Scope->UpdateView();
+	}
 }
 
 void AShooterCharacter::CalculateTurnInPlaceParameters(float DeltaTime)
@@ -354,7 +366,13 @@ FName AShooterCharacter::GetWeaponAttachPoint_Implementation(const FGameplayTag&
 {
 	checkf(Combat, TEXT("Combat component is missing"));
 	checkf(Combat->WeaponData, TEXT("No WeaponData Asset - Please Fill out BP_ShooterCharacter"));
-	return Combat->WeaponData->GripPoints.FindChecked(WeaponType);
+	if (const FName* GripPoint = Combat->WeaponData->GripPoints.Find(WeaponType))
+	{
+		return *GripPoint;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("No grip socket for weapon tag %s. Using RifleSocket."), *WeaponType.ToString());
+	return TEXT("RifleSocket");
 }
 
 USkeletalMeshComponent* AShooterCharacter::GetMesh1P_Implementation() const

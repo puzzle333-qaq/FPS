@@ -76,6 +76,11 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
 	TArray<TObjectPtr<UAnimMontage>> HitReacts;
+
+	UCameraComponent* GetFirstPersonCamera() const { return FirstPersonCamera; }
+	UCombatComponent* GetCombatComponent() const { return Combat; }
+	float GetDefaultFieldOfView() const { return DefaultFOV; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Health")
 	TObjectPtr<UStatsComponent>Stats;

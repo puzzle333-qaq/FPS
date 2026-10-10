@@ -52,6 +52,27 @@ void UShooterReticle::NativeOnInitialized()
 void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	UImage* ReticleImage = ResolveReticleImage();
+	if (!IsValid(ReticleImage))
+	{
+		return;
+	}
+
+	// The HUD crosshair stays up while hip firing. ADS aims through the weapon
+	// sight, so the widget mark has to leave the screen. The widget itself keeps
+	// ticking so the mark can come back when aim is released.
+	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetOwningPlayerPawn());
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	const bool bAimThroughSight = IsValid(Combat) && Combat->bAiming
+		&& IsValid(Weapon) && Weapon->WeaponKind != EWeaponKind::Melee;
+	const ESlateVisibility DesiredVisibility = bAimThroughSight
+		? ESlateVisibility::Collapsed
+		: ESlateVisibility::HitTestInvisible;
+	if (ReticleImage->GetVisibility() != DesiredVisibility)
+	{
+		ReticleImage->SetVisibility(DesiredVisibility);
+	}
 }
 
 void UShooterReticle::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
