@@ -30,6 +30,15 @@ enum class EWeaponStatus : uint8
 
 };
 
+// Long gun, pistol, or knife. Main and secondary slots only accept a long gun.
+UENUM(BlueprintType)
+enum class EWeaponKind : uint8
+{
+	LongGun UMETA(DisplayName = "Long Gun"),
+	Pistol UMETA(DisplayName = "Pistol"),
+	Melee UMETA(DisplayName = "Knife")
+};
+
 UCLASS()
 class FPS_API AWeapon : public AActor
 {
@@ -51,6 +60,9 @@ public:
 
 	UPROPERTY(EditAnywhere,BlueprintReadOnly , Category = "FPS|WeaponType")
 	FGameplayTag WeaponType;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|WeaponType")
+	EWeaponKind WeaponKind;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
 	float AimFeildOfView;

@@ -56,6 +56,18 @@ public:
 	UFUNCTION(BlueprintCallable)
 	bool HasCurrentWeapon() const;
 
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void EquipMainWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void EquipSeconedaryWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void EquipMeleeWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void EquipPistolWeapon();
+
 	UPROPERTY(BlueprintAssignable)
 	FWeaponFirstReplicated OnWeaponFirstReplicated;
 
@@ -101,6 +113,10 @@ private:
 	void Input_FireWeapon_Pressed();
 	void Input_FireWeapon_Released();
 	void Input_Aim_Pressed();
+	void Input_EquipMainWeapon();
+	void Input_EquipSeconedaryWeapon();
+	void Input_EquipMeleeWeapon();
+	void Input_EquipPistolWeapon();
 	void ConfigureWeaponHitCollision();
 
 	void CalculateFABRIKSocket();

@@ -41,17 +41,17 @@ private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> CrouchAction;
 
-	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> EquipMainWeapon;
 
-	UPROPERTY(EditAnywhere, Category = "FPS|Input")
-	TObjectPtr<UInputAction>EquipSeconedaryWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> EquipSeconedaryWeapon;
 
-	UPROPERTY(EditAnywhere, Category = "FPS|Input")
-	TObjectPtr<UInputAction>EquipMeleeWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> EquipMeleeWeapon;
 
-	UPROPERTY(EditAnywhere, Category = "FPS|Input")
-	TObjectPtr<UInputAction>EquipPistolWeapon;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> EquipPistolWeapon;
 
 
 	void Input_Crouch();

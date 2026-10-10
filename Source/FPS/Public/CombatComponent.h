@@ -6,6 +6,15 @@
 #include "Engine/Texture2D.h"
 #include "CombatComponent.generated.h"
 
+UENUM(BlueprintType)
+enum class EWeaponSlot : uint8
+{
+	Main,
+	Secondary,
+	Pistol,
+	Melee
+};
+
 class UAnimInstance;
 class UAnimMontage;
 class UWeaponData;
@@ -34,6 +43,17 @@ public:
 	void Initiate_FireWeapon_Released();
 	void Initiate_ReloadWeapon();
 	void Initiate_Aim_Pressed();
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_EquipMainWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_EquipSeconedaryWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_EquipMeleeWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_EquipPistolWeapon();
 
 	void Notify_ReloadWeapon();
 
@@ -140,4 +160,11 @@ private:
 
 	UFUNCTION(NetMulticast,Reliable)
 	void Multicast_CycleWeapon(int32 WeaponIndex);
+
+	// Main and secondary resolve to the first and second long gun. Pistol and melee take the first match.
+	AWeapon* FindWeaponForSlot(EWeaponSlot Slot) const;
+	void Initiate_EquipSlot(EWeaponSlot Slot);
+
+	UFUNCTION(Server, Reliable)
+	void Server_EquipSlot(EWeaponSlot Slot);
 };

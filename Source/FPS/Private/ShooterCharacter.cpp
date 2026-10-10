@@ -355,5 +355,45 @@ void AShooterCharacter::Input_Aim_Pressed()
 	OnAim(Combat->bAiming);
 }
 
+void AShooterCharacter::EquipMainWeapon()
+{
+	if (IsValid(Combat)) Combat->Initiate_EquipMainWeapon();
+}
+
+void AShooterCharacter::EquipSeconedaryWeapon()
+{
+	if (IsValid(Combat)) Combat->Initiate_EquipSeconedaryWeapon();
+}
+
+void AShooterCharacter::EquipMeleeWeapon()
+{
+	if (IsValid(Combat)) Combat->Initiate_EquipMeleeWeapon();
+}
+
+void AShooterCharacter::EquipPistolWeapon()
+{
+	if (IsValid(Combat)) Combat->Initiate_EquipPistolWeapon();
+}
+
+void AShooterCharacter::Input_EquipMainWeapon()
+{
+	EquipMainWeapon();
+}
+
+void AShooterCharacter::Input_EquipSeconedaryWeapon()
+{
+	EquipSeconedaryWeapon();
+}
+
+void AShooterCharacter::Input_EquipMeleeWeapon()
+{
+	EquipMeleeWeapon();
+}
+
+void AShooterCharacter::Input_EquipPistolWeapon()
+{
+	EquipPistolWeapon();
+}
+
 
 

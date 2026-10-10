@@ -43,6 +43,7 @@ AWeapon::AWeapon()
 	StartingCarriedAmmo = 10;
 	Sequence = 0;
 	WeaponStatus = EWeaponStatus::UnEquipped;
+	WeaponKind = EWeaponKind::LongGun;
 
 }
 

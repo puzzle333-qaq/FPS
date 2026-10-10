@@ -70,6 +70,33 @@ void UCombatComponent::SpawnInventory()
 		ReserveAmmo.Add(Weapon->WeaponType, Weapon->StartingCarriedAmmo);
 	}
 
+	int32 LongGunCount = 0;
+	int32 PistolCount = 0;
+	int32 MeleeCount = 0;
+	for (const AWeapon* Weapon : Inventory)
+	{
+		if (!IsValid(Weapon)) continue;
+		switch (Weapon->WeaponKind)
+		{
+		case EWeaponKind::LongGun: ++LongGunCount; break;
+		case EWeaponKind::Pistol: ++PistolCount; break;
+		case EWeaponKind::Melee: ++MeleeCount; break;
+		default: break;
+		}
+	}
+	if (LongGunCount > 2)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s has %d long guns. Main uses the first, secondary uses the second."), *GetNameSafe(GetOwner()), LongGunCount);
+	}
+	if (PistolCount > 1)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s has %d pistols. The pistol slot uses the first one."), *GetNameSafe(GetOwner()), PistolCount);
+	}
+	if (MeleeCount > 1)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s has %d knives. The melee slot uses the first one."), *GetNameSafe(GetOwner()), MeleeCount);
+	}
+
 	if (Inventory.Num() > 0)
 	{
 		Equip(Inventory[0]);
@@ -638,6 +665,95 @@ void UCombatComponent::Initiate_Aim_Pressed()
 	const bool bNextAim = !bAiming;
 	Local_Aim(bNextAim);
 	Server_Aim(bNextAim);
+}
+
+AWeapon* UCombatComponent::FindWeaponForSlot(EWeaponSlot Slot) const
+{
+	int32 LongGunIndex = 0;
+	for (AWeapon* Weapon : Inventory)
+	{
+		if (!IsValid(Weapon)) continue;
+
+		if (Slot == EWeaponSlot::Pistol)
+		{
+			if (Weapon->WeaponKind == EWeaponKind::Pistol)
+			{
+				return Weapon;
+			}
+			continue;
+		}
+
+		if (Slot == EWeaponSlot::Melee)
+		{
+			if (Weapon->WeaponKind == EWeaponKind::Melee)
+			{
+				return Weapon;
+			}
+			continue;
+		}
+
+		if (Weapon->WeaponKind != EWeaponKind::LongGun) continue;
+
+		const int32 WantedLongGun = (Slot == EWeaponSlot::Secondary) ? 1 : 0;
+		if (LongGunIndex == WantedLongGun)
+		{
+			return Weapon;
+		}
+		++LongGunIndex;
+	}
+
+	return nullptr;
+}
+
+void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
+{
+	AWeapon* Weapon = FindWeaponForSlot(Slot);
+	if (!IsValid(Weapon) || Weapon == CurrentWeapon) return;
+
+	if (IsValid(CurrentWeapon))
+	{
+		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
+		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+	}
+
+	const int32 WeaponIndex = Inventory.IndexOfByKey(Weapon);
+	if (!Inventory.IsValidIndex(WeaponIndex)) return;
+
+	LocalWeaponIndex = WeaponIndex;
+	Local_CycleWeapon(WeaponIndex, true);
+	Server_EquipSlot(Slot);
+}
+
+void UCombatComponent::Server_EquipSlot_Implementation(EWeaponSlot Slot)
+{
+	AWeapon* Weapon = FindWeaponForSlot(Slot);
+	if (!IsValid(Weapon)) return;
+
+	const int32 WeaponIndex = Inventory.IndexOfByKey(Weapon);
+	if (!Inventory.IsValidIndex(WeaponIndex)) return;
+
+	// Server resolves the slot again, so a client cannot put a pistol in the main slot.
+	Server_CycleWeapon_Implementation(WeaponIndex);
+}
+
+void UCombatComponent::Initiate_EquipMainWeapon()
+{
+	Initiate_EquipSlot(EWeaponSlot::Main);
+}
+
+void UCombatComponent::Initiate_EquipSeconedaryWeapon()
+{
+	Initiate_EquipSlot(EWeaponSlot::Secondary);
+}
+
+void UCombatComponent::Initiate_EquipMeleeWeapon()
+{
+	Initiate_EquipSlot(EWeaponSlot::Melee);
+}
+
+void UCombatComponent::Initiate_EquipPistolWeapon()
+{
+	Initiate_EquipSlot(EWeaponSlot::Pistol);
 }
 
 void UCombatComponent::Notify_ReloadWeapon()
