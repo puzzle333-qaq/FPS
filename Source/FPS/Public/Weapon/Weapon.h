@@ -67,6 +67,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage")
 	float Damage;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage")
+	float HeadshotMultiplier;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage")
+	float LimbMultiplier;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Icon")
 	TObjectPtr<UTexture2D> WeaponIcon;
 

@@ -7,7 +7,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "GameFramework/SpringArmComponent.h"
-
+#include "Components/CapsuleComponent.h"
 #include "WeaponData.h"
 #include "Weapon/Weapon.h"
 #include "EnhancedInputComponent.h"
@@ -15,6 +15,7 @@
 #include "InputActionValue.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "FPSTraceChannels.h"
 
 
 
@@ -58,13 +59,18 @@ AShooterCharacter::AShooterCharacter()
 	DefaultFOV = 90.f;
 	TurningStatus = ETurningInPlace::NotTurning;
 
-	bWeaponFirstReplicated = false;	
+	bWeaponFirstReplicated = false;
+
+	ConfigureWeaponHitCollision();
 }
 
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	// A Blueprint collision override is applied after the constructor. Set the weapon channel again here.
+	ConfigureWeaponHitCollision();
+
 	FirstPersonCamera->SetFieldOfView(DefaultFOV);
 
 	StartingAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
@@ -301,6 +307,24 @@ void AShooterCharacter::Multicast_HitReact_Implementation(int32 MontageIndex)
 		{
 			GetMesh()->GetAnimInstance()->Montage_Play(HitReacts[MontageIndex]);
 		}
+	}
+}
+
+void AShooterCharacter::ConfigureWeaponHitCollision()
+{
+	// The capsule has no bone. Ignore it so the trace reaches the body mesh and Hit.BoneName is filled.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(FPSTraceChannels::ECC_Weapon, ECR_Ignore);
+
+	USkeletalMeshComponent* BodyMesh = GetMesh();
+	if (IsValid(BodyMesh))
+	{
+		BodyMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		BodyMesh->SetCollisionResponseToChannel(FPSTraceChannels::ECC_Weapon, ECR_Block);
+	}
+
+	if (IsValid(Mesh1P))
+	{
+		Mesh1P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 }
 

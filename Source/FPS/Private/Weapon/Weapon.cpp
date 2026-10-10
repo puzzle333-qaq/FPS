@@ -35,6 +35,8 @@ AWeapon::AWeapon()
 	TraceRadius = 5.f;
 	FireTime = 0.1f;
 	Damage = 15.f;
+	HeadshotMultiplier = 2.f;
+	LimbMultiplier = 0.75f;
 
 	MagCapacity = 10;
 	Ammo = 5;

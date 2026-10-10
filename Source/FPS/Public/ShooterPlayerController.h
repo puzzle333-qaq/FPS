@@ -41,6 +41,19 @@ private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> CrouchAction;
 
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> EquipMainWeapon;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction>EquipSeconedaryWeapon;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction>EquipMeleeWeapon;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction>EquipPistolWeapon;
+
+
 	void Input_Crouch();
 	void Input_Jump();
 	void Input_Move(const FInputActionValue& InputActionValue);

@@ -10,6 +10,7 @@
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "ShooterType/ShooterType.h"
 
 
 UCombatComponent::UCombatComponent()
@@ -403,7 +404,14 @@ void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 
 	if (IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>())
 	{
-		IPlayerInterface::Execute_DoDamage(Hit.GetActor(), CurrentWeapon->Damage, GetOwner());
+		const FName Bone = ResolveDamageBone(Hit);
+		const float Damage = ScaleDamageForBone(CurrentWeapon->Damage, Bone, CurrentWeapon->HeadshotMultiplier, CurrentWeapon->LimbMultiplier);
+		UE_LOG(LogTemp, Log, TEXT("Hit %s bone %s zone %s damage %.1f"),
+			*GetNameSafe(Hit.GetActor()),
+			*Bone.ToString(),
+			*UEnum::GetValueAsString(ResolveHitZone(Bone)),
+			Damage);
+		IPlayerInterface::Execute_DoDamage(Hit.GetActor(), Damage, GetOwner());
 	}
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
