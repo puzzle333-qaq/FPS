@@ -6,7 +6,6 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/LocalPlayer.h"
-#include "ShooterCharacter.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -46,22 +45,6 @@ void AShooterPlayerController::SetupInputComponent()
 	if (CrouchAction)
 	{
 		ShooterInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ThisClass::Input_Crouch);
-	}
-	if (EquipMainWeapon)
-	{
-		ShooterInputComponent->BindAction(EquipMainWeapon, ETriggerEvent::Started, this, &ThisClass::Input_EquipMainWeapon);
-	}
-	if (EquipSeconedaryWeapon)
-	{
-		ShooterInputComponent->BindAction(EquipSeconedaryWeapon, ETriggerEvent::Started, this, &ThisClass::Input_EquipSeconedaryWeapon);
-	}
-	if (EquipMeleeWeapon)
-	{
-		ShooterInputComponent->BindAction(EquipMeleeWeapon, ETriggerEvent::Started, this, &ThisClass::Input_EquipMeleeWeapon);
-	}
-	if (EquipPistolWeapon)
-	{
-		ShooterInputComponent->BindAction(EquipPistolWeapon, ETriggerEvent::Started, this, &ThisClass::Input_EquipPistolWeapon);
 	}
 }
 
@@ -117,36 +100,4 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& InputActionVa
 
 	AddYawInput(InputAxisVector.X);
 	AddPitchInput(InputAxisVector.Y);
-}
-
-void AShooterPlayerController::Input_EquipMainWeapon()
-{
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetPawn()))
-	{
-		Shooter->EquipMainWeapon();
-	}
-}
-
-void AShooterPlayerController::Input_EquipSeconedaryWeapon()
-{
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetPawn()))
-	{
-		Shooter->EquipSeconedaryWeapon();
-	}
-}
-
-void AShooterPlayerController::Input_EquipMeleeWeapon()
-{
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetPawn()))
-	{
-		Shooter->EquipMeleeWeapon();
-	}
-}
-
-void AShooterPlayerController::Input_EquipPistolWeapon()
-{
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetPawn()))
-	{
-		Shooter->EquipPistolWeapon();
-	}
 }
