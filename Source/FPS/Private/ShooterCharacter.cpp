@@ -16,6 +16,27 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "FPSTraceChannels.h"
+#include "UObject/UnrealType.h"
+
+namespace
+{
+	template <typename T>
+	T* FindBlueprintStruct(UObject* Object, const TCHAR* Name)
+	{
+		if (!IsValid(Object))
+		{
+			return nullptr;
+		}
+
+		FStructProperty* Property = FindFProperty<FStructProperty>(Object->GetClass(), Name);
+		if (!Property || Property->Struct != TBaseStructure<T>::Get())
+		{
+			return nullptr;
+		}
+
+		return Property->ContainerPtrToValuePtr<T>(Object);
+	}
+}
 
 
 
@@ -74,6 +95,14 @@ void AShooterCharacter::BeginPlay()
 	FirstPersonCamera->SetFieldOfView(DefaultFOV);
 
 	StartingAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
+
+	if (IsValid(Mesh1P))
+	{
+		AuthoredHipMeshLocation = Mesh1P->GetRelativeLocation();
+		AuthoredHipMeshRotation = Mesh1P->GetRelativeRotation();
+	}
+
+	ConfigureAimTickOrder();
 }
 
 void AShooterCharacter::BeginDestroy()
@@ -112,7 +141,7 @@ void AShooterCharacter::Tick(float DeltaTime)
 
 	CalculateTurnInPlaceParameters(DeltaTime);
 	CalculateFABRIKSocket();
-
+	UpdateAimSocketAlignment(DeltaTime);
 }
 
 void AShooterCharacter::CalculateTurnInPlaceParameters(float DeltaTime)
@@ -205,6 +234,80 @@ void AShooterCharacter::CalculateFABRIKSocket()
 	FABRIK_SocketTransform.SetLocation(OutLocation);
 	FABRIK_SocketTransform.SetRotation(OutRotation.Quaternion());
 	FABRIK_SocketTransform.SetScale3D(FVector::OneVector);
+}
+
+void AShooterCharacter::ConfigureAimTickOrder()
+{
+	// The aim socket follows the arm bones, so read it after Mesh1P animates.
+	if (IsValid(Mesh1P))
+	{
+		PrimaryActorTick.AddPrerequisite(Mesh1P, Mesh1P->PrimaryComponentTick);
+	}
+}
+
+float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
+{
+	return AimAlignAlpha;
+}
+
+void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
+{
+	if (!IsLocallyControlled() || !IsValid(Mesh1P) || !IsValid(FirstPersonCamera) || !IsValid(Combat))
+	{
+		return;
+	}
+
+	FVector* AdsLocationProperty = FindBlueprintStruct<FVector>(this, TEXT("AdsMesh1PLoc"));
+	if (!AdsLocationProperty)
+	{
+		return;
+	}
+
+	AWeapon* Weapon = Combat->CurrentWeapon;
+	USkeletalMeshComponent* WeaponMesh = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
+	if (!IsValid(WeaponMesh) || !WeaponMesh->IsAttachedTo(Mesh1P))
+	{
+		return;
+	}
+
+	if (!Weapon->HasAimSocket())
+	{
+		if (Weapon->WeaponKind != EWeaponKind::Melee && MissingAimSocketWeapon.Get() != Weapon)
+		{
+			MissingAimSocketWeapon = Weapon;
+			UE_LOG(LogTemp, Warning, TEXT("%s has no socket '%s'. ADS keeps the blueprint location."),
+				*GetNameSafe(Weapon), *Weapon->AimSocketName.ToString());
+		}
+		return;
+	}
+
+	USceneComponent* Parent = Mesh1P->GetAttachParent();
+	if (!IsValid(Parent))
+	{
+		return;
+	}
+
+	WeaponMesh->UpdateComponentToWorld();
+	FVector SocketWorld = FVector::ZeroVector;
+	if (!Weapon->GetAimSocketWorldLocation(SocketWorld))
+	{
+		return;
+	}
+
+	// Mesh1P stays at its component rotation (yaw -90 on the camera). The blueprint
+	// rotator variables are not applied, so measure the miss in camera space and
+	// slide the current relative location by that parent-space delta.
+	const FTransform CameraTransform = FirstPersonCamera->GetComponentTransform();
+	const FVector SocketCamera = CameraTransform.InverseTransformPosition(SocketWorld);
+	const FVector DesiredWorld = CameraTransform.TransformPosition(FVector(SocketCamera.X, 0.f, 0.f));
+	const FVector DeltaParent = Parent->GetComponentTransform().InverseTransformVector(DesiredWorld - SocketWorld);
+	const FVector CenteredLocation = Mesh1P->GetRelativeLocation() + DeltaParent;
+	if (CenteredLocation.ContainsNaN())
+	{
+		return;
+	}
+
+	*AdsLocationProperty = CenteredLocation;
 }
 
 

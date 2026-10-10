@@ -32,6 +32,7 @@ AWeapon::AWeapon()
 	Mesh3P->SetHiddenInGame(true);
 
 	AimFeildOfView = 60.f;
+	AimSocketName = TEXT("AimSocket");
 	TraceRadius = 5.f;
 	FireTime = 0.1f;
 	Damage = 15.f;
@@ -70,6 +71,22 @@ void AWeapon::OnRep_Instigator()
 USkeletalMeshComponent* AWeapon::GetMesh1P() const
 {
 	return Mesh1P;
+}
+
+bool AWeapon::HasAimSocket() const
+{
+	return IsValid(Mesh1P) && !AimSocketName.IsNone() && Mesh1P->DoesSocketExist(AimSocketName);
+}
+
+bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
+{
+	if (!HasAimSocket())
+	{
+		return false;
+	}
+
+	OutLocation = Mesh1P->GetSocketLocation(AimSocketName);
+	return true;
 }
 
 USkeletalMeshComponent* AWeapon::GetMesh3P() const

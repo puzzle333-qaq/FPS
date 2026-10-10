@@ -16,6 +16,7 @@ class UCombatComponent;
 class UCameraComponent;
 class USpringArmComponent;
 class UInputAction;
+class UTimelineComponent;
 class AWeapon;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
@@ -122,11 +123,22 @@ private:
 	void CalculateFABRIKSocket();
 	void CalculateTurnInPlaceParameters(float DeltaTime);
 	void TurnInPlace(float DeltaTime);
+	void ConfigureAimTickOrder();
+	void UpdateAimSocketAlignment(float DeltaTime);
+	float GetAimTimelineAlpha(float DeltaTime);
 
 	bool bWeaponFirstReplicated;
 	FRotator StartingAimRotation;
 
 	float InterpAO_Yaw;
+	float AimAlignAlpha = 0.f;
+
+	// Mesh1P relative pose captured at BeginPlay. Used when the blueprint hip variables are absent.
+	FVector AuthoredHipMeshLocation = FVector::ZeroVector;
+	FRotator AuthoredHipMeshRotation = FRotator::ZeroRotator;
+
+	TWeakObjectPtr<AWeapon> MissingAimSocketWeapon;
+	TWeakObjectPtr<UTimelineComponent> AimTimeline;
 
 
 	//1st preson view(arms)

@@ -67,6 +67,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
 	float AimFeildOfView;
 
+	// Socket on the weapon skeleton that should sit on the camera's view axis while aiming.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
+	FName AimSocketName;
+
+	bool HasAimSocket() const;
+	bool GetAimSocketWorldLocation(FVector& OutLocation) const;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
 	EFireType FireType;
 
