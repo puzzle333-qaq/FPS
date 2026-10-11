@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
@@ -156,6 +156,7 @@ bool AShooterCharacter::HasCurrentWeapon() const
 void AShooterCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	UpdateLocomotionGait(true);
 
 	CalculateTurnInPlaceParameters(DeltaTime);
 	CalculateFABRIKSocket();
@@ -757,6 +758,7 @@ void AShooterCharacter::HandleAimStateChanged(bool bIsAiming)
 	}
 	// 服务器和本地客户端都要改速度，两边一致才不会被拉回
 	RefreshControllerMovementSpeed();
+	RefreshLocomotionGait();
 }
 
 void AShooterCharacter::RefreshControllerMovementSpeed()
@@ -772,12 +774,14 @@ void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHe
 {
 	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
 	RefreshControllerMovementSpeed();   // 下蹲会打断冲刺
+	RefreshLocomotionGait();
 }
 
 void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
 	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
 	RefreshControllerMovementSpeed();
+	RefreshLocomotionGait();
 }
 
 bool AShooterCharacter::CanJumpInternal_Implementation() const
@@ -794,5 +798,92 @@ void AShooterCharacter::OnJumped_Implementation()
 	if (HasAuthority() && IsValid(Stats))
 	{
 		Stats->ChangeStaminaByAmout(-Stats->JumpStaminaCost);
+	}
+}
+
+void AShooterCharacter::RefreshLocomotionGait()
+{
+	UpdateLocomotionGait(true);
+}
+
+void AShooterCharacter::UpdateLocomotionGait(bool bNotifyCombat)
+{
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	FVector Velocity = GetVelocity();
+	Velocity.Z = 0.f;
+	GroundSpeed = Velocity.Size();
+
+	const float MaxSpeed = IsValid(CMC)
+		? (bIsCrouched ? CMC->MaxWalkSpeedCrouched : CMC->MaxWalkSpeed)
+		: 0.f;
+
+	// Want walk gait when allowed max speed is in the walk band (not Velocity/MaxWalkSpeed normalize).
+	const bool bWantWalkGait = MaxSpeed > 0.f && MaxSpeed <= WalkGaitSpeedThreshold;
+	// Only swap to Walk BS / use Walk reference speed if DA actually has Strafe_Walking.
+	const bool bHasWalkBS = IsValid(Combat) && Combat->HasStrafeWalkingAnim();
+	const bool bNewWalkGait = bWantWalkGait && bHasWalkBS;
+
+	// PlayRate scales STEP FREQUENCY to match ground speed vs the authored sample speed
+	// of the BlendSpace that is ACTUALLY playing (not the gait we wish we had).
+	// Formula: LocomotionPlayRate = Clamp(GroundSpeed / RefSpeed, Min, Max)
+	float RefSpeed;
+	if (bIsCrouched)
+	{
+		RefSpeed = CrouchAnimReferenceSpeed; // Strafe_Crouching
+	}
+	else if (bNewWalkGait)
+	{
+		RefSpeed = WalkAnimReferenceSpeed; // Strafe_Walking
+	}
+	else
+	{
+		// Still on Jog Strafe_Standing (common when Strafe_Walking empty) — slow play rate = fewer steps
+		RefSpeed = JogAnimReferenceSpeed;
+	}
+	RefSpeed = FMath::Max(RefSpeed, 1.f);
+
+	if (GroundSpeed > 1.f)
+	{
+		LocomotionPlayRate = FMath::Clamp(GroundSpeed / RefSpeed, MinLocomotionPlayRate, MaxLocomotionPlayRate);
+	}
+	else
+	{
+		LocomotionPlayRate = 0.f; // idle: freeze locomotion BS feet (AnimBP should be in Idle state anyway)
+	}
+
+	const bool bGaitChanged = bNewWalkGait != bUseWalkGait;
+	bUseWalkGait = bNewWalkGait;
+
+	// 把步态写进 AnimInstance，蓝图可直接绑 Play Rate / BlendList（变量名需一致）
+	auto PushToAnim = [this](USkeletalMeshComponent* AnimMesh)
+	{
+		if (!IsValid(AnimMesh)) return;
+		UAnimInstance* Anim = AnimMesh->GetAnimInstance();
+		if (!IsValid(Anim)) return;
+
+		if (FBoolProperty* WalkProp = FindFProperty<FBoolProperty>(Anim->GetClass(), TEXT("bUseWalkGait")))
+		{
+			WalkProp->SetPropertyValue_InContainer(Anim, bUseWalkGait);
+		}
+		auto SetFloatProp = [Anim](const TCHAR* Name, float Value)
+		{
+			if (FFloatProperty* Prop = FindFProperty<FFloatProperty>(Anim->GetClass(), Name))
+			{
+				Prop->SetPropertyValue_InContainer(Anim, Value);
+			}
+		};
+		// Primary name + common aliases so AnimBP Play Rate pin can use either
+		SetFloatProp(TEXT("LocomotionPlayRate"), LocomotionPlayRate);
+		SetFloatProp(TEXT("PlayRate"), LocomotionPlayRate);
+		SetFloatProp(TEXT("BS_PlayRate"), LocomotionPlayRate);
+		SetFloatProp(TEXT("GroundSpeed"), GroundSpeed);
+		SetFloatProp(TEXT("Speed"), GroundSpeed);
+	};
+	PushToAnim(Mesh1P);
+	PushToAnim(GetMesh());
+
+	if (bNotifyCombat && bGaitChanged && IsValid(Combat))
+	{
+		Combat->RefreshLocomotionBlendSpaces(bUseWalkGait);
 	}
 }

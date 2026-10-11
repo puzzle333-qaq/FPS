@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -86,6 +86,12 @@ public:
 
 	// 切枪时自动关镜（本地 + 服务器）
 	void StopAimForWeaponSwitch();
+
+	// 慢走步态时把 Strafe_Walking 写进 AnimInstance.Strafe_Standing（站立 Jog BS 没有 Walk 采样）
+	void RefreshLocomotionBlendSpaces(bool bUseWalkGait);
+
+	// Current weapon has a Walk strafe BlendSpace filled in DA_WeaponData
+	bool HasStrafeWalkingAnim() const;
 
 	UPROPERTY(Transient, BlueprintReadOnly , ReplicatedUsing = OnRep_CurrentWeapon)
 	TObjectPtr<AWeapon> CurrentWeapon;	

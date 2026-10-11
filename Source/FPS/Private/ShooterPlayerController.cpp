@@ -1,4 +1,5 @@
-﻿#include "ShooterPlayerController.h"
+#include "ShooterPlayerController.h"
+#include "ShooterCharacter.h"
 
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
@@ -168,6 +169,11 @@ void AShooterPlayerController::ApplyMovementSpeed()
 	// 站立时角色用 MaxWalkSpeed，蹲下时用 MaxWalkSpeedCrouched，两个都设好
 	CMC->MaxWalkSpeed = Speed;
 	CMC->MaxWalkSpeedCrouched = Speed * CrouchSpeedMultiplier;
+
+	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyCharacter))
+	{
+		Shooter->RefreshLocomotionGait();
+	}
 
 	// 耐力只在服务器上计算
 	if (HasAuthority())

@@ -1,4 +1,5 @@
-﻿#include "CombatComponent.h"
+#include "CombatComponent.h"
+#include "ShooterCharacter.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/Weapon.h"
 #include "WeaponData.h"
@@ -390,7 +391,38 @@ void UCombatComponent::ApplyEquippedWeaponAnim(AWeapon* Weapon)
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
 
-	auto ApplyToMesh = [Weapon, this](USkeletalMeshComponent* Mesh, bool bFirstPerson)
+	bool bWalkGait = false;
+	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(Owner))
+	{
+		bWalkGait = Shooter->IsUsingWalkGait();
+	}
+	RefreshLocomotionBlendSpaces(bWalkGait);
+}
+
+bool UCombatComponent::HasStrafeWalkingAnim() const
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return false;
+
+	auto HasWalk = [this](const TMap<FGameplayTag, FPlayerAnim>& Anims) -> bool
+	{
+		if (const FPlayerAnim* Anim = Anims.Find(CurrentWeapon->WeaponType))
+		{
+			return IsValid(Anim->Strafe_Walking);
+		}
+		return false;
+	};
+
+	// Either view having Walk BS is enough — 3P is what you see for foot sliding
+	return HasWalk(WeaponData->ThirdPersonAnims) || HasWalk(WeaponData->FirstPersonAnims);
+}
+void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
+
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
+
+	auto ApplyToMesh = [this, bUseWalkGait](USkeletalMeshComponent* Mesh, bool bFirstPerson)
 	{
 		if (!IsValid(Mesh)) return;
 		UAnimInstance* AnimInstance = Mesh->GetAnimInstance();
@@ -399,15 +431,22 @@ void UCombatComponent::ApplyEquippedWeaponAnim(AWeapon* Weapon)
 		const TMap<FGameplayTag, FPlayerAnim>& Anims = bFirstPerson
 			? WeaponData->FirstPersonAnims
 			: WeaponData->ThirdPersonAnims;
-		const FPlayerAnim* WeaponAnim = Anims.Find(Weapon->WeaponType);
+		const FPlayerAnim* WeaponAnim = Anims.Find(CurrentWeapon->WeaponType);
 		if (!WeaponAnim) return;
+
+		FPlayerAnim AnimCopy = *WeaponAnim;
+		// 站立 Locomotion 绑的是 Strafe_Standing；慢走时换成 Walk BS，避免继续采 Jog 造成小碎步
+		if (bUseWalkGait && IsValid(AnimCopy.Strafe_Walking))
+		{
+			AnimCopy.Strafe_Standing = AnimCopy.Strafe_Walking;
+		}
 
 		// ABP_FirstPerson spells this CurrenrAnim. ABP_ThirdPerson uses CurrentAnim.
 		const FName PropertyName = bFirstPerson ? TEXT("CurrenrAnim") : TEXT("CurrentAnim");
 		FStructProperty* AnimProperty = FindFProperty<FStructProperty>(AnimInstance->GetClass(), PropertyName);
 		if (!AnimProperty || AnimProperty->Struct != FPlayerAnim::StaticStruct()) return;
 
-		AnimProperty->CopyCompleteValue(AnimProperty->ContainerPtrToValuePtr<void>(AnimInstance), WeaponAnim);
+		AnimProperty->CopyCompleteValue(AnimProperty->ContainerPtrToValuePtr<void>(AnimInstance), &AnimCopy);
 	};
 
 	ApplyToMesh(IPlayerInterface::Execute_GetMesh1P(Owner), true);

@@ -39,6 +39,10 @@ struct FPlayerAnim
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TObjectPtr<UBlendSpace> Strafe_Crouching;
+
+	// 站立慢走/开镜：放 Walk 采样的 BlendSpace；AnimBP 在 bUseWalkGait 时用它替换 Strafe_Standing
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TObjectPtr<UBlendSpace> Strafe_Walking;
 };
 
 USTRUCT(BlueprintType)

@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -38,6 +38,19 @@ public:
 	// 跳跃耐力：耐力不够就不能跳；真正起跳时在服务器扣耐力
 	virtual bool CanJumpInternal_Implementation() const override;
 	virtual void OnJumped_Implementation() override;
+
+	// 给 AnimBP 用：绝对地面速度 + 是否该播 Walk BlendSpace（不是 Velocity/MaxWalkSpeed 归一化）
+	UFUNCTION(BlueprintPure, Category = "FPS|Locomotion")
+	float GetGroundSpeed() const { return GroundSpeed; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Locomotion")
+	bool IsUsingWalkGait() const { return bUseWalkGait; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Locomotion")
+	float GetLocomotionPlayRate() const { return LocomotionPlayRate; }
+
+	// 控制器在改 MaxWalkSpeed 后调用，立刻刷新步态
+	void RefreshLocomotionGait();
 
 	// 下蹲开始/结束时（服务器和本地客户端都会调用）刷新速度
 	virtual void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
@@ -127,6 +140,36 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Strafing")
 	float MovementOffsetYaw;
 
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Locomotion")
+	float GroundSpeed = 0.f;
+
+	// true = 静步/开镜/当前 MaxWalkSpeed 偏慢，站立 Locomotion 应采 Walk BS
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Locomotion")
+	bool bUseWalkGait = false;
+
+	// AnimBP BlendSpace Player Play Rate MUST bind this: PlayRate = Clamp(GroundSpeed / RefSpeed, Min, Max)
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Locomotion")
+	float LocomotionPlayRate = 1.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Locomotion")
+	float WalkGaitSpeedThreshold = 360.f;
+
+	// Authored sample speed (cm/s) of the BlendSpace currently playing. PlayRate = GroundSpeed / this.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Locomotion", meta = (ClampMin = "1.0"))
+	float WalkAnimReferenceSpeed = 150.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Locomotion", meta = (ClampMin = "1.0"))
+	float JogAnimReferenceSpeed = 375.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Locomotion", meta = (ClampMin = "1.0"))
+	float CrouchAnimReferenceSpeed = 150.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Locomotion", meta = (ClampMin = "0.05"))
+	float MinLocomotionPlayRate = 0.15f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Locomotion", meta = (ClampMin = "0.1"))
+	float MaxLocomotionPlayRate = 2.0f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|TurnInPlace")
 	ETurningInPlace TurningStatus;
 	
@@ -140,6 +183,7 @@ private:
 	void HandleAimStateChanged(bool bIsAiming);
 	// 让控制器按 冲刺/静步/下蹲/开镜 重新算速度
 	void RefreshControllerMovementSpeed();
+	void UpdateLocomotionGait(bool bNotifyCombat);
 
 	void Input_CycleWeapon();
 	void Input_ReloadWeapon();
