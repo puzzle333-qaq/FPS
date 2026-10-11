@@ -33,6 +33,8 @@
 19. [Blueprint contract checklist](#19-blueprint-contract-checklist)
 20. [Caveats, known issues and extension notes](#20-caveats-known-issues-and-extension-notes)
 
+> **Latest revision (recoil / stamina / healing / locomotion):** new subsections were added to the existing sections — `4.11` (recoil structs, new delegates, `FPlayerAnim.Strafe_Walking`), `6.5–6.7` (healing, locomotion gait, movement hooks), `7.7–7.9` (recoil, aim-state broadcast, blend-space refresh), `8.4–8.6` (recoil properties, hand-socket re-attach, hidden-for-heal), `11.1` (stamina), `12.1–12.2` (sprint/walk speed model, movement-state replication), `19.1` (blueprint contract additions) and `20.1.1` (new known issues).
+
 ---
 
 ## 1. About this document
@@ -249,6 +251,27 @@ The same struct is reused in three maps: `WeaponMontages` (animations on the **w
 
 ---
 
+### 4.11 Recoil structs, new delegates and the added `FPlayerAnim` field
+
+| Type | Declared in | Purpose |
+| --- | --- | --- |
+| `FRecoilStep` | Weapon.h | One shot's kick in degrees: `Pitch` (up +, down −) and `Yaw` (right +, left −). Has a default constructor and a `(Pitch, Yaw)` convenience constructor |
+| `FRecoilScale` | RecoilModifierInterface.h | Multipliers stacked on the weapon's authored kick: `Pitch`, `Yaw`, `Recovery` — all default `1` (unchanged) |
+| `IRecoilModifier` / `URecoilModifier` | RecoilModifierInterface.h | `BlueprintNativeEvent` interface with one function, `GetAttachmentRecoilScale()`. Implement it on a weapon **or on any component of the weapon or the character** (foregrip, muzzle brake, stock, perk component…) to modify recoil |
+| `FPlayerAnim::Strafe_Walking` | WeaponData.h | `UBlendSpace*` sampled at walk speed. While the walk gait is active it is copied over `Strafe_Standing` (see 6.6 and 7.9) |
+
+New delegates:
+
+| Delegate | Declared in | Kind | Fired when | Consumed by |
+| --- | --- | --- | --- | --- |
+| `FAimStateChanged` | CombatComponent.h | Plain C++ multicast (`DECLARE_MULTICAST_DELEGATE_OneParam`, `bool`) — **not** a blueprint delegate | `Local_Aim` actually changes `bAiming` | `AShooterCharacter::HandleAimStateChanged` (blueprint `OnAim`, movement speed, gait) |
+| `FStaminaChanged` | StatsComponent.h | Dynamic multicast (component, old, new) | Stamina or max stamina changes | Stamina bar (`WB_Stamina`) |
+| `FStaminaDepleted` | StatsComponent.h | Dynamic multicast, no parameters | The server drains the last of the stamina while sprinting | `AShooterPlayerController::HandleStaminaDepleted` |
+
+> `EDeathState` is now *read* (`HealPlayer` and `Server_BeginHeal` refuse to heal a dead or full-health character) but is still never written, so it stays `NotDead` forever — see 20.1.
+
+---
+
 ## 5. IPlayerInterface — character capability interface
 
 **Location**: [PlayerInterface.h](<Source/FPS/Public/Interface/PlayerInterface.h>) (the `.cpp` is intentionally empty — the comment says it does not need to be modified).
@@ -456,6 +479,70 @@ Every callback is guarded by `IsValid(Combat)`.
 | ◆`AO_Yaw` / `MovementOffsetYaw` / `TurningStatus` | `BlueprintReadOnly`; animation parameters |
 | ◆`OnAim(bool)` | `BlueprintImplementableEvent`; ADS state callback |
 | `GetFirstPersonCamera()` / `GetCombatComponent()` / `GetDefaultFieldOfView()` | C++ accessors (used by `SniperScopeComponent`) |
+
+---
+
+### 6.5 Healing
+
+The heal is designed so that the animation decides *when*, the server decides *how much*.
+
+| Function | Behaviour and effect |
+| --- | --- |
+| ◆`HealPlayer(float InHealAmout)` (public, `BlueprintCallable`) | Client-side entry point. Guards: locally controlled, not already healing, amount > 0, `Stats` valid, `Stats->DeathState == NotDead`, `Health < MaxHealth`, and the current weapon is neither `Reloading` nor `Cycling`. Stores `PendingHealAmout`, plays the montage (`Mesh1P` first, falling back to the 3P body mesh), logs a warning if neither mesh could play it, sets `bIsHealing = true`, arms `HealLocalTimer` for `HealMontage->GetPlayLength() + 2.f` as a **timeout** (a montage that never fires its notify can therefore never lock the player out), then calls `Server_BeginHeal(PendingHealAmout)` |
+| `PlayHealMontage(USkeletalMeshComponent* HealMesh, bool bBindEnd)` (private) | `Montage_Play` on the given mesh; hides the equipped weapon through `HideEquippedWeaponForHeal()`; binds `OnHealMontageEnded` when `bBindEnd` is set **or** when this is an observed proxy (so a remote player's gun comes back when their 3P montage ends) |
+| `HideEquippedWeaponForHeal()` / `RestoreWeaponAfterHeal()` (private) | Remember the current weapon in `HealHiddenWeapon` and call `AWeapon::SetHiddenForHeal(true/false)` (see 8.6) |
+| ◆`Notify_HealPlayer()` (public, `BlueprintCallable`) | The animation-notify entry point. Locally controlled only: clears `bIsHealing`, clears the timeout timer and calls `Server_FinishHeal(true)` |
+| `OnHealMontageEnded(UAnimMontage*, bool bInterrupted)` (private) | Restores the weapon first; for a remote proxy it only clears `bIsHealing`; for the owner, an interrupted montage aborts the heal (`Server_FinishHeal(false)`), otherwise it forwards to `Notify_HealPlayer()` — so a montage **without** the notify still heals once at the end |
+| `AbortLocalHeal()` / `AbortServerHeal()` (private) | Timeout callbacks; reset the healing flags and restore the weapon |
+| `Server_BeginHeal_Implementation(float InHealAmout)` ⇄ | Authority only. Refuses when already healing, amount ≤ 0, `HealAmout <= 0`, dead, or at full health. **Clamps the request to the server's own value** (`ServerHealAmout = min(InHealAmout, HealAmout)`), so a client cannot ask for a bigger heal; arms `HealServerTimer` (montage length + 2 s) and calls `Multicast_PlayHealMontage()` |
+| `Server_FinishHeal_Implementation(bool bCompleted)` ⇄ | Authority only. Ignores the call when not healing, clears the timer, and commits `Stats->ChangeHealthByAmout(ServerHealAmout, this)` **only when `bCompleted`**. Because `bServerHealing` is cleared first, the notify + montage-end double call is harmless (at most one commit) |
+| `Multicast_PlayHealMontage_Implementation()` ⇄ | Skips the locally controlled owner and dedicated servers; other clients play the 3P heal montage (`bBindEnd = false`, the end delegate is bound inside `PlayHealMontage` for proxies) |
+
+Data: `HealMontage` (`EditDefaultsOnly`, `AnimMontage_Arms_Healing` in this project) and `HealAmout` (default `30`, set in the constructor), plus `bIsHealing`, `bServerHealing`, `PendingHealAmout`, `ServerHealAmout`, `HealLocalTimer` (client) and `HealServerTimer` (server).
+
+Notes:
+
+- Input path: `IA_Heal` → `Input_Heal()` → `HealPlayer(HealAmout)`.
+- The heal amount is not scaled by missing health; `ChangeHealthByAmout` clamps to `MaxHealth`, so overheal is impossible but the same fixed amount is always "consumed".
+- ⚠ `PlayHealMontage(Mesh1P, true) || PlayHealMontage(GetMesh(), true)` short-circuits: only the first mesh that succeeds plays the animation.
+- ⚠ Both an anim notify and the montage-end path can commit; the server guard makes this safe, but do not add a second *server* entry point.
+- The heal is not gameplay-gated by movement or damage — taking damage during the montage does not cancel it.
+
+### 6.6 Locomotion gait, ground speed and play rate
+
+New `BlueprintPure` getters: `GetGroundSpeed()`, `IsUsingWalkGait()`, `GetLocomotionPlayRate()`.
+
+| Function | Behaviour and effect |
+| --- | --- |
+| `RefreshLocomotionGait()` (public) | Thin wrapper for `UpdateLocomotionGait(true)`. Called by the controller after it changes `MaxWalkSpeed`, and by `OnStartCrouch` / `OnEndCrouch` |
+| `UpdateLocomotionGait(bool bNotifyCombat)` (private) | Runs on **every tick** and produces the three locomotion values described below |
+
+`UpdateLocomotionGait` in detail:
+
+1. `GroundSpeed` = magnitude of the horizontal (Z-zeroed) velocity.
+2. `MaxSpeed` = `MaxWalkSpeedCrouched` when crouched, otherwise `MaxWalkSpeed`. Note this is the **allowed** speed, not `Velocity / MaxWalkSpeed`.
+3. `bWantWalkGait = MaxSpeed > 0 && MaxSpeed <= WalkGaitSpeedThreshold` (default `360`).
+4. `bHasWalkBS = Combat->HasStrafeWalkingAnim()`; `bNewWalkGait = bWantWalkGait && bHasWalkBS`, so the walk BlendSpace is only used when `DA_WeaponData` actually provides one.
+5. Reference speed depends on the BlendSpace that is **actually playing**: `CrouchAnimReferenceSpeed` (`150`) when crouched, `WalkAnimReferenceSpeed` (`150`) in walk gait, otherwise `JogAnimReferenceSpeed` (`375`).
+6. `LocomotionPlayRate = Clamp(GroundSpeed / RefSpeed, MinLocomotionPlayRate (0.15), MaxLocomotionPlayRate (2.0))`, or `0` when `GroundSpeed <= 1` (idle freezes the locomotion feet).
+7. Pushes the values into **both** anim instances (`Mesh1P` and the 3P body) *by property name*, tolerating several spellings: `bUseWalkGait` (bool), and `LocomotionPlayRate` / `PlayRate` / `BS_PlayRate`, plus `GroundSpeed` / `Speed` (floats). Missing properties are silently ignored.
+8. When the gait changed and `bNotifyCombat` is set, calls `Combat->RefreshLocomotionBlendSpaces(bUseWalkGait)` so the ABP's `FPlayerAnim` copy swaps `Strafe_Standing` for `Strafe_Walking`.
+
+Effects: slow movement (walk / ADS) no longer plays the jog cycle at 1× speed, and the animation step frequency follows actual ground speed — this is what removes foot sliding and the "mincing steps" artefact.
+
+⚠ Blueprint contract: the ABP must expose at least one alias of each value. In this project the 3P ABP carries `bUseWalkGait`, `LocomotionPlayRate` and `GroundSpeed`; the 1P ABP carries `PlayRate`.
+
+### 6.7 Movement-mode hooks (crouch, jump stamina, aim state)
+
+| Override / function | Behaviour |
+| --- | --- |
+| `CanJumpInternal_Implementation() const` | `Super::` **and** (`Stats` invalid or `Stats->HasStaminaForJump()`). Clients predict with the replicated stamina, the server is the final judge |
+| `OnJumped_Implementation()` | `Super::`, then subtracts `Stats->JumpStaminaCost` (default `15`) **on the authority only** — `OnJumped` runs on both the predicting client and the server, so charging unconditionally would deduct twice |
+| `OnStartCrouch(...)` / `OnEndCrouch(...)` | `Super::`, then `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` on both server and local client, so crouching immediately re-resolves speed and gait |
+| `HandleAimStateChanged(bool bIsAiming)` (private, bound in `BeginPlay` to `Combat->OnAimStateChanged`) | Calls the blueprint event `OnAim(bIsAiming)` **only when locally controlled**, and always calls `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` — the server needs the new speed as well, otherwise it would pull the client back |
+| `RefreshControllerMovementSpeed()` (private) | `Cast<AShooterPlayerController>(GetController())->RefreshMovementSpeed()`. Simulated proxies (your character on someone else's machine) have no local controller and are skipped |
+| `Input_Aim_Pressed()` | No longer calls `OnAim` directly — the aim state is broadcast from `UCombatComponent::Local_Aim` through `OnAimStateChanged` (see 7.8) |
+| ⚠`Input_VersionWeapon()` | Empty body and **not bound** in `SetupPlayerInputComponent` (`VersionWeaponAction` is declared but unused) — dead placeholder |
 
 ---
 
@@ -705,6 +792,58 @@ Flow: status → `Reloading` → `Server_ReloadWeapon()` → `PlayReloadMontage(
 
 ---
 
+### 7.7 Recoil (view kick, pattern and recovery)
+
+`UCombatComponent` owns the runtime state; `AWeapon` owns the authored pattern.
+
+| Member | Meaning |
+| --- | --- |
+| `UnrecoveredRecoil` (`FVector2D`) | `X` = yaw, `Y` = pitch that has been applied but not yet given back |
+| `RecoilShotIndex` (`int32`) | Position within `RecoilPattern` for the current burst |
+| `SecondsSinceRecoilShot` (`float`) | Time since the last kick; drives the pattern reset and the recovery delay |
+
+File-local helpers in [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>):
+
+| Helper | Behaviour |
+| --- | --- |
+| `AppendAttachmentRecoil(UObject*, FRecoilScale&)` | If the object's class implements `IRecoilModifier`, multiplies `Pitch`, `Yaw` and `Recovery` by the returned values (each clamped to ≥ 0) |
+| `GatherAttachmentRecoil(const AActor*, FRecoilScale&)` | Runs `AppendAttachmentRecoil` on the **actor itself and every one of its components** |
+| `AddViewRecoil(APlayerController*, Pitch, Yaw, out AppliedPitch, out AppliedYaw)` | Adds the kick to the control rotation, clamping pitch to `PlayerCameraManager->ViewPitchMin/ViewPitchMax` (falling back to ±89°), and reports back only **the amount that actually fit**, so a kick lost to the pitch limit is not owed back later |
+
+| Function | Behaviour and effect |
+| --- | --- |
+| `ResolveRecoilScale() const` (private) | `Pitch/Yaw = weapon RecoilPitchScale/RecoilYawScale × (bAiming ? AimRecoilMultiplier : 1)`, then multiplied by every `IRecoilModifier` found on **the weapon and the owning character** (and their components). `Recovery` starts at 1 and is only changed by modifiers |
+| `ApplyFireRecoil()` (private) | Local player only; skipped for melee and for weapons with an empty `RecoilPattern`. Picks `RecoilPattern[Clamp(RecoilShotIndex, 0, Num-1)]` — past the last entry the spray repeats the final step — scales it, applies it through `AddViewRecoil`, accumulates the applied delta into `UnrecoveredRecoil`, resets `SecondsSinceRecoilShot` and increments the index |
+| `TickRecoil(float DeltaTime)` (private) | Called from `TickComponent`. Returns immediately when there is nothing owed. When the trigger is **not** held and `SecondsSinceRecoilShot >= RecoilResetTime`, the pattern index returns to 0 so the next burst starts from the first step. No recovery while spraying, during `RecoilRecoveryDelay`, or when nothing is owed. Otherwise `Step = min(|UnrecoveredRecoil|, max(0, RecoilRecoverySpeed × Recovery) × DeltaTime)` is given back **along the direction of the accumulated vector**, and the applied amount is added back into `UnrecoveredRecoil` so recovery blocked by the pitch limit stays owed |
+| `ResetRecoilPattern()` (private) | Sets `RecoilShotIndex = 0`; called from `Equip`, `OnRep_CurrentWeapon` and `Initiate_ReloadWeapon` |
+
+Call site: `Local_FireWeapon()` calls `ApplyFireRecoil()` immediately after `AWeapon::Local_Fire(...)`.
+
+Defaults authored on `AWeapon` (see 8.4): a 12-step pattern (climb → drift right → swing left → settle), `RecoilPitchScale` / `RecoilYawScale` = 1, `AimRecoilMultiplier` = 0.65, `RecoilRecoverySpeed` = 18 °/s, `RecoilRecoveryDelay` = 0.12 s, `RecoilResetTime` = 0.4 s.
+
+⚠ The kick is applied to the **local control rotation only** — the server neither simulates nor validates it. That matches UE's client-authoritative aim model, but it means recoil is a feel feature and cannot be used as a server-side accuracy penalty.
+
+### 7.8 Aim-state broadcast and auto un-aim on weapon switch
+
+| Function | Behaviour and effect |
+| --- | --- |
+| `Local_Aim(bool bPressed)` (private) | Returns immediately when `bAiming == bPressed` (this is what prevents duplicate broadcasts on a listen server), otherwise assigns `bAiming` and broadcasts `OnAimStateChanged(bAiming)` |
+| `StopAimForWeaponSwitch()` (public) | If aiming: `Local_Aim(false)` for instant local feedback **and** `Server_Aim(false)` (reliable RPC, delivered in order) |
+| Call sites | `Initiate_CycleWeapon()` and `Initiate_EquipSlot()` |
+| `Server_CycleWeapon_Implementation` | Also calls `Local_Aim(false)` so remote players see the aim state drop |
+
+Behaviour change: `Initiate_EquipSlot` used to `return` while aiming (pressing a number key did nothing). It now switches weapons and drops out of ADS instead.
+
+### 7.9 Locomotion blend-space refresh (walk gait)
+
+| Function | Behaviour and effect |
+| --- | --- |
+| `HasStrafeWalkingAnim() const` | True when `FirstPersonAnims` **or** `ThirdPersonAnims` has a `Strafe_Walking` BlendSpace for the current weapon type (either view is enough — the 3P view is what you see for foot sliding) |
+| `RefreshLocomotionBlendSpaces(bool bUseWalkGait)` | Copies `FPlayerAnim` into the ABP struct property (`CurrenrAnim` for 1P, `CurrentAnim` for 3P). When `bUseWalkGait` is true **and** `Strafe_Walking` is valid, the copy's `Strafe_Standing` is replaced by `Strafe_Walking` first. Applied to both meshes |
+| `ApplyEquippedWeaponAnim(AWeapon*)` | Now a thin wrapper: it reads `AShooterCharacter::IsUsingWalkGait()` and forwards to `RefreshLocomotionBlendSpaces` — so equipping a weapon also re-applies the currently correct gait |
+
+---
+
 ## 8. AWeapon — the weapon actor
 
 **Location**: [Weapon.h](<Source/FPS/Public/Weapon/Weapon.h>) / [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)
@@ -764,6 +903,49 @@ End       = Start + Direction * TraceLength
 ### 8.3 Notes for contributors
 - `AWeapon` has **no** tick of its own and never fires on its own: all decisions live in `UCombatComponent`; the weapon only provides "presentation + data + hit detection".
 - Blueprint weapon subclasses (`BP_Rifle`, `BP_Pistol`, `BP_M700`, …) must set `WeaponType` (tag), `WeaponKind`, the two meshes / animation blueprints and `AimSocketName`, and implement `FireEffect`.
+
+---
+
+### 8.4 Recoil properties
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `RecoilPattern` (`TArray<FRecoilStep>`) | 12 steps | Per-shot kick in degrees, in firing order. Past the last entry the spray repeats the final step. The stock pattern climbs, drifts right, swings left, then settles |
+| `RecoilPitchScale` | `1.0` | Multiplier on the pattern's pitch (`ClampMin = 0`) |
+| `RecoilYawScale` | `1.0` | Multiplier on the pattern's yaw |
+| `AimRecoilMultiplier` | `0.65` | Extra multiplier applied while aiming down sights |
+| `RecoilRecoverySpeed` | `18.0` | Degrees per second given back after the delay |
+| `RecoilRecoveryDelay` | `0.12` | Seconds to wait after the last shot before recovery starts |
+| `RecoilResetTime` | `0.4` | Trigger released for this long ⇒ the next burst restarts at pattern step 1 |
+
+The stock 12-step pattern is:
+
+```
+(0.48, 0.00) (0.55, 0.10) (0.52, 0.22) (0.46, 0.30)
+(0.40, 0.16) (0.38,-0.08) (0.36,-0.26) (0.34,-0.34)
+(0.32,-0.12) (0.30, 0.14) (0.28, 0.22) (0.26, 0.06)
+```
+
+`BP_RIfle` overrides `RecoilPattern`; the other weapon blueprints inherit the C++ default. See 7.7 for how the component consumes these values.
+
+### 8.5 Re-attaching the weapon to a hand socket (grip notify)
+
+`AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName)`:
+
+1. Validates `PawnMesh` and the socket name, and that the owning pawn implements `IPlayerInterface`.
+2. Chooses `Mesh1P` or `Mesh3P` by comparing the passed mesh with the interface's `GetMesh1P()` / `GetMesh3P()`.
+3. Accepts **either a socket or a bone** on the character mesh (`DoesSocketExist` or `GetBoneIndex`); otherwise logs a warning naming the missing grip and returns.
+4. Attaches with `EAttachmentRule::KeepWorld` for location, rotation and scale (and `bWeldSimulatedBodies = false`), so the gun keeps the pose it has this frame and then follows the new socket.
+
+This is what `UAnimNotify_WeaponGrip` calls (see 19.1 for the contract). Together with `UCombatComponent::OnReloadMontageEnded` / `OnObservedReloadMontageEnded` — both of which now call `AttachToOwingPawn()` — it fixes the weapon drifting off the grip during the sniper reload and shell-eject montages.
+
+### 8.6 Healing support
+
+| Function | Behaviour |
+| --- | --- |
+| `SetHiddenForHeal(bool bHideWeapon)` | `true` hides both `Mesh1P` and `Mesh3P` (with `bPropagateToChildren`); `false` restores visibility through `SetMeshVisibility(GetInstigator())`, which respects who is looking at the gun |
+
+Called from `AShooterCharacter::HideEquippedWeaponForHeal` / `RestoreWeaponAfterHeal` (see 6.5).
 
 ---
 
@@ -834,7 +1016,7 @@ All three are **free functions** (not members), so any module can reuse them.
 
 | Function | Behaviour |
 | --- | --- |
-| Constructor | Disables ticking (`bStartWithTickEnabled = false`, `bCanEverTick = false`); `SetIsReplicatedByDefault(true)`; 100/100 |
+| Constructor | Ticking is now **enabled** (`bStartWithTickEnabled = true`, `bCanEverTick = true`) for the stamina drain; `SetIsReplicatedByDefault(true)`; 100/100 health, 100/100 stamina |
 | `GetLifetimeReplicatedProps` ⇄ | Replicates `DeathState`; `Health`/`MaxHealth` are `COND_OwnerOnly` (**enemies cannot read your health**) |
 | `static FindStatsComponent(const AActor*)` ◆ | Null-safe `FindComponentByClass`, used by blueprints and other components |
 | `ChangeHealthByAmout(float Amout, AActor* Instigator)` ◆ | Stores the old value → `Health = Clamp(Health + Amout, 0, MaxHealth)` → broadcasts `OnHealthChanged(component, old, new, Instigator)`; ⚠ **always returns false** (the return value is not implemented) |
@@ -862,6 +1044,67 @@ All three are **free functions** (not members), so any module can reuse them.
 | `Input_Look(const FInputActionValue&)` | `AddYawInput(X)` + `AddPitchInput(Y)`; sensitivity comes from the input assets / `MouseX`/`MouseY` in `DefaultInput.ini` |
 | `Input_Jump()` | If `bWantsToCrouch` is true → cancel crouching (stand up); otherwise `GetCharacter()->Jump()`. **Effect**: pressing jump while crouched stands up first instead of getting stuck |
 | `Input_Crouch()` | Toggles `CharacterMovement->bWantsToCrouch` directly (**toggle**, not hold) |
+
+---
+
+### 11.1 Stamina
+
+The component now owns a second resource alongside health. Full member list (all `EditDefaultsOnly`):
+
+| Member | Default | Replication | Notes |
+| --- | --- | --- | --- |
+| `Stamina` | `100` | `ReplicatedUsing = OnRep_Stamina`, `COND_OwnerOnly` | Current stamina |
+| `MaxStamina` | `100` | `ReplicatedUsing = OnRep_MaxStamina`, `COND_OwnerOnly` | Ceiling |
+| `StaminaDrainRate` | `20` /s | not replicated | Drain while sprinting |
+| `StaminaRegenRate` | `10` /s | not replicated | Regen while not sprinting |
+| `JumpStaminaCost` | `15` | not replicated | Charged once per jump, on the authority (see 6.7) |
+
+| Function | Behaviour and effect |
+| --- | --- |
+| `SetSprinting(bool bNewSprinting)` | Inline setter used by the controller so the drain tick knows whether sprint is active |
+| `HasStaminaForJump() const` | `Stamina >= JumpStaminaCost`; used by `CanJumpInternal_Implementation` for client prediction and the server verdict |
+| `TickComponent(...)` | **The component now ticks** (`bCanEverTick = true`, `bStartWithTickEnabled = true`) — the earlier revision had ticking disabled. Authority only: `Owner->HasAuthority()` or the tick returns. `bIsMoving = Velocity.Size2D() > 10`; `bIsDraining = bIsSprinting && bIsMoving`; the delta is `-StaminaDrainRate * dt` while draining, otherwise `+StaminaRegenRate * dt`. When a **draining** tick leaves no stamina, it clears `bIsSprinting` and broadcasts `OnStaminaDepleted` |
+| `ChangeStaminaByAmout(float Amout)` | `Clamp(Stamina + Amout, 0, MaxStamina)`; broadcasts `OnStaminaChanged` **only when the value actually changed** (avoids per-tick delegate spam) and returns `Stamina > 0.f` ("stamina remains") |
+| `ChangeMaxStaminaAmout(float Amout)` | `MaxStamina += Amout` and broadcasts `OnMaxStaminaChanged`; ⚠ no floor/ceiling |
+| `OnRep_Stamina` / `OnRep_MaxStamina` | Broadcast the corresponding delegate so the HUD (`WB_Stamina`) refreshes on clients |
+
+Design notes:
+
+- Stamina is **computed on the server only** and replicated to the owner; clients never run the drain math, which is why `bIsSprinting` has to be pushed up from the controller (`Server_SetMovementState`) — see 12.1.
+- `bIsSprinting` lives on the component (`SetSprinting`) but is only ever written by `AShooterPlayerController::ApplyMovementSpeed`, so using `UStatsComponent` without that controller means sprint never drains.
+- The jump cost is deducted in `AShooterCharacter::OnJumped_Implementation` on the authority only, because `OnJumped` fires on both the predicting client and the server.
+
+### 12.1 Sprint, walk and the speed model
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `WalkSpeed` | `250` | Base speed for the slow-walk mode (kept for reference/tuning) |
+| `RunSpeed` | `500` | Base speed when neither sprinting nor walking |
+| `SprintSpeed` | `800` | Base speed while sprinting |
+| `CrouchSpeedMultiplier` | `0.6` | Applied to `MaxWalkSpeedCrouched` |
+| `WalkSpeedMultiplier` | `0.5` | Applied to `MaxWalkSpeed` while the walk toggle is on |
+| `AimSpeedMultiplier` | `0.7` | Applied to `MaxWalkSpeed` while aiming |
+
+| Function | Behaviour and effect |
+| --- | --- |
+| `Input_Sprint()` | Toggles `bIsSprinting`, clears `bIsWalking` (sprint cancels walk), then `UpdateMovementSpeed()` |
+| `Input_Walk()` | Toggles `bIsWalking`, clears `bIsSprinting` (walk cancels sprint), then `UpdateMovementSpeed()` |
+| `UpdateMovementSpeed()` (private) | Re-checks stamina first (a client at 0 stamina cannot start sprinting: `bIsSprinting && Stats->Stamina <= 0` clears the flag), applies the speed locally, and — when not authoritative — sends `Server_SetMovementState(bIsSprinting, bIsWalking)`. **The mirror is required**: the server corrects `MaxWalkSpeed`, so a client-only change would be reverted |
+| `ApplyMovementSpeed()` (private) | Refuses sprint while aiming or crouched; `Speed = bIsSprinting ? SprintSpeed : RunSpeed`; multiplies by `WalkSpeedMultiplier` when walking and by `AimSpeedMultiplier` when aiming; writes **both** `CMC->MaxWalkSpeed = Speed` and `CMC->MaxWalkSpeedCrouched = Speed * CrouchSpeedMultiplier`; calls `AShooterCharacter::RefreshLocomotionGait()`; on the authority pushes `Stats->SetSprinting(bIsSprinting)` so the drain tick follows |
+| `RefreshMovementSpeed()` (public, no RPC) | Inline wrapper for `ApplyMovementSpeed()`, called by the character when aiming or crouching changes (`HandleAimStateChanged`, `OnStartCrouch`, `OnEndCrouch`) |
+| `GetStats()` (private) | `UStatsComponent::FindStatsComponent(GetPawn())`; while it is there it registers `HandleStaminaDepleted` with `AddUniqueDynamic`, so repeated calls do not stack subscriptions |
+
+Multipliers compose multiplicatively — the header comment documents `crouch + walk + ADS = 500 × 0.6 × 0.5 × 0.7` (the crouch factor is what is applied to `MaxWalkSpeedCrouched`).
+
+Automatic cancellations: sprint is refused while aiming or crouched, cancelled when stamina runs out (`HandleStaminaDepleted`) and cancelled by the walk toggle.
+
+### 12.2 Movement-state replication
+
+| Function | Behaviour |
+| --- | --- |
+| `Server_SetMovementState(bool bNewSprinting, bool bNewWalking)` ⇄ | Authority: stores the flags and re-runs `UpdateMovementSpeed()`. On the authority that call no longer sends an RPC (`HasAuthority()` guard), so there is no recursion |
+| `Client_StopSprint()` ⇄ | Server → client: "your stamina ran out, stop sprinting". The client clears `bIsSprinting` and re-applies the speed locally |
+| `HandleStaminaDepleted()` | Runs on the **server** (it is registered on `Stats->OnStaminaDepleted`): clears `bIsSprinting`, re-applies speed, and calls `Client_StopSprint()` when the owner is a remote client (`!IsLocalController()`) |
 
 ---
 
@@ -1102,6 +1345,19 @@ Several C++/Blueprint contracts are implicit (by name or by interface). Changing
 
 ---
 
+### 19.1 Contract additions for recoil, locomotion, healing and new inputs
+
+| Category | Name | Type | Consumer | Consequence if missing |
+| --- | --- | --- | --- | --- |
+| ABP variables (3P) | `bUseWalkGait`, `LocomotionPlayRate`, `GroundSpeed` | bool / float / float | written by `AShooterCharacter::UpdateLocomotionGait` | Walk gait never engages and the play rate stays at 1 (silent) |
+| ABP variable (1P) | `PlayRate` (also accepts `LocomotionPlayRate` / `BS_PlayRate`) | float | same | 1P locomotion ignores the ground speed |
+| Data asset entry | `Strafe_Walking` per weapon tag in `FirstPersonAnims` / `ThirdPersonAnims` | `UBlendSpace` | `HasStrafeWalkingAnim`, `RefreshLocomotionBlendSpaces` | The walk gait silently falls back to the jog BlendSpace (`bUseWalkGait` stays false) |
+| Anim notify | **Weapon Grip** (`UAnimNotify_WeaponGrip`) with its `GripSocket` | C++ `UAnimNotify` | `AWeapon::AttachToPawnSocket` | The gun is not re-parented to the support hand during reload / shell-eject montages (it drifts with the animation) |
+| Character property | `HealMontage` | `UAnimMontage` | `PlayHealMontage` | Heal input logs a warning and does nothing |
+| Input | `IA_Sprint`, `IA_Walk` on the controller; `IA_Heal` on the character | `UInputAction` | `SetupInputComponent` | Those actions do nothing |
+| Widget | `WB_Stamina` bound to `OnStaminaChanged` / `OnMaxStaminaChanged` | `UUserWidget` | `UStatsComponent` delegates | No stamina bar (the widget exists and is hosted by `WBP_ShooterOverlay`) |
+| Gameplay tag / interface | Weapons or components implementing `IRecoilModifier::GetAttachmentRecoilScale` | Blueprint interface | `GatherAttachmentRecoil` | No attachment recoil modifiers apply (optional feature) |
+
 ## 20. Caveats, known issues and extension notes
 
 ### 20.1 Known issues
@@ -1121,6 +1377,27 @@ Several C++/Blueprint contracts are implicit (by name or by interface). Changing
 | 11 | `CastChecked<UEnhancedInputComponent>` | Character input binding **crashes** if the input component type is wrong | Keep `DefaultInputComponentClass` set to EnhancedInput |
 | 12 | `AShooterGameModeBase` | Empty shell | Requires a blueprint subclass for match rules |
 | 13 | `AWeapon::Rep_Fire`'s `Sequence` | Only incremented during non-authoritative prediction | Ammo can wobble briefly under high latency / packet loss and converges via the multicast |
+
+#### 20.1.1 Added with the recoil / stamina / healing / locomotion revision
+
+| # | Location | Issue | Impact / suggestion |
+| --- | --- | --- | --- |
+| 14 | `AShooterCharacter::Input_VersionWeapon` + `VersionWeaponAction` | Empty body and never bound | Dead code; wire it to something or delete it |
+| 15 | `ApplyFireRecoil` / `TickRecoil` | The kick is applied to the local control rotation only | Intended (UE aim is client-authoritative) but it is a feel feature, not a server-side accuracy penalty |
+| 16 | `UpdateLocomotionGait` | AnimInstance properties are found **by name** with several aliases | A renamed/missing property is a silent no-op — when the feet stop matching the speed, check the ABP variable names first |
+| 17 | `UStatsComponent::ChangeMaxStaminaAmout` | No floor/ceiling | A negative amount can produce 0 or a negative ceiling |
+| 18 | `UStatsComponent` stamina tick | Server-only; `bIsSprinting` must be pushed by `AShooterPlayerController` | Using the component without that controller means sprint never drains |
+| 19 | `AShooterCharacter::HealPlayer` | `PlayHealMontage(Mesh1P, true) \|\| PlayHealMontage(GetMesh(), true)` — only the first mesh that succeeds plays | If neither mesh can play the montage the heal does not start and a warning is logged |
+| 20 | Heal commit | `Notify_HealPlayer` (anim notify) **and** `OnHealMontageEnded` both call `Server_FinishHeal(true)` | Safe (guarded by `bServerHealing`, and `Server_FinishHeal` clears it before committing), but do not add a second server entry point |
+| 21 | Healing | Amount is not scaled by missing health and the montage is not cancelled by damage | Overheal is impossible (`Clamp` to `MaxHealth`) but the "cost" is always the same; add a movement/damage interrupt if you want a riskier heal |
+| 22 | Recoil recovery | Give-back stops at the camera's `ViewPitchMin/Max`; the un-applied part stays owed | By design (see `AddViewRecoil`), but it means recoil can accumulate while the player looks at the floor/ceiling |
+
+Fixed in this revision (no longer issues in 20.1):
+
+- ADS no longer blocks weapon switching — `Initiate_EquipSlot` now auto un-aims instead of returning.
+- The weapon is re-attached after reload and fire montages (`OnReloadMontageEnded`, `OnObservedReloadMontageEnded` and the **Weapon Grip** notify), which fixed the sniper reload/eject montages dragging the gun off the grip.
+- `UStatsComponent` finally ticks, so stamina works; `bCanEverTick` / `bStartWithTickEnabled` are now `true`.
+- `EDeathState` is at least read now (the heal path refuses to heal the dead), though it is still never written.
 
 ### 20.2 Review notes (code-quality observations)
 
@@ -1142,4 +1419,4 @@ Several C++/Blueprint contracts are implicit (by name or by interface). Changing
 
 ---
 
-*This document was compiled by reading the source on the current `master` branch (local state after commit `74c1cfd Add New Weapon Type:Sniper`).*
+*This document was compiled by reading the source on the current `master` branch (local state at commit `c096f05 Localmotion Play rate when player is walking`).*

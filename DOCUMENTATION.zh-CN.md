@@ -33,6 +33,8 @@
 19. [蓝图契约清单](#19-蓝图契约清单)
 20. [注意事项、已知问题与扩展建议](#20-注意事项已知问题与扩展建议)
 
+> **最新修订（后坐力 / 耐力 / 治疗 / 移动步态）：** 在原有章节内新增了子章节 —— `4.11`（后坐力结构体、新委托、`FPlayerAnim.Strafe_Walking`）、`6.5–6.7`（治疗、移动步态、移动相关钩子）、`7.7–7.9`（后坐力、开镜状态广播、BlendSpace 刷新）、`8.4–8.6`（后坐力属性、握持 Socket 重挂、治疗时隐藏武器）、`11.1`（耐力）、`12.1–12.2`（冲刺/静步速度模型、移动状态复制）、`19.1`（蓝图契约新增项）、`20.1.1`（新增已知问题）。
+
 ---
 
 ## 1. 文档说明与阅读顺序
@@ -249,6 +251,27 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 
 ---
 
+### 4.11 后坐力结构体、新增委托与 `FPlayerAnim` 新增字段
+
+| 类型 | 声明处 | 作用 |
+| --- | --- | --- |
+| `FRecoilStep` | Weapon.h | 单发子弹的视角偏移（度）：`Pitch`（向上为正、向下为负）、`Yaw`（向右为正、向左为负）。提供默认构造与 `(Pitch, Yaw)` 便捷构造 |
+| `FRecoilScale` | RecoilModifierInterface.h | 叠加在武器固有后坐力上的倍率：`Pitch`、`Yaw`、`Recovery`，默认都是 `1`（不改变） |
+| `IRecoilModifier` / `URecoilModifier` | RecoilModifierInterface.h | 只有一个函数 `GetAttachmentRecoilScale()` 的 `BlueprintNativeEvent` 接口。实现在**武器本身，或武器/角色身上的任意组件**（握把、枪口补偿器、枪托、天赋组件……）即可修正后坐力 |
+| `FPlayerAnim::Strafe_Walking` | WeaponData.h | 慢走速度下使用的 `UBlendSpace*`；慢走步态激活时会被复制覆盖 `Strafe_Standing`（见 6.6、7.9） |
+
+新增委托：
+
+| 委托 | 声明处 | 类型 | 触发时机 | 使用方 |
+| --- | --- | --- | --- | --- |
+| `FAimStateChanged` | CombatComponent.h | 普通 C++ 多播（`DECLARE_MULTICAST_DELEGATE_OneParam`，`bool`），**不是**蓝图委托 | `Local_Aim` 真正改变了 `bAiming` 时 | `AShooterCharacter::HandleAimStateChanged`（蓝图 `OnAim`、移动速度、步态） |
+| `FStaminaChanged` | StatsComponent.h | 动态多播（组件、旧值、新值） | 耐力或耐力上限变化 | 耐力条（`WB_Stamina`） |
+| `FStaminaDepleted` | StatsComponent.h | 动态多播，无参数 | 服务器在冲刺中把最后一点耐力耗尽 | `AShooterPlayerController::HandleStaminaDepleted` |
+
+> `EDeathState` 现在会被**读取**（`HealPlayer` 与 `Server_BeginHeal` 拒绝治疗死亡或满血的角色），但仍然从未被写入，因此永远停留在 `NotDead` —— 见 20.1。
+
+---
+
 ## 5. IPlayerInterface — 角色能力接口
 
 **位置**：[PlayerInterface.h](<Source/FPS/Public/Interface/PlayerInterface.h>)（`.cpp` 为空，注释说"不需要修改"）
@@ -456,6 +479,70 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 | ◆`AO_Yaw` / `MovementOffsetYaw` / `TurningStatus` | `BlueprintReadOnly`，动画参数 |
 | ◆`OnAim(bool)` | `BlueprintImplementableEvent`，ADS 状态回调 |
 | `GetFirstPersonCamera()` / `GetCombatComponent()` / `GetDefaultFieldOfView()` | C++ 访问器（`SniperScopeComponent` 使用） |
+
+---
+
+### 6.5 治疗
+
+设计思路：**动画决定"什么时候"加血，服务器决定"加多少"**。
+
+| 函数 | 行为与效果 |
+| --- | --- |
+| ◆`HealPlayer(float InHealAmout)`（public，`BlueprintCallable`） | 客户端入口。守卫条件：本地控制、未在治疗、治疗量 > 0、`Stats` 有效、`Stats->DeathState == NotDead`、`Health < MaxHealth`、当前武器不在 `Reloading`/`Cycling`。通过后记录 `PendingHealAmout`，播放 Montage（先试 `Mesh1P`，失败再试 3P 身体网格），两个网格都播不了就打印 Warning；设置 `bIsHealing = true`，用 `HealMontage->GetPlayLength() + 2.f` 给 `HealLocalTimer` 上一个**超时兜底**（即使动画通知永远不触发也不会把角色锁死），最后 `Server_BeginHeal(PendingHealAmout)` |
+| `PlayHealMontage(USkeletalMeshComponent* HealMesh, bool bBindEnd)`（private） | 在指定网格上 `Montage_Play`；调用 `HideEquippedWeaponForHeal()` 隐藏武器；当 `bBindEnd` 为真**或**当前是旁观代理时绑定 `OnHealMontageEnded`（保证远端玩家的枪在 3P 动画结束后会恢复） |
+| `HideEquippedWeaponForHeal()` / `RestoreWeaponAfterHeal()`（private） | 把当前武器记到 `HealHiddenWeapon`，并调用 `AWeapon::SetHiddenForHeal(true/false)`（见 8.6） |
+| ◆`Notify_HealPlayer()`（public，`BlueprintCallable`） | 动画通知入口。仅本地控制者执行：清 `bIsHealing`、清超时定时器、`Server_FinishHeal(true)` |
+| `OnHealMontageEnded(UAnimMontage*, bool bInterrupted)`（private） | 先恢复武器；旁观代理只清 `bIsHealing`；对拥有者来说，被打断则放弃治疗（`Server_FinishHeal(false)`），正常结束则转调 `Notify_HealPlayer()` —— 因此**没有放通知的 Montage 也会在结束时结算一次** |
+| `AbortLocalHeal()` / `AbortServerHeal()`（private） | 超时回调，复位治疗标记并恢复武器 |
+| `Server_BeginHeal_Implementation(float InHealAmout)` ⇄ | 仅权威。已在治疗、治疗量 ≤ 0、`HealAmout <= 0`、已死亡或满血时直接拒绝。**把请求量钳制到服务器自己的值**（`ServerHealAmout = min(InHealAmout, HealAmout)`），客户端无法要求更大的治疗量；设置 `HealServerTimer`（Montage 时长 + 2 秒）并 `Multicast_PlayHealMontage()` |
+| `Server_FinishHeal_Implementation(bool bCompleted)` ⇄ | 仅权威。不在治疗状态直接忽略；清超时定时器；**只有 `bCompleted` 为真**才执行 `Stats->ChangeHealthByAmout(ServerHealAmout, this)`。由于会先清掉 `bServerHealing`，动画通知与 Montage 结束回调的"双重提交"最多只生效一次 |
+| `Multicast_PlayHealMontage_Implementation()` ⇄ | 跳过本地控制的拥有者与专用服务器；其他客户端播放 3P 治疗 Montage（`bBindEnd = false`，代理的结束委托在 `PlayHealMontage` 内部绑定） |
+
+数据成员：`HealMontage`（`EditDefaultsOnly`，本工程指向 `AnimMontage_Arms_Healing`）、`HealAmout`（构造函数中默认 `30`），以及 `bIsHealing`、`bServerHealing`、`PendingHealAmout`、`ServerHealAmout`、`HealLocalTimer`（客户端）、`HealServerTimer`（服务器）。
+
+注意：
+
+- 输入链路：`IA_Heal` → `Input_Heal()` → `HealPlayer(HealAmout)`。
+- 治疗量不会按缺失血量缩放；`ChangeHealthByAmout` 会 `Clamp` 到 `MaxHealth`，因此不会溢出，但"消耗"量永远是固定值。
+- ⚠ `PlayHealMontage(Mesh1P, true) || PlayHealMontage(GetMesh(), true)` 是短路求值：只有第一个成功的网格会播动画。
+- ⚠ 动画通知与 Montage 结束两条路径都会提交；服务器的守卫让它安全，但不要再增加第三个**服务端**入口。
+- 治疗不受移动或受伤打断：动画期间被打中不会中止。
+
+### 6.6 移动步态、地面速度与播放速率
+
+新增 `BlueprintPure` 取值函数：`GetGroundSpeed()`、`IsUsingWalkGait()`、`GetLocomotionPlayRate()`。
+
+| 函数 | 行为与效果 |
+| --- | --- |
+| `RefreshLocomotionGait()`（public） | `UpdateLocomotionGait(true)` 的包装。控制器改完 `MaxWalkSpeed` 后调用，`OnStartCrouch` / `OnEndCrouch` 也会调用 |
+| `UpdateLocomotionGait(bool bNotifyCombat)`（private） | **每帧**执行，产出下面三个移动相关数值 |
+
+`UpdateLocomotionGait` 细节：
+
+1. `GroundSpeed` = 去掉 Z 之后的水平速度大小。
+2. `MaxSpeed` = 蹲下时取 `MaxWalkSpeedCrouched`，否则取 `MaxWalkSpeed`。注意这是**允许的最大速度**，不是 `Velocity / MaxWalkSpeed` 的归一化。
+3. `bWantWalkGait = MaxSpeed > 0 && MaxSpeed <= WalkGaitSpeedThreshold`（默认 `360`）。
+4. `bHasWalkBS = Combat->HasStrafeWalkingAnim()`；`bNewWalkGait = bWantWalkGait && bHasWalkBS` —— 只有 `DA_WeaponData` 真的填了 Walk BlendSpace 才会切换步态。
+5. 参考速度取决于**当前真正在播**的 BlendSpace：蹲下用 `CrouchAnimReferenceSpeed`（`150`），慢走步态用 `WalkAnimReferenceSpeed`（`150`），否则用 `JogAnimReferenceSpeed`（`375`）。
+6. `LocomotionPlayRate = Clamp(GroundSpeed / RefSpeed, MinLocomotionPlayRate(0.15), MaxLocomotionPlayRate(2.0))`；当 `GroundSpeed <= 1` 时直接给 `0`（待机时冻结脚步）。
+7. 把数值**按变量名**写进**两个** AnimInstance（`Mesh1P` 与 3P 身体），并且容忍多种拼写：`bUseWalkGait`（bool），以及 `LocomotionPlayRate` / `PlayRate` / `BS_PlayRate`，还有 `GroundSpeed` / `Speed`（float）。变量不存在时静默跳过。
+8. 步态发生变化且 `bNotifyCombat` 为真时，调用 `Combat->RefreshLocomotionBlendSpaces(bUseWalkGait)`，让 ABP 里的 `FPlayerAnim` 副本把 `Strafe_Standing` 换成 `Strafe_Walking`。
+
+效果：慢速移动（静步 / 开镜）不再以 1 倍速播放跑步循环，动画步频随实际地面速度变化 —— 这正是消除滑步与"小碎步"的关键。
+
+⚠ 蓝图契约：ABP 至少要暴露上述别名之一。本工程 3P ABP 里有 `bUseWalkGait`、`LocomotionPlayRate`、`GroundSpeed`；1P ABP 里有 `PlayRate`。
+
+### 6.7 移动相关钩子（下蹲、跳跃耐力、开镜状态）
+
+| 重写 / 函数 | 行为 |
+| --- | --- |
+| `CanJumpInternal_Implementation() const` | `Super::` **且**（`Stats` 无效或 `Stats->HasStaminaForJump()`）。客户端用同步过来的耐力做预测，服务器做最终判定 |
+| `OnJumped_Implementation()` | `Super::` 之后扣 `Stats->JumpStaminaCost`（默认 `15`），**只在权威端扣** —— `OnJumped` 在预测客户端和服务器上都会调用，无条件扣会扣两次 |
+| `OnStartCrouch(...)` / `OnEndCrouch(...)` | `Super::`，然后 `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()`；服务器与本地客户端都会执行，保证下蹲后速度/步态立刻重算 |
+| `HandleAimStateChanged(bool bIsAiming)`（private，`BeginPlay` 中绑定到 `Combat->OnAimStateChanged`） | **仅在本地控制时**调用蓝图事件 `OnAim(bIsAiming)`；并且总是调用 `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` —— 服务器也需要新速度，否则会把客户端拉回旧速度 |
+| `RefreshControllerMovementSpeed()`（private） | `Cast<AShooterPlayerController>(GetController())->RefreshMovementSpeed()`。模拟代理（别人电脑上的你）没有本地控制器，直接跳过 |
+| `Input_Aim_Pressed()` | 不再直接调 `OnAim` —— 开镜状态统一由 `UCombatComponent::Local_Aim` 通过 `OnAimStateChanged` 广播（见 7.8） |
+| ⚠`Input_VersionWeapon()` | 空函数，且 `SetupInputComponent` 里**没有绑定**（`VersionWeaponAction` 声明了但没用）—— 占位死代码 |
 
 ---
 
@@ -705,6 +792,58 @@ if (Ammo > 0) Local_FireWeapon();
 
 ---
 
+### 7.7 后坐力（视角上跳、弹道与回正）
+
+`UCombatComponent` 持有运行时状态，`AWeapon` 持有作者配置的弹道。
+
+| 成员 | 含义 |
+| --- | --- |
+| `UnrecoveredRecoil`（`FVector2D`） | `X` = 偏航、`Y` = 俯仰：**已经施加但还没还回去**的量 |
+| `RecoilShotIndex`（`int32`） | 当前连发在 `RecoilPattern` 中的下标 |
+| `SecondsSinceRecoilShot`（`float`） | 距离上一发的时长，用于弹道复位与回正延迟 |
+
+[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) 内部的匿名命名空间辅助函数：
+
+| 辅助函数 | 行为 |
+| --- | --- |
+| `AppendAttachmentRecoil(UObject*, FRecoilScale&)` | 如果对象所属类实现了 `IRecoilModifier`，就把返回的 `Pitch`、`Yaw`、`Recovery` 乘进当前倍率（各自 `max(0, x)`） |
+| `GatherAttachmentRecoil(const AActor*, FRecoilScale&)` | 对**该 Actor 本身以及它的每一个组件**执行上面的累乘 |
+| `AddViewRecoil(APlayerController*, Pitch, Yaw, out AppliedPitch, out AppliedYaw)` | 把偏移加进控制旋转，俯仰按 `PlayerCameraManager->ViewPitchMin/ViewPitchMax` 钳制（取不到时回退 ±89°），并且只回报**真正加进去的那部分**，所以因为视角上限而没加上去的量不会被记成"欠账" |
+
+| 函数 | 行为与效果 |
+| --- | --- |
+| `ResolveRecoilScale() const`（private） | `Pitch/Yaw = 武器 RecoilPitchScale/RecoilYawScale × (bAiming ? AimRecoilMultiplier : 1)`，再乘以**武器与拥有者角色**（含双方组件）上所有 `IRecoilModifier` 的返回值。`Recovery` 初值 1，只被接口修正 |
+| `ApplyFireRecoil()`（private） | 仅本地玩家；近战或 `RecoilPattern` 为空的武器直接返回。取 `RecoilPattern[Clamp(RecoilShotIndex, 0, Num-1)]` —— 超出数组长度后重复最后一发 —— 乘倍率后通过 `AddViewRecoil` 施加，把实际生效的增量累加到 `UnrecoveredRecoil`，清零 `SecondsSinceRecoilShot`，并自增下标 |
+| `TickRecoil(float DeltaTime)`（private） | 由 `TickComponent` 每帧调用。没有欠账就直接返回。**未按扳机**且 `SecondsSinceRecoilShot >= RecoilResetTime` 时把弹道下标复位为 0（下一轮连发从第一发开始）。连发中、处于 `RecoilRecoveryDelay` 内或没有欠账时不回正。否则沿着欠账向量方向回正 `Step = min(|UnrecoveredRecoil|, max(0, RecoilRecoverySpeed × Recovery) × DeltaTime)`，并把实际生效量加回 `UnrecoveredRecoil`，因此被视角上限挡住的部分仍然"欠着" |
+| `ResetRecoilPattern()`（private） | 把 `RecoilShotIndex` 置 0；在 `Equip`、`OnRep_CurrentWeapon`、`Initiate_ReloadWeapon` 中调用 |
+
+调用点：`Local_FireWeapon()` 在 `AWeapon::Local_Fire(...)` 之后立刻调用 `ApplyFireRecoil()`。
+
+`AWeapon` 上作者配置的默认值（见 8.4）：12 发弹道（上抬 → 右偏 → 左摆 → 回中）、`RecoilPitchScale` / `RecoilYawScale` = 1、`AimRecoilMultiplier` = 0.65、`RecoilRecoverySpeed` = 18 度/秒、`RecoilRecoveryDelay` = 0.12 秒、`RecoilResetTime` = 0.4 秒。
+
+⚠ 视角偏移**只作用在本地控制旋转上**，服务器既不模拟也不校验。这与 UE 本身"瞄准由客户端决定"的模型一致，但也意味着后坐力只是手感表现，不能当作服务端的精度惩罚。
+
+### 7.8 开镜状态广播与切枪自动关镜
+
+| 函数 | 行为与效果 |
+| --- | --- |
+| `Local_Aim(bool bPressed)`（private） | `bAiming == bPressed` 时直接返回（这正是避免监听服务器重复广播的关键），否则赋值并广播 `OnAimStateChanged(bAiming)` |
+| `StopAimForWeaponSwitch()`（public） | 若正在开镜：`Local_Aim(false)` 保证本地手感即时，**同时** `Server_Aim(false)`（可靠 RPC，按顺序到达） |
+| 调用点 | `Initiate_CycleWeapon()` 与 `Initiate_EquipSlot()` |
+| `Server_CycleWeapon_Implementation` | 也会调用 `Local_Aim(false)`，让其他玩家看到开镜状态被取消 |
+
+行为变化：`Initiate_EquipSlot` 以前在开镜时会直接 `return`（按数字键没反应），现在改成"切枪并自动关镜"。
+
+### 7.9 移动 BlendSpace 刷新（慢走步态）
+
+| 函数 | 行为与效果 |
+| --- | --- |
+| `HasStrafeWalkingAnim() const` | 当 `FirstPersonAnims` **或** `ThirdPersonAnims` 中当前武器类型填了 `Strafe_Walking` 时返回真（任意一个视角有就够 —— 滑步主要看 3P） |
+| `RefreshLocomotionBlendSpaces(bool bUseWalkGait)` | 把 `FPlayerAnim` 复制进 ABP 的结构体变量（1P 是 `CurrenrAnim`，3P 是 `CurrentAnim`）。当 `bUseWalkGait` 为真**且** `Strafe_Walking` 有效时，先把副本里的 `Strafe_Standing` 替换成 `Strafe_Walking`。两个网格都会写 |
+| `ApplyEquippedWeaponAnim(AWeapon*)` | 现在只是薄包装：读取 `AShooterCharacter::IsUsingWalkGait()` 后转调 `RefreshLocomotionBlendSpaces` —— 因此换枪时也会重新应用当前正确的步态 |
+
+---
+
 ## 8. AWeapon — 武器 Actor
 
 **位置**：[Weapon.h](<Source/FPS/Public/Weapon/Weapon.h>) / [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)
@@ -764,6 +903,49 @@ if (Ammo > 0) Local_FireWeapon();
 ### 8.3 参与者注意
 - `AWeapon` **没有** 自己的 Tick、也不主动开火：所有决策都在 `UCombatComponent`，武器只负责"表现 + 数据 + 命中检测"。
 - 蓝图派生武器（`BP_RIfle`、`BP_Pistol`、`BP_M700` 等）需要做的事：设 `WeaponType`(Tag)、`WeaponKind`、两个网格体 / 动画蓝图、`AimSocketName`，并实现 `FireEffect`。
+
+---
+
+### 8.4 后坐力属性
+
+| 属性 | 默认值 | 含义 |
+| --- | --- | --- |
+| `RecoilPattern`（`TArray<FRecoilStep>`） | 12 发 | 按开火顺序排列的每发偏移（度）。超出数组长度后重复最后一发。内置弹道为"上抬 → 右偏 → 左摆 → 回中" |
+| `RecoilPitchScale` | `1.0` | 弹道俯仰倍率（`ClampMin = 0`） |
+| `RecoilYawScale` | `1.0` | 弹道偏航倍率 |
+| `AimRecoilMultiplier` | `0.65` | 开镜时的额外倍率 |
+| `RecoilRecoverySpeed` | `18.0` | 延迟结束后每秒回正的角度 |
+| `RecoilRecoveryDelay` | `0.12` | 打完最后一发后等待多久开始回正（秒） |
+| `RecoilResetTime` | `0.4` | 松开扳机超过这个时间，下一轮连发从弹道第 1 发重新开始 |
+
+内置 12 发弹道：
+
+```
+(0.48, 0.00) (0.55, 0.10) (0.52, 0.22) (0.46, 0.30)
+(0.40, 0.16) (0.38,-0.08) (0.36,-0.26) (0.34,-0.34)
+(0.32,-0.12) (0.30, 0.14) (0.28, 0.22) (0.26, 0.06)
+```
+
+`BP_RIfle` 覆盖了 `RecoilPattern`，其他武器蓝图沿用 C++ 默认值。组件的消费方式见 7.7。
+
+### 8.5 把武器重新挂到手部 Socket（握持通知）
+
+`AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName)`：
+
+1. 校验 `PawnMesh` 与 Socket 名有效，且拥有者 Pawn 实现了 `IPlayerInterface`。
+2. 通过比较传入网格与接口的 `GetMesh1P()` / `GetMesh3P()` 决定操作 `Mesh1P` 还是 `Mesh3P`。
+3. 角色网格上**Socket 或骨骼名都可以**（`DoesSocketExist` 或 `GetBoneIndex`）；都不存在时打印一条带挂点名与网格名的 Warning 并返回。
+4. 用 `EAttachmentRule::KeepWorld`（位置/旋转/缩放三项都是 `KeepWorld`，`bWeldSimulatedBodies = false`）挂接，因此枪会保持当前帧姿态，然后跟随新的 Socket。
+
+这是 `UAnimNotify_WeaponGrip` 调用的入口（契约见 19.1）。配合现在都会调用 `AttachToOwingPawn()` 的 `UCombatComponent::OnReloadMontageEnded` / `OnObservedReloadMontageEnded`，修掉了"狙击枪换弹 / 退壳 Montage 把枪带偏"的问题。
+
+### 8.6 治疗相关支持
+
+| 函数 | 行为 |
+| --- | --- |
+| `SetHiddenForHeal(bool bHideWeapon)` | `true` 时隐藏 `Mesh1P` 与 `Mesh3P`（`bPropagateToChildren`）；`false` 时通过 `SetMeshVisibility(GetInstigator())` 恢复可见性，从而保持"谁能看到哪把枪"的规则 |
+
+由 `AShooterCharacter::HideEquippedWeaponForHeal` / `RestoreWeaponAfterHeal` 调用（见 6.5）。
 
 ---
 
@@ -834,7 +1016,7 @@ if (Ammo > 0) Local_FireWeapon();
 
 | 函数 | 行为 |
 | --- | --- |
-| 构造函数 | 关闭 Tick（`bStartWithTickEnabled = false`、`bCanEverTick = false`）；`SetIsReplicatedByDefault(true)`；100/100 |
+| 构造函数 | Tick 现在**已开启**（`bStartWithTickEnabled = true`、`bCanEverTick = true`）用于耐力消耗；`SetIsReplicatedByDefault(true)`；生命值 100/100，耐力 100/100 |
 | `GetLifetimeReplicatedProps` ⇄ | 复制 `DeathState`；`Health`/`MaxHealth` 仅 `COND_OwnerOnly`（**敌人看不到你的血量**） |
 | `static FindStatsComponent(const AActor*)` ◆ | 空安全的 `FindComponentByClass`，供蓝图/其他组件快速取用 |
 | `ChangeHealthByAmout(float Amout, AActor* Instigator)` ◆ | 先存旧值 → `Health = Clamp(Health + Amout, 0, MaxHealth)` → 广播 `OnHealthChanged(组件, 旧值, 新值, Instigator)`；⚠ **恒返回 false**（返回值语义未实现） |
@@ -862,6 +1044,67 @@ if (Ammo > 0) Local_FireWeapon();
 | `Input_Look(const FInputActionValue&)` | `AddYawInput(X)` + `AddPitchInput(Y)`；灵敏度由输入资产/`DefaultInput.ini` 的 `MouseX/Y` 决定 |
 | `Input_Jump()` | 若 `bWantsToCrouch` 为真 → 先取消蹲伏（起身）；否则 `GetCharacter()->Jump()`。**效果**：蹲下时按跳跃先站起，避免"卡在蹲姿" |
 | `Input_Crouch()` | 直接翻转 `CharacterMovement->bWantsToCrouch`（**切换式**蹲伏，不是按住式） |
+
+---
+
+### 11.1 耐力
+
+组件现在在生命值之外还管理第二项资源。完整成员表（全部为 `EditDefaultsOnly`）：
+
+| 成员 | 默认值 | 复制 | 说明 |
+| --- | --- | --- | --- |
+| `Stamina` | `100` | `ReplicatedUsing = OnRep_Stamina`，`COND_OwnerOnly` | 当前耐力 |
+| `MaxStamina` | `100` | `ReplicatedUsing = OnRep_MaxStamina`，`COND_OwnerOnly` | 耐力上限 |
+| `StaminaDrainRate` | `20` /秒 | 不复制 | 冲刺时的消耗速度 |
+| `StaminaRegenRate` | `10` /秒 | 不复制 | 非冲刺时的回复速度 |
+| `JumpStaminaCost` | `15` | 不复制 | 每次跳跃的消耗，只在权威端扣（见 6.7） |
+
+| 函数 | 行为与效果 |
+| --- | --- |
+| `SetSprinting(bool bNewSprinting)` | 内联 setter，由控制器写入，让消耗 Tick 知道是否处于冲刺 |
+| `HasStaminaForJump() const` | `Stamina >= JumpStaminaCost`；`CanJumpInternal_Implementation` 用它做客户端预测与服务端判定 |
+| `TickComponent(...)` | **组件现在会 Tick**（`bCanEverTick = true`、`bStartWithTickEnabled = true`）—— 早期版本是关闭的。仅权威端执行：`Owner->HasAuthority()` 不成立直接返回。`bIsMoving = Velocity.Size2D() > 10`；`bIsDraining = bIsSprinting && bIsMoving`；增量为消耗时的 `-StaminaDrainRate * dt`，否则 `+StaminaRegenRate * dt`。当某次**消耗**把耐力打到 0 时，清掉 `bIsSprinting` 并广播 `OnStaminaDepleted` |
+| `ChangeStaminaByAmout(float Amout)` | `Clamp(Stamina + Amout, 0, MaxStamina)`；**只有数值真的变化**才广播 `OnStaminaChanged`（避免每帧刷委托），返回 `Stamina > 0.f`（"还有耐力"） |
+| `ChangeMaxStaminaAmout(float Amout)` | `MaxStamina += Amout` 并广播 `OnMaxStaminaChanged`；⚠ 没有上下限约束 |
+| `OnRep_Stamina` / `OnRep_MaxStamina` | 广播对应委托，让客户端 HUD（`WB_Stamina`）刷新 |
+
+设计要点：
+
+- 耐力**只在服务器计算**，再同步给拥有者；客户端不跑消耗计算，因此 `bIsSprinting` 必须由控制器上报（`Server_SetMovementState`）—— 见 12.1。
+- `bIsSprinting` 存放在组件上（`SetSprinting`），但只有 `AShooterPlayerController::ApplyMovementSpeed` 会写入它，所以脱离该控制器使用 `UStatsComponent` 时冲刺永远不会消耗耐力。
+- 跳跃消耗在 `AShooterCharacter::OnJumped_Implementation` 中仅权威端扣除，因为 `OnJumped` 在预测客户端与服务器上都会触发。
+
+### 12.1 冲刺、静步与速度模型
+
+| 属性 | 默认值 | 含义 |
+| --- | --- | --- |
+| `WalkSpeed` | `250` | 静步模式的基础速度（保留用于调参/参考） |
+| `RunSpeed` | `500` | 既不冲刺也不静步时的基础速度 |
+| `SprintSpeed` | `800` | 冲刺时的基础速度 |
+| `CrouchSpeedMultiplier` | `0.6` | 乘到 `MaxWalkSpeedCrouched` 上 |
+| `WalkSpeedMultiplier` | `0.5` | 静步开关打开时乘到 `MaxWalkSpeed` 上 |
+| `AimSpeedMultiplier` | `0.7` | 开镜时乘到 `MaxWalkSpeed` 上 |
+
+| 函数 | 行为与效果 |
+| --- | --- |
+| `Input_Sprint()` | 翻转 `bIsSprinting`，并清掉 `bIsWalking`（冲刺打断静步），然后 `UpdateMovementSpeed()` |
+| `Input_Walk()` | 翻转 `bIsWalking`，并清掉 `bIsSprinting`（静步打断冲刺），然后 `UpdateMovementSpeed()` |
+| `UpdateMovementSpeed()`（private） | 先复查耐力（客户端耐力为 0 时不允许开始冲刺：`bIsSprinting && Stats->Stamina <= 0` 会清标记），本地应用速度；非权威时再发 `Server_SetMovementState(bIsSprinting, bIsWalking)`。**这个镜像上报是必须的**：服务器会纠正 `MaxWalkSpeed`，只改客户端会被拉回 |
+| `ApplyMovementSpeed()`（private） | 开镜或下蹲时拒绝冲刺；`Speed = bIsSprinting ? SprintSpeed : RunSpeed`；静步时乘 `WalkSpeedMultiplier`，开镜时乘 `AimSpeedMultiplier`；**同时**写 `CMC->MaxWalkSpeed = Speed` 与 `CMC->MaxWalkSpeedCrouched = Speed * CrouchSpeedMultiplier`；调用 `AShooterCharacter::RefreshLocomotionGait()`；在权威端把 `Stats->SetSprinting(bIsSprinting)` 推给组件，让消耗 Tick 跟随 |
+| `RefreshMovementSpeed()`（public，不发 RPC） | `ApplyMovementSpeed()` 的内联包装；角色在开镜或下蹲状态变化时调用（`HandleAimStateChanged`、`OnStartCrouch`、`OnEndCrouch`） |
+| `GetStats()`（private） | `UStatsComponent::FindStatsComponent(GetPawn())`，同时用 `AddUniqueDynamic` 注册 `HandleStaminaDepleted`，反复调用不会重复订阅 |
+
+倍率是**相乘叠加**的 —— 头文件注释给出了 `下蹲 + 静步 + 开镜 = 500 × 0.6 × 0.5 × 0.7`（其中下蹲倍率作用于 `MaxWalkSpeedCrouched`）。
+
+自动打断规则：开镜或下蹲时禁止冲刺；耐力耗尽由 `HandleStaminaDepleted` 中断冲刺；静步开关也会中断冲刺。
+
+### 12.2 移动状态的网络同步
+
+| 函数 | 行为 |
+| --- | --- |
+| `Server_SetMovementState(bool bNewSprinting, bool bNewWalking)` ⇄ | 权威端：保存标记并重新执行 `UpdateMovementSpeed()`。在权威端这次调用不会再发 RPC（`HasAuthority()` 守卫），因此不会递归 |
+| `Client_StopSprint()` ⇄ | 服务器 → 客户端："你的耐力耗尽了，退出冲刺"。客户端清 `bIsSprinting` 并本地重算速度 |
+| `HandleStaminaDepleted()` | 在**服务器**上执行（注册到 `Stats->OnStaminaDepleted`）：清 `bIsSprinting`、重算速度；如果拥有者是远程客户端（`!IsLocalController()`）再调用 `Client_StopSprint()` |
 
 ---
 
@@ -1102,6 +1345,19 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 
 ---
 
+### 19.1 后坐力 / 移动 / 治疗 / 新输入的契约新增项
+
+| 类别 | 名称 | 类型 | 使用方 | 缺失后果 |
+| --- | --- | --- | --- | --- |
+| ABP 变量（3P） | `bUseWalkGait`、`LocomotionPlayRate`、`GroundSpeed` | bool / float / float | 由 `AShooterCharacter::UpdateLocomotionGait` 写入 | 慢走步态永不生效，播放速率恒为 1（静默） |
+| ABP 变量（1P） | `PlayRate`（也兼容 `LocomotionPlayRate` / `BS_PlayRate`） | float | 同上 | 1P 移动动画不跟随地面速度 |
+| 数据资产条目 | `FirstPersonAnims` / `ThirdPersonAnims` 中每个武器 Tag 的 `Strafe_Walking` | `UBlendSpace` | `HasStrafeWalkingAnim`、`RefreshLocomotionBlendSpaces` | 慢走步态静默回退到跑步 BlendSpace（`bUseWalkGait` 保持 false） |
+| 动画通知 | **Weapon Grip**（`UAnimNotify_WeaponGrip`）及其 `GripSocket` | C++ `UAnimNotify` | `AWeapon::AttachToPawnSocket` | 换弹 / 退壳 Montage 播放时枪不会被重新挂到副手上（会跟着动画漂移） |
+| 角色属性 | `HealMontage` | `UAnimMontage` | `PlayHealMontage` | 按治疗键只打印 Warning，没有任何效果 |
+| 输入 | 控制器的 `IA_Sprint`、`IA_Walk`；角色的 `IA_Heal` | `UInputAction` | `SetupInputComponent` | 这些动作无响应 |
+| 控件 | `WB_Stamina`（绑定 `OnStaminaChanged` / `OnMaxStaminaChanged`） | `UUserWidget` | `UStatsComponent` 委托 | 没有耐力条（控件已存在，由 `WBP_ShooterOverlay` 承载） |
+| 接口 | 实现 `IRecoilModifier::GetAttachmentRecoilScale` 的武器/组件 | 蓝图接口 | `GatherAttachmentRecoil` | 配件无法修正后坐力（可选功能） |
+
 ## 20. 注意事项、已知问题与扩展建议
 
 ### 20.1 已知问题一览
@@ -1121,6 +1377,27 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 | 11 | `CastChecked<UEnhancedInputComponent>` | 角色输入绑定会在输入组件类型不匹配时**直接崩溃** | 确保 `DefaultInputComponentClass` 是 EnhancedInput |
 | 12 | `AShooterGameModeBase` | 空壳 | 需要蓝图子类补充规则 |
 | 13 | `AWeapon::Rep_Fire` 的 `Sequence` | 只在非权威预测时 `++` | 高延迟/丢包下弹数会短暂波动，靠多播校正收敛 |
+
+#### 20.1.1 后坐力 / 耐力 / 治疗 / 移动步态修订新增
+
+| # | 位置 | 问题 | 影响 / 建议 |
+| --- | --- | --- | --- |
+| 14 | `AShooterCharacter::Input_VersionWeapon` + `VersionWeaponAction` | 空函数且从未绑定 | 死代码；要么接上功能，要么删掉 |
+| 15 | `ApplyFireRecoil` / `TickRecoil` | 只作用在本地控制旋转上 | 符合设计（UE 瞄准由客户端决定），但它只是手感表现，不能当作服务端的精度惩罚 |
+| 16 | `UpdateLocomotionGait` | AnimInstance 变量是**按名字**查找的，且带多个别名 | 改名或缺失会静默失效 —— 发现脚步和速度对不上时，先检查 ABP 变量名 |
+| 17 | `UStatsComponent::ChangeMaxStaminaAmout` | 没有上下限 | 传入负值可能得到 0 或负上限 |
+| 18 | `UStatsComponent` 的耐力 Tick | 只在服务器跑；`bIsSprinting` 必须由 `AShooterPlayerController` 推入 | 脱离该控制器使用组件时，冲刺永远不会消耗耐力 |
+| 19 | `AShooterCharacter::HealPlayer` | `PlayHealMontage(Mesh1P, true) \|\| PlayHealMontage(GetMesh(), true)` 短路求值，只有第一个成功的网格播动画 | 两个网格都播不了时治疗不会开始，并打印 Warning |
+| 20 | 治疗结算 | `Notify_HealPlayer`（动画通知）**与** `OnHealMontageEnded` 都会调用 `Server_FinishHeal(true)` | 是安全的（`bServerHealing` 守卫，且 `Server_FinishHeal` 会先清标记再结算），但不要再增加第三个**服务端**入口 |
+| 21 | 治疗 | 治疗量不按缺失血量缩放，动画也不会被受伤打断 | 不会溢出（`Clamp` 到 `MaxHealth`），但"代价"永远是固定值；想做高风险治疗需要自行加移动/受伤打断 |
+| 22 | 后坐力回正 | 回正在相机 `ViewPitchMin/Max` 处被截断，未生效的部分仍然记在账上 | 这是 `AddViewRecoil` 的设计，但意味着玩家一直盯着地面/天花板时后坐力会累积 |
+
+本次修订已修复（20.1 中不再成立）：
+
+- 开镜不再阻止切枪 —— `Initiate_EquipSlot` 现在是"自动关镜后切枪"，而不是直接 `return`。
+- 换弹与开火 Montage 结束后会重新挂接武器（`OnReloadMontageEnded`、`OnObservedReloadMontageEnded` 以及 **Weapon Grip** 通知），修掉了狙击枪换弹/退壳 Montage 把枪带偏的问题。
+- `UStatsComponent` 终于会 Tick（`bCanEverTick` / `bStartWithTickEnabled` 现在都是 `true`），耐力系统因此可用。
+- `EDeathState` 至少被读取了（治疗路径会拒绝治疗死亡角色），但依然从未被写入。
 
 ### 20.2 评审要点（代码质量观察）
 
@@ -1142,4 +1419,4 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 
 ---
 
-*本文档基于当前 `master` 分支源码（提交 `74c1cfd Add New Weapon Type:Sniper` 之后的本地状态）通读整理。*
+*本文档基于当前 `master` 分支源码（提交 `c096f05 Localmotion Play rate when player is walking` 时的本地状态）通读整理。*
