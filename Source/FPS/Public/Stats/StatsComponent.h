@@ -1,4 +1,4 @@
-
+﻿
 
 #pragma once
 
@@ -43,6 +43,13 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Stamina")
 	float StaminaRegenRate = 10.f;   
+
+	// 每次跳跃消耗的耐力（只在服务器上扣）
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Stamina")
+	float JumpStaminaCost = 15.f;
+
+	// 当前耐力够不够跳一次
+	bool HasStaminaForJump() const { return Stamina >= JumpStaminaCost; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Health")
 	static UStatsComponent* FindStatsComponent(const AActor* Actor) { return IsValid(Actor) ? Actor->FindComponentByClass<UStatsComponent>() : nullptr; }

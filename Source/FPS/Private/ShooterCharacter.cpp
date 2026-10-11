@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
@@ -20,6 +20,7 @@
 #include "TimerManager.h"
 #include "FPSTraceChannels.h"
 #include "UObject/UnrealType.h"
+#include "ShooterPlayerController.h"
 
 namespace
 {
@@ -114,6 +115,12 @@ void AShooterCharacter::BeginPlay()
 	}
 
 	ConfigureAimTickOrder();
+
+	if (IsValid(Combat))
+	{
+		// 不管是按右键还是切枪自动关镜，都走这一个入口
+		Combat->OnAimStateChanged.AddUObject(this, &ThisClass::HandleAimStateChanged);
+	}
 }
 
 void AShooterCharacter::BeginDestroy()
@@ -481,8 +488,7 @@ void AShooterCharacter::Input_FireWeapon_Released()
 void AShooterCharacter::Input_Aim_Pressed()
 {
 	if (!IsValid(Combat)) return;
-	Combat->Initiate_Aim_Pressed();
-	OnAim(Combat->bAiming);
+	Combat->Initiate_Aim_Pressed();   // OnAim 现在由 HandleAimStateChanged 统一调用
 }
 
 void AShooterCharacter::EquipMainWeapon()
@@ -742,5 +748,51 @@ void AShooterCharacter::Input_VersionWeapon()
 
 }
 
+void AShooterCharacter::HandleAimStateChanged(bool bIsAiming)
+{
+	// 蓝图里的开镜动画/FOV 只在本地玩家身上播
+	if (IsLocallyControlled())
+	{
+		OnAim(bIsAiming);
+	}
+	// 服务器和本地客户端都要改速度，两边一致才不会被拉回
+	RefreshControllerMovementSpeed();
+}
 
+void AShooterCharacter::RefreshControllerMovementSpeed()
+{
+	// 模拟代理（别人电脑上的你）没有控制器，这里会是 nullptr，直接跳过
+	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
+	{
+		PC->RefreshMovementSpeed();
+	}
+}
 
+void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+	RefreshControllerMovementSpeed();   // 下蹲会打断冲刺
+}
+
+void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+	RefreshControllerMovementSpeed();
+}
+
+bool AShooterCharacter::CanJumpInternal_Implementation() const
+{
+	// 客户端用同步过来的耐力做预测，服务器用真实耐力做最终判断
+	return Super::CanJumpInternal_Implementation() && (!IsValid(Stats) || Stats->HasStaminaForJump());
+}
+
+void AShooterCharacter::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+
+	// OnJumped 在客户端（预测）和服务器上都会调用，只在服务器扣，避免扣两次
+	if (HasAuthority() && IsValid(Stats))
+	{
+		Stats->ChangeStaminaByAmout(-Stats->JumpStaminaCost);
+	}
+}

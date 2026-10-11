@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -20,6 +20,9 @@ class UAnimInstance;
 class UAnimMontage;
 class UWeaponData;
 class AWeapon;
+
+// 开镜状态改变时广播（普通 C++ 委托，不给蓝图用）
+DECLARE_MULTICAST_DELEGATE_OneParam(FAimStateChanged, bool /*bIsAiming*/);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FReticleChanged, UMaterialInstanceDynamic*, ReticleMaterialInst);
 
@@ -77,6 +80,12 @@ public:
 
 	UPROPERTY(BlueprintReadOnly,Replicated)
 	bool bAiming;
+
+	// 角色订阅它：开镜/关镜时刷新蓝图镜头和移动速度
+	FAimStateChanged OnAimStateChanged;
+
+	// 切枪时自动关镜（本地 + 服务器）
+	void StopAimForWeaponSwitch();
 
 	UPROPERTY(Transient, BlueprintReadOnly , ReplicatedUsing = OnRep_CurrentWeapon)
 	TObjectPtr<AWeapon> CurrentWeapon;	

@@ -4,6 +4,7 @@
 #include "EnhancedInputComponent.h"
 #include "InputActionValue.h"
 #include "Stats/StatsComponent.h"
+#include "CombatComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/LocalPlayer.h"
@@ -144,13 +145,29 @@ void AShooterPlayerController::UpdateMovementSpeed()
 
 void AShooterPlayerController::ApplyMovementSpeed()
 {
-	if (!IsValid(GetCharacter())) return;
-	UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();
+	ACharacter* MyCharacter = GetCharacter();
+	if (!IsValid(MyCharacter)) return;
+	UCharacterMovementComponent* CMC = MyCharacter->GetCharacterMovement();
 	if (!IsValid(CMC)) return;
 
-	if (bIsSprinting)      CMC->MaxWalkSpeed = SprintSpeed;
-	else if (bIsWalking)   CMC->MaxWalkSpeed = WalkSpeed;
-	else                   CMC->MaxWalkSpeed = RunSpeed;
+	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(MyCharacter);
+	const bool bAiming = IsValid(Combat) && Combat->bAiming;
+	const bool bCrouched = MyCharacter->bIsCrouched;
+
+	// 下蹲或开镜时不能冲刺
+	if (bIsSprinting && (bAiming || bCrouched))
+	{
+		bIsSprinting = false;
+	}
+
+	// 基础速度：冲刺或正常跑；静步/开镜作为倍率乘上去
+	float Speed = bIsSprinting ? SprintSpeed : RunSpeed;
+	if (bIsWalking) Speed *= WalkSpeedMultiplier;
+	if (bAiming)    Speed *= AimSpeedMultiplier;
+
+	// 站立时角色用 MaxWalkSpeed，蹲下时用 MaxWalkSpeedCrouched，两个都设好
+	CMC->MaxWalkSpeed = Speed;
+	CMC->MaxWalkSpeedCrouched = Speed * CrouchSpeedMultiplier;
 
 	// 耐力只在服务器上计算
 	if (HasAuthority())

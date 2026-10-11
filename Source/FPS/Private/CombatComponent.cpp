@@ -1,4 +1,4 @@
-#include "CombatComponent.h"
+﻿#include "CombatComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/Weapon.h"
 #include "WeaponData.h"
@@ -361,6 +361,8 @@ void UCombatComponent::Initiate_CycleWeapon()
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	if (Inventory.Num() < 2) return;
 
+	StopAimForWeaponSwitch();   // 切枪前先关镜
+
 	const int32 NextIndex = AdvanceWeaponIndex();
 	Local_CycleWeapon(NextIndex, true);
 	Server_CycleWeapon(NextIndex);
@@ -467,6 +469,9 @@ void UCombatComponent::Server_CycleWeapon_Implementation(int32 WeaponIndex)
 {
 	if (!Inventory.IsValidIndex(WeaponIndex)) return;
 	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+
+	// 服务器这边也关镜，bAiming 会同步给其他玩家
+	Local_Aim(false);
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bListenServerOwner = GetNetMode() == NM_ListenServer && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
@@ -911,12 +916,13 @@ void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 	{
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
-		if (bAiming == true) return;
+		// 以前开镜时直接 return（按数字键没反应），现在改成切枪前自动关镜
 	}
 
 	const int32 WeaponIndex = Inventory.IndexOfByKey(Weapon);
 	if (!Inventory.IsValidIndex(WeaponIndex)) return;
 
+	StopAimForWeaponSwitch();   // 切枪前先关镜
 	LocalWeaponIndex = WeaponIndex;
 	Local_CycleWeapon(WeaponIndex, true);
 	Server_EquipSlot(Slot);
@@ -983,7 +989,16 @@ void UCombatComponent::Server_Aim_Implementation(bool bPressed)
 
 void UCombatComponent::Local_Aim(bool bPressed)
 {
+	if (bAiming == bPressed) return;   // 状态没变就不广播，避免 listen server 上重复触发
 	bAiming = bPressed;
+	OnAimStateChanged.Broadcast(bAiming);
+}
+
+void UCombatComponent::StopAimForWeaponSwitch()
+{
+	if (!bAiming) return;
+	Local_Aim(false);    // 本地立刻关镜，手感不延迟
+	Server_Aim(false);   // 通知服务器（Reliable RPC 按顺序到达）
 }
 
 

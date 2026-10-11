@@ -18,6 +18,9 @@ class FPS_API AShooterPlayerController : public APlayerController
 	
 public:
 	AShooterPlayerController();
+
+	// 只按当前状态重新算速度（不发 RPC），角色在开镜/下蹲变化时调用
+	void RefreshMovementSpeed() { ApplyMovementSpeed(); }
 	
 
 protected:
@@ -62,6 +65,16 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement")
 	float SprintSpeed = 800.f;
+
+	// 下面三个倍率会相乘叠加，例如 下蹲+静步+开镜 = 500 * 0.6 * 0.5 * 0.7
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CrouchSpeedMultiplier = 0.6f;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float WalkSpeedMultiplier = 0.5f;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AimSpeedMultiplier = 0.7f;
 
 	bool bIsSprinting = false;
 	bool bIsWalking = false;
