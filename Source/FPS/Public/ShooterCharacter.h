@@ -141,6 +141,8 @@ private:
 	void Input_VersionWeapon();
 	bool PlayHealMontage(USkeletalMeshComponent* HealMesh, bool bBindEnd);
 	void OnHealMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	void HideEquippedWeaponForHeal();
+	void RestoreWeaponAfterHeal();
 
 	UFUNCTION(Server, Reliable)
 	void Server_BeginHeal(float InHealAmout);
@@ -166,6 +168,7 @@ private:
 	float AimAlignAlpha = 0.f;
 
 	bool bIsHealing = false;
+	TWeakObjectPtr<AWeapon> HealHiddenWeapon;
 	bool bServerHealing = false;
 	float PendingHealAmout = 0.f;
 	float ServerHealAmout = 0.f;

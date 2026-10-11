@@ -662,6 +662,9 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 		if (IsValid(Montage3P) && IsValid(AnimInstance3P))
 		{
 			AnimInstance3P->Montage_Play(Montage3P);
+			FOnMontageEnded EndDelegate;
+			EndDelegate.BindUObject(this, &UCombatComponent::OnObservedReloadMontageEnded);
+			AnimInstance3P->Montage_SetEndDelegate(EndDelegate, Montage3P);
 		}
 	}
 }
@@ -762,17 +765,33 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson)
 	}
 
 	// The owner's 1P montage owns the Reloading lock. The 3P montage is only what other people see.
+	FOnMontageEnded EndDelegate;
 	if (bFirstPerson)
 	{
-		FOnMontageEnded EndDelegate;
 		EndDelegate.BindUObject(this, &UCombatComponent::OnReloadMontageEnded);
-		AnimInstance->Montage_SetEndDelegate(EndDelegate, ReloadMontage);
 	}
+	else
+	{
+		EndDelegate.BindUObject(this, &UCombatComponent::OnObservedReloadMontageEnded);
+	}
+	AnimInstance->Montage_SetEndDelegate(EndDelegate, ReloadMontage);
 	return true;
+}
+
+void UCombatComponent::OnObservedReloadMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupted*/)
+{
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->AttachToOwingPawn();
+	}
 }
 
 void UCombatComponent::OnReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->AttachToOwingPawn();
+	}
 	if (!IsValid(Montage) || !IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return;
 

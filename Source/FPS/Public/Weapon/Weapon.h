@@ -12,16 +12,16 @@ class UMaterialInstanceDynamic;
 
 enum EPhysicalSurface : int;
 
-// One shot in a spray. Pitch is degrees up, yaw is degrees right. No randomness.
+// One shot's kick in degrees. Positive pitch looks up. Positive yaw looks right, negative yaw looks left.
 USTRUCT(BlueprintType)
 struct FRecoilStep
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (DisplayName = "Pitch Up"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (DisplayName = "Pitch (Up +, Down -)"))
 	float Pitch = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (DisplayName = "Yaw Right"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (DisplayName = "Yaw (Right +, Left -)"))
 	float Yaw = 0.f;
 
 	FRecoilStep() = default;
@@ -71,7 +71,9 @@ public:
 
 
 	void AttachToOwingPawn();
+	void AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName);
 	void DetachFromPawn();
+	void SetHiddenForHeal(bool bHideWeapon);
 	void WeaponTrace(FHitResult& OutHit, float TraceLength);
 
 	UPROPERTY(EditAnywhere,BlueprintReadOnly , Category = "FPS|WeaponType")

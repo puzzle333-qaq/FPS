@@ -35,15 +35,20 @@ AWeapon::AWeapon()
 	AimSocketName = TEXT("AimSocket");
 	TraceRadius = 5.f;
 	FireTime = 0.1f;
+	// Sample spray: climb, drift right, then swing left, then back toward center.
 	RecoilPattern = {
-		FRecoilStep(0.35f, 0.00f),
-		FRecoilStep(0.50f, 0.04f),
-		FRecoilStep(0.62f, 0.10f),
-		FRecoilStep(0.70f, 0.16f),
-		FRecoilStep(0.64f, 0.20f),
-		FRecoilStep(0.56f, 0.18f),
-		FRecoilStep(0.50f, 0.14f),
-		FRecoilStep(0.46f, 0.12f)
+		FRecoilStep(0.48f,  0.00f),
+		FRecoilStep(0.55f,  0.10f),
+		FRecoilStep(0.52f,  0.22f),
+		FRecoilStep(0.46f,  0.30f),
+		FRecoilStep(0.40f,  0.16f),
+		FRecoilStep(0.38f, -0.08f),
+		FRecoilStep(0.36f, -0.26f),
+		FRecoilStep(0.34f, -0.34f),
+		FRecoilStep(0.32f, -0.12f),
+		FRecoilStep(0.30f,  0.14f),
+		FRecoilStep(0.28f,  0.22f),
+		FRecoilStep(0.26f,  0.06f)
 	};
 	RecoilPitchScale = 1.f;
 	RecoilYawScale = 1.f;
@@ -151,6 +156,64 @@ void AWeapon::AttachToOwingPawn()
 	Mesh3P->AttachToComponent(PawnMesh3P, SnapRules, AttachPoint);
 	Mesh3P->SetRelativeTransform(AuthoredMesh3PRelative);
 	Mesh3P->RefreshBoneTransforms();
+}
+
+void AWeapon::AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName)
+{
+	if (!IsValid(PawnMesh) || SocketName.IsNone())
+	{
+		return;
+	}
+
+	APawn* OwningPawn = GetInstigator();
+	if (!IsValid(OwningPawn) || !OwningPawn->Implements<UPlayerInterface>())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* WeaponMesh = nullptr;
+	if (PawnMesh == IPlayerInterface::Execute_GetMesh1P(OwningPawn))
+	{
+		WeaponMesh = Mesh1P;
+	}
+	else if (PawnMesh == IPlayerInterface::Execute_GetMesh3P(OwningPawn))
+	{
+		WeaponMesh = Mesh3P;
+	}
+	if (!IsValid(WeaponMesh))
+	{
+		return;
+	}
+
+	const bool bHasSocket = PawnMesh->DoesSocketExist(SocketName);
+	const bool bHasBone = PawnMesh->GetBoneIndex(SocketName) != INDEX_NONE;
+	if (!bHasSocket && !bHasBone)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Grip '%s' is missing on %s."), *SocketName.ToString(), *GetNameSafe(PawnMesh));
+		return;
+	}
+
+	// Keep the gun where it already is on this frame, then follow the new hand.
+	const FAttachmentTransformRules KeepWorld(EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, false);
+	WeaponMesh->AttachToComponent(PawnMesh, KeepWorld, SocketName);
+}
+
+void AWeapon::SetHiddenForHeal(bool bHideWeapon)
+{
+	if (bHideWeapon)
+	{
+		if (IsValid(Mesh1P))
+		{
+			Mesh1P->SetHiddenInGame(true, true);
+		}
+		if (IsValid(Mesh3P))
+		{
+			Mesh3P->SetHiddenInGame(true, true);
+		}
+		return;
+	}
+
+	SetMeshVisibility(GetInstigator());
 }
 
 void AWeapon::DetachFromPawn()

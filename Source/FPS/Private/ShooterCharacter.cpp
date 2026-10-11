@@ -524,7 +524,10 @@ bool AShooterCharacter::PlayHealMontage(USkeletalMeshComponent* HealMesh, bool b
 		return false;
 	}
 
-	if (bBindEnd)
+	HideEquippedWeaponForHeal();
+
+	// Remote viewers bind this too, so their gun comes back when the 3P montage ends.
+	if (bBindEnd || !IsLocallyControlled())
 	{
 		FOnMontageEnded EndDelegate;
 		EndDelegate.BindUObject(this, &AShooterCharacter::OnHealMontageEnded);
@@ -532,6 +535,29 @@ bool AShooterCharacter::PlayHealMontage(USkeletalMeshComponent* HealMesh, bool b
 	}
 
 	return true;
+}
+
+void AShooterCharacter::HideEquippedWeaponForHeal()
+{
+	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon))
+	{
+		return;
+	}
+
+	HealHiddenWeapon = Combat->CurrentWeapon;
+	HealHiddenWeapon->SetHiddenForHeal(true);
+}
+
+void AShooterCharacter::RestoreWeaponAfterHeal()
+{
+	AWeapon* HiddenWeapon = HealHiddenWeapon.Get();
+	HealHiddenWeapon = nullptr;
+	if (!IsValid(HiddenWeapon) || HiddenWeapon->IsHidden())
+	{
+		return;
+	}
+
+	HiddenWeapon->SetHiddenForHeal(false);
 }
 
 void AShooterCharacter::HealPlayer(float InHealAmout)
@@ -583,6 +609,7 @@ void AShooterCharacter::AbortLocalHeal()
 
 	bIsHealing = false;
 	PendingHealAmout = 0.f;
+	RestoreWeaponAfterHeal();
 	Server_FinishHeal(false);
 }
 
@@ -604,6 +631,7 @@ void AShooterCharacter::Notify_HealPlayer()
 
 void AShooterCharacter::OnHealMontageEnded(UAnimMontage* /*Montage*/, bool bInterrupted)
 {
+	RestoreWeaponAfterHeal();
 	if (!IsLocallyControlled())
 	{
 		bIsHealing = false;

@@ -141,6 +141,7 @@ private:
 	bool GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const;
 	bool PlayReloadMontage(bool bFirstPerson);
 	void OnReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	void OnObservedReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 	UFUNCTION(Server, Reliable)
 	void Server_ReloadWeapon();
