@@ -911,13 +911,13 @@ void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 	{
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+		if (bAiming == true) return;
 	}
 
 	const int32 WeaponIndex = Inventory.IndexOfByKey(Weapon);
 	if (!Inventory.IsValidIndex(WeaponIndex)) return;
 
 	LocalWeaponIndex = WeaponIndex;
-	bAiming = false;
 	Local_CycleWeapon(WeaponIndex, true);
 	Server_EquipSlot(Slot);
 }
