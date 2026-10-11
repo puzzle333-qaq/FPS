@@ -35,6 +35,22 @@ AWeapon::AWeapon()
 	AimSocketName = TEXT("AimSocket");
 	TraceRadius = 5.f;
 	FireTime = 0.1f;
+	RecoilPattern = {
+		FRecoilStep(0.35f, 0.00f),
+		FRecoilStep(0.50f, 0.04f),
+		FRecoilStep(0.62f, 0.10f),
+		FRecoilStep(0.70f, 0.16f),
+		FRecoilStep(0.64f, 0.20f),
+		FRecoilStep(0.56f, 0.18f),
+		FRecoilStep(0.50f, 0.14f),
+		FRecoilStep(0.46f, 0.12f)
+	};
+	RecoilPitchScale = 1.f;
+	RecoilYawScale = 1.f;
+	AimRecoilMultiplier = 0.65f;
+	RecoilRecoverySpeed = 18.f;
+	RecoilRecoveryDelay = 0.12f;
+	RecoilResetTime = 0.4f;
 	Damage = 15.f;
 	HeadshotMultiplier = 2.f;
 	LimbMultiplier = 0.75f;

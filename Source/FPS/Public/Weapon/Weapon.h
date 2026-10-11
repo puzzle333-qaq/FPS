@@ -12,6 +12,22 @@ class UMaterialInstanceDynamic;
 
 enum EPhysicalSurface : int;
 
+// One shot in a spray. Pitch is degrees up, yaw is degrees right. No randomness.
+USTRUCT(BlueprintType)
+struct FRecoilStep
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (DisplayName = "Pitch Up"))
+	float Pitch = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (DisplayName = "Yaw Right"))
+	float Yaw = 0.f;
+
+	FRecoilStep() = default;
+	FRecoilStep(float InPitch, float InYaw) : Pitch(InPitch), Yaw(InYaw) {}
+};
+
 UENUM(BlueprintType)
 enum class EFireType : uint8
 {
@@ -79,6 +95,30 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
 	float FireTime;
+
+	// Shot order. Past the last entry, the spray repeats that last step.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil")
+	TArray<FRecoilStep> RecoilPattern;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
+	float RecoilPitchScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
+	float RecoilYawScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
+	float AimRecoilMultiplier;
+
+	// Degrees per second given back after RecoilRecoveryDelay, once the trigger is up.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
+	float RecoilRecoverySpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
+	float RecoilRecoveryDelay;
+
+	// A new burst starts at the first step after the trigger has been up this long.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
+	float RecoilResetTime;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Trace")
 	float TraceRadius;

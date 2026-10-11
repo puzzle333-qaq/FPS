@@ -11,6 +11,73 @@
 #include "TimerManager.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ShooterType/ShooterType.h"
+#include "Interface/RecoilModifierInterface.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
+
+namespace
+{
+	void AppendAttachmentRecoil(UObject* Object, FRecoilScale& Scale)
+	{
+		if (!IsValid(Object) || !Object->GetClass()->ImplementsInterface(URecoilModifier::StaticClass()))
+		{
+			return;
+		}
+
+		const FRecoilScale Part = IRecoilModifier::Execute_GetAttachmentRecoilScale(Object);
+		Scale.Pitch *= FMath::Max(0.f, Part.Pitch);
+		Scale.Yaw *= FMath::Max(0.f, Part.Yaw);
+		Scale.Recovery *= FMath::Max(0.f, Part.Recovery);
+	}
+
+	void GatherAttachmentRecoil(const AActor* Actor, FRecoilScale& Scale)
+	{
+		if (!IsValid(Actor))
+		{
+			return;
+		}
+
+		AppendAttachmentRecoil(const_cast<AActor*>(Actor), Scale);
+		TInlineComponentArray<UActorComponent*> Components(Actor);
+		for (UActorComponent* Component : Components)
+		{
+			AppendAttachmentRecoil(Component, Scale);
+		}
+	}
+
+	// Positive pitch looks up. The applied amount is what actually fit inside the view limits.
+	void AddViewRecoil(APlayerController* PC, float PitchDegrees, float YawDegrees, float& OutAppliedPitch, float& OutAppliedYaw)
+	{
+		OutAppliedPitch = 0.f;
+		OutAppliedYaw = 0.f;
+		if (!IsValid(PC))
+		{
+			return;
+		}
+
+		const FRotator Control = PC->GetControlRotation();
+		const float OldPitch = FRotator::NormalizeAxis(Control.Pitch);
+		const float OldYaw = FRotator::NormalizeAxis(Control.Yaw);
+		float PitchMin = -89.f;
+		float PitchMax = 89.f;
+		if (const APlayerCameraManager* CameraManager = PC->PlayerCameraManager)
+		{
+			PitchMin = CameraManager->ViewPitchMin;
+			PitchMax = CameraManager->ViewPitchMax;
+		}
+		const float NewPitch = FMath::Clamp(OldPitch + PitchDegrees, PitchMin, PitchMax);
+		const float NewYaw = FRotator::NormalizeAxis(OldYaw + YawDegrees);
+
+		FRotator Updated = Control;
+		Updated.Pitch = NewPitch;
+		Updated.Yaw = NewYaw;
+		PC->SetControlRotation(Updated);
+
+		OutAppliedPitch = NewPitch - OldPitch;
+		OutAppliedYaw = FRotator::NormalizeAxis(NewYaw - OldYaw);
+	}
+}
 
 
 UCombatComponent::UCombatComponent()
@@ -55,6 +122,7 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 	}
 	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 	NotifyAmmoChanged();
+	ResetRecoilPattern();
 }
 
 void UCombatComponent::SpawnInventory()
@@ -151,6 +219,7 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 	CurrentWeapon->SetActorHiddenInGame(false);
 	CurrentWeapon->AttachToOwingPawn();
 	ApplyEquippedWeaponAnim(CurrentWeapon);
+	ResetRecoilPattern();
 	IPlayerInterface::Execute_WeaponReplicated(GetOwner());
 	InitializeWeaponWidget();
 }
@@ -161,7 +230,117 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	TickRecoil(DeltaTime);
+}
 
+void UCombatComponent::ResetRecoilPattern()
+{
+	RecoilShotIndex = 0;
+}
+
+FRecoilScale UCombatComponent::ResolveRecoilScale() const
+{
+	FRecoilScale Scale;
+	if (!IsValid(CurrentWeapon))
+	{
+		return Scale;
+	}
+
+	const float AimScale = bAiming ? CurrentWeapon->AimRecoilMultiplier : 1.f;
+	Scale.Pitch = FMath::Max(0.f, CurrentWeapon->RecoilPitchScale) * FMath::Max(0.f, AimScale);
+	Scale.Yaw = FMath::Max(0.f, CurrentWeapon->RecoilYawScale) * FMath::Max(0.f, AimScale);
+	Scale.Recovery = 1.f;
+	GatherAttachmentRecoil(CurrentWeapon, Scale);
+	GatherAttachmentRecoil(GetOwner(), Scale);
+	return Scale;
+}
+
+void UCombatComponent::ApplyFireRecoil()
+{
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwningPawn) || !OwningPawn->IsLocallyControlled() || !IsValid(CurrentWeapon))
+	{
+		return;
+	}
+	if (CurrentWeapon->WeaponKind == EWeaponKind::Melee || CurrentWeapon->RecoilPattern.Num() == 0)
+	{
+		return;
+	}
+
+	APlayerController* PC = Cast<APlayerController>(OwningPawn->GetController());
+	if (!IsValid(PC))
+	{
+		return;
+	}
+
+	const int32 StepIndex = FMath::Clamp(RecoilShotIndex, 0, CurrentWeapon->RecoilPattern.Num() - 1);
+	const FRecoilStep& Step = CurrentWeapon->RecoilPattern[StepIndex];
+	const FRecoilScale Scale = ResolveRecoilScale();
+
+	float AppliedPitch = 0.f;
+	float AppliedYaw = 0.f;
+	AddViewRecoil(PC, Step.Pitch * Scale.Pitch, Step.Yaw * Scale.Yaw, AppliedPitch, AppliedYaw);
+
+	UnrecoveredRecoil.X += AppliedYaw;
+	UnrecoveredRecoil.Y += AppliedPitch;
+	SecondsSinceRecoilShot = 0.f;
+	++RecoilShotIndex;
+}
+
+void UCombatComponent::TickRecoil(float DeltaTime)
+{
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwningPawn) || !OwningPawn->IsLocallyControlled())
+	{
+		return;
+	}
+	if (RecoilShotIndex == 0 && UnrecoveredRecoil.IsNearlyZero())
+	{
+		return;
+	}
+
+	SecondsSinceRecoilShot += DeltaTime;
+
+	const float ResetTime = IsValid(CurrentWeapon) ? CurrentWeapon->RecoilResetTime : 0.4f;
+	const float RecoveryDelay = IsValid(CurrentWeapon) ? CurrentWeapon->RecoilRecoveryDelay : 0.12f;
+	const float RecoverySpeed = IsValid(CurrentWeapon) ? CurrentWeapon->RecoilRecoverySpeed : 18.f;
+	const bool bSprayHeld = bTriggerPressed
+		&& IsValid(CurrentWeapon)
+		&& CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading
+		&& CurrentWeapon->WeaponStatus != EWeaponStatus::Cycling;
+
+	if (!bSprayHeld && SecondsSinceRecoilShot >= ResetTime)
+	{
+		RecoilShotIndex = 0;
+	}
+
+	if (bSprayHeld || SecondsSinceRecoilShot < RecoveryDelay || UnrecoveredRecoil.IsNearlyZero())
+	{
+		return;
+	}
+
+	const float Length = UnrecoveredRecoil.Size();
+	const float Speed = RecoverySpeed * ResolveRecoilScale().Recovery;
+	const float Step = FMath::Min(Length, FMath::Max(0.f, Speed) * DeltaTime);
+	if (Step <= KINDA_SMALL_NUMBER)
+	{
+		UnrecoveredRecoil = FVector2D::ZeroVector;
+		return;
+	}
+
+	const FVector2D GiveBack = UnrecoveredRecoil * (Step / Length);
+	APlayerController* PC = Cast<APlayerController>(OwningPawn->GetController());
+	float AppliedPitch = 0.f;
+	float AppliedYaw = 0.f;
+	AddViewRecoil(PC, -GiveBack.Y, -GiveBack.X, AppliedPitch, AppliedYaw);
+	if (FMath::IsNearlyZero(AppliedPitch) && FMath::IsNearlyZero(AppliedYaw))
+	{
+		UnrecoveredRecoil = FVector2D::ZeroVector;
+		return;
+	}
+
+	UnrecoveredRecoil.X += AppliedYaw;
+	UnrecoveredRecoil.Y += AppliedPitch;
 }
 
 void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -367,6 +546,7 @@ void UCombatComponent::Local_FireWeapon()
 
 	EPhysicalSurface ImpactSurfaceType = Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType1;
 	CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, true);
+	ApplyFireRecoil();
 	NotifyAmmoChanged();
 
 	GetWorld()->GetTimerManager().SetTimer(FireTimer, this, &ThisClass::FireTimerFinished, CurrentWeapon->FireTime);
@@ -500,6 +680,7 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	if (!GetReloadMontage(true, ReloadMontage, AnimInstance)) return;
 
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Reloading;
+	ResetRecoilPattern();
 	Server_ReloadWeapon();
 	if (!PlayReloadMontage(true))
 	{

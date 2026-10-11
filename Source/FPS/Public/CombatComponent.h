@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "Engine/Texture2D.h"
+#include "Interface/RecoilModifierInterface.h"
 #include "CombatComponent.generated.h"
 
 UENUM(BlueprintType)
@@ -128,6 +129,15 @@ private:
 	void Local_Aim(bool bPressed);
 
 	void Local_FireWeapon();
+	void ApplyFireRecoil();
+	void TickRecoil(float DeltaTime);
+	void ResetRecoilPattern();
+	FRecoilScale ResolveRecoilScale() const;
+
+	// X is yaw (right), Y is pitch (up) still waiting to be given back.
+	FVector2D UnrecoveredRecoil = FVector2D::ZeroVector;
+	int32 RecoilShotIndex = 0;
+	float SecondsSinceRecoilShot = 0.f;
 	bool GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const;
 	bool PlayReloadMontage(bool bFirstPerson);
 	void OnReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
