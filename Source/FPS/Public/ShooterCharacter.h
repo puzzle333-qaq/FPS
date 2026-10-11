@@ -17,6 +17,7 @@ class UCameraComponent;
 class USpringArmComponent;
 class UInputAction;
 class UTimelineComponent;
+class UAnimMontage;
 class AWeapon;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
@@ -68,6 +69,19 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void EquipPistolWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Heal")
+	void HealPlayer(float InHealAmout);
+
+	// Anim notify entry. The montage-end callback also commits once; the server applies the heal only once.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Heal")
+	void Notify_HealPlayer();
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Heal")
+	TObjectPtr<UAnimMontage> HealMontage;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Heal")
+	float HealAmout;
 
 	UPROPERTY(BlueprintAssignable)
 	FWeaponFirstReplicated OnWeaponFirstReplicated;
@@ -123,6 +137,19 @@ private:
 	void Input_EquipSeconedaryWeapon();
 	void Input_EquipMeleeWeapon();
 	void Input_EquipPistolWeapon();
+	void Input_Heal();
+	void Input_VersionWeapon();
+	bool PlayHealMontage(USkeletalMeshComponent* HealMesh, bool bBindEnd);
+	void OnHealMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	UFUNCTION(Server, Reliable)
+	void Server_BeginHeal(float InHealAmout);
+
+	UFUNCTION(Server, Reliable)
+	void Server_FinishHeal(bool bCompleted);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayHealMontage();
 	void ConfigureWeaponHitCollision();
 
 	void CalculateFABRIKSocket();
@@ -137,6 +164,16 @@ private:
 
 	float InterpAO_Yaw;
 	float AimAlignAlpha = 0.f;
+
+	bool bIsHealing = false;
+	bool bServerHealing = false;
+	float PendingHealAmout = 0.f;
+	float ServerHealAmout = 0.f;
+	FTimerHandle HealLocalTimer;
+	FTimerHandle HealServerTimer;
+
+	void AbortLocalHeal();
+	void AbortServerHeal();
 
 	// Mesh1P relative pose captured at BeginPlay. Used when the blueprint hip variables are absent.
 	FVector AuthoredHipMeshLocation = FVector::ZeroVector;
@@ -177,6 +214,12 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> EquipPistolWeaponAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction>HealAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction>VersionWeaponAction;
 
 
 };

@@ -131,6 +131,8 @@ private:
 	void SetMeshVisibility(APawn* OwningPawn) const;
 	void CaptureAuthoredMeshRelative();
 
+
+
 	FTransform AuthoredMesh1PRelative = FTransform::Identity;
 	FTransform AuthoredMesh3PRelative = FTransform::Identity;
 	bool bCapturedAuthoredRelative = false;

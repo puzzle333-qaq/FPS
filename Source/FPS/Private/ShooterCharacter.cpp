@@ -6,6 +6,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "WeaponData.h"
@@ -16,6 +17,7 @@
 #include "InputActionValue.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "TimerManager.h"
 #include "FPSTraceChannels.h"
 #include "UObject/UnrealType.h"
 
@@ -84,6 +86,8 @@ AShooterCharacter::AShooterCharacter()
 	bWeaponFirstReplicated = false;
 
 	ConfigureWeaponHitCollision();
+
+	HealAmout = 30.f;
 }
 
 void AShooterCharacter::BeginPlay()
@@ -340,6 +344,7 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	ShooterInputComponent->BindAction(EquipSeconedaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipSeconedaryWeapon);
 	ShooterInputComponent->BindAction(EquipMeleeWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipMeleeWeapon);
 	ShooterInputComponent->BindAction(EquipPistolWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipPistolWeapon);
+	ShooterInputComponent->BindAction(HealAction, ETriggerEvent::Started, this, &ThisClass::Input_Heal);
 
 }
 
@@ -500,6 +505,185 @@ void AShooterCharacter::EquipPistolWeapon()
 	if (IsValid(Combat)) Combat->Initiate_EquipPistolWeapon();
 }
 
+bool AShooterCharacter::PlayHealMontage(USkeletalMeshComponent* HealMesh, bool bBindEnd)
+{
+	if (!IsValid(HealMesh) || !IsValid(HealMontage))
+	{
+		return false;
+	}
+
+	UAnimInstance* AnimInstance = HealMesh->GetAnimInstance();
+	if (!IsValid(AnimInstance))
+	{
+		return false;
+	}
+
+	const float PlayedLength = AnimInstance->Montage_Play(HealMontage);
+	if (PlayedLength <= 0.f)
+	{
+		return false;
+	}
+
+	if (bBindEnd)
+	{
+		FOnMontageEnded EndDelegate;
+		EndDelegate.BindUObject(this, &AShooterCharacter::OnHealMontageEnded);
+		AnimInstance->Montage_SetEndDelegate(EndDelegate, HealMontage);
+	}
+
+	return true;
+}
+
+void AShooterCharacter::HealPlayer(float InHealAmout)
+{
+	if (!IsLocallyControlled() || bIsHealing || InHealAmout <= 0.f || !IsValid(Stats))
+	{
+		return;
+	}
+
+	if (Stats->DeathState != EDeathState::NotDead || Stats->Health >= Stats->MaxHealth)
+	{
+		return;
+	}
+
+	if (IsValid(Combat) && IsValid(Combat->CurrentWeapon))
+	{
+		const EWeaponStatus Status = Combat->CurrentWeapon->WeaponStatus;
+		if (Status == EWeaponStatus::Reloading || Status == EWeaponStatus::Cycling)
+		{
+			return;
+		}
+	}
+
+	PendingHealAmout = InHealAmout;
+
+	// The owner watches Mesh1P. Fall back to the body mesh when the arms instance cannot play it.
+	const bool bPlayed = PlayHealMontage(Mesh1P, true) || PlayHealMontage(GetMesh(), true);
+	if (!bPlayed)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s could not play HealMontage. Assign it on the character and use a slot the AnimBP evaluates."), *GetName());
+		return;
+	}
+
+	bIsHealing = true;
+	if (UWorld* World = GetWorld())
+	{
+		const float Timeout = HealMontage->GetPlayLength() + 2.f;
+		World->GetTimerManager().SetTimer(HealLocalTimer, FTimerDelegate::CreateUObject(this, &AShooterCharacter::AbortLocalHeal), Timeout, false);
+	}
+	Server_BeginHeal(PendingHealAmout);
+}
+
+void AShooterCharacter::AbortLocalHeal()
+{
+	if (!bIsHealing)
+	{
+		return;
+	}
+
+	bIsHealing = false;
+	PendingHealAmout = 0.f;
+	Server_FinishHeal(false);
+}
+
+void AShooterCharacter::Notify_HealPlayer()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	bIsHealing = false;
+	PendingHealAmout = 0.f;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HealLocalTimer);
+	}
+	Server_FinishHeal(true);
+}
+
+void AShooterCharacter::OnHealMontageEnded(UAnimMontage* /*Montage*/, bool bInterrupted)
+{
+	if (!IsLocallyControlled())
+	{
+		bIsHealing = false;
+		return;
+	}
+
+	if (bInterrupted)
+	{
+		bIsHealing = false;
+		PendingHealAmout = 0.f;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(HealLocalTimer);
+		}
+		Server_FinishHeal(false);
+		return;
+	}
+
+	Notify_HealPlayer();
+}
+
+void AShooterCharacter::Server_BeginHeal_Implementation(float InHealAmout)
+{
+	if (bServerHealing || InHealAmout <= 0.f || HealAmout <= 0.f || !IsValid(Stats))
+	{
+		return;
+	}
+
+	if (Stats->DeathState != EDeathState::NotDead || Stats->Health >= Stats->MaxHealth)
+	{
+		return;
+	}
+
+	bServerHealing = true;
+	ServerHealAmout = FMath::Min(InHealAmout, HealAmout);
+	if (UWorld* World = GetWorld())
+	{
+		const float Timeout = (IsValid(HealMontage) ? HealMontage->GetPlayLength() : 0.f) + 2.f;
+		World->GetTimerManager().SetTimer(HealServerTimer, FTimerDelegate::CreateUObject(this, &AShooterCharacter::AbortServerHeal), Timeout, false);
+	}
+	Multicast_PlayHealMontage();
+}
+
+void AShooterCharacter::AbortServerHeal()
+{
+	bServerHealing = false;
+	ServerHealAmout = 0.f;
+}
+
+void AShooterCharacter::Server_FinishHeal_Implementation(bool bCompleted)
+{
+	if (!bServerHealing)
+	{
+		return;
+	}
+
+	bServerHealing = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HealServerTimer);
+	}
+	if (!bCompleted || !IsValid(Stats))
+	{
+		return;
+	}
+
+	Stats->ChangeHealthByAmout(ServerHealAmout, this);
+	ServerHealAmout = 0.f;
+}
+
+void AShooterCharacter::Multicast_PlayHealMontage_Implementation()
+{
+	if (IsLocallyControlled() || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	PlayHealMontage(GetMesh(), false);
+}
+
 void AShooterCharacter::Input_EquipMainWeapon()
 {
 	EquipMainWeapon();
@@ -518,6 +702,16 @@ void AShooterCharacter::Input_EquipMeleeWeapon()
 void AShooterCharacter::Input_EquipPistolWeapon()
 {
 	EquipPistolWeapon();
+}
+
+void AShooterCharacter::Input_Heal()
+{
+	HealPlayer(HealAmout);
+}
+
+void AShooterCharacter::Input_VersionWeapon()
+{
+
 }
 
 
