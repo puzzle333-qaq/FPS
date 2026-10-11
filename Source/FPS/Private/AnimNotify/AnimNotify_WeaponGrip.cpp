@@ -25,13 +25,6 @@ void UAnimNotify_WeaponGrip::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
 		return;
 	}
 
-	// Hand swaps are authored for the first-person arms. Applying them to the
-	// body reparents the third-person gun and the FABRIK target drifts until reload.
-	if (MeshComp != IPlayerInterface::Execute_GetMesh1P(Owner))
-	{
-		return;
-	}
-
 	Weapon->AttachToPawnSocket(MeshComp, GripSocket);
 }
 

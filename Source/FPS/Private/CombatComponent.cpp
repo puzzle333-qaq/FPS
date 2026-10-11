@@ -662,9 +662,6 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 		if (IsValid(Montage3P) && IsValid(AnimInstance3P))
 		{
 			AnimInstance3P->Montage_Play(Montage3P);
-			FOnMontageEnded EndDelegate;
-			EndDelegate.BindUObject(this, &UCombatComponent::OnObservedReloadMontageEnded);
-			AnimInstance3P->Montage_SetEndDelegate(EndDelegate, Montage3P);
 		}
 	}
 }
