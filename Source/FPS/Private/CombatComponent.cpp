@@ -917,6 +917,7 @@ void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 	if (!Inventory.IsValidIndex(WeaponIndex)) return;
 
 	LocalWeaponIndex = WeaponIndex;
+	bAiming = false;
 	Local_CycleWeapon(WeaponIndex, true);
 	Server_EquipSlot(Slot);
 }
