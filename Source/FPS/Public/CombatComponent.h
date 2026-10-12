@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -26,6 +26,9 @@ class AWeapon;
 DECLARE_MULTICAST_DELEGATE_OneParam(FAimStateChanged, bool /*bIsAiming*/);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FReticleChanged, UMaterialInstanceDynamic*, ReticleMaterialInst);
+
+// 当前武器换了（服务器 Equip 或客户端 OnRep 时广播），配件菜单用它刷新
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCurrentWeaponChanged, AWeapon*, NewWeapon);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCurrentReserveAmmoChanged, int32, RoundsInServe, int32, RoundsInWeapon, UTexture2D*, WeaponIcon);
 
@@ -67,7 +70,7 @@ public:
 	void Initiate_EquipAttachment(UAttachmentData* Attachment);
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
-	void Initiate_RemoveAttachment(EAttachmentSlot Slot);
+	void Initiate_RemoveAttachment(FGameplayTag SlotTag);
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
 	void Initiate_ToggleFlashlight();
@@ -113,6 +116,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable)
 	FCurrentReserveAmmoChanged OnCurrentReserveAmmoChanged;
+
+	UPROPERTY(BlueprintAssignable)
+	FCurrentWeaponChanged OnCurrentWeaponChanged;
 
 	void InitializeWeaponWidget();
 	void NotifyAmmoChanged();
@@ -214,7 +220,7 @@ private:
 	void Server_EquipAttachment(UAttachmentData* Attachment);
 
 	UFUNCTION(Server, Reliable)
-	void Server_RemoveAttachment(EAttachmentSlot Slot);
+	void Server_RemoveAttachment(FGameplayTag SlotTag);
 
 	UFUNCTION(Server, Reliable)
 	void Server_ToggleFlashlight();

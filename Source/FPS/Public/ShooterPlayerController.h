@@ -7,6 +7,7 @@
 
 class UInputMappingContext;
 class UInputAction;
+class UAttachmentMenu;
 struct FInputActionValue;
 /**
  * 
@@ -55,6 +56,20 @@ private:
 	TObjectPtr<UInputAction> FlashlightAction;
 
 	void Input_ToggleFlashlight();
+
+	// 配件菜单开关（例如 B 键）
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> ToggleAttachmentMenuAction;
+
+	// 填 WBP_AttachmentMenu
+	UPROPERTY(EditAnywhere, Category = "FPS|UI")
+	TSubclassOf<UAttachmentMenu> AttachmentMenuClass;
+
+	// 只创建一次，之后反复加到屏幕/移除
+	UPROPERTY(Transient)
+	TObjectPtr<UAttachmentMenu> AttachmentMenu;
+
+	void Input_ToggleAttachmentMenu();
 
 	void Input_Crouch();
 	void Input_Jump();

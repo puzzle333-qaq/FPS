@@ -30,6 +30,34 @@ struct FAttachmentVisual
 	TObjectPtr<UStaticMeshComponent> Mesh3P;
 };
 
+// 枪上的一个配件槽位（在枪蓝图的 Class Defaults -> FPS|Attachment -> AttachmentSlots 里配置）
+// 每一行 = “这把枪有一个什么槽、挂在哪个 Socket、只允许装哪些配件、默认装哪个”
+USTRUCT(BlueprintType)
+struct FWeaponAttachmentSlot
+{
+	GENERATED_BODY()
+
+	// 槽位类型，例如 Attachment.Slot.Barrel
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment", meta = (Categories = "Attachment.Slot"))
+	FGameplayTag SlotTag;
+
+	// 配件模型挂在枪骨骼网格体的哪个 Socket（1P 和 3P 网格体都要有同名 Socket）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
+	FName SocketName;
+
+	// 白名单：这个槽只能装这里列出的配件（配件自己的 SlotTag 也必须和本槽一致）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
+	TArray<TObjectPtr<UAttachmentData>> AllowedAttachments;
+
+	// 枪生成时默认装的配件（可以空着；必须在白名单里，否则会被拒绝）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
+	TObjectPtr<UAttachmentData> DefaultAttachment;
+
+	// 勾上后这个槽不能被卸空（比如弹匣），只能换成别的
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
+	bool bRequired = false;
+};
+
 // 配件变化时广播，UI 可以绑它刷新
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAttachmentsChanged, AWeapon*, Weapon);
 
@@ -90,20 +118,36 @@ public:
 
 	// ================= 配件系统 =================
 
-	// 只在服务器调用：装上配件（同槽位的旧配件会被替换）
+	// 只在服务器调用：装上配件（同槽位的旧配件会被替换）。不在白名单里会返回 false
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
 	bool EquipAttachment(UAttachmentData* Attachment);
 
-	// 只在服务器调用：卸下某个槽位的配件
+	// 只在服务器调用：卸下某个槽位的配件（bRequired 的槽不能卸）
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
-	bool RemoveAttachment(EAttachmentSlot Slot);
+	bool RemoveAttachment(FGameplayTag SlotTag);
+
+	// ---------- 给 UI 用的查询 ----------
+	// 这把枪有哪些槽位
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	TArray<FWeaponAttachmentSlot> GetAttachmentSlots() const { return AttachmentSlots; }
+
+	// 某个槽位可以装哪些配件（没有这个槽就返回空数组）
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	TArray<UAttachmentData*> GetAllowedAttachmentsForSlot(FGameplayTag SlotTag) const;
+
+	// 这个配件能不能装到这把枪上（有对应槽位 且 在白名单里）
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	bool CanEquipAttachment(const UAttachmentData* Attachment) const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	bool HasAttachmentSlot(FGameplayTag SlotTag) const { return FindSlot(SlotTag) != nullptr; }
 
 	// 只在服务器调用：开/关手电（没有手电配件时无效）
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
 	void ToggleFlashlight();
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
-	UAttachmentData* GetAttachmentInSlot(EAttachmentSlot Slot) const;
+	UAttachmentData* GetAttachmentInSlot(FGameplayTag SlotTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	TArray<UAttachmentData*> GetEquippedAttachments() const { return ObjectPtrDecay(EquippedAttachments); }
@@ -128,9 +172,12 @@ public:
 	// IRecoilModifier
 	virtual FRecoilScale GetAttachmentRecoilScale_Implementation() const override;
 
-	// 枪生成时（服务器）自动装上的配件
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Attachment")
-	TArray<TObjectPtr<UAttachmentData>> DefaultAttachments;
+	// 这把枪的配件槽位表：有哪些槽、挂哪个 Socket、能装什么、默认装什么
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment", meta = (TitleProperty = "SlotTag"))
+	TArray<FWeaponAttachmentSlot> AttachmentSlots;
+
+	// 按槽位类型找到槽位配置，找不到返回 nullptr
+	const FWeaponAttachmentSlot* FindSlot(const FGameplayTag& SlotTag) const;
 
 	USkeletalMeshComponent* GetMesh1P() const;
 	USkeletalMeshComponent* GetMesh3P() const;
@@ -261,7 +308,7 @@ private:
 	void UpdateFlashlightAttachment();
 	void ApplyFlashlightState();
 	UStaticMeshComponent* SpawnAttachmentMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson);
-	const FAttachmentVisual* FindVisual(EAttachmentSlot Slot) const;
+	const FAttachmentVisual* FindVisual(const FGameplayTag& SlotTag) const;
 
 	UPROPERTY(Transient)
 	TArray<FAttachmentVisual> AttachmentVisuals;

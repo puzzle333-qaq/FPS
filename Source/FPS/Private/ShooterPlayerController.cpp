@@ -1,4 +1,4 @@
-#include "ShooterPlayerController.h"
+﻿#include "ShooterPlayerController.h"
 #include "ShooterCharacter.h"
 
 #include "EnhancedInputSubsystems.h"
@@ -9,6 +9,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/LocalPlayer.h"
+#include "Ui/AttachmentMenu.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -61,6 +62,10 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		ShooterInputComponent->BindAction(FlashlightAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFlashlight);
 	}
+	if (ToggleAttachmentMenuAction)
+	{
+		ShooterInputComponent->BindAction(ToggleAttachmentMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleAttachmentMenu);
+	}
 }
 
 void AShooterPlayerController::Input_ToggleFlashlight()
@@ -69,6 +74,36 @@ void AShooterPlayerController::Input_ToggleFlashlight()
 	if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
 	{
 		Combat->Initiate_ToggleFlashlight();
+	}
+}
+
+void AShooterPlayerController::Input_ToggleAttachmentMenu()
+{
+	// UI 只存在于本地玩家
+	if (!IsLocalController() || !AttachmentMenuClass) return;
+
+	if (!IsValid(AttachmentMenu))
+	{
+		AttachmentMenu = CreateWidget<UAttachmentMenu>(this, AttachmentMenuClass);
+		if (!IsValid(AttachmentMenu)) return;
+	}
+
+	if (AttachmentMenu->IsInViewport())
+	{
+		// 关闭：回到纯游戏输入，隐藏鼠标
+		AttachmentMenu->RemoveFromParent();
+		SetInputMode(FInputModeGameOnly());
+		SetShowMouseCursor(false);
+	}
+	else
+	{
+		// 打开：游戏+UI 输入（还能按键关菜单），显示鼠标
+		AttachmentMenu->AddToViewport(10);
+		FInputModeGameAndUI Mode;
+		Mode.SetHideCursorDuringCapture(false);
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(Mode);
+		SetShowMouseCursor(true);
 	}
 }
 

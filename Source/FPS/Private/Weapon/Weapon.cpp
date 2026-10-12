@@ -14,6 +14,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Engine/StaticMesh.h"
+#include "ShooterGamePlayTags.h"
 
 AWeapon::AWeapon()
 {
@@ -107,7 +108,7 @@ bool AWeapon::HasAimSocket() const
 bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 {
 	// 装了瞄具且瞄具模型上有 SightSocket：开镜对准红点中心
-	if (const FAttachmentVisual* Optic = FindVisual(EAttachmentSlot::Optic))
+	if (const FAttachmentVisual* Optic = FindVisual(ShooterTags::Tag_Attachment_Slot_Optic))
 	{
 		if (IsValid(Optic->Mesh1P) && !Optic->Data->SightSocketName.IsNone() && Optic->Mesh1P->DoesSocketExist(Optic->Data->SightSocketName))
 		{
@@ -344,9 +345,13 @@ void AWeapon::BeginPlay()
 	// 默认配件只由服务器装，客户端通过同步拿到
 	if (HasAuthority())
 	{
-		for (UAttachmentData* Attachment : DefaultAttachments)
+		// 每个槽位装上自己的默认配件
+		for (const FWeaponAttachmentSlot& Slot : AttachmentSlots)
 		{
-			EquipAttachment(Attachment);
+			if (IsValid(Slot.DefaultAttachment))
+			{
+				EquipAttachment(Slot.DefaultAttachment);
+			}
 		}
 	}
 	else if (EquippedAttachments.Num() > 0)
@@ -368,10 +373,19 @@ bool AWeapon::EquipAttachment(UAttachmentData* Attachment)
 {
 	if (!HasAuthority() || !IsValid(Attachment)) return false;
 
-	// 同一个槽位只能有一个：先把旧的去掉
-	EquippedAttachments.RemoveAll([Attachment](const UAttachmentData* Existing)
+	// 服务器校验：枪上有这个槽 且 配件在白名单里。客户端发来的请求不可信，必须在这里检查
+	if (!CanEquipAttachment(Attachment))
 	{
-		return !IsValid(Existing) || Existing->Slot == Attachment->Slot;
+		UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s rejected %s: no slot '%s' or not in AllowedAttachments."),
+			*GetName(), *GetNameSafe(Attachment), *Attachment->SlotTag.ToString());
+		return false;
+	}
+
+	// 同一个槽位只能有一个：先把旧的去掉
+	const FGameplayTag NewSlot = Attachment->SlotTag;
+	EquippedAttachments.RemoveAll([NewSlot](const UAttachmentData* Existing)
+	{
+		return !IsValid(Existing) || Existing->SlotTag == NewSlot;
 	});
 	EquippedAttachments.Add(Attachment);
 
@@ -386,13 +400,20 @@ bool AWeapon::EquipAttachment(UAttachmentData* Attachment)
 	return true;
 }
 
-bool AWeapon::RemoveAttachment(EAttachmentSlot Slot)
+bool AWeapon::RemoveAttachment(FGameplayTag SlotTag)
 {
 	if (!HasAuthority()) return false;
 
-	const int32 Removed = EquippedAttachments.RemoveAll([Slot](const UAttachmentData* Existing)
+	const FWeaponAttachmentSlot* Slot = FindSlot(SlotTag);
+	if (Slot && Slot->bRequired)
 	{
-		return !IsValid(Existing) || Existing->Slot == Slot;
+		UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s: slot '%s' is required and cannot be emptied."), *GetName(), *SlotTag.ToString());
+		return false;
+	}
+
+	const int32 Removed = EquippedAttachments.RemoveAll([SlotTag](const UAttachmentData* Existing)
+	{
+		return !IsValid(Existing) || Existing->SlotTag == SlotTag;
 	});
 	if (Removed == 0) return false;
 
@@ -415,11 +436,48 @@ void AWeapon::ToggleFlashlight()
 	ForceNetUpdate();
 }
 
-UAttachmentData* AWeapon::GetAttachmentInSlot(EAttachmentSlot Slot) const
+const FWeaponAttachmentSlot* AWeapon::FindSlot(const FGameplayTag& SlotTag) const
+{
+	if (!SlotTag.IsValid()) return nullptr;
+	// MatchesTagExact：必须完全相同，Attachment.Slot.Barrel 不会匹配父标签 Attachment.Slot
+	return AttachmentSlots.FindByPredicate([&SlotTag](const FWeaponAttachmentSlot& Slot)
+	{
+		return Slot.SlotTag.MatchesTagExact(SlotTag);
+	});
+}
+
+TArray<UAttachmentData*> AWeapon::GetAllowedAttachmentsForSlot(FGameplayTag SlotTag) const
+{
+	TArray<UAttachmentData*> Result;
+	if (const FWeaponAttachmentSlot* Slot = FindSlot(SlotTag))
+	{
+		for (UAttachmentData* Attachment : Slot->AllowedAttachments)
+		{
+			if (IsValid(Attachment))
+			{
+				Result.Add(Attachment);
+			}
+		}
+	}
+	return Result;
+}
+
+bool AWeapon::CanEquipAttachment(const UAttachmentData* Attachment) const
+{
+	if (!IsValid(Attachment)) return false;
+
+	const FWeaponAttachmentSlot* Slot = FindSlot(Attachment->SlotTag);
+	if (!Slot) return false;   // 这把枪没有这种槽位
+
+	// 白名单里有它才行
+	return Slot->AllowedAttachments.Contains(Attachment);
+}
+
+UAttachmentData* AWeapon::GetAttachmentInSlot(FGameplayTag SlotTag) const
 {
 	for (UAttachmentData* Attachment : EquippedAttachments)
 	{
-		if (IsValid(Attachment) && Attachment->Slot == Slot)
+		if (IsValid(Attachment) && Attachment->SlotTag == SlotTag)
 		{
 			return Attachment;
 		}
@@ -442,7 +500,7 @@ float AWeapon::GetRecoilMultiplier() const
 
 float AWeapon::GetEffectiveAimFOV() const
 {
-	const UAttachmentData* Optic = GetAttachmentInSlot(EAttachmentSlot::Optic);
+	const UAttachmentData* Optic = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Optic);
 	if (IsValid(Optic) && Optic->bOverridesAimFOV)
 	{
 		return Optic->AimFOV;
@@ -490,11 +548,11 @@ void AWeapon::OnRep_FlashlightOn()
 	ApplyFlashlightState();
 }
 
-const FAttachmentVisual* AWeapon::FindVisual(EAttachmentSlot Slot) const
+const FAttachmentVisual* AWeapon::FindVisual(const FGameplayTag& SlotTag) const
 {
-	return AttachmentVisuals.FindByPredicate([Slot](const FAttachmentVisual& Visual)
+	return AttachmentVisuals.FindByPredicate([&SlotTag](const FAttachmentVisual& Visual)
 	{
-		return IsValid(Visual.Data) && Visual.Data->Slot == Slot;
+		return IsValid(Visual.Data) && Visual.Data->SlotTag == SlotTag;
 	});
 }
 
@@ -502,9 +560,12 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 {
 	if (!IsValid(Parent) || !IsValid(Data) || !IsValid(Data->Mesh)) return nullptr;
 
-	if (!Data->AttachSocketName.IsNone() && !Parent->DoesSocketExist(Data->AttachSocketName))
+	// Socket 来自枪的槽位表，而不是配件本身
+	const FWeaponAttachmentSlot* Slot = FindSlot(Data->SlotTag);
+	const FName SocketName = Slot ? Slot->SocketName : NAME_None;
+	if (!SocketName.IsNone() && !Parent->DoesSocketExist(SocketName))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Attachment %s: socket '%s' is missing on %s."), *GetNameSafe(Data), *Data->AttachSocketName.ToString(), *GetNameSafe(Parent->GetSkeletalMeshAsset()));
+		UE_LOG(LogTemp, Warning, TEXT("Attachment %s: socket '%s' is missing on %s."), *GetNameSafe(Data), *SocketName.ToString(), *GetNameSafe(Parent->GetSkeletalMeshAsset()));
 	}
 
 	// 运行时创建组件：NewObject + 挂到 Socket + RegisterComponent
@@ -513,7 +574,7 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Comp->bReceivesDecals = false;
 	Comp->CastShadow = !bFirstPerson;   // 和枪一样：1P 不投影，3P 投影
-	Comp->SetupAttachment(Parent, Data->AttachSocketName);
+	Comp->SetupAttachment(Parent, SocketName);
 	Comp->SetRelativeTransform(Data->MeshOffset);
 	Comp->RegisterComponent();
 	return Comp;

@@ -2,20 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "GameplayTagContainer.h"
 #include "AttachmentData.generated.h"
 
 class UStaticMesh;
 class UTexture2D;
-
-// 配件槽位：每把枪每个槽位最多装一个配件
-UENUM(BlueprintType)
-enum class EAttachmentSlot : uint8
-{
-	Muzzle UMETA(DisplayName = "Muzzle"),     // 枪口（消音器、制退器）
-	Optic UMETA(DisplayName = "Optic"),       // 瞄具（红点、倍镜）
-	Grip UMETA(DisplayName = "Grip"),         // 握把
-	Tactical UMETA(DisplayName = "Tactical")  // 战术（手电筒）
-};
 
 // 一个配件 = 一份数据资产（在内容浏览器里右键 -> Miscellaneous -> Data Asset -> AttachmentData）
 UCLASS(BlueprintType)
@@ -25,8 +16,10 @@ class FPS_API UAttachmentData : public UPrimaryDataAsset
 
 public:
 	// ---------- 基本信息 ----------
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
-	EAttachmentSlot Slot = EAttachmentSlot::Muzzle;
+	// 这个配件属于哪种槽位（枪管/后托/握把...）。槽位类型是 GameplayTag，
+	// 想加新类型不用改 C++：Project Settings -> GameplayTags 里加一个 Attachment.Slot.xxx 就行
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment", meta = (Categories = "Attachment.Slot"))
+	FGameplayTag SlotTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
 	FText DisplayName;
@@ -39,9 +32,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
 	TObjectPtr<UStaticMesh> Mesh;
 
-	// 挂到枪的骨骼网格体上哪个 Socket（要在枪的 Skeletal Mesh 里先建好）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
-	FName AttachSocketName = TEXT("Socket_Muzzle");
+	// 注意：挂在枪的哪个 Socket 不在这里配，而是由“枪的槽位表”决定（FWeaponAttachmentSlot::SocketName）
+	// 这样同一个红点装在不同枪上，可以挂到各自不同的位置
 
 	// 相对 Socket 的微调（位置/旋转/缩放）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")

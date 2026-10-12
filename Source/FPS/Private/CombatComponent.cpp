@@ -1,4 +1,4 @@
-#include "CombatComponent.h"
+﻿#include "CombatComponent.h"
 #include "ShooterCharacter.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/Weapon.h"
@@ -124,6 +124,7 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 	NotifyAmmoChanged();
 	ResetRecoilPattern();
+	OnCurrentWeaponChanged.Broadcast(CurrentWeapon); // 通知 UI：换枪了
 }
 
 void UCombatComponent::SpawnInventory()
@@ -223,6 +224,7 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 	ResetRecoilPattern();
 	IPlayerInterface::Execute_WeaponReplicated(GetOwner());
 	InitializeWeaponWidget();
+	OnCurrentWeaponChanged.Broadcast(CurrentWeapon); // 客户端也通知 UI
 }
 
 
@@ -1079,15 +1081,15 @@ void UCombatComponent::Initiate_EquipAttachment(UAttachmentData* Attachment)
 	}
 }
 
-void UCombatComponent::Initiate_RemoveAttachment(EAttachmentSlot Slot)
+void UCombatComponent::Initiate_RemoveAttachment(FGameplayTag SlotTag)
 {
 	if (GetOwner()->HasAuthority())
 	{
-		Server_RemoveAttachment_Implementation(Slot);
+		Server_RemoveAttachment_Implementation(SlotTag);
 	}
 	else
 	{
-		Server_RemoveAttachment(Slot);
+		Server_RemoveAttachment(SlotTag);
 	}
 }
 
@@ -1111,11 +1113,11 @@ void UCombatComponent::Server_EquipAttachment_Implementation(UAttachmentData* At
 	}
 }
 
-void UCombatComponent::Server_RemoveAttachment_Implementation(EAttachmentSlot Slot)
+void UCombatComponent::Server_RemoveAttachment_Implementation(FGameplayTag SlotTag)
 {
 	if (IsValid(CurrentWeapon))
 	{
-		CurrentWeapon->RemoveAttachment(Slot);
+		CurrentWeapon->RemoveAttachment(SlotTag);
 	}
 }
 
