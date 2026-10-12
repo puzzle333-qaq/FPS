@@ -1,4 +1,4 @@
-#include "Ui/LoadoutPreviewRig.h"
+﻿#include "Ui/LoadoutPreviewRig.h"
 
 #include "Weapon/Weapon.h"
 #include "Weapon/AttachmentData.h"
@@ -118,6 +118,7 @@ void ALoadoutPreviewRig::SpawnPreview(AWeapon* Weapon, int32 Index)
 	const float Height = (1 - Index) * 90.f;
 	Mesh->SetupAttachment(GetRootComponent());
 	Mesh->SetRelativeLocation(FVector(0.f, -28.f, Height));
+	Mesh->SetRelativeRotation(FRotator(0.f, 90.f, 0.f)); // 模型朝向不对，Yaw 转 90 度
 	Mesh->RegisterComponent();
 	PreviewComponents.Add(Mesh);
 
