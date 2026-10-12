@@ -1,4 +1,4 @@
-
+﻿
 
 
 #include "Weapon/Weapon.h"
@@ -646,6 +646,17 @@ float AWeapon::GetEffectiveAimFOV() const
 		return Optic->AimFOV;
 	}
 	return AimFeildOfView;
+}
+
+UAttachmentData* AWeapon::GetOpticAttachment() const
+{
+	return GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Optic);
+}
+
+UStaticMeshComponent* AWeapon::GetOpticMesh1P() const
+{
+	const FAttachmentVisual* Optic = FindVisual(ShooterTags::Tag_Attachment_Slot_Optic);
+	return Optic ? Optic->Mesh1P.Get() : nullptr;
 }
 
 bool AWeapon::HasFlashlight() const

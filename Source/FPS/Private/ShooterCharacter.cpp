@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
@@ -12,6 +12,7 @@
 #include "WeaponData.h"
 #include "Weapon/Weapon.h"
 #include "Weapon/SniperScopeComponent.h"
+#include "Weapon/OpticScopeComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
@@ -21,6 +22,7 @@
 #include "FPSTraceChannels.h"
 #include "UObject/UnrealType.h"
 #include "ShooterPlayerController.h"
+#include "ShooterGamePlayTags.h"
 
 namespace
 {
@@ -98,6 +100,12 @@ void AShooterCharacter::BeginPlay()
 		USniperScopeComponent* Scope = NewObject<USniperScopeComponent>(this, TEXT("SniperScope"));
 		Scope->RegisterComponent();
 	}
+	// 倍镜画中画（配件瞄具 OpticType = Magnified 时用）
+	if (GetNetMode() != NM_DedicatedServer && !FindComponentByClass<UOpticScopeComponent>())
+	{
+		UOpticScopeComponent* OpticScope = NewObject<UOpticScopeComponent>(this, TEXT("OpticScope"));
+		OpticScope->RegisterComponent();
+	}
 
 	Super::BeginPlay();
 
@@ -165,6 +173,10 @@ void AShooterCharacter::Tick(float DeltaTime)
 	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
 	{
 		Scope->UpdateView();
+	}
+	if (UOpticScopeComponent* OpticScope = FindComponentByClass<UOpticScopeComponent>())
+	{
+		OpticScope->UpdateView();
 	}
 }
 
@@ -274,7 +286,12 @@ void AShooterCharacter::CalculateFABRIKSocket()
 		FABRIK_SocketTransform = FTransform::Identity;
 	}
 
-	if (Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld))
+	// 狙击枪第一人称扶手跟动画走。步枪和手枪仍用 FABRIK。
+	if (Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper))
+	{
+		FABRIK_SocketTransform1P = FTransform::Identity;
+	}
+	else if (Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld))
 	{
 		WriteHandSpace(Mesh1P, SocketWorld, FABRIK_SocketTransform1P);
 		FABRIK_Alpha1P = 1.f;

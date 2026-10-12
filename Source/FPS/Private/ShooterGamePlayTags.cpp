@@ -9,6 +9,7 @@ namespace ShooterTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Melee, "Weapon.type.melee", "Knife weapon type");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Barrel, "Attachment.Slot.Barrel", "Attachment slot: Barrel");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Handguard, "Attachment.Slot.Handguard", "Attachment slot: Handguard");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Muzzle, "Attachment.Slot.Muzzle", "Attachment slot: Muzzle");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Optic, "Attachment.Slot.Optic", "Attachment slot: Optic");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Grip, "Attachment.Slot.Grip", "Attachment slot: Grip");

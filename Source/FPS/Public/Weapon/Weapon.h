@@ -1,4 +1,4 @@
-
+﻿
 
 #pragma once
 
@@ -163,6 +163,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool HasFlashlight() const;
+
+	// 当前装在瞄具槽上的配件数据（没装返回 nullptr）
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	UAttachmentData* GetOpticAttachment() const;
+
+	// 瞄具在第一人称枪上生成的模型（倍镜画中画要把 SceneCapture 挂到它的 LensSocket 上）
+	UStaticMeshComponent* GetOpticMesh1P() const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool IsFlashlightOn() const { return bFlashlightOn; }

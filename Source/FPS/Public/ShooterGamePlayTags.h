@@ -13,6 +13,7 @@ namespace ShooterTags
 
 	// ---- 配件槽位类型（原生标签）。更多类型可在 Project Settings -> GameplayTags 里加 Attachment.Slot.xxx ----
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Barrel);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Handguard);   // 护木
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Muzzle);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Optic);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Grip);
