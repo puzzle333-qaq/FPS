@@ -167,7 +167,7 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateLocomotionGait(true);
 
 	CalculateTurnInPlaceParameters(DeltaTime);
-	CalculateFABRIKSocket();
+	CalculateFABRIKSocket(DeltaTime);
 	UpdateAimSocketAlignment(DeltaTime);
 
 	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
@@ -244,7 +244,7 @@ void AShooterCharacter::TurnInPlace(float DeltaTime)
 }
 
 
-void AShooterCharacter::CalculateFABRIKSocket()
+void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 {
 	auto WriteHandSpace = [](USkeletalMeshComponent* PoseMesh, const FTransform& World, FTransform& Out)
 	{
@@ -267,9 +267,9 @@ void AShooterCharacter::CalculateFABRIKSocket()
 		Out.SetScale3D(FVector::OneVector);
 	};
 
-	FABRIK_Alpha1P = 0.f;
 	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon))
 	{
+		FABRIK_Alpha1P = 0.f;
 		FABRIK_SocketTransform = FTransform::Identity;
 		FABRIK_SocketTransform1P = FTransform::Identity;
 		return;
@@ -290,15 +290,34 @@ void AShooterCharacter::CalculateFABRIKSocket()
 	if (Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper))
 	{
 		FABRIK_SocketTransform1P = FTransform::Identity;
+		FABRIK_Alpha1P = 0.f;
 	}
 	else if (Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld))
 	{
 		WriteHandSpace(Mesh1P, SocketWorld, FABRIK_SocketTransform1P);
-		FABRIK_Alpha1P = 1.f;
+
+		// 目标强度 = 1 × (1 - 曲线值)。换弹/拉栓时直接把目标压到 0
+		float TargetAlpha = 1.f;
+		const UAnimInstance* ArmAnim = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+		if (IsValid(ArmAnim) && !DisableLeftHandIKCurveName.IsNone())
+		{
+			TargetAlpha *= 1.f - FMath::Clamp(ArmAnim->GetCurveValue(DisableLeftHandIKCurveName), 0.f, 1.f);
+		}
+		const EWeaponStatus Status = Combat->CurrentWeapon->WeaponStatus;
+		if (bDisableLeftHandIKDuringReload && (Status == EWeaponStatus::Reloading || Status == EWeaponStatus::BoltCycling))
+		{
+			TargetAlpha = 0.f;
+		}
+
+		// 平滑过渡，避免左手瞬移
+		FABRIK_Alpha1P = LeftHandIKBlendSpeed > 0.f
+			? FMath::FInterpTo(FABRIK_Alpha1P, TargetAlpha, DeltaTime, LeftHandIKBlendSpeed)
+			: TargetAlpha;
 	}
 	else
 	{
 		FABRIK_SocketTransform1P = FTransform::Identity;
+		FABRIK_Alpha1P = 0.f;
 	}
 }
 
@@ -395,6 +414,10 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	ShooterInputComponent->BindAction(EquipMeleeWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipMeleeWeapon);
 	ShooterInputComponent->BindAction(EquipPistolWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipPistolWeapon);
 	ShooterInputComponent->BindAction(HealAction, ETriggerEvent::Started, this, &ThisClass::Input_Heal);
+	if (SwitchFireModeAction)
+	{
+		ShooterInputComponent->BindAction(SwitchFireModeAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchFireMode);
+	}
 
 }
 
@@ -511,6 +534,11 @@ void AShooterCharacter::ConfigureWeaponHitCollision()
 void AShooterCharacter::Input_CycleWeapon()
 {
 	if (IsValid(Combat)) Combat->Initiate_CycleWeapon();
+}
+
+void AShooterCharacter::Input_SwitchFireMode()
+{
+	if (IsValid(Combat)) Combat->Initiate_SwitchFireMode();
 }
 
 void AShooterCharacter::Input_ReloadWeapon()
@@ -632,7 +660,7 @@ void AShooterCharacter::HealPlayer(float InHealAmout)
 	if (IsValid(Combat) && IsValid(Combat->CurrentWeapon))
 	{
 		const EWeaponStatus Status = Combat->CurrentWeapon->WeaponStatus;
-		if (Status == EWeaponStatus::Reloading || Status == EWeaponStatus::Cycling)
+		if (Status == EWeaponStatus::Reloading || Status == EWeaponStatus::Cycling || Status == EWeaponStatus::BoltCycling)
 		{
 			return;
 		}

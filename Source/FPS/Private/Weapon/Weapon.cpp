@@ -546,6 +546,7 @@ void AWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AWeapon, EquippedAttachments);
 	DOREPLIFETIME(AWeapon, bFlashlightOn);
+	DOREPLIFETIME_CONDITION(AWeapon, FireType, COND_SkipOwner);
 }
 
 // ================= 配件系统 =================

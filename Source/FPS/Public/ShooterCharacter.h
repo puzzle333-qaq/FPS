@@ -84,6 +84,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
 	float FABRIK_Alpha1P = 0.f;
 
+	// 动画曲线名。手臂蒙太奇里这条曲线为 1 时左手 IK 完全关掉（让左手去拿弹匣/拉栓），0 时正常扶枪
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FABRIK")
+	FName DisableLeftHandIKCurveName = TEXT("DisableLHandIK");
+
+	// 勾上：换弹/拉栓期间不管有没有曲线，左手 IK 都淡出到 0
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FABRIK")
+	bool bDisableLeftHandIKDuringReload = true;
+
+	// 左手 IK 淡入淡出速度（越大越快，10 大约 0.2~0.3 秒）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FABRIK", meta = (ClampMin = "0"))
+	float LeftHandIKBlendSpeed = 10.f;
+
 	UFUNCTION(BlueprintCallable)
 	bool HasCurrentWeapon() const;
 
@@ -195,6 +207,7 @@ private:
 
 	void Input_CycleWeapon();
 	void Input_ReloadWeapon();
+	void Input_SwitchFireMode();
 	void Input_FireWeapon_Pressed();
 	void Input_FireWeapon_Released();
 	void Input_Aim_Pressed();
@@ -219,7 +232,7 @@ private:
 	void Multicast_PlayHealMontage();
 	void ConfigureWeaponHitCollision();
 
-	void CalculateFABRIKSocket();
+	void CalculateFABRIKSocket(float DeltaTime);
 	void CalculateTurnInPlaceParameters(float DeltaTime);
 	void TurnInPlace(float DeltaTime);
 	void ConfigureAimTickOrder();
@@ -285,6 +298,10 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>HealAction;
+
+	// 单发/自动切换键（IA_SwitchFireMode）
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction>SwitchFireModeAction;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>VersionWeaponAction;

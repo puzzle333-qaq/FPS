@@ -310,7 +310,8 @@ void UCombatComponent::TickRecoil(float DeltaTime)
 	const bool bSprayHeld = bTriggerPressed
 		&& IsValid(CurrentWeapon)
 		&& CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading
-		&& CurrentWeapon->WeaponStatus != EWeaponStatus::Cycling;
+		&& CurrentWeapon->WeaponStatus != EWeaponStatus::Cycling
+		&& CurrentWeapon->WeaponStatus != EWeaponStatus::BoltCycling;
 
 	if (!bSprayHeld && SecondsSinceRecoilShot >= ResetTime)
 	{
@@ -362,6 +363,7 @@ void UCombatComponent::Initiate_CycleWeapon()
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;   // 拉栓中不能切枪
 	if (Inventory.Num() < 2) return;
 
 	StopAimForWeaponSwitch();   // 切枪前先关镜
@@ -553,6 +555,7 @@ void UCombatComponent::Initiate_FireWeapon_Pressed()
 	if (!IsValid(CurrentWeapon))return;
 	bTriggerPressed = true;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;
 	// The burst continues from FireTimerFinished while this timer is still the active callback.
 	// Gating Local_FireWeapon on IsTimerActive stops that next shot.
 	if (GetWorld()->GetTimerManager().IsTimerActive(FireTimer)) return;
@@ -575,6 +578,7 @@ void UCombatComponent::Local_FireWeapon()
 		return;
 	}
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;
 
 	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
 	{
@@ -594,6 +598,7 @@ void UCombatComponent::Local_FireWeapon()
 	CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, true);
 	ApplyFireRecoil();
 	NotifyAmmoChanged();
+	BeginBoltCycleAfterShot();
 
 	GetWorld()->GetTimerManager().SetTimer(FireTimer, this, &ThisClass::FireTimerFinished, CurrentWeapon->FireTime);
 
@@ -626,6 +631,13 @@ void UCombatComponent::FireTimerFinished()
 		return;
 	}
 
+	// 开枪时已经进入拉栓状态：等这一发的射速间隔走完再播拉栓，避免把开火动画打断
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling)
+	{
+		PlayBoltMontage1P();
+		return;
+	}
+
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	// Empty mag starts the same reload as the reload key. ApplyReload here fills the
 	// magazine immediately and never plays the montage.
@@ -653,6 +665,7 @@ void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 	const float Now = GetWorld()->GetTimeSeconds();
 	const float MinInterval = FMath::Max(0.f, CurrentWeapon->FireTime - 0.02f);
 	if (MinInterval > 0.f && Now < ServerNextFireTime) return;
+	if (Now < ServerBoltEndTime) return;   // 还在拉栓，这一发不算
 	ServerNextFireTime = Now + MinInterval;
 
 	if (IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>())
@@ -672,6 +685,16 @@ void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 	if (!bListenServerOwner)
 	{
 		CurrentWeapon->Auth_Fire();
+	}
+
+	// 拉栓枪：服务器不播动画，按“射速间隔 + 拉栓蒙太奇长度”记一个结束时间。
+	// 乘 0.9 给网络抖动留余量，免得正常玩家被误拒。
+	if (CurrentWeapon->Ammo > 0)
+	{
+		if (const UAnimMontage* Bolt = GetBoltMontage(true))
+		{
+			ServerBoltEndTime = Now + MinInterval + Bolt->GetPlayLength() * 0.9f;
+		}
 	}
 
 	Multicast_FireWeapon(Hit, CurrentWeapon->Ammo);
@@ -710,6 +733,13 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 			AnimInstance3P->Montage_Play(Montage3P);
 		}
 	}
+
+	// 其他人看到的拉栓：和本地一样，等射速间隔走完再播。只是表现，不锁任何东西
+	if (AuthAmmo > 0 && IsValid(GetBoltMontage(false)))
+	{
+		const float Delay = FMath::Max(CurrentWeapon->FireTime, 0.01f);
+		GetWorld()->GetTimerManager().SetTimer(BoltTimer3P, this, &ThisClass::PlayBoltMontage3P, Delay);
+	}
 }
 
 
@@ -718,17 +748,22 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;   // 拉栓中不能换弹
 	if (CurrentWeapon->Ammo >= CurrentWeapon->MagCapacity) return;
 	if (CurrentReserveAmmo <= 0) return;
 
+	// 先定好这次是哪种换弹，手臂、枪、第三人称都用同一个种类
+	const EReloadType ReloadType = ChooseReloadType();
+
 	UAnimMontage* ReloadMontage = nullptr;
 	UAnimInstance* AnimInstance = nullptr;
-	if (!GetReloadMontage(true, ReloadMontage, AnimInstance)) return;
+	if (!GetReloadMontage(true, ReloadType, ReloadMontage, AnimInstance)) return;
 
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Reloading;
+	CurrentWeapon->bHasReloadedOnce = true;
 	ResetRecoilPattern();
-	Server_ReloadWeapon();
-	if (!PlayReloadMontage(true))
+	Server_ReloadWeapon(ReloadType);
+	if (!PlayReloadMontage(true, ReloadType))
 	{
 		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 		Server_EndReload();
@@ -756,7 +791,14 @@ bool UCombatComponent::ApplyReload()
 	return true;
 }
 
-bool UCombatComponent::GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const
+EReloadType UCombatComponent::ChooseReloadType() const
+{
+	if (!IsValid(CurrentWeapon)) return EReloadType::Tactical;
+	if (!CurrentWeapon->bHasReloadedOnce) return EReloadType::First;
+	return CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
+}
+
+bool UCombatComponent::GetReloadMontage(bool bFirstPerson, EReloadType ReloadType, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const
 {
 	OutMontage = nullptr;
 	OutAnim = nullptr;
@@ -769,7 +811,16 @@ bool UCombatComponent::GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMon
 		? WeaponData->FirstPersonMontages
 		: WeaponData->ThirdPersonMontages;
 	const FMontageData* MontageData = ViewMontages.Find(CurrentWeapon->WeaponType);
-	if (!MontageData || !IsValid(MontageData->ReloadMontage)) return false;
+	if (!MontageData) return false;
+
+	// 第一次换弹没填 FirstReloadMontage 时，按弹匣空不空退回空匣/战术，再退回 ReloadMontage
+	EReloadType Resolved = ReloadType;
+	if (Resolved == EReloadType::First && !IsValid(MontageData->FirstReloadMontage))
+	{
+		Resolved = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
+	}
+	UAnimMontage* Chosen = MontageData->ResolveReloadMontage(Resolved);
+	if (!IsValid(Chosen)) return false;
 
 	USkeletalMeshComponent* Mesh = bFirstPerson
 		? IPlayerInterface::Execute_GetMesh1P(Owner)
@@ -777,16 +828,16 @@ bool UCombatComponent::GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMon
 	UAnimInstance* AnimInstance = IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr;
 	if (!IsValid(AnimInstance)) return false;
 
-	OutMontage = MontageData->ReloadMontage;
+	OutMontage = Chosen;
 	OutAnim = AnimInstance;
 	return true;
 }
 
-bool UCombatComponent::PlayReloadMontage(bool bFirstPerson)
+bool UCombatComponent::PlayReloadMontage(bool bFirstPerson, EReloadType ReloadType)
 {
 	UAnimMontage* ReloadMontage = nullptr;
 	UAnimInstance* AnimInstance = nullptr;
-	if (!GetReloadMontage(bFirstPerson, ReloadMontage, AnimInstance)) return false;
+	if (!GetReloadMontage(bFirstPerson, ReloadType, ReloadMontage, AnimInstance)) return false;
 
 	const float PlayedLength = AnimInstance->Montage_Play(ReloadMontage);
 	if (PlayedLength <= 0.f) return false;
@@ -797,7 +848,13 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson)
 	{
 		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
 		{
-			UAnimMontage* WeaponReloadMontage = WeaponMontageData->ReloadMontage;
+			// 枪身也按同一个种类挑，保证手和弹匣是成对的那两条动画
+			EReloadType WeaponReloadType = ReloadType;
+			if (WeaponReloadType == EReloadType::First && !IsValid(WeaponMontageData->FirstReloadMontage))
+			{
+				WeaponReloadType = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
+			}
+			UAnimMontage* WeaponReloadMontage = WeaponMontageData->ResolveReloadMontage(WeaponReloadType);
 			USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
 			UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
 			if (IsValid(WeaponReloadMontage) && IsValid(WeaponAnim))
@@ -866,9 +923,10 @@ void UCombatComponent::Client_ReloadWeapon_Implementation(int32 NewWeaponAmmo, i
 	}
 }
 
-void UCombatComponent::Server_ReloadWeapon_Implementation()
+void UCombatComponent::Server_ReloadWeapon_Implementation(EReloadType ReloadType)
 {
 	if (!IsValid(CurrentWeapon)) return;
+	if (GetWorld()->GetTimeSeconds() < ServerBoltEndTime) return;   // 拉栓没结束不能换弹
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bListenServerOwner = GetNetMode() == NM_ListenServer && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
@@ -879,9 +937,10 @@ void UCombatComponent::Server_ReloadWeapon_Implementation()
 		if (CurrentWeapon->Ammo >= CurrentWeapon->MagCapacity) return;
 		if (CurrentReserveAmmo <= 0) return;
 		CurrentWeapon->WeaponStatus = EWeaponStatus::Reloading;
+		CurrentWeapon->bHasReloadedOnce = true;
 	}
 
-	Multicast_ReloadWeapon();
+	Multicast_ReloadWeapon(ReloadType);
 }
 
 void UCombatComponent::Server_EndReload_Implementation()
@@ -891,7 +950,7 @@ void UCombatComponent::Server_EndReload_Implementation()
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 }
 
-void UCombatComponent::Multicast_ReloadWeapon_Implementation()
+void UCombatComponent::Multicast_ReloadWeapon_Implementation(EReloadType ReloadType)
 {
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	if (!IsValid(OwningPawn) || OwningPawn->IsLocallyControlled())
@@ -900,7 +959,115 @@ void UCombatComponent::Multicast_ReloadWeapon_Implementation()
 		return;
 	}
 
-	PlayReloadMontage(false);
+	PlayReloadMontage(false, ReloadType);
+}
+
+// ================= 拉栓 / 泵动 =================
+
+UAnimMontage* UCombatComponent::GetBoltMontage(bool bFirstPerson) const
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return nullptr;
+	const TMap<FGameplayTag, FMontageData>& ViewMontages = bFirstPerson
+		? WeaponData->FirstPersonMontages
+		: WeaponData->ThirdPersonMontages;
+	const FMontageData* MontageData = ViewMontages.Find(CurrentWeapon->WeaponType);
+	return (MontageData && IsValid(MontageData->BoltMontage)) ? MontageData->BoltMontage.Get() : nullptr;
+}
+
+void UCombatComponent::BeginBoltCycleAfterShot()
+{
+	if (!IsValid(CurrentWeapon)) return;
+	// 打空了就不拉栓，接下来直接走空匣换弹
+	if (CurrentWeapon->Ammo <= 0) return;
+	if (!IsValid(GetBoltMontage(true))) return;
+
+	CurrentWeapon->WeaponStatus = EWeaponStatus::BoltCycling;
+}
+
+void UCombatComponent::PlayBoltMontage1P()
+{
+	if (!IsValid(CurrentWeapon)) return;
+
+	UAnimMontage* BoltMontage = GetBoltMontage(true);
+	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+	UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+	if (!IsValid(BoltMontage) || !IsValid(AnimInstance) || AnimInstance->Montage_Play(BoltMontage) <= 0.f)
+	{
+		// 播不了就别卡死在拉栓状态
+		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+		return;
+	}
+
+	// 枪身拉栓（枪机后退、抛壳）只在自己的 1P 枪上播，和换弹一样
+	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+	{
+		USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
+		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
+		if (IsValid(WeaponMontageData->BoltMontage) && IsValid(WeaponAnim))
+		{
+			WeaponAnim->Montage_Play(WeaponMontageData->BoltMontage);
+		}
+	}
+
+	// 和换弹一样：第一人称手臂蒙太奇持有拉栓锁，播完（或被打断）才解锁
+	FOnMontageEnded EndDelegate;
+	EndDelegate.BindUObject(this, &UCombatComponent::OnBoltMontageEnded);
+	AnimInstance->Montage_SetEndDelegate(EndDelegate, BoltMontage);
+}
+
+void UCombatComponent::OnBoltMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupted*/)
+{
+	if (!IsValid(CurrentWeapon)) return;
+	if (CurrentWeapon->WeaponStatus != EWeaponStatus::BoltCycling) return;
+	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+}
+
+void UCombatComponent::PlayBoltMontage3P()
+{
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwningPawn) || OwningPawn->IsLocallyControlled()) return;
+
+	UAnimMontage* BoltMontage = GetBoltMontage(false);
+	USkeletalMeshComponent* Mesh3P = IPlayerInterface::Execute_GetMesh3P(OwningPawn);
+	UAnimInstance* AnimInstance = IsValid(Mesh3P) ? Mesh3P->GetAnimInstance() : nullptr;
+	if (IsValid(BoltMontage) && IsValid(AnimInstance))
+	{
+		AnimInstance->Montage_Play(BoltMontage);
+	}
+}
+
+bool UCombatComponent::CanSwitchFireMode() const
+{
+	if (!IsValid(CurrentWeapon) || !CurrentWeapon->bCanSwitchFireMode) return false;
+	const EWeaponStatus Status = CurrentWeapon->WeaponStatus;
+	return Status != EWeaponStatus::Reloading
+		&& Status != EWeaponStatus::BoltCycling
+		&& Status != EWeaponStatus::Cycling;
+}
+
+void UCombatComponent::Initiate_SwitchFireMode()
+{
+	if (!CanSwitchFireMode()) return;
+
+	const EFireType NewFireType = CurrentWeapon->FireType == EFireType::Automatic
+		? EFireType::Single
+		: EFireType::Automatic;
+
+	// 本地立刻生效（FireTimerFinished 读的就是它），再让服务器同步给其他人
+	CurrentWeapon->FireType = NewFireType;
+	OnFireModeChanged.Broadcast(CurrentWeapon, NewFireType);
+
+	if (!GetOwner()->HasAuthority())
+	{
+		Server_SetFireMode(NewFireType);
+	}
+}
+
+void UCombatComponent::Server_SetFireMode_Implementation(EFireType NewFireType)
+{
+	// 服务器再检查一次：不允许切换的枪不接受
+	if (!IsValid(CurrentWeapon) || !CurrentWeapon->bCanSwitchFireMode) return;
+	CurrentWeapon->FireType = NewFireType;
 }
 
 void UCombatComponent::Initiate_Aim_Pressed()
@@ -957,6 +1124,7 @@ void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 	{
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+		if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;   // 拉栓中不能切枪
 		// 以前开镜时直接 return（按数字键没反应），现在改成切枪前自动关镜
 	}
 

@@ -95,6 +95,8 @@ enum class EWeaponStatus : uint8
 	Reloading,
 	Cycling,
 	UnEquipped,
+	// 开枪后正在拉栓/泵动。和 Reloading 一样：不能开火、换弹、切枪
+	BoltCycling,
 
 };
 
@@ -223,8 +225,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool GetMuzzleAttachPoint(bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
+	// 当前射击模式。同步给其他玩家（拥有者自己本地先改，跳过拥有者避免被旧值盖回）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "FPS|FireType")
 	EFireType FireType;
+
+	// 能否按键在单发/自动之间切换。步枪、冲锋枪勾上；手枪、狙击不勾
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
+	bool bCanSwitchFireMode = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
 	float FireTime;
@@ -283,6 +290,9 @@ public:
 	int32 StartingCarriedAmmo;
 
 	EWeaponStatus WeaponStatus;
+
+	// 这把枪是不是已经换过弹（决定第一次换弹播 FirstReloadMontage）。只在本地/服务器各自记，不同步
+	bool bHasReloadedOnce = false;
 
 protected:
 	virtual void BeginPlay() override;

@@ -6,6 +6,8 @@
 #include "Engine/Texture2D.h"
 #include "Interface/RecoilModifierInterface.h"
 #include "Weapon/AttachmentData.h"
+#include "WeaponData.h"
+#include "Weapon/Weapon.h"
 #include "CombatComponent.generated.h"
 
 UENUM(BlueprintType)
@@ -30,6 +32,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FReticleChanged, UMaterialInstanceDy
 // 当前武器换了（服务器 Equip 或客户端 OnRep 时广播），配件菜单用它刷新
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCurrentWeaponChanged, AWeapon*, NewWeapon);
 
+// 射击模式切换后广播（本地），UI 绑它显示 单发/自动
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFireModeChanged, AWeapon*, Weapon, EFireType, NewFireType);
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCurrentReserveAmmoChanged, int32, RoundsInServe, int32, RoundsInWeapon, UTexture2D*, WeaponIcon);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
@@ -51,6 +56,13 @@ public:
 	void Initiate_FireWeapon_Released();
 	void Initiate_ReloadWeapon();
 	void Initiate_Aim_Pressed();
+
+	// 单发/自动切换：本地先改，再发服务器。换弹、拉栓、切枪中或这把枪不允许切换时无效
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_SwitchFireMode();
+
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon")
+	FFireModeChanged OnFireModeChanged;
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_EquipMainWeapon();
 
@@ -180,13 +192,29 @@ private:
 	FVector2D UnrecoveredRecoil = FVector2D::ZeroVector;
 	int32 RecoilShotIndex = 0;
 	float SecondsSinceRecoilShot = 0.f;
-	bool GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const;
-	bool PlayReloadMontage(bool bFirstPerson);
+	bool GetReloadMontage(bool bFirstPerson, EReloadType ReloadType, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const;
+	bool PlayReloadMontage(bool bFirstPerson, EReloadType ReloadType);
+	// 按当前弹匣和“是否第一次换弹”决定这次换弹的种类
+	EReloadType ChooseReloadType() const;
+
+	// ---------- 拉栓 / 泵动 ----------
+	// 当前武器在某个视角下的拉栓蒙太奇（没填返回 nullptr）
+	UAnimMontage* GetBoltMontage(bool bFirstPerson) const;
+	// 本地开枪后调用：要拉栓就把武器状态改成 BoltCycling
+	void BeginBoltCycleAfterShot();
+	// 射速计时器结束后真正播拉栓（等开火动画播完，避免互相打断）
+	void PlayBoltMontage1P();
+	void OnBoltMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	// 其他玩家看到的第三人称拉栓，纯表现
+	void PlayBoltMontage3P();
+	FTimerHandle BoltTimer3P;
+	// 服务器：拉栓结束前拒绝下一发和换弹
+	float ServerBoltEndTime = 0.f;
 	void OnReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void OnObservedReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 	UFUNCTION(Server, Reliable)
-	void Server_ReloadWeapon();
+	void Server_ReloadWeapon(EReloadType ReloadType);
 
 	UFUNCTION(Client,Reliable)
 	void Client_ReloadWeapon(int32 NewWeaponAmmo, int32 NewCarryAmmo);
@@ -195,7 +223,7 @@ private:
 	void Server_EndReload();
 
 	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_ReloadWeapon();
+	void Multicast_ReloadWeapon(EReloadType ReloadType);
 
 	UFUNCTION()
 	void OnRep_CurrentReserveAmmo();
@@ -230,4 +258,10 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_ToggleFlashlight();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetFireMode(EFireType NewFireType);
+
+	// 当前武器现在能不能切射击模式
+	bool CanSwitchFireMode() const;
 };
