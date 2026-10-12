@@ -4,7 +4,7 @@
 
 # FPS — Unreal Engine 5 C++ First-Person Shooter
 
-A first-person shooter gameplay framework built with **Unreal Engine 5.8 + C++**: character movement and look, walk/sprint movement modes with stamina, weapons (long gun / pistol / melee) with equipping, cycling and auto-un-aim, firing with hit detection, **recoil patterns with view-kick recovery**, reloading, aiming down sights (ADS), a sniper scope, health with healing, per-body-part damage, hit reactions, and full multiplayer replication.
+A first-person shooter gameplay framework built with **Unreal Engine 5.8 + C++**: character movement and look, walk/sprint movement modes with stamina, weapons (long gun / pistol / melee) with equipping, cycling and auto-un-aim, firing with hit detection, **recoil patterns with view-kick recovery**, reloading, aiming down sights (ADS), a sniper scope, **a data-driven weapon attachment system** (barrel / handguard / muzzle / optic / grip / stock / tactical / magazine) with an in-game attachment menu and a Tab loadout screen, **picture-in-picture magnified optics**, a flashlight, health with healing, per-body-part damage, hit reactions, and full multiplayer replication.
 
 > This document was written by reading the source code. **No code file was modified.**
 > For the function-by-function, component-by-component deep dive (signatures, behaviour, call chains, effects), see [DOCUMENTATION.md](<DOCUMENTATION.md>).
@@ -52,7 +52,11 @@ Enabled plugins ([FPS.uproject](<FPS.uproject>)): `ModelingToolsEditorMode` (edi
 | Animation driving | `AO_Yaw`, `MovementOffsetYaw`, `TurningStatus`, `FABRIK_SocketTransform`, `FPlayerAnim` struct injection into the ABPs | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [WeaponData.h](<Source/FPS/Public/WeaponData.h>) |
 | Hit reactions | Random montage from `HitReacts`, broadcast with a NetMulticast | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
 | UI | Dynamic reticle material (per weapon), ammo/reserve + weapon icon HUD, health bar, stamina bar, reticle hidden while aiming | [ShooterReticle.cpp](<Source/FPS/Private/Ui/ShooterReticle.cpp>), [ReserveAmmo.cpp](<Source/FPS/Private/Ui/ReserveAmmo.cpp>) |
-| Networking | Server-authoritative spawning, equipping, damage, stamina and healing; client-side magazine prediction and recoil; NetMulticast FX and third-person montages | [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| Weapon attachments | Data-asset driven attachments per slot, server-validated whitelist, default loadout per weapon, replicated, live 1P/3P meshes, and redirection of the grip / muzzle / aim sockets | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [AttachmentData.h](<Source/FPS/Public/Weapon/AttachmentData.h>) |
+| Attachment UI | In-game attachment menu (one row per slot), Tab loadout screen with a three-weapon preview render and a draggable attachment window | [AttachmentMenu.cpp](<Source/FPS/Private/Ui/AttachmentMenu.cpp>), [LoadoutScreen.cpp](<Source/FPS/Private/Ui/LoadoutScreen.cpp>) |
+| Optics & flashlight | Red dot / holographic sights align on the optic's own socket, magnified optics render a picture-in-picture scope, and the flashlight is a spotlight driven by the attachment data | [OpticScopeComponent.cpp](<Source/FPS/Private/Weapon/OpticScopeComponent.cpp>) |
+| 1P hand IK | `UFirstPersonAnimInstance` pulls `FABRIK_Socket1P` / `FABRIK_Alpha1P` so the left hand follows the weapon or the mounted grip | [FirstPersonAnimInstance.cpp](<Source/FPS/Private/Animation/FirstPersonAnimInstance.cpp>) |
+| Networking | Server-authoritative spawning, equipping, attachments, damage, stamina and healing; client-side magazine prediction and recoil; NetMulticast FX and third-person montages | [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 
 ---
 
@@ -87,6 +91,14 @@ FPS/
       │  ├─ Interface/
       │  │  ├─ PlayerInterface.h          # Character capability interface
       │  │  └─ RecoilModifierInterface.h  # IRecoilModifier + FRecoilScale (attachment recoil hooks)
+      │  ├─ Animation/FirstPersonAnimInstance.h   # C++ base for ABP_FirstPerson: 1P hand FABRIK target
+      │  ├─ Ui/AttachmentMenu.h                   # Attachment menu (one row per slot)
+      │  ├─ Ui/AttachmentSlotRow.h                # Slot row + attachment option buttons
+      │  ├─ Ui/AttachmentOptionEntry.h            # One attachment button / the "remove" button
+      │  ├─ Ui/LoadoutScreen.h                    # Tab loadout screen + draggable attachment window
+      │  ├─ Ui/LoadoutPreviewRig.h                # SceneCapture rig for the three-weapon preview
+      │  ├─ Weapon/AttachmentData.h               # Attachment data asset (+ EOpticType)
+      │  ├─ Weapon/OpticScopeComponent.h          # Picture-in-picture magnified optic
       │  ├─ Stats/StatsComponent.h        # Health + stamina component
       │  ├─ ShooterType/ShooterType.h     # Hit zone / damage multiplier helpers
       │  ├─ Ui/ShooterReticle.h           # Dynamic reticle widget
@@ -123,6 +135,22 @@ FPS/
 12. **Scope material**: `/Game/FPS/UI/M_SniperScope` is a hard-coded path (see `SniperScopeMaterialPath` in [SniperScopeComponent.cpp](<Source/FPS/Private/Weapon/SniperScopeComponent.cpp>)). Renaming or moving it breaks the scope view and logs a warning. The material must expose `ScopeView` (texture), `MaskRadius`, `RingWidth`, `ReticleThickness` and `Aspect` parameters.
 
 ---
+
+### 4.1 Weapon attachments and loadout setup
+
+1. **Tags** — attachment slot types are gameplay tags declared in [ShooterGamePlayTags.h](<Source/FPS/Public/ShooterGamePlayTags.h>): `Attachment.Slot.Barrel`, `Handguard`, `Muzzle`, `Optic`, `Grip`, `Stock`, `Tactical`, `Magazine`. Adding a new type is a tag-only change.
+2. **Attachment assets** — create one `UAttachmentData` data asset per attachment (right-click → Miscellaneous → Data Asset → AttachmentData). The shipped ones live in `Content/FPS/Data/Accessries/` (`DA_Barris`, `DA_HangGuard`, `DA_Grip`, `DA_Grip_Vertical`, `DA_Sight`, `DA_Sight1`, `DA_Sight2`, `DA_MAG45`, `DA_Back`). Fill `SlotTag`, `Mesh`, `MeshOffset`, and optionally the recoil multipliers, the optic block and the flashlight block. The moving sockets (`FABRIK`, `Muzzle`, `SightSocket`, `LensSocket`, `LightSocket`) are authored **on the attachment's static mesh**.
+3. **Weapon slot table** — on the weapon blueprint (`BP_RIfle` already has it) fill `FPS|Attachment → AttachmentSlots`: one row per slot with `SlotTag`, `SocketName`, the `AllowedAttachments` whitelist, an optional `DefaultAttachment` and `bRequired`. A slot socket is looked up on the weapon skeleton first and then on already-spawned attachments, which is how a grip mounts onto the handguard.
+4. **Menu + loadout** — set `AttachmentMenuClass = WBP_AttachmentMenu` on `BP_ShooterPlayerController` and assign `IA_AttachmentMenu` (bound in `IMC_Shooter`) and `IA_Flashlight`. `WBP_AttachmentMenu` must contain a `VerticalBox` named `SlotList` and set `RowClass = WBP_AttachmentSlotRow`; that row needs `Text_SlotName` + `EntryContainer` with `EntryClass = WBP_AttachmentEntry`; the entry needs `Button_Select` + `Text_Name` (`Image_Icon` is optional).
+5. **Loadout screen** — the Tab screen and its attachment window are built entirely in C++ and created on demand, so no WBP is needed; only their slot rows load `/Game/FPS/UI/WBP_AttachmentSlotRow` by a hard-coded path.
+
+New controls:
+
+| Action | Input asset | Bound on | Trigger event | Notes |
+| --- | --- | --- | --- | --- |
+| Attachment menu | `IA_AttachmentMenu` | Controller → `ToggleAttachmentMenuAction` | `Started` | Opens/closes the per-slot attachment menu; shows the cursor and ignores look input |
+| Flashlight | `IA_Flashlight` | Controller → `FlashlightAction` | `Started` | Requests a flashlight toggle through the combat component (server-authoritative) |
+| Loadout | runtime `IA_Loadout_Runtime` (Tab) | Controller, registered at runtime | `Started` | Opens the full-screen loadout; the action and its mapping context are created in C++ and are **not** part of `IMC_Shooter` |
 
 ## 5. Controls
 
@@ -222,11 +250,31 @@ graph TD
 - `ChangeMaxHealthByAmout` / `ChangeMaxStaminaAmout` have no floor or ceiling.
 - `AShooterCharacter::DoDamage_Implementation` picks a random index into `HitReacts` without checking for an empty array; keep at least one montage configured.
 - Scope magnification, disc radius and reticle thickness are compile-time constants in `SniperScopeComponent.cpp` and are not exposed as properties.
+- The attachment window loads its rows from a hard-coded path (`/Game/FPS/UI/WBP_AttachmentSlotRow.WBP_AttachmentSlotRow_C`); renaming that widget breaks the loadout window rows (a warning is logged).
+- `BP_M700` (the sniper) has no `AttachmentSlots` configured, so the attachment menu reports "this weapon has no attachment slots" for it.
+- `DA_Sight` sets `bOverridesAimFOV` but has no lens material, so it behaves as a red-dot style sight; a magnified optic needs the full `OpticType = Magnified` block (lens socket, lens material, material index, render-target size) or the picture-in-picture scope logs a warning and stays off.
+- The loadout screen only shows the **first three** inventory weapons, and its preview rig is a transient actor spawned far below the level (Z = −100000) that is destroyed when the widget is destructed.
+- Attachment equip/remove is validated on the server, but the menu is built from replicated state, so a rejected request leaves the menu unchanged (the server logs a warning).
 - `AShooterGameModeBase` is an empty shell; match rules (rounds, scoring, respawn) must be added.
 
 ---
 
-## 10. Further Reading
+## 10. Weapon Attachments and Loadout
+
+| Piece | What it does |
+| --- | --- |
+| `FWeaponAttachmentSlot` | One row of a weapon's slot table: slot tag, mount socket, whitelist, default attachment, `bRequired` |
+| `UAttachmentData` | One data asset per attachment: slot tag, name/icon, static mesh + offset, `FabrikSocketName` / `MuzzleSocketName`, recoil multipliers, the optic block (`OpticType`, `AimFOV`, `SightSocketName`, magnification, lens socket / material / index, render-target size) and the flashlight block |
+| `AWeapon` attachment API | `EquipAttachment` / `RemoveAttachment` / `ToggleFlashlight` (server only, `BlueprintAuthorityOnly`), plus `GetAttachmentSlots`, `GetAllowedAttachmentsForSlot`, `CanEquipAttachment`, `HasAttachmentSlot`, `GetAttachmentInSlot`, `GetEquippedAttachments`, `GetRecoilMultiplier`, `GetEffectiveAimFOV`, `GetOpticAttachment`, `GetOpticMesh1P`, `HasFlashlight`, `IsFlashlightOn` and the `OnAttachmentsChanged` delegate |
+| Replication | `EquippedAttachments` (an array — maps cannot replicate) and `bFlashlightOn`, both `ReplicatedUsing`; the server rebuilds visuals on every change and calls `ForceNetUpdate` |
+| Runtime visuals | `RebuildAttachmentVisuals` destroys and respawns the 1P/3P static meshes, resolves mount sockets in dependency order (a handguard is mounted before the grip it carries) and re-parents the spotlight to the mesh the local player can see |
+| Recoil / ADS integration | `AWeapon` implements `IRecoilModifier`, so attachment multipliers feed the recoil system; `GetAimSocketWorldLocation` prefers the optic's `SightSocket`, then a barrel attachment's `AimSocket`, then the weapon's own; the ADS FOV comes from `GetEffectiveAimFOV()` |
+| Input & UI | `IA_AttachmentMenu` (B) toggles `UAttachmentMenu`, `IA_Flashlight` (F) toggles the light, and Tab opens `ULoadoutScreen` (created at runtime together with its input action/context) |
+| Grip / muzzle / scope | The 1P hand IK follows the grip attachment's `FABRIK` socket when it is mounted; muzzle FX use muzzle attachment → barrel attachment → weapon socket; snipers keep the full-screen `SniperScopeComponent`, while `UOpticScopeComponent` handles picture-in-picture magnified optics on other weapons |
+
+Networking summary: the client only **requests** through `UCombatComponent` (`Initiate_EquipAttachment`, `Initiate_RemoveAttachment`, `Initiate_ToggleFlashlight` and their `…OnWeapon` variants), which forwards to reliable server RPCs; `AWeapon` re-validates the slot and the whitelist, applies the change, and the replicated array drives `OnRep_EquippedAttachments` → visual rebuild + `OnAttachmentsChanged` so the UI refreshes.
+
+## 11. Further Reading
 
 - Function-by-function / component-by-component reference: [DOCUMENTATION.md](<DOCUMENTATION.md>)
 - 中文版：[README.zh-CN.md](<README.zh-CN.md>) ｜ [DOCUMENTATION.zh-CN.md](<DOCUMENTATION.zh-CN.md>)

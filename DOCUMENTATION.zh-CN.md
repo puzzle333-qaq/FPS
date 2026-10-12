@@ -32,8 +32,13 @@
 18. [端到端时序](#18-端到端时序)
 19. [蓝图契约清单](#19-蓝图契约清单)
 20. [注意事项、已知问题与扩展建议](#20-注意事项已知问题与扩展建议)
+21. [配件数据资产 —— `UAttachmentData`](#21-配件数据资产--uattachmentdata)
+22. [配件与整备界面](#22-配件与整备界面)
+23. [瞄具、手电与第一人称扶枪 IK](#23-瞄具手电与第一人称扶枪-ik)
 
-> **最新修订（后坐力 / 耐力 / 治疗 / 移动步态）：** 在原有章节内新增了子章节 —— `4.11`（后坐力结构体、新委托、`FPlayerAnim.Strafe_Walking`）、`6.5–6.7`（治疗、移动步态、移动相关钩子）、`7.7–7.9`（后坐力、开镜状态广播、BlendSpace 刷新）、`8.4–8.6`（后坐力属性、握持 Socket 重挂、治疗时隐藏武器）、`11.1`（耐力）、`12.1–12.2`（冲刺/静步速度模型、移动状态复制）、`19.1`（蓝图契约新增项）、`20.1.1`（新增已知问题）。
+> **最新修订（武器配件 / 整备界面 / 画中画倍镜）：** 新增顶层章节 `21–23`，分别说明配件数据资产、配件与整备界面、以及画中画倍镜 + 手电 + 第一人称扶枪 IK；蓝图契约新增项见 `19.2`，新增已知问题见 `20.1.2`。
+>
+> **上一次修订（后坐力 / 耐力 / 治疗 / 移动步态）：** 子章节 `4.11`、`6.5–6.7`、`7.7–7.9`、`8.4–8.6`、`11.1`、`12.1–12.2`、`19.1`、`20.1.1`。
 
 ---
 
@@ -1358,6 +1363,21 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 | 控件 | `WB_Stamina`（绑定 `OnStaminaChanged` / `OnMaxStaminaChanged`） | `UUserWidget` | `UStatsComponent` 委托 | 没有耐力条（控件已存在，由 `WBP_ShooterOverlay` 承载） |
 | 接口 | 实现 `IRecoilModifier::GetAttachmentRecoilScale` 的武器/组件 | 蓝图接口 | `GatherAttachmentRecoil` | 配件无法修正后坐力（可选功能） |
 
+### 19.2 配件 / 瞄具 / 整备界面的契约新增项
+
+| 类别 | 名称 | 类型 | 使用方 | 缺失后果 |
+| --- | --- | --- | --- | --- |
+| 枪的槽位表 | 武器蓝图上的 `FPS|Attachment → AttachmentSlots` | `TArray<FWeaponAttachmentSlot>` | `FindSlot`、`CanEquipAttachment`、`RebuildAttachmentVisuals` | 这把枪没有任何配件槽，菜单会显示"这把枪没有配件槽" |
+| 配件资产 | `SlotTag` 与该枪某个槽位一致，且填了 `Mesh` | `UAttachmentData` | `AWeapon::EquipAttachment` | 请求被拒绝（服务器会打 Warning） |
+| 模型 Socket | 握把模型的 `FABRIK`、枪口/枪管模型的 `Muzzle`、瞄具模型的 `SightSocket`、倍镜的 `LensSocket`、手电模型的 `LightSocket` | 配件 StaticMesh 上的 Socket | 1P/3P 扶枪 IK、枪口特效、开镜对准、画中画拍摄、手电挂点 | 对应功能被跳过并打印 Warning |
+| 菜单控件 | `WBP_AttachmentMenu` 内含 `SlotList`（**必需**）与 `Text_WeaponName`（可选），并设置 `RowClass = WBP_AttachmentSlotRow` | UMG 绑定 | `UAttachmentMenu` | `BindWidget` 断言 / 菜单无法构建 |
+| 槽位行控件 | `Text_SlotName` 与 `EntryContainer`（**必需**），并设置 `EntryClass = WBP_AttachmentEntry` | UMG 绑定 | `UAttachmentSlotRow::Setup` | 同上 |
+| 配件按钮控件 | `Button_Select` 与 `Text_Name`（**必需**），`Image_Icon`（可选） | UMG 绑定 | `UAttachmentOptionEntry::Setup` | 同上 |
+| 控制器属性 | `AttachmentMenuClass`、`ToggleAttachmentMenuAction`、`FlashlightAction` | `TSubclassOf` / `UInputAction` | `SetupInputComponent`、`Input_ToggleAttachmentMenu` | 菜单键或手电键无响应 |
+| 输入资产 | `IMC_Shooter` 中存在 `IA_AttachmentMenu`、`IA_Flashlight` | 输入动作 | 控制器绑定 | 这两个键永远不会触发 |
+| ABP_FirstPerson 父类 | 继承 `UFirstPersonAnimInstance`，暴露 `FABRIK_Socket1P` / `FABRIK_Alpha1P` | C++ 动画实例 | `NativeUpdateAnimation` | 1P 左手不会跟随枪或握把 |
+| 硬编码控件路径 | `/Game/FPS/UI/WBP_AttachmentSlotRow` | 控件蓝图 | `ULoadoutAttachmentWindow::BuildLayout` | 整备界面的配件窗没有行（会打 Warning） |
+
 ## 20. 注意事项、已知问题与扩展建议
 
 ### 20.1 已知问题一览
@@ -1399,6 +1419,20 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 - `UStatsComponent` 终于会 Tick（`bCanEverTick` / `bStartWithTickEnabled` 现在都是 `true`），耐力系统因此可用。
 - `EDeathState` 至少被读取了（治疗路径会拒绝治疗死亡角色），但依然从未被写入。
 
+#### 20.1.2 配件 / 整备界面修订新增
+
+| # | 位置 | 问题 | 影响 / 建议 |
+| --- | --- | --- | --- |
+| 23 | `ULoadoutAttachmentWindow::BuildLayout` | 按硬编码路径加载 `/Game/FPS/UI/WBP_AttachmentSlotRow` | 该控件改名或移动后，整备界面的配件窗会没有行（会打 Warning） |
+| 24 | `AWeapon::GetFallbackMuzzleSocketName` | 用**反射**读取 `MuzzleSocketName` 属性，读不到就回退 `"Muzzle"` | 蓝图里把这个属性改名后，会静默回退到默认枪口名 |
+| 25 | 配件挂点解析 | 槽位 Socket 在枪和已装配件上都不存在时，打 Warning 并把模型挂在枪根 | 检查槽位的 `SocketName` 与配件模型的 Socket |
+| 26 | `RebuildAttachmentVisuals` | 每次装卸都会销毁并重建**所有** 1P/3P 配件模型，并重新挂接手电 | 配件数量少时没问题，但它不是增量更新；默认配件在枪生成时会跑一次 |
+| 27 | `ALoadoutPreviewRig` | 生成在 `Z = -100000`，标记 `RF_Transient`，渲染时关闭了光照/雾/后处理/大气 | 纯本地表现；因为是无光照渲染，模型永远看得清 |
+| 28 | `ULoadoutScreen::RefreshWeapons` | 只显示背包前三把武器；右侧背包面板尚未实现 | 背包变大时需要扩展 |
+| 29 | `AShooterCharacter::Input_FireWeapon_Pressed` | `PC->bShowMouseCursor` 为真时直接返回 | 点击界面不会误开枪；但反过来，鼠标光标意外可见时也无法开火 —— 开火"失灵"时先检查输入模式 |
+| 30 | `UOpticScopeComponent::UpdateView` | 要求非狙击枪、`OpticType = Magnified`、有效 Lens Socket、Lens Material 与合法 `LensMaterialIndex` | 配置不全时打 Warning 且不放大（对准依然正常） |
+| 31 | 配件界面 | 界面基于同步状态重建，被服务器拒绝的装卸不会在客户端报错 | 只有服务器日志有记录，客户端没有错误提示 |
+
 ### 20.2 评审要点（代码质量观察）
 
 - **注释即设计决策**：多处注释记录了"为什么不那样做"（例如 `Multicast_CycleWeapon` 的递归爆栈、`Initiate_FireWeapon_Pressed` 不能门控 `FireTimer`、1P 装备动画即使骨架不匹配也要播）。维护时**不要**当成冗余注释删掉。
@@ -1419,4 +1453,160 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 
 ---
 
-*本文档基于当前 `master` 分支源码（提交 `c096f05 Localmotion Play rate when player is walking` 时的本地状态）通读整理。*
+## 21. 配件数据资产 —— `UAttachmentData`
+
+**位置**：[AttachmentData.h](<Source/FPS/Public/Weapon/AttachmentData.h>) / [AttachmentData.cpp](<Source/FPS/Private/Weapon/AttachmentData.cpp>)
+**继承**：`UPrimaryDataAsset` —— `GetPrimaryAssetId()` 返回 `("Attachment", 资产名)`，所以 AssetManager 可以按 Attachment 这个 PrimaryAssetType 枚举所有配件。
+
+### 21.1 `EOpticType`
+
+| 值 | 含义 |
+| --- | --- |
+| `None` | 不是瞄具（握把、弹匣、枪托、手电……） |
+| `RedDot` | 相机对准 `SightSocket`，不做画中画 |
+| `Holographic` | 与红点一致，保留为单独的配置选项 |
+| `Magnified` | 既对准，又运行画中画拍摄（见第 23 章） |
+
+`IsMagnifiedOptic()` 是 `UOpticScopeComponent` 使用的内联判断。
+
+### 21.2 属性
+
+| 属性 | 默认值 | 作用 |
+| --- | --- | --- |
+| `SlotTag` | — | 这个配件属于哪种槽位（`Attachment.Slot.*`），必须与枪上某个槽位 Tag 一致 |
+| `DisplayName` / `Icon` | — | 菜单按钮用的名字与图标 |
+| `Mesh` / `MeshOffset` | — / 单位变换 | 生成的 StaticMesh，以及相对挂点的偏移 |
+| `FabrikSocketName` | `FABRIK` | **握把模型上**手应该抓住的 Socket；1P 与 3P 的 IK 都指向它 |
+| `MuzzleSocketName` | `Muzzle` | 枪口/枪管模型上的 Socket，作为开火特效原点（枪口配件优先于枪管） |
+| `RecoilMultiplier` | `1.0` | 乘进后坐力（0.8 = 减少 20%）；多个配件相乘 |
+| `RecoilRecoveryMultiplier` | `1.0` | 缩放回正速度 |
+| `bOverridesAimFOV` / `AimFOV` | `false` / `55` | 勾选后开镜 FOV 用它，而不是枪自己的 `AimFeildOfView` |
+| `SightSocketName` | `SightSocket` | 瞄具模型上的瞄准点 Socket（红点中心），开镜时相机对准它 |
+| `OpticType` | `None` | 见 21.1 |
+| `Magnification` / `BaseFOVForMagnification` | `4` / `0` | 倍率，以及换算拍摄 FOV 用的基准视野（0 = 用角色默认 FOV） |
+| `LensSocketName` | `LensSocket` | `SceneCaptureComponent2D` 挂载的 Socket |
+| `LensMaterial` / `LensTextureParameterName` / `LensMaterialIndex` | — / `ScopeView` / `0` | 换到镜片材质槽的动态材质、接收 RenderTarget 的贴图参数名，以及镜片是第几个材质槽 |
+| `RenderTargetSize` | `512` | 正方形渲染目标分辨率（钳制 64…2048） |
+| `bProvidesFlashlight` + `LightSocketName`、`LightIntensity`、`LightColor`、`LightAttenuationRadius`、`LightInnerConeAngle`、`LightOuterConeAngle` | `false`、`LightSocket`、`5000`、暖白、`2500`、`12`、`24` | 在武器上创建聚光灯并挂到这个模型上 |
+
+**关键设计**：**挂载** Socket 不在配件上，而由枪的槽位表决定（`FWeaponAttachmentSlot::SocketName`）。这样同一个红点装在不同枪上可以落在不同位置，配件本身只需要负责自己的功能 Socket。
+
+---
+
+## 22. 配件与整备界面
+
+### 22.1 `UAttachmentMenu`
+
+**位置**：[AttachmentMenu.h](<Source/FPS/Public/Ui/AttachmentMenu.h>) / [AttachmentMenu.cpp](<Source/FPS/Private/Ui/AttachmentMenu.cpp>)
+
+| 函数 | 行为 |
+| --- | --- |
+| `NativeConstruct()` | 从拥有者 Pawn 找到战斗组件，订阅 `OnCurrentWeaponChanged`（换枪要重建整张表），然后 `Refresh()` |
+| `NativeDestruct()` | 解绑战斗组件与被绑定的武器，控件关闭后不再收到通知 |
+| `BindToWeapon(AWeapon*)` | 把 `OnAttachmentsChanged` 的订阅从上一把枪搬到新枪上 |
+| `Refresh()`（BlueprintCallable） | 清空 `SlotList`，取当前武器，用**蓝图类的显示名**设置 `Text_WeaponName`（`GetClass()->GetDisplayNameText()`，不是实例名），然后按 `Weapon->GetAttachmentSlots()` 每条创建一个 `RowClass` 控件 |
+| `OnAttachmentsChanged` / `OnCurrentWeaponChanged` | 都调用 `ScheduleMenuRefresh`：把刷新**延迟到下一帧**——在按钮自己的 `OnClicked` 里当场刷新会把正在处理点击的控件拆掉 |
+
+### 22.2 `UAttachmentSlotRow`
+
+| 函数 | 行为 |
+| --- | --- |
+| `Setup(AWeapon*, const FWeaponAttachmentSlot&)` | 用槽位 Tag 的**最后一段**写 `Text_SlotName`（`Attachment.Slot.Barrel` → `Barrel`）；清空 `EntryContainer`；非必需槽位先放一个"卸下"按钮（`Data == nullptr`，槽位为空时视为已选中）；再按 `Weapon->GetAllowedAttachmentsForSlot()` 每个配件一个按钮，已装的标记为已装备，`CanEquipAttachment` 不通过的置灰 |
+
+### 22.3 `UAttachmentOptionEntry`
+
+| 函数 | 行为 |
+| --- | --- |
+| `NativeOnInitialized()` | 绑定 `Button_Select->OnClicked` |
+| `Setup(Data, SlotTag, bEquipped, bAllowed, Weapon)` | 文本取 `DisplayName`，为空则用资产名（`Data` 为空时用 `RemoveText`）；有图标才显示 `Image_Icon`；已装备时用 `EquippedColor` 染色，`bAllowed` 为假时禁用按钮 |
+| `OnSelectClicked()` | 已装备就直接返回；否则只通过战斗组件**发请求**（`Initiate_EquipAttachmentOnWeapon` 或 `Initiate_RemoveAttachmentOnWeapon`）。装不装由服务器决定，成功后广播 `OnAttachmentsChanged` 触发菜单重建 |
+
+### 22.4 `ULoadoutScreen` 与 `ULoadoutAttachmentWindow`
+
+**位置**：[LoadoutScreen.h](<Source/FPS/Public/Ui/LoadoutScreen.h>) / [LoadoutScreen.cpp](<Source/FPS/Private/Ui/LoadoutScreen.cpp>)
+
+这两个控件**完全由 C++ 构建**（`WidgetTree->ConstructWidget`），没有对应的 WBP 资产：
+
+| 函数 | 行为 |
+| --- | --- |
+| `ULoadoutScreen(const FObjectInitializer&)` | 调用 `SetIsFocusable(true)`，让界面能拿到键盘焦点 |
+| `NativeOnInitialized()` → `BuildLayout()` | 构建 Canvas 根：全屏压暗 Border、武器面板（标题、"Tab 关闭"提示、预览层 = `UImage` + 三个透明点击 `UButton` 与其底部居中标签）、以及承载配件窗的 `PopupLayer`。同时按硬编码路径加载 `/Game/FPS/UI/WBP_AttachmentSlotRow` 作为配件窗的行控件 |
+| `NativeConstruct()` → `RefreshWeapons()` | 先解绑旧武器，把 `ShownWeapons` 设为 3，为背包前三把订阅 `OnAttachmentsChanged`，给每张卡写名字（空位写"空"并禁用），按需生成 `ALoadoutPreviewRig`（`RF_Transient`、`AlwaysSpawn`、`Z = -100000`），调用 `PreviewRig->ShowWeapons(...)`，用渲染目标（512×768）设置预览笔刷，并在下一帧再拍一次 |
+| `NativeDestruct()` | 解绑所有展示过的武器并销毁预览装置 |
+| `OpenWindow(int32 Index)` | 在 `PopupLayer` 里按需创建唯一的 `ULoadoutAttachmentWindow`，首次打开时定位到 42% 宽度 / 72px（用户拖动过就不再自动定位），然后 `ShowForWeapon` |
+| `HandleAttachmentsChanged(AWeapon*)` | 重新 `PreviewRig->ShowWeapons(...)`，让预览反映最新配件 |
+| `ULoadoutAttachmentWindow::BuildLayout()` | `USizeBox`（最小宽 420）→ 圆角 `UBorder` 外框 → 竖直框：`DragHandle` Border（内含 `Text_WeaponName`）、`Text_Empty` 提示、`SlotList` |
+| `ShowForWeapon` / `RebuildSlots` | 绑定武器（订阅 `OnAttachmentsChanged`），按槽位重建行；若重建由变化广播触发，则延迟到下一帧 |
+| `NativeOnPreviewMouseButtonDown` / `NativeOnMouseMove` / `NativeOnMouseButtonUp` | 按住标题栏拖动窗口：捕获鼠标、按"本地点击位置 − 记录偏移"移动 Canvas 槽位、松开时释放捕获；`bUserMoved` 让整备界面以后不再自动定位 |
+
+### 22.5 `ALoadoutPreviewRig`
+
+**位置**：[LoadoutPreviewRig.h](<Source/FPS/Public/Ui/LoadoutPreviewRig.h>) / [LoadoutPreviewRig.cpp](<Source/FPS/Private/Ui/LoadoutPreviewRig.cpp>)
+
+- 构造函数：一个根组件；**正交** `USceneCaptureComponent2D` 位于 `(400,0,0)`、朝 +X 反方向看，`OrthoWidth = 180`（于是 512×768 的目标高 270 单位 = 三个 90 单位的格位）；`PRM_UseShowOnlyList`；关闭每帧/随移动捕获；关闭大气、雾、后处理与**光照**（无光照渲染，模型永远可见）；另有一个可移动的方向光。
+- `BeginPlay`：关闭 Actor 碰撞，创建 512×768 的 `PF_B8G8R8A8` 渲染目标（深色底色），赋给捕获组件，并把**只有自己**加入 `ShowOnlyActors`。
+- `ShowWeapons(const TArray<AWeapon*>&)`：清掉上一次的预览组件，最多生成三把枪的预览并拍一张。
+- `SpawnPreview(AWeapon*, Index)`：把武器的 1P/3P 骨骼网格体资产与**它的材质设置**复制到新的 `USkeletalMeshComponent`（强制 LOD1、无碰撞、不投影），放在 `(0, -28, (1-Index) * 90)` 并做 90° Yaw 修正；随后用与枪上相同的挂载顺序算法生成已装配件（挂点可以是预览网格体，也可以是已经生成的配件网格体）。
+- `Capture()` 只是调 `CaptureScene()`，整备界面把它推迟到下一帧执行，保证模型都已注册。
+
+---
+
+## 23. 瞄具、手电与第一人称扶枪 IK
+
+### 23.1 `UOpticScopeComponent`（画中画倍镜）
+
+**位置**：[OpticScopeComponent.h](<Source/FPS/Public/Weapon/OpticScopeComponent.h>) / [OpticScopeComponent.cpp](<Source/FPS/Private/Weapon/OpticScopeComponent.cpp>)
+
+| 函数 | 行为 |
+| --- | --- |
+| 构造函数 | `bCanEverTick = false` —— 由角色 Tick 驱动，所以它是在开镜对准**之后**才更新 |
+| `UpdateView()` | 开启条件：本地控制、`Combat->bAiming`、武器**不是** `Weapon.type.sniper`、瞄具配件存在且 `IsMagnifiedOptic()`、瞄具 1P 模型存在。不满足就 `Deactivate()`；满足则 `BindToOptic()`（幂等），之后每帧刷新 `Capture->FOVAngle`、把 `HiddenActors` 重置为角色 + 武器（避免手臂和枪自己被拍进镜筒），并在首次激活时打开捕获/Tick/可见性并换入镜片动态材质 |
+| `BindToOptic(OpticMesh, Optic)` | 绑定未变化时直接返回。否则先 `Deactivate()` 并还原上一个镜片材质，再校验 `LensSocketName`、`LensMaterial`、`LensMaterialIndex`（每种失败都打 Warning，并记住绑定以免每帧刷日志，返回 false）。渲染目标（正方形，`RenderTargetSize` 钳制 64…2048）与 `SceneCaptureComponent2D` **只创建一次**，之后用 `SnapToTargetNotIncludingScale` 重新挂到镜片 Socket；创建镜片 `UMaterialInstanceDynamic` 并把渲染目标塞进 `LensTextureParameterName`；记录镜片槽原材质以便还原 |
+| `Deactivate()` | 停止逐帧捕获、关闭捕获组件 Tick 与可见性、还原镜片材质 —— 不开镜时零开销 |
+| `RestoreLensMaterial()` | 仅当镜片槽当前仍是我们的 MID 时才还原，避免覆盖别人设置过的材质 |
+| `ComputeCaptureFOV(Optic)` | 与狙击镜相同的三角换算：`2·atan(tan(基准/2) / 倍率)`，基准取 `BaseFOVForMagnification`，为 0 时用角色 `DefaultFOV` |
+| `EndPlay(...)` | 关闭、还原材质并销毁捕获组件 |
+
+与 `USniperScopeComponent`（第 16 章）的区别：狙击镜是**全屏 UMG 遮罩**，本组件是**在镜片位置做材质替换**的画中画 —— 因此非狙击武器也能装倍镜，而 `Weapon.type.sniper` 这条路径仍然独占全屏镜。
+
+### 23.2 手电
+
+| 函数（AWeapon） | 行为 |
+| --- | --- |
+| `HasFlashlight()` | 任一已装配件 `bProvidesFlashlight` 为真则返回真 |
+| `ToggleFlashlight()` | 仅权威，且必须存在手电：翻转 `bFlashlightOn`，调用 `OnRep_FlashlightOn()`（服务器不会收到自己的 OnRep）并 `ForceNetUpdate()` |
+| `OnRep_FlashlightOn()` | 客户端应用开关状态 |
+| `ApplyFlashlightState()` | `SetHiddenInGame(!bFlashlightOn)` + `SetVisibility(bFlashlightOn)`。可见性变化后还要再调一次，因为父网格隐藏会把过期的隐藏标记传播给挂在上面的灯 |
+| `UpdateFlashlightAttachment()` | 选择本地玩家真正能看到的模型（本地控制用 1P，否则 3P），把聚光灯挂到该模型的 `LightSocketName`（没有该 Socket 就挂在模型原点） |
+| 创建 | `RebuildAttachmentVisuals` 按需创建 `USpotLightComponent`，并从第一个手电配件复制强度、颜色、衰减半径与内外锥角；没有手电配件时销毁它 |
+
+### 23.3 第一人称扶枪 IK
+
+| 函数 | 行为 |
+| --- | --- |
+| `AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld)` | 先刷新（可能被隐藏的）枪骨骼。优先**握把配件**：它必须挂在真实 Socket 上（父组件确实有该挂点 Socket），且模型上有 `FabrikSocketName`；否则回退到枪骨骼的 `FABRIK` Socket，连它也没有则返回 false |
+| `AShooterCharacter::CalculateFABRIKSocket()` | 先把 `FABRIK_Alpha1P` 归零，然后写 3P 目标（`FABRIK_SocketTransform`，转换到 3P 身体 `hand_r` 骨骼空间）与 1P 目标（`FABRIK_SocketTransform1P`，转换到 `Mesh1P` 的 `hand_r` 空间）并把 `FABRIK_Alpha1P` 置 1。**狙击枪刻意跳过 1P 目标**（保持 0），让第一人称的左手继续跟动画 |
+| `UFirstPersonAnimInstance::NativeUpdateAnimation(float)` | 每帧把 `AShooterCharacter::FABRIK_SocketTransform1P` / `FABRIK_Alpha1P` 拷进自己的 `FABRIK_Socket1P` / `FABRIK_Alpha1P`；拥有者不是射击角色时把 alpha 归零。`ABP_FirstPerson` 继承这个类，所以 ABP 里的 FABRIK 节点可以直接用 |
+
+### 23.4 Socket 解析优先级
+
+| 解析函数 | 顺序 |
+| --- | --- |
+| `AWeapon::GetAimSocketWorldLocation`（开镜对准） | 1) 瞄具配件的 `SightSocketName`（**1P** 模型）；2) **枪管**配件 1P 模型上的 `AimSocketName`；3) 其他配件（跳过瞄具/枪管）上的 `AimSocketName`；4) 枪自身 `Mesh1P` 上的 `AimSocketName` |
+| `AWeapon::GetMuzzleAttachPoint`（开火特效原点） | 1) **枪口**配件的 `MuzzleSocketName`（消音器在枪管前面，所以优先）；2) **枪管**配件的 Socket；3) 枪模型 + 反射读取的 `MuzzleSocketName`（默认 `"Muzzle"`） |
+| `AWeapon::GetFabrikWorldTransform` | 1) 正确挂载的握把配件 `FabrikSocketName`；2) 枪骨骼的 `FABRIK`；3) 失败 |
+| `FindAttachmentMount`（新配件模型挂哪） | 1) 枪模型有该槽位 `SocketName`（或槽位没写 Socket）时挂枪；2) 否则找第一个带该 Socket 的已生成配件模型；3) 都没有则挂枪根并打 Warning |
+
+### 23.5 输入与输入模式细节
+
+| 函数 | 行为 |
+| --- | --- |
+| `AShooterPlayerController::EnsureLoadoutInput()` | `BeginPlay` 与 `SetupInputComponent` 都会调用。缺失时用 C++ 创建 `IA_Loadout_Runtime`（Boolean）与 `IMC_Loadout_Runtime`（映射 **Tab**），若子系统还没有该上下文则以优先级 1 加入 —— 所以整备键**不在** `IMC_Shooter` 里 |
+| `Input_ToggleLoadout()` | 仅本地控制器。按需创建 `ULoadoutScreen`；已打开则移除并恢复 `FInputModeGameOnly`（隐藏鼠标、恢复转视角与移动）。打开时先关掉配件菜单（避免输入模式计数错乱），松开扳机，以 Z 20 加入视口并切到 `FInputModeGameAndUI`：控件获得焦点、显示鼠标、不锁定到视口、屏蔽转视角与移动 |
+| `Input_ToggleAttachmentMenu()` | 仅本地控制器，且整备界面打开时忽略。按需创建 `AttachmentMenuClass`；关闭时恢复纯游戏输入，打开时松开扳机、以 Z 10 加入视口并切到 `FInputModeGameAndUI`（显示鼠标、屏蔽转视角，仍允许移动） |
+| `Input_ToggleFlashlight()` | 只转发请求：`Combat->Initiate_ToggleFlashlight()` |
+| `AShooterCharacter::Input_FireWeapon_Pressed()` | `PC->bShowMouseCursor` 为真时直接返回，因此在菜单里点鼠标不会开枪 |
+
+---
+
+*本文档基于当前 `master` 分支源码（提交 `ab816ba Repair Weapon review rotation error` 时的本地状态）通读整理。*

@@ -32,8 +32,13 @@
 18. [End-to-end sequences](#18-end-to-end-sequences)
 19. [Blueprint contract checklist](#19-blueprint-contract-checklist)
 20. [Caveats, known issues and extension notes](#20-caveats-known-issues-and-extension-notes)
+21. [Attachment data asset — `UAttachmentData`](#21-attachment-data-asset--uattachmentdata)
+22. [Attachment and loadout UI](#22-attachment-and-loadout-ui)
+23. [Optics, flashlight and first-person FABRIK](#23-optics-flashlight-and-first-person-fabrik)
 
-> **Latest revision (recoil / stamina / healing / locomotion):** new subsections were added to the existing sections — `4.11` (recoil structs, new delegates, `FPlayerAnim.Strafe_Walking`), `6.5–6.7` (healing, locomotion gait, movement hooks), `7.7–7.9` (recoil, aim-state broadcast, blend-space refresh), `8.4–8.6` (recoil properties, hand-socket re-attach, hidden-for-heal), `11.1` (stamina), `12.1–12.2` (sprint/walk speed model, movement-state replication), `19.1` (blueprint contract additions) and `20.1.1` (new known issues).
+> **Latest revision (weapon attachments, loadout, PiP optics):** new top-level sections `21–23` document the attachment data asset, the attachment/loadout UI and the picture-in-picture optic + flashlight + first-person FABRIK, with contract additions in `19.2` and new known issues in `20.1.2`.
+>
+> **Previous revision (recoil / stamina / healing / locomotion):** subsections `4.11`, `6.5–6.7`, `7.7–7.9`, `8.4–8.6`, `11.1`, `12.1–12.2`, `19.1` and `20.1.1`.
 
 ---
 
@@ -1358,6 +1363,21 @@ Several C++/Blueprint contracts are implicit (by name or by interface). Changing
 | Widget | `WB_Stamina` bound to `OnStaminaChanged` / `OnMaxStaminaChanged` | `UUserWidget` | `UStatsComponent` delegates | No stamina bar (the widget exists and is hosted by `WBP_ShooterOverlay`) |
 | Gameplay tag / interface | Weapons or components implementing `IRecoilModifier::GetAttachmentRecoilScale` | Blueprint interface | `GatherAttachmentRecoil` | No attachment recoil modifiers apply (optional feature) |
 
+### 19.2 Contract additions for attachments, optics and the loadout UI
+
+| Category | Name | Type | Consumer | Consequence if missing |
+| --- | --- | --- | --- | --- |
+| Weapon slot table | `FPS|Attachment → AttachmentSlots` on the weapon blueprint | `TArray<FWeaponAttachmentSlot>` | `FindSlot`, `CanEquipAttachment`, `RebuildAttachmentVisuals` | The weapon has no attachment slots; the menu reports "this weapon has no attachment slots" |
+| Attachment asset | `SlotTag` matching a slot tag of that weapon, plus `Mesh` | `UAttachmentData` | `AWeapon::EquipAttachment` | The request is rejected (server-side warning) |
+| Mesh sockets | `FABRIK` on a grip mesh, `Muzzle` on muzzle/barrel meshes, `SightSocket` on an optic, `LensSocket` on a magnified optic, `LightSocket` on a flashlight mesh | sockets on the attachment static mesh | 1P/3P hand IK, muzzle FX, ADS alignment, PiP capture, flashlight mount | That feature is skipped and logs a warning |
+| Menu widget | `WBP_AttachmentMenu` with `SlotList` (**required**) and `Text_WeaponName` (optional), `RowClass = WBP_AttachmentSlotRow` | UMG binds | `UAttachmentMenu` | `BindWidget` asserts / the menu does not build |
+| Slot row widget | `Text_SlotName` and `EntryContainer` (**required**), `EntryClass = WBP_AttachmentEntry` | UMG binds | `UAttachmentSlotRow::Setup` | Same as above |
+| Entry widget | `Button_Select` and `Text_Name` (**required**), `Image_Icon` (optional) | UMG binds | `UAttachmentOptionEntry::Setup` | Same as above |
+| Controller properties | `AttachmentMenuClass`, `ToggleAttachmentMenuAction`, `FlashlightAction` | `TSubclassOf` / `UInputAction` | `SetupInputComponent`, `Input_ToggleAttachmentMenu` | The menu or flashlight key does nothing |
+| Input assets | `IA_AttachmentMenu`, `IA_Flashlight` present in `IMC_Shooter` | input actions | controller bindings | Those keys are never triggered |
+| ABP_FirstPerson parent class | `UFirstPersonAnimInstance` exposing `FABRIK_Socket1P` / `FABRIK_Alpha1P` | C++ anim instance | `NativeUpdateAnimation` | The 1P left hand does not follow the weapon or grip |
+| Hard-coded widget path | `/Game/FPS/UI/WBP_AttachmentSlotRow` | widget blueprint | `ULoadoutAttachmentWindow::BuildLayout` | The loadout window has no rows (warning logged) |
+
 ## 20. Caveats, known issues and extension notes
 
 ### 20.1 Known issues
@@ -1399,6 +1419,20 @@ Fixed in this revision (no longer issues in 20.1):
 - `UStatsComponent` finally ticks, so stamina works; `bCanEverTick` / `bStartWithTickEnabled` are now `true`.
 - `EDeathState` is at least read now (the heal path refuses to heal the dead), though it is still never written.
 
+#### 20.1.2 Added with the attachment / loadout revision
+
+| # | Location | Issue | Impact / suggestion |
+| --- | --- | --- | --- |
+| 23 | `ULoadoutAttachmentWindow::BuildLayout` | Loads `/Game/FPS/UI/WBP_AttachmentSlotRow` from a hard-coded path | Renaming or moving that widget empties the loadout window rows (a warning is logged) |
+| 24 | `AWeapon::GetFallbackMuzzleSocketName` | Reads a `MuzzleSocketName` property **by reflection** and falls back to `"Muzzle"` | A property renamed in the blueprint silently falls back to the default name |
+| 25 | Attachment mount resolution | A slot socket missing on both the weapon and the equipped attachments logs a warning and mounts the mesh at the weapon root | Verify the slot `SocketName` and the attachment mesh sockets |
+| 26 | `RebuildAttachmentVisuals` | Every equip/remove destroys **all** 1P/3P attachment meshes and re-parents the spotlight | Fine for a handful of attachments, but it is not incremental; the default loadout runs it once per weapon at spawn |
+| 27 | `ALoadoutPreviewRig` | Spawned at `Z = -100000` as `RF_Transient`; renders with lighting/fog/post-process/atmosphere disabled | Purely local presentation; the models are always visible because the capture is unlit |
+| 28 | `ULoadoutScreen::RefreshWeapons` | Shows only the first three inventory weapons; the right-hand bag panel is not implemented | Extend it if the inventory grows |
+| 29 | `AShooterCharacter::Input_FireWeapon_Pressed` | Returns early while `PC->bShowMouseCursor` is true | Clicking UI never fires — but a stray visible cursor also blocks firing, so check the input mode if firing "stops working" |
+| 30 | `UOpticScopeComponent::UpdateView` | Requires a non-sniper weapon, `OpticType = Magnified`, a valid lens socket, a lens material and a valid `LensMaterialIndex` | A misconfigured optic logs a warning and does not magnify (the sight still aligns normally) |
+| 31 | Attachment UI | Built from replicated state, so a rejected equip/remove leaves the menu unchanged | The server logs the rejection; there is no client-side error surfacing |
+
 ### 20.2 Review notes (code-quality observations)
 
 - **Comments record design decisions**: many comments explain *why not* to do something (the recursion overflow in `Multicast_CycleWeapon`, why `Initiate_FireWeapon_Pressed` must not gate on `FireTimer`, why the 1P equip montage plays even with a mismatched skeleton). Do **not** treat them as redundant when refactoring.
@@ -1419,4 +1453,160 @@ Fixed in this revision (no longer issues in 20.1):
 
 ---
 
-*This document was compiled by reading the source on the current `master` branch (local state at commit `c096f05 Localmotion Play rate when player is walking`).*
+## 21. Attachment data asset — `UAttachmentData`
+
+**Location**: [AttachmentData.h](<Source/FPS/Public/Weapon/AttachmentData.h>) / [AttachmentData.cpp](<Source/FPS/Private/Weapon/AttachmentData.cpp>)
+**Inherits**: `UPrimaryDataAsset` — `GetPrimaryAssetId()` returns `("Attachment", <AssetName>)`, so the asset manager can enumerate every attachment under that primary asset type.
+
+### 21.1 `EOpticType`
+
+| Value | Meaning |
+| --- | --- |
+| `None` | Not a sight (grip, magazine, stock, flashlight…) |
+| `RedDot` | Camera aligns to the `SightSocket`; no picture-in-picture |
+| `Holographic` | Same as red dot, kept as a separate authoring option |
+| `Magnified` | Aligns **and** runs the picture-in-picture capture (see 23) |
+
+`IsMagnifiedOptic()` is the inline predicate used by `UOpticScopeComponent`.
+
+### 21.2 Properties
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `SlotTag` | — | Which slot type this attachment belongs to (`Attachment.Slot.*`); must match a slot tag on the weapon |
+| `DisplayName` / `Icon` | — | Name and icon used by the menu entries |
+| `Mesh` / `MeshOffset` | — / identity | Static mesh spawned on the weapon, and its offset relative to the mount socket |
+| `FabrikSocketName` | `FABRIK` | Socket **on the grip mesh** that the hands should hold; 1P and 3P IK both target it |
+| `MuzzleSocketName` | `Muzzle` | Socket on a muzzle/barrel mesh used as the firing FX origin (muzzle attachments win over barrels) |
+| `RecoilMultiplier` | `1.0` | Multiplied into the recoil kick (0.8 = 20 % less); all attachments multiply together |
+| `RecoilRecoveryMultiplier` | `1.0` | Scales how fast the view is given back |
+| `bOverridesAimFOV` / `AimFOV` | `false` / `55` | When set, ADS uses this FOV instead of the weapon's `AimFeildOfView` |
+| `SightSocketName` | `SightSocket` | Socket on the optic mesh (dot centre) that the camera aligns to while aiming |
+| `OpticType` | `None` | See 21.1 |
+| `Magnification` / `BaseFOVForMagnification` | `4` / `0` | Magnification, and the reference FOV used to convert it to a capture FOV (0 = the character's default FOV) |
+| `LensSocketName` | `LensSocket` | Socket where the `SceneCaptureComponent2D` is attached |
+| `LensMaterial` / `LensTextureParameterName` / `LensMaterialIndex` | — / `ScopeView` / `0` | Material swapped onto the lens slot, the texture parameter that receives the render target, and which material slot is the lens |
+| `RenderTargetSize` | `512` | Square capture resolution (clamped to 64…2048) |
+| `bProvidesFlashlight` + `LightSocketName`, `LightIntensity`, `LightColor`, `LightAttenuationRadius`, `LightInnerConeAngle`, `LightOuterConeAngle` | `false`, `LightSocket`, `5000`, warm white, `2500`, `12`, `24` | Spotlight created on the weapon and attached to this mesh |
+
+**Key design note**: the *mount* socket is **not** on the attachment — it comes from the weapon's slot table (`FWeaponAttachmentSlot::SocketName`). That is what lets the same red dot sit at a different position on each gun, while the attachment only has to author its own functional sockets.
+
+---
+
+## 22. Attachment and loadout UI
+
+### 22.1 `UAttachmentMenu`
+
+**Location**: [AttachmentMenu.h](<Source/FPS/Public/Ui/AttachmentMenu.h>) / [AttachmentMenu.cpp](<Source/FPS/Private/Ui/AttachmentMenu.cpp>)
+
+| Function | Behaviour |
+| --- | --- |
+| `NativeConstruct()` | Finds the combat component on the owning pawn, subscribes to `OnCurrentWeaponChanged` (a weapon swap rebuilds the whole table) and calls `Refresh()` |
+| `NativeDestruct()` | Unsubscribes from the combat component and from the bound weapon, so a closed menu stops receiving notifications |
+| `BindToWeapon(AWeapon*)` | Moves the `OnAttachmentsChanged` subscription from the previous weapon to the new one |
+| `Refresh()` (BlueprintCallable) | Clears `SlotList`, resolves the current weapon, sets `Text_WeaponName` from the **blueprint class display name** (`GetClass()->GetDisplayNameText()`, not the instance name), then creates one `RowClass` widget per entry of `Weapon->GetAttachmentSlots()` |
+| `OnAttachmentsChanged` / `OnCurrentWeaponChanged` | Both call `ScheduleMenuRefresh`, a file-local helper that defers the refresh to the **next tick** — refreshing inside the button's own `OnClicked` would destroy the widget that is handling the click |
+
+### 22.2 `UAttachmentSlotRow`
+
+| Function | Behaviour |
+| --- | --- |
+| `Setup(AWeapon*, const FWeaponAttachmentSlot&)` | Writes `Text_SlotName` from the **last segment** of the slot tag (`Attachment.Slot.Barrel` → `Barrel`); clears `EntryContainer`; for a non-required slot first adds a "remove" entry (`Data == nullptr`, equipped when nothing is in the slot); then adds one entry per `Weapon->GetAllowedAttachmentsForSlot()`, marking the equipped one and disabling anything `CanEquipAttachment` rejects |
+
+### 22.3 `UAttachmentOptionEntry`
+
+| Function | Behaviour |
+| --- | --- |
+| `NativeOnInitialized()` | Binds `Button_Select->OnClicked` |
+| `Setup(Data, SlotTag, bEquipped, bAllowed, Weapon)` | Label = `DisplayName` or the asset name (or the `RemoveText` fallback when `Data` is null); shows `Image_Icon` only when the attachment has one; tints the button with `EquippedColor` when equipped and disables it when `bAllowed` is false |
+| `OnSelectClicked()` | Ignores the click when already equipped; otherwise it only **requests** the change through the combat component (`Initiate_EquipAttachmentOnWeapon` or `Initiate_RemoveAttachmentOnWeapon`). The server decides, and the resulting `OnAttachmentsChanged` broadcast rebuilds the menu |
+
+### 22.4 `ULoadoutScreen` and `ULoadoutAttachmentWindow`
+
+**Location**: [LoadoutScreen.h](<Source/FPS/Public/Ui/LoadoutScreen.h>) / [LoadoutScreen.cpp](<Source/FPS/Private/Ui/LoadoutScreen.cpp>)
+
+Both widgets are **built entirely in C++** (`WidgetTree->ConstructWidget`) — there is no WBP asset for them:
+
+| Function | Behaviour |
+| --- | --- |
+| `ULoadoutScreen(const FObjectInitializer&)` | Calls `SetIsFocusable(true)` so the screen can take keyboard focus |
+| `NativeOnInitialized()` → `BuildLayout()` | Builds a canvas root: a dim full-screen border, a weapon panel (title, "Tab 关闭" hint, preview overlay = `UImage` plus three transparent hit `UButton`s with bottom-centre labels) and a `PopupLayer` canvas for the attachment window. It also loads `/Game/FPS/UI/WBP_AttachmentSlotRow` (hard-coded) for the window rows |
+| `NativeConstruct()` → `RefreshWeapons()` | Unsubscribes the previous weapons, resizes `ShownWeapons` to 3, subscribes `OnAttachmentsChanged` for the first three inventory entries, labels each card (or "空" and disabled when absent), lazily spawns `ALoadoutPreviewRig` (`RF_Transient`, `AlwaysSpawn`, at `Z = -100000`), calls `PreviewRig->ShowWeapons(...)`, sets the preview brush from the rig's render target (512×768) and re-captures on the next tick |
+| `NativeDestruct()` | Unsubscribes every shown weapon and destroys the preview rig |
+| `OpenWindow(int32 Index)` | Lazily creates a single `ULoadoutAttachmentWindow` inside `PopupLayer`, positions it at 42 % width / 72 px the first time (unless the user already dragged it) and calls `ShowForWeapon` |
+| `HandleAttachmentsChanged(AWeapon*)` | Re-runs `PreviewRig->ShowWeapons(...)` so the preview reflects the new attachment set |
+| `ULoadoutAttachmentWindow::BuildLayout()` | `USizeBox` (min width 420) → rounded `UBorder` frame → vertical box with a `DragHandle` border holding `Text_WeaponName`, a `Text_Empty` hint and the `SlotList` vertical box |
+| `ShowForWeapon` / `RebuildSlots` | Binds the weapon (subscribing `OnAttachmentsChanged`) and rebuilds one row per slot, deferring the rebuild to the next tick when it is triggered by a change broadcast |
+| `NativeOnPreviewMouseButtonDown` / `NativeOnMouseMove` / `NativeOnMouseButtonUp` | Dragging the window by its handle: capture the mouse, move the canvas slot by the delta between the local click position and the stored offset, release the capture on button up; `bUserMoved` stops the screen from re-positioning the window later |
+
+### 22.5 `ALoadoutPreviewRig`
+
+**Location**: [LoadoutPreviewRig.h](<Source/FPS/Public/Ui/LoadoutPreviewRig.h>) / [LoadoutPreviewRig.cpp](<Source/FPS/Private/Ui/LoadoutPreviewRig.cpp>)
+
+- Constructor: root scene component; an **orthographic** `USceneCaptureComponent2D` at `(400, 0, 0)` looking back down +X with `OrthoWidth = 180` (so a 512×768 target is 270 units tall = three 90-unit slots); `PRM_UseShowOnlyList`; capture every frame / on movement disabled; atmosphere, fog, post-processing and **lighting** disabled (an unlit render, so the models are always visible); a moveable directional `KeyLight`.
+- `BeginPlay`: disables actor collision, creates a 512×768 `PF_B8G8R8A8` render target with a dark clear colour, assigns it to the capture and adds **only this actor** to `ShowOnlyActors`.
+- `ShowWeapons(const TArray<AWeapon*>&)`: clears the previous preview components, spawns up to three weapon previews and captures once.
+- `SpawnPreview(AWeapon*, Index)`: copies the weapon's 1P/3P skeletal mesh asset and **its material assignments** onto a new `USkeletalMeshComponent` (forced LOD 1, no collision, no shadow), places it at `(0, -28, (1-Index) * 90)` with a 90° yaw correction, then spawns the equipped attachments using the same mount-order algorithm as the weapon (a mount can be the preview mesh or an already-spawned attachment mesh).
+- `Capture()` simply calls `CaptureScene()`, which the loadout screen defers to the next tick so the meshes are registered before rendering.
+
+---
+
+## 23. Optics, flashlight and first-person FABRIK
+
+### 23.1 `UOpticScopeComponent` (picture-in-picture magnified optic)
+
+**Location**: [OpticScopeComponent.h](<Source/FPS/Public/Weapon/OpticScopeComponent.h>) / [OpticScopeComponent.cpp](<Source/FPS/Private/Weapon/OpticScopeComponent.cpp>)
+
+| Function | Behaviour |
+| --- | --- |
+| Constructor | `bCanEverTick = false` — the character tick drives it, so the scope is updated **after** the ADS alignment |
+| `UpdateView()` | Conditions for being on: locally controlled, `Combat->bAiming`, the weapon is **not** tagged `Weapon.type.sniper`, the optic attachment exists, `IsMagnifiedOptic()`, and the optic's 1P mesh exists. When off → `Deactivate()`. When on → `BindToOptic()` (idempotent), then every frame refresh `Capture->FOVAngle`, reset `HiddenActors` to the character + weapon (so the arms and the gun are not drawn inside the tube) and, on the first active frame, enable capture/tick/visibility and swap in the lens material instance |
+| `BindToOptic(OpticMesh, Optic)` | Returns early when the binding is unchanged. Otherwise deactivates, restores the previous lens material, then validates `LensSocketName`, `LensMaterial` and `LensMaterialIndex` (each failure logs a warning, caches the binding so the log is not spammed every frame, and returns false). Creates the render target (square, `RenderTargetSize` clamped to 64…2048) and the `SceneCaptureComponent2D` **once**, re-parents it to the lens socket with `SnapToTargetNotIncludingScale`, creates the lens `UMaterialInstanceDynamic` and sets the render target on `LensTextureParameterName`, and records the original material of the lens slot so it can be restored |
+| `Deactivate()` | Stops per-frame capture, disables the capture tick/visibility and restores the lens material — no cost while not aiming |
+| `RestoreLensMaterial()` | Puts the original material back, but only if the lens slot still holds our MID (so it never clobbers a material someone else set) |
+| `ComputeCaptureFOV(Optic)` | Same tangent maths as the sniper scope: `2·atan(tan(base/2) / magnification)`, with the base FOV taken from `BaseFOVForMagnification` or the character's `DefaultFOV` |
+| `EndPlay(...)` | Deactivates, restores the lens material and destroys the capture component |
+
+Difference from `USniperScopeComponent` (section 16): the sniper scope renders a **full-screen UMG mask**, while this component renders **inside the optic lens** using a material swap — so a weapon can have a magnified attachment without the sniper weapon path, and the sniper tag stays exclusive to the full-screen version.
+
+### 23.2 Flashlight
+
+| Function (AWeapon) | Behaviour |
+| --- | --- |
+| `HasFlashlight()` | True when any equipped attachment sets `bProvidesFlashlight` |
+| `ToggleFlashlight()` | Authority only, and only when a flashlight exists: flips `bFlashlightOn`, calls `OnRep_FlashlightOn()` (the server does not receive its own `OnRep`) and `ForceNetUpdate()` |
+| `OnRep_FlashlightOn()` | Applies the state on clients |
+| `ApplyFlashlightState()` | `SetHiddenInGame(!bFlashlightOn)` + `SetVisibility(bFlashlightOn)`. Called again after visibility changes because hiding the parent mesh propagates a stale hidden flag to the attached light |
+| `UpdateFlashlightAttachment()` | Picks the mesh the local player can actually see (1P when locally controlled, otherwise 3P) and attaches the spotlight to it at `LightSocketName` when that socket exists, else at the mesh origin |
+| Creation | `RebuildAttachmentVisuals` creates the `USpotLightComponent` on demand and copies intensity, colour, attenuation radius and inner/outer cone angles from the first flashlight attachment; it is destroyed when no flashlight attachment remains |
+
+### 23.3 First-person FABRIK
+
+| Function | Behaviour |
+| --- | --- |
+| `AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld)` | Refreshes the (possibly hidden) weapon mesh bones first. Prefers the **grip attachment**: it must be mounted on a real socket (the parent component must have the mount socket) and its mesh must have `FabrikSocketName`; otherwise it falls back to the weapon mesh's own `FABRIK` socket and returns false when that is missing too |
+| `AShooterCharacter::CalculateFABRIKSocket()` | Resets `FABRIK_Alpha1P` to 0, then writes the 3P target (`FABRIK_SocketTransform`, converted into the `hand_r` bone space of the 3P body) and the 1P target (`FABRIK_SocketTransform1P`, converted into the `hand_r` space of `Mesh1P`) with `FABRIK_Alpha1P = 1`. **Sniper weapons deliberately skip the 1P target** (`FABRIK_Alpha1P` stays 0) so the first-person hand keeps following the animation |
+| `UFirstPersonAnimInstance::NativeUpdateAnimation(float)` | Copies `AShooterCharacter::FABRIK_SocketTransform1P` / `FABRIK_Alpha1P` into its own `FABRIK_Socket1P` / `FABRIK_Alpha1P` every frame, and zeroes the alpha when the owning pawn is not a shooter character. `ABP_FirstPerson` derives from this class, so a FABRIK node in the ABP can consume them directly |
+
+### 23.4 Socket resolution order
+
+| Resolver | Order |
+| --- | --- |
+| `AWeapon::GetAimSocketWorldLocation` (ADS alignment) | 1) the optic attachment's `SightSocketName` on its **1P** mesh; 2) `AimSocketName` on the **barrel** attachment's 1P mesh; 3) `AimSocketName` on any other attachment (optic/barrel skipped); 4) `AimSocketName` on the weapon's own `Mesh1P` |
+| `AWeapon::GetMuzzleAttachPoint` (firing FX origin) | 1) the **muzzle** attachment's `MuzzleSocketName` (a suppressor sits in front of the barrel, so it wins); 2) the **barrel** attachment's socket; 3) the weapon mesh with `MuzzleSocketName` read by reflection (default `"Muzzle"`) |
+| `AWeapon::GetFabrikWorldTransform` | 1) the grip attachment's `FabrikSocketName` when properly mounted; 2) `FABRIK` on the weapon mesh; 3) fail |
+| `FindAttachmentMount` (where a new attachment mesh goes) | 1) the weapon mesh when it has the slot's `SocketName` (or the slot has none); 2) the first already-spawned attachment mesh that has that socket; 3) otherwise the weapon mesh plus a warning |
+
+### 23.5 Input and UI-mode details
+
+| Function | Behaviour |
+| --- | --- |
+| `AShooterPlayerController::EnsureLoadoutInput()` | Called from both `BeginPlay` and `SetupInputComponent`. Creates `IA_Loadout_Runtime` (Boolean) and `IMC_Loadout_Runtime` (mapped to **Tab**) in C++ when they are missing, and adds the context at priority 1 if the subsystem does not already have it — the loadout key is therefore never in `IMC_Shooter` |
+| `Input_ToggleLoadout()` | Local controller only. Creates `ULoadoutScreen` on demand; when open it removes it and restores `FInputModeGameOnly` (cursor hidden, look/move input re-enabled). When opening it closes the attachment menu first (so the input-mode bookkeeping does not drift), releases the trigger, adds the widget at Z 20 and switches to `FInputModeGameAndUI` with the widget focused, cursor shown, mouse not locked to the viewport and look/move input ignored |
+| `Input_ToggleAttachmentMenu()` | Local controller only, and ignored while the loadout screen is open. Lazily creates `AttachmentMenuClass`; toggling off restores game-only input, toggling on releases the trigger, adds the widget at Z 10 and switches to `FInputModeGameAndUI` (cursor shown, look input ignored, movement still allowed) |
+| `Input_ToggleFlashlight()` | Only forwards the request: `Combat->Initiate_ToggleFlashlight()` |
+| `AShooterCharacter::Input_FireWeapon_Pressed()` | Returns early while `PC->bShowMouseCursor` is true, so clicking in a menu never fires the weapon |
+
+---
+
+*This document was compiled by reading the source on the current `master` branch (local state at commit `ab816ba Repair Weapon review rotation error`).*
