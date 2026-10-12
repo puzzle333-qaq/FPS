@@ -1328,5 +1328,6 @@ void UCombatComponent::Server_ToggleFlashlight_Implementation()
 
 float UCombatComponent::GetCurrentAimFOV(float Fallback) const
 {
-	return IsValid(CurrentWeapon) ? CurrentWeapon->GetEffectiveAimFOV() : Fallback;
+	const float AimFOV = IsValid(CurrentWeapon) ? CurrentWeapon->GetEffectiveAimFOV() : 0.f;
+	return AimFOV > 0.f ? AimFOV : Fallback;
 }

@@ -683,11 +683,12 @@ float AWeapon::GetRecoilMultiplier() const
 float AWeapon::GetEffectiveAimFOV() const
 {
 	const UAttachmentData* Optic = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Optic);
-	if (IsValid(Optic) && Optic->bOverridesAimFOV)
+	// 优先级：瞄具配件的 AimFOV（勾了 bOverridesAimFOV 且 > 0）→ 枪的 AimFeildOfView（> 0）→ 0 表示“不变焦，用默认 FOV”
+	if (IsValid(Optic) && Optic->bOverridesAimFOV && Optic->AimFOV > 0.f)
 	{
 		return Optic->AimFOV;
 	}
-	return AimFeildOfView;
+	return AimFeildOfView > 0.f ? AimFeildOfView : 0.f;
 }
 
 UAttachmentData* AWeapon::GetOpticAttachment() const
@@ -735,20 +736,8 @@ void AWeapon::OnRep_EquippedAttachments()
 	RebuildAttachmentVisuals();
 	OnAttachmentsChanged.Broadcast(this);
 
-	// 开镜时间轴停在终点后不会再采样。瞄具换了就直接把镜头推到新的 FOV。
-	APawn* Pawn = GetInstigator();
-	if (!IsValid(Pawn) || !Pawn->IsLocallyControlled()) return;
-
-	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(Pawn);
-	if (!IsValid(Combat) || !Combat->bAiming || Combat->CurrentWeapon != this) return;
-
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(Pawn))
-	{
-		if (UCameraComponent* Camera = Shooter->GetFirstPersonCamera())
-		{
-			Camera->SetFieldOfView(GetEffectiveAimFOV());
-		}
-	}
+	// 开镜 FOV 现在由 AShooterCharacter::UpdateAimFieldOfView 每帧插值，
+	// 瞄具换了它下一帧自动追到新的 FOV，这里不用再手动设镜头。
 }
 
 void AWeapon::OnRep_FlashlightOn()

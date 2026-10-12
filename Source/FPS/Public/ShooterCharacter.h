@@ -151,6 +151,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
 	float DefaultFOV;
 
+	// 勾上：开镜 FOV 由 C++ 每帧插值（蓝图 OnAim 里就不要再改 FOV 了）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
+	bool bDriveAimFOVInCode = true;
+
+	// 开镜/关镜时 FOV 的插值速度（越大越快，0 = 瞬间切换）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming", meta = (ClampMin = "0"))
+	float AimFOVInterpSpeed = 20.f;
+
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
@@ -238,6 +246,8 @@ private:
 	void ConfigureAimTickOrder();
 	void UpdateAimSocketAlignment(float DeltaTime);
 	float GetAimTimelineAlpha(float DeltaTime);
+	// 本地玩家每帧把镜头 FOV 插值到开镜目标或默认值
+	void UpdateAimFieldOfView(float DeltaTime);
 
 	bool bWeaponFirstReplicated;
 	FRotator StartingAimRotation;

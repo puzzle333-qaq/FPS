@@ -159,7 +159,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	float GetRecoilMultiplier() const;
 
-	// 开镜 FOV：瞄具配件覆盖了就用配件的，否则用枪自己的 AimFeildOfView。蓝图 OnAim 请用这个
+	// 开镜 FOV：瞄具配件覆盖了（且 > 0）就用配件的，否则用枪自己的 AimFeildOfView；都 <= 0 时返回 0（不变焦）
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
 	float GetEffectiveAimFOV() const;
 

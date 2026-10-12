@@ -169,6 +169,7 @@ void AShooterCharacter::Tick(float DeltaTime)
 	CalculateTurnInPlaceParameters(DeltaTime);
 	CalculateFABRIKSocket(DeltaTime);
 	UpdateAimSocketAlignment(DeltaTime);
+	UpdateAimFieldOfView(DeltaTime);
 
 	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
 	{
@@ -328,6 +329,30 @@ void AShooterCharacter::ConfigureAimTickOrder()
 	{
 		PrimaryActorTick.AddPrerequisite(Mesh1P, Mesh1P->PrimaryComponentTick);
 	}
+}
+
+void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
+{
+	if (!bDriveAimFOVInCode || !IsLocallyControlled() || !IsValid(FirstPersonCamera)) return;
+
+	// 默认：不开镜、切枪（切枪会自动关镜）、死亡时都回到 DefaultFOV
+	float TargetFOV = DefaultFOV;
+	const bool bDead = IsValid(Stats) && Stats->DeathState != EDeathState::NotDead;
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	if (!bDead && IsValid(Combat) && Combat->bAiming && IsValid(Weapon)
+		// 狙击镜用自己的画中画，整屏不变焦（SniperScopeComponent 也会把镜头压回默认）
+		&& !Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper))
+	{
+		TargetFOV = Combat->GetCurrentAimFOV(DefaultFOV);
+	}
+
+	const float CurrentFOV = FirstPersonCamera->FieldOfView;
+	if (FMath::IsNearlyEqual(CurrentFOV, TargetFOV, 0.01f)) return;
+
+	const float NewFOV = AimFOVInterpSpeed > 0.f
+		? FMath::FInterpTo(CurrentFOV, TargetFOV, DeltaTime, AimFOVInterpSpeed)
+		: TargetFOV;
+	FirstPersonCamera->SetFieldOfView(NewFOV);
 }
 
 float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
