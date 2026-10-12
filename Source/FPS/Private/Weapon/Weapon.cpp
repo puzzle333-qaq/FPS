@@ -10,6 +10,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "KismetTraceUtils.h"
+#include "Net/UnrealNetwork.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/SpotLightComponent.h"
+#include "Engine/StaticMesh.h"
 
 AWeapon::AWeapon()
 {
@@ -96,12 +100,24 @@ USkeletalMeshComponent* AWeapon::GetMesh1P() const
 
 bool AWeapon::HasAimSocket() const
 {
-	return IsValid(Mesh1P) && !AimSocketName.IsNone() && Mesh1P->DoesSocketExist(AimSocketName);
+	FVector Unused;
+	return GetAimSocketWorldLocation(Unused);
 }
 
 bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 {
-	if (!HasAimSocket())
+	// 装了瞄具且瞄具模型上有 SightSocket：开镜对准红点中心
+	if (const FAttachmentVisual* Optic = FindVisual(EAttachmentSlot::Optic))
+	{
+		if (IsValid(Optic->Mesh1P) && !Optic->Data->SightSocketName.IsNone() && Optic->Mesh1P->DoesSocketExist(Optic->Data->SightSocketName))
+		{
+			OutLocation = Optic->Mesh1P->GetSocketLocation(Optic->Data->SightSocketName);
+			return true;
+		}
+	}
+
+	// 否则用枪自己的 AimSocket（机瞄）
+	if (!IsValid(Mesh1P) || AimSocketName.IsNone() || !Mesh1P->DoesSocketExist(AimSocketName))
 	{
 		return false;
 	}
@@ -156,6 +172,9 @@ void AWeapon::AttachToOwingPawn()
 	Mesh3P->AttachToComponent(PawnMesh3P, SnapRules, AttachPoint);
 	Mesh3P->SetRelativeTransform(AuthoredMesh3PRelative);
 	Mesh3P->RefreshBoneTransforms();
+
+	// 现在知道是不是本地玩家了，把手电挂到正确的模型上
+	UpdateFlashlightAttachment();
 }
 
 void AWeapon::AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName)
@@ -321,7 +340,275 @@ void AWeapon::Rep_Fire(int32 AuthAmmo)
 void AWeapon::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	// 默认配件只由服务器装，客户端通过同步拿到
+	if (HasAuthority())
+	{
+		for (UAttachmentData* Attachment : DefaultAttachments)
+		{
+			EquipAttachment(Attachment);
+		}
+	}
+	else if (EquippedAttachments.Num() > 0)
+	{
+		RebuildAttachmentVisuals();
+	}
+}
+
+void AWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AWeapon, EquippedAttachments);
+	DOREPLIFETIME(AWeapon, bFlashlightOn);
+}
+
+// ================= 配件系统 =================
+
+bool AWeapon::EquipAttachment(UAttachmentData* Attachment)
+{
+	if (!HasAuthority() || !IsValid(Attachment)) return false;
+
+	// 同一个槽位只能有一个：先把旧的去掉
+	EquippedAttachments.RemoveAll([Attachment](const UAttachmentData* Existing)
+	{
+		return !IsValid(Existing) || Existing->Slot == Attachment->Slot;
+	});
+	EquippedAttachments.Add(Attachment);
+
+	if (!HasFlashlight())
+	{
+		bFlashlightOn = false;
+	}
+
+	// 服务器不会收到 OnRep，所以手动调一次（监听服务器也要看到模型）
+	OnRep_EquippedAttachments();
+	ForceNetUpdate();
+	return true;
+}
+
+bool AWeapon::RemoveAttachment(EAttachmentSlot Slot)
+{
+	if (!HasAuthority()) return false;
+
+	const int32 Removed = EquippedAttachments.RemoveAll([Slot](const UAttachmentData* Existing)
+	{
+		return !IsValid(Existing) || Existing->Slot == Slot;
+	});
+	if (Removed == 0) return false;
+
+	if (!HasFlashlight())
+	{
+		bFlashlightOn = false;
+	}
+
+	OnRep_EquippedAttachments();
+	ForceNetUpdate();
+	return true;
+}
+
+void AWeapon::ToggleFlashlight()
+{
+	if (!HasAuthority() || !HasFlashlight()) return;
+
+	bFlashlightOn = !bFlashlightOn;
+	OnRep_FlashlightOn();   // 服务器自己也要亮灯
+	ForceNetUpdate();
+}
+
+UAttachmentData* AWeapon::GetAttachmentInSlot(EAttachmentSlot Slot) const
+{
+	for (UAttachmentData* Attachment : EquippedAttachments)
+	{
+		if (IsValid(Attachment) && Attachment->Slot == Slot)
+		{
+			return Attachment;
+		}
+	}
+	return nullptr;
+}
+
+float AWeapon::GetRecoilMultiplier() const
+{
+	float Multiplier = 1.f;
+	for (const UAttachmentData* Attachment : EquippedAttachments)
+	{
+		if (IsValid(Attachment))
+		{
+			Multiplier *= FMath::Max(0.f, Attachment->RecoilMultiplier);   // 相乘叠加：0.8 * 0.9 = 0.72
+		}
+	}
+	return Multiplier;
+}
+
+float AWeapon::GetEffectiveAimFOV() const
+{
+	const UAttachmentData* Optic = GetAttachmentInSlot(EAttachmentSlot::Optic);
+	if (IsValid(Optic) && Optic->bOverridesAimFOV)
+	{
+		return Optic->AimFOV;
+	}
+	return AimFeildOfView;
+}
+
+bool AWeapon::HasFlashlight() const
+{
+	for (const UAttachmentData* Attachment : EquippedAttachments)
+	{
+		if (IsValid(Attachment) && Attachment->bProvidesFlashlight)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+FRecoilScale AWeapon::GetAttachmentRecoilScale_Implementation() const
+{
+	// CombatComponent::ResolveRecoilScale 会把这里的值乘到后座上
+	FRecoilScale Scale;
+	const float Recoil = GetRecoilMultiplier();
+	Scale.Pitch = Recoil;
+	Scale.Yaw = Recoil;
+	for (const UAttachmentData* Attachment : EquippedAttachments)
+	{
+		if (IsValid(Attachment))
+		{
+			Scale.Recovery *= FMath::Max(0.f, Attachment->RecoilRecoveryMultiplier);
+		}
+	}
+	return Scale;
+}
+
+void AWeapon::OnRep_EquippedAttachments()
+{
+	RebuildAttachmentVisuals();
+	OnAttachmentsChanged.Broadcast(this);
+}
+
+void AWeapon::OnRep_FlashlightOn()
+{
+	ApplyFlashlightState();
+}
+
+const FAttachmentVisual* AWeapon::FindVisual(EAttachmentSlot Slot) const
+{
+	return AttachmentVisuals.FindByPredicate([Slot](const FAttachmentVisual& Visual)
+	{
+		return IsValid(Visual.Data) && Visual.Data->Slot == Slot;
+	});
+}
+
+UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson)
+{
+	if (!IsValid(Parent) || !IsValid(Data) || !IsValid(Data->Mesh)) return nullptr;
+
+	if (!Data->AttachSocketName.IsNone() && !Parent->DoesSocketExist(Data->AttachSocketName))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Attachment %s: socket '%s' is missing on %s."), *GetNameSafe(Data), *Data->AttachSocketName.ToString(), *GetNameSafe(Parent->GetSkeletalMeshAsset()));
+	}
+
+	// 运行时创建组件：NewObject + 挂到 Socket + RegisterComponent
+	UStaticMeshComponent* Comp = NewObject<UStaticMeshComponent>(this);
+	Comp->SetStaticMesh(Data->Mesh);
+	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Comp->bReceivesDecals = false;
+	Comp->CastShadow = !bFirstPerson;   // 和枪一样：1P 不投影，3P 投影
+	Comp->SetupAttachment(Parent, Data->AttachSocketName);
+	Comp->SetRelativeTransform(Data->MeshOffset);
+	Comp->RegisterComponent();
+	return Comp;
+}
+
+void AWeapon::RebuildAttachmentVisuals()
+{
+	// 专用服务器不需要画面
+	if (GetNetMode() == NM_DedicatedServer) return;
+
+	// 1. 清掉旧模型
+	for (FAttachmentVisual& Visual : AttachmentVisuals)
+	{
+		if (IsValid(Visual.Mesh1P)) Visual.Mesh1P->DestroyComponent();
+		if (IsValid(Visual.Mesh3P)) Visual.Mesh3P->DestroyComponent();
+	}
+	AttachmentVisuals.Reset();
+
+	// 2. 按当前配件重新生成
+	for (UAttachmentData* Attachment : EquippedAttachments)
+	{
+		if (!IsValid(Attachment)) continue;
+
+		FAttachmentVisual& Visual = AttachmentVisuals.AddDefaulted_GetRef();
+		Visual.Data = Attachment;
+		Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);
+		Visual.Mesh3P = SpawnAttachmentMesh(Mesh3P, Attachment, false);
+	}
+
+	// 3. 手电：有就创建，没有就销毁
+	if (HasFlashlight())
+	{
+		if (!IsValid(Flashlight))
+		{
+			Flashlight = NewObject<USpotLightComponent>(this);
+			Flashlight->SetupAttachment(Mesh1P);
+			Flashlight->RegisterComponent();
+		}
+		for (const UAttachmentData* Attachment : EquippedAttachments)
+		{
+			if (IsValid(Attachment) && Attachment->bProvidesFlashlight)
+			{
+				Flashlight->SetIntensity(Attachment->LightIntensity);
+				Flashlight->SetLightColor(Attachment->LightColor);
+				Flashlight->SetAttenuationRadius(Attachment->LightAttenuationRadius);
+				Flashlight->SetInnerConeAngle(Attachment->LightInnerConeAngle);
+				Flashlight->SetOuterConeAngle(Attachment->LightOuterConeAngle);
+				break;
+			}
+		}
+		UpdateFlashlightAttachment();
+	}
+	else if (IsValid(Flashlight))
+	{
+		Flashlight->DestroyComponent();
+		Flashlight = nullptr;
+	}
+
+	// 新模型要跟枪一样：本地玩家只显示 1P，其他人只显示 3P
+	if (IsValid(GetInstigator()) && Mesh1P->GetAttachParent())
+	{
+		SetMeshVisibility(GetInstigator());
+	}
+	ApplyFlashlightState();
+}
+
+void AWeapon::UpdateFlashlightAttachment()
+{
+	if (!IsValid(Flashlight)) return;
+
+	const FAttachmentVisual* Visual = AttachmentVisuals.FindByPredicate([](const FAttachmentVisual& V)
+	{
+		return IsValid(V.Data) && V.Data->bProvidesFlashlight;
+	});
+	if (!Visual) return;
+
+	// 本地玩家看到的是 1P 模型，其他人看到的是 3P 模型，灯要跟着看得见的那个
+	const APawn* OwningPawn = GetInstigator();
+	const bool bLocal = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
+	USceneComponent* Parent = bLocal ? Visual->Mesh1P.Get() : Visual->Mesh3P.Get();
+	if (!IsValid(Parent))
+	{
+		Parent = bLocal ? Mesh1P.Get() : Mesh3P.Get();
+	}
+
+	const FName Socket = Parent->DoesSocketExist(Visual->Data->LightSocketName) ? Visual->Data->LightSocketName : NAME_None;
+	Flashlight->AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
+}
+
+void AWeapon::ApplyFlashlightState()
+{
+	if (IsValid(Flashlight))
+	{
+		Flashlight->SetVisibility(bFlashlightOn);
+	}
 }
 
 void AWeapon::SetMeshVisibility(APawn* OwningPawn) const

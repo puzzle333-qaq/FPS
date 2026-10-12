@@ -6,9 +6,32 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Engine/Texture2D.h"
+#include "Interface/RecoilModifierInterface.h"
+#include "Weapon/AttachmentData.h"
 #include "Weapon.generated.h"
 
 class UMaterialInstanceDynamic;
+class UStaticMeshComponent;
+class USpotLightComponent;
+
+// 一个已装配件在本地生成的模型（1P/3P 各一个）。只在本地存在，不同步
+USTRUCT()
+struct FAttachmentVisual
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TObjectPtr<UAttachmentData> Data;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMeshComponent> Mesh1P;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMeshComponent> Mesh3P;
+};
+
+// 配件变化时广播，UI 可以绑它刷新
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAttachmentsChanged, AWeapon*, Weapon);
 
 enum EPhysicalSurface : int;
 
@@ -56,13 +79,58 @@ enum class EWeaponKind : uint8
 };
 
 UCLASS()
-class FPS_API AWeapon : public AActor
+class FPS_API AWeapon : public AActor, public IRecoilModifier   // 实现后座接口，CombatComponent 会自动读到配件倍率
 {
 	GENERATED_BODY()
 	
 public:	
 	AWeapon();
 	virtual void OnRep_Instigator() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	// ================= 配件系统 =================
+
+	// 只在服务器调用：装上配件（同槽位的旧配件会被替换）
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
+	bool EquipAttachment(UAttachmentData* Attachment);
+
+	// 只在服务器调用：卸下某个槽位的配件
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
+	bool RemoveAttachment(EAttachmentSlot Slot);
+
+	// 只在服务器调用：开/关手电（没有手电配件时无效）
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
+	void ToggleFlashlight();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	UAttachmentData* GetAttachmentInSlot(EAttachmentSlot Slot) const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	TArray<UAttachmentData*> GetEquippedAttachments() const { return ObjectPtrDecay(EquippedAttachments); }
+
+	// 所有配件后座倍率相乘
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	float GetRecoilMultiplier() const;
+
+	// 开镜 FOV：瞄具配件覆盖了就用配件的，否则用枪自己的 AimFeildOfView。蓝图 OnAim 请用这个
+	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
+	float GetEffectiveAimFOV() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	bool HasFlashlight() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	bool IsFlashlightOn() const { return bFlashlightOn; }
+
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Attachment")
+	FAttachmentsChanged OnAttachmentsChanged;
+
+	// IRecoilModifier
+	virtual FRecoilScale GetAttachmentRecoilScale_Implementation() const override;
+
+	// 枪生成时（服务器）自动装上的配件
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Attachment")
+	TArray<TObjectPtr<UAttachmentData>> DefaultAttachments;
 
 	USkeletalMeshComponent* GetMesh1P() const;
 	USkeletalMeshComponent* GetMesh3P() const;
@@ -172,6 +240,34 @@ private:
 
 	void SetMeshVisibility(APawn* OwningPawn) const;
 	void CaptureAuthoredMeshRelative();
+
+	// ---------- 配件内部 ----------
+	// 已装配件列表。TMap 不能网络同步，所以用数组，每个槽位最多一个
+	UPROPERTY(ReplicatedUsing = OnRep_EquippedAttachments)
+	TArray<TObjectPtr<UAttachmentData>> EquippedAttachments;
+
+	UPROPERTY(ReplicatedUsing = OnRep_FlashlightOn)
+	bool bFlashlightOn = false;
+
+	UFUNCTION()
+	void OnRep_EquippedAttachments();
+
+	UFUNCTION()
+	void OnRep_FlashlightOn();
+
+	// 按 EquippedAttachments 重新生成所有配件模型和手电
+	void RebuildAttachmentVisuals();
+	// 手电挂到 1P 还是 3P 模型上（本地玩家看 1P，其他人看 3P）
+	void UpdateFlashlightAttachment();
+	void ApplyFlashlightState();
+	UStaticMeshComponent* SpawnAttachmentMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson);
+	const FAttachmentVisual* FindVisual(EAttachmentSlot Slot) const;
+
+	UPROPERTY(Transient)
+	TArray<FAttachmentVisual> AttachmentVisuals;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USpotLightComponent> Flashlight;
 
 
 

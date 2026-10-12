@@ -1062,3 +1062,72 @@ AWeapon* UCombatComponent::SpawnWeapon(TSubclassOf<AWeapon> WeaponClass) const
 	return Weapon;
 }
 
+
+// ================= 配件 =================
+
+void UCombatComponent::Initiate_EquipAttachment(UAttachmentData* Attachment)
+{
+	if (!IsValid(Attachment)) return;
+	// 服务器（或单机）直接装；客户端发 RPC 让服务器装，结果再同步回来
+	if (GetOwner()->HasAuthority())
+	{
+		Server_EquipAttachment_Implementation(Attachment);
+	}
+	else
+	{
+		Server_EquipAttachment(Attachment);
+	}
+}
+
+void UCombatComponent::Initiate_RemoveAttachment(EAttachmentSlot Slot)
+{
+	if (GetOwner()->HasAuthority())
+	{
+		Server_RemoveAttachment_Implementation(Slot);
+	}
+	else
+	{
+		Server_RemoveAttachment(Slot);
+	}
+}
+
+void UCombatComponent::Initiate_ToggleFlashlight()
+{
+	if (GetOwner()->HasAuthority())
+	{
+		Server_ToggleFlashlight_Implementation();
+	}
+	else
+	{
+		Server_ToggleFlashlight();
+	}
+}
+
+void UCombatComponent::Server_EquipAttachment_Implementation(UAttachmentData* Attachment)
+{
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->EquipAttachment(Attachment);
+	}
+}
+
+void UCombatComponent::Server_RemoveAttachment_Implementation(EAttachmentSlot Slot)
+{
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->RemoveAttachment(Slot);
+	}
+}
+
+void UCombatComponent::Server_ToggleFlashlight_Implementation()
+{
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->ToggleFlashlight();
+	}
+}
+
+float UCombatComponent::GetCurrentAimFOV(float Fallback) const
+{
+	return IsValid(CurrentWeapon) ? CurrentWeapon->GetEffectiveAimFOV() : Fallback;
+}

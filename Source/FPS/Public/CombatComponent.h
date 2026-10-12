@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "Engine/Texture2D.h"
 #include "Interface/RecoilModifierInterface.h"
+#include "Weapon/AttachmentData.h"
 #include "CombatComponent.generated.h"
 
 UENUM(BlueprintType)
@@ -60,6 +61,20 @@ public:
 	void Initiate_EquipPistolWeapon();
 
 	void Notify_ReloadWeapon();
+
+	// ================= 配件（给 UI / 输入调用，本地调用即可，内部会发给服务器） =================
+	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
+	void Initiate_EquipAttachment(UAttachmentData* Attachment);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
+	void Initiate_RemoveAttachment(EAttachmentSlot Slot);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
+	void Initiate_ToggleFlashlight();
+
+	// 当前枪的开镜 FOV（已考虑瞄具配件）；没有枪时返回 Fallback
+	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
+	float GetCurrentAimFOV(float Fallback = 90.f) const;
 
 	// Moves rounds from reserve into the magazine. Reload input does not call this.
 	// A montage notify calls it at the insert frame.
@@ -193,4 +208,14 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_EquipSlot(EWeaponSlot Slot);
+
+	// 客户端 -> 服务器：给当前枪装/卸配件、开关手电
+	UFUNCTION(Server, Reliable)
+	void Server_EquipAttachment(UAttachmentData* Attachment);
+
+	UFUNCTION(Server, Reliable)
+	void Server_RemoveAttachment(EAttachmentSlot Slot);
+
+	UFUNCTION(Server, Reliable)
+	void Server_ToggleFlashlight();
 };

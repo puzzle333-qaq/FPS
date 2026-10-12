@@ -57,6 +57,19 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		ShooterInputComponent->BindAction(WalkAction, ETriggerEvent::Started, this, &ThisClass::Input_Walk);
 	}
+	if (FlashlightAction)
+	{
+		ShooterInputComponent->BindAction(FlashlightAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFlashlight);
+	}
+}
+
+void AShooterPlayerController::Input_ToggleFlashlight()
+{
+	// 控制器只管“按了键”，真正开关灯交给 CombatComponent -> 服务器 -> 当前武器
+	if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
+	{
+		Combat->Initiate_ToggleFlashlight();
+	}
 }
 
 void AShooterPlayerController::Input_Crouch()

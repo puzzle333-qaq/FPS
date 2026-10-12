@@ -50,6 +50,12 @@ private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>WalkAction;
 
+	// 手电开关（例如 F 键）
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> FlashlightAction;
+
+	void Input_ToggleFlashlight();
+
 	void Input_Crouch();
 	void Input_Jump();
 	void Input_Sprint();
