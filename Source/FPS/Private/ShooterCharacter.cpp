@@ -168,7 +168,10 @@ void AShooterCharacter::Tick(float DeltaTime)
 
 	CalculateTurnInPlaceParameters(DeltaTime);
 	CalculateFABRIKSocket(DeltaTime);
+	UpdateAimAlpha(DeltaTime);             // 开镜进度先推进，下面对准和 FOV 都用它
+	RemoveVisualRecoilFromMesh();          // 开镜对准要按没有后坐的位置算
 	UpdateAimSocketAlignment(DeltaTime);
+	ApplyVisualRecoilToMesh(DeltaTime);    // 算完再把枪身后坐叠回去
 	UpdateAimFieldOfView(DeltaTime);
 
 	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
@@ -331,28 +334,139 @@ void AShooterCharacter::ConfigureAimTickOrder()
 	}
 }
 
+void AShooterCharacter::UpdateAimAlpha(float DeltaTime)
+{
+	if (!IsLocallyControlled()) return;
+
+	const bool bDead = IsValid(Stats) && Stats->DeathState != EDeathState::NotDead;
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	const float Target = (!bDead && IsValid(Combat) && Combat->bAiming) ? 1.f : 0.f;
+
+	// 开镜和关镜都用同一个时间；时间为 0 就瞬间到位
+	const float AdsTime = IsValid(Weapon) ? Weapon->GetEffectiveAdsTime() : 0.2f;
+	if (AdsTime <= KINDA_SMALL_NUMBER)
+	{
+		AimAlpha = Target;
+	}
+	else
+	{
+		AimAlpha = FMath::FInterpConstantTo(AimAlpha, Target, DeltaTime, 1.f / AdsTime);
+	}
+	// 给手臂和 FOV 用的是缓入缓出后的值，看起来不生硬
+	AimAlignAlpha = FMath::InterpEaseInOut(0.f, 1.f, AimAlpha, 2.f);
+}
+
 void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
 {
 	if (!bDriveAimFOVInCode || !IsLocallyControlled() || !IsValid(FirstPersonCamera)) return;
 
-	// 默认：不开镜、切枪（切枪会自动关镜）、死亡时都回到 DefaultFOV
-	float TargetFOV = DefaultFOV;
-	const bool bDead = IsValid(Stats) && Stats->DeathState != EDeathState::NotDead;
+	// 开镜 FOV 目标：狙击用画中画，整屏不变焦（SniperScopeComponent 也会把镜头压回默认）
 	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
-	if (!bDead && IsValid(Combat) && Combat->bAiming && IsValid(Weapon)
-		// 狙击镜用自己的画中画，整屏不变焦（SniperScopeComponent 也会把镜头压回默认）
-		&& !Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper))
+	float AimTargetFOV = DefaultFOV;
+	if (IsValid(Combat) && IsValid(Weapon) && !Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper))
 	{
-		TargetFOV = Combat->GetCurrentAimFOV(DefaultFOV);
+		AimTargetFOV = Combat->GetCurrentAimFOV(DefaultFOV);
 	}
 
-	const float CurrentFOV = FirstPersonCamera->FieldOfView;
-	if (FMath::IsNearlyEqual(CurrentFOV, TargetFOV, 0.01f)) return;
+	if (AimAlpha <= KINDA_SMALL_NUMBER)
+	{
+		// 完全腰射时直接对齐目标，下次开镜只按开镜进度混合
+		SmoothedAimFOV = AimTargetFOV;
+	}
+	else if (IsValid(Combat) && Combat->bAiming)
+	{
+		// 开镜中切倍率档 / 换瞄具：平滑追过去。关镜过程中保持原值，让镜头从当前倍率退回默认
+		SmoothedAimFOV = AimFOVInterpSpeed > 0.f
+			? FMath::FInterpTo(SmoothedAimFOV, AimTargetFOV, DeltaTime, AimFOVInterpSpeed)
+			: AimTargetFOV;
+	}
 
-	const float NewFOV = AimFOVInterpSpeed > 0.f
-		? FMath::FInterpTo(CurrentFOV, TargetFOV, DeltaTime, AimFOVInterpSpeed)
-		: TargetFOV;
-	FirstPersonCamera->SetFieldOfView(NewFOV);
+	// 最终 FOV = 默认 FOV 和开镜 FOV 按开镜进度混合（死亡、关镜、切枪时开镜进度会回到 0）
+	const float NewFOV = FMath::Lerp(DefaultFOV, SmoothedAimFOV, AimAlignAlpha);
+	if (!FMath::IsNearlyEqual(FirstPersonCamera->FieldOfView, NewFOV, 0.001f))
+	{
+		FirstPersonCamera->SetFieldOfView(NewFOV);
+	}
+}
+
+void AShooterCharacter::AddVisualRecoil(const FVector& KickLocation, const FRotator& KickRotation)
+{
+	if (!IsLocallyControlled()) return;
+
+	VisualRecoilLocTarget += KickLocation;
+	VisualRecoilRotTarget += KickRotation;
+
+	// 连发时别越叠越夸张：位移最多 8 厘米，旋转最多 10 度
+	VisualRecoilLocTarget = VisualRecoilLocTarget.GetClampedToMaxSize(8.f);
+	VisualRecoilRotTarget.Pitch = FMath::Clamp(VisualRecoilRotTarget.Pitch, -10.f, 10.f);
+	VisualRecoilRotTarget.Yaw = FMath::Clamp(VisualRecoilRotTarget.Yaw, -10.f, 10.f);
+	VisualRecoilRotTarget.Roll = FMath::Clamp(VisualRecoilRotTarget.Roll, -10.f, 10.f);
+}
+
+void AShooterCharacter::RemoveVisualRecoilFromMesh()
+{
+	if (!bVisualRecoilWritten || !IsValid(Mesh1P)) return;
+	bVisualRecoilWritten = false;
+
+	FVector BaseLoc = Mesh1P->GetRelativeLocation();
+	FQuat BaseQuat = Mesh1P->GetRelativeRotation().Quaternion();
+
+	// 只有 Mesh1P 还是我们上一帧写的值时才减回去。
+	// 如果蓝图（比如开镜时间轴）这期间改过它，就以蓝图的新值为准，不再减
+	if (BaseLoc.Equals(LastWrittenMeshLoc, 0.01f))
+	{
+		BaseLoc -= AppliedRecoilLocParent;
+	}
+	if (BaseQuat.Equals(LastWrittenMeshQuat, 1.e-4f))
+	{
+		BaseQuat = AppliedRecoilQuat.Inverse() * BaseQuat;
+	}
+	Mesh1P->SetRelativeLocationAndRotation(BaseLoc, BaseQuat);
+}
+
+void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
+{
+	if (!IsLocallyControlled() || !IsValid(Mesh1P) || !IsValid(FirstPersonCamera)) return;
+
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	const float KickSpeed = IsValid(Weapon) ? Weapon->VisualRecoilKickSpeed : 30.f;
+	const float RecoverySpeed = IsValid(Weapon) ? Weapon->VisualRecoilRecoverySpeed : 10.f;
+
+	// 两段弹簧：目标慢慢回 0，当前值快速追目标 → 开枪瞬间“踢一下”，然后平滑回位
+	VisualRecoilLocTarget = FMath::VInterpTo(VisualRecoilLocTarget, FVector::ZeroVector, DeltaTime, RecoverySpeed);
+	VisualRecoilRotTarget = FMath::RInterpTo(VisualRecoilRotTarget, FRotator::ZeroRotator, DeltaTime, RecoverySpeed);
+	VisualRecoilLocCurrent = FMath::VInterpTo(VisualRecoilLocCurrent, VisualRecoilLocTarget, DeltaTime, KickSpeed);
+	VisualRecoilRotCurrent = FMath::RInterpTo(VisualRecoilRotCurrent, VisualRecoilRotTarget, DeltaTime, KickSpeed);
+
+	if (VisualRecoilLocCurrent.IsNearlyZero(0.001f) && VisualRecoilRotCurrent.IsNearlyZero(0.001f)
+		&& VisualRecoilLocTarget.IsNearlyZero(0.001f) && VisualRecoilRotTarget.IsNearlyZero(0.001f))
+	{
+		VisualRecoilLocCurrent = FVector::ZeroVector;
+		VisualRecoilRotCurrent = FRotator::ZeroRotator;
+		return;   // 没有后坐就不碰 Mesh1P
+	}
+
+	// 偏移是按镜头空间定义的（X 前、Z 上），换算到 Mesh1P 父组件的空间
+	USceneComponent* Parent = Mesh1P->GetAttachParent();
+	FVector LocParent = VisualRecoilLocCurrent;
+	FQuat RotParent = VisualRecoilRotCurrent.Quaternion();
+	if (IsValid(Parent) && Parent != FirstPersonCamera)
+	{
+		const FTransform CameraToParent = FirstPersonCamera->GetComponentTransform().GetRelativeTransform(Parent->GetComponentTransform());
+		LocParent = CameraToParent.TransformVectorNoScale(VisualRecoilLocCurrent);
+		const FQuat CamQ = CameraToParent.GetRotation();
+		RotParent = CamQ * RotParent * CamQ.Inverse();
+	}
+
+	const FVector NewLoc = Mesh1P->GetRelativeLocation() + LocParent;
+	const FQuat NewQuat = RotParent * Mesh1P->GetRelativeRotation().Quaternion();
+	Mesh1P->SetRelativeLocationAndRotation(NewLoc, NewQuat);
+
+	AppliedRecoilLocParent = LocParent;
+	AppliedRecoilQuat = RotParent;
+	LastWrittenMeshLoc = Mesh1P->GetRelativeLocation();
+	LastWrittenMeshQuat = Mesh1P->GetRelativeRotation().Quaternion();
+	bVisualRecoilWritten = true;
 }
 
 float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
@@ -368,16 +482,39 @@ void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 	}
 
 	FVector* AdsLocationProperty = FindBlueprintStruct<FVector>(this, TEXT("AdsMesh1PLoc"));
-	if (!AdsLocationProperty)
+
+	// C++ 驱动开镜：先算出开镜位置，再按开镜进度在腰射位置和它之间插值，写进 Mesh1P
+	if (bDriveAdsInCode)
 	{
+		FVector AdsLocation = AdsLocationProperty ? *AdsLocationProperty : AuthoredHipMeshLocation;
+		if (ComputeAdsMeshLocation(AdsLocation) && AdsLocationProperty)
+		{
+			*AdsLocationProperty = AdsLocation;   // 蓝图里还读这个变量的话，值也是对的
+		}
+		const FVector NewLocation = FMath::Lerp(AuthoredHipMeshLocation, AdsLocation, AimAlignAlpha);
+		if (!NewLocation.ContainsNaN())
+		{
+			Mesh1P->SetRelativeLocation(NewLocation);
+		}
 		return;
 	}
+
+	// 旧方式：只算 AdsMesh1PLoc，蓝图时间轴去移动 Mesh1P
+	FVector AdsLocation;
+	if (AdsLocationProperty && ComputeAdsMeshLocation(AdsLocation))
+	{
+		*AdsLocationProperty = AdsLocation;
+	}
+}
+
+bool AShooterCharacter::ComputeAdsMeshLocation(FVector& OutLocation)
+{
 
 	AWeapon* Weapon = Combat->CurrentWeapon;
 	USkeletalMeshComponent* WeaponMesh = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
 	if (!IsValid(WeaponMesh) || !WeaponMesh->IsAttachedTo(Mesh1P))
 	{
-		return;
+		return false;
 	}
 
 	if (!Weapon->HasAimSocket())
@@ -388,20 +525,20 @@ void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 			UE_LOG(LogTemp, Warning, TEXT("%s has no socket '%s'. ADS keeps the blueprint location."),
 				*GetNameSafe(Weapon), *Weapon->AimSocketName.ToString());
 		}
-		return;
+		return false;
 	}
 
 	USceneComponent* Parent = Mesh1P->GetAttachParent();
 	if (!IsValid(Parent))
 	{
-		return;
+		return false;
 	}
 
 	WeaponMesh->UpdateComponentToWorld();
 	FVector SocketWorld = FVector::ZeroVector;
 	if (!Weapon->GetAimSocketWorldLocation(SocketWorld))
 	{
-		return;
+		return false;
 	}
 
 	// Mesh1P stays at its component rotation (yaw -90 on the camera). The blueprint
@@ -414,10 +551,11 @@ void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 	const FVector CenteredLocation = Mesh1P->GetRelativeLocation() + DeltaParent;
 	if (CenteredLocation.ContainsNaN())
 	{
-		return;
+		return false;
 	}
 
-	*AdsLocationProperty = CenteredLocation;
+	OutLocation = CenteredLocation;
+	return true;
 }
 
 
@@ -439,6 +577,10 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	ShooterInputComponent->BindAction(EquipMeleeWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipMeleeWeapon);
 	ShooterInputComponent->BindAction(EquipPistolWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipPistolWeapon);
 	ShooterInputComponent->BindAction(HealAction, ETriggerEvent::Started, this, &ThisClass::Input_Heal);
+	if (SwitchZoomAction)
+	{
+		ShooterInputComponent->BindAction(SwitchZoomAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchZoom);
+	}
 	if (SwitchFireModeAction)
 	{
 		ShooterInputComponent->BindAction(SwitchFireModeAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchFireMode);
@@ -559,6 +701,11 @@ void AShooterCharacter::ConfigureWeaponHitCollision()
 void AShooterCharacter::Input_CycleWeapon()
 {
 	if (IsValid(Combat)) Combat->Initiate_CycleWeapon();
+}
+
+void AShooterCharacter::Input_SwitchZoom()
+{
+	if (IsValid(Combat)) Combat->Initiate_CycleZoom();
 }
 
 void AShooterCharacter::Input_SwitchFireMode()

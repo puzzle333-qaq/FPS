@@ -159,7 +159,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	float GetRecoilMultiplier() const;
 
-	// 开镜 FOV：瞄具配件覆盖了（且 > 0）就用配件的，否则用枪自己的 AimFeildOfView；都 <= 0 时返回 0（不变焦）
+	// 开镜 FOV：可变倍率瞄具用当前档；其他瞄具覆盖了（且 > 0）就用配件的，否则用枪自己的 AimFeildOfView；都 <= 0 时返回 0（不变焦）
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
 	float GetEffectiveAimFOV() const;
 
@@ -210,6 +210,22 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
 	float AimFeildOfView;
 
+	// 开镜所需时间（秒），不装配件时。配件的 AdsTimeMultiplier 会乘上去
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming", meta = (ClampMin = "0"))
+	float AimDownSightTime;
+
+	// 实际开镜时间 = AimDownSightTime × 所有已装配件的 AdsTimeMultiplier
+	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
+	float GetEffectiveAdsTime() const;
+
+	// 可变倍率瞄具有几档（不是可变倍率返回 0）
+	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
+	int32 GetZoomLevelCount() const;
+
+	// 当前倍率档（本地状态，不同步：只影响自己的镜头 FOV）
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "FPS|Aiming")
+	int32 CurrentZoomIndex = 0;
+
 	// Socket on the weapon skeleton that should sit on the camera's view axis while aiming.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
 	FName AimSocketName;
@@ -259,6 +275,27 @@ public:
 	// A new burst starts at the first step after the trigger has been up this long.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
 	float RecoilResetTime;
+
+	// ---------- 枪身视觉后坐（只影响第一人称手臂和枪的画面，不影响准星和弹道） ----------
+	// 每发位移（厘米，镜头空间）：X = 往后退，Y = 左右随机幅度，Z = 往上抬。会乘 Pitch/Yaw 后坐倍率
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil|Visual")
+	FVector VisualRecoilLocation;
+
+	// 每发旋转：Pitch / Yaw = 每 1 度图案后坐对应枪身转多少度；Roll = 左右随机滚转幅度（度）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil|Visual")
+	FRotator VisualRecoilRotation;
+
+	// 开镜时视觉后坐再乘这个（开镜要稳，别把瞄具踢出画面）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil|Visual", meta = (ClampMin = "0"))
+	float VisualRecoilAimMultiplier;
+
+	// 枪身被踢出去的速度（越大越“脆”）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil|Visual", meta = (ClampMin = "0"))
+	float VisualRecoilKickSpeed;
+
+	// 枪身回到原位的速度
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil|Visual", meta = (ClampMin = "0"))
+	float VisualRecoilRecoverySpeed;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Trace")
 	float TraceRadius;

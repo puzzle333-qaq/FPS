@@ -72,6 +72,7 @@ AWeapon::AWeapon()
 	Mesh3P->SetHiddenInGame(true);
 
 	AimFeildOfView = 60.f;
+	AimDownSightTime = 0.2f;
 	AimSocketName = TEXT("AimSocket");
 	TraceRadius = 5.f;
 	FireTime = 0.1f;
@@ -96,6 +97,11 @@ AWeapon::AWeapon()
 	RecoilRecoverySpeed = 18.f;
 	RecoilRecoveryDelay = 0.12f;
 	RecoilResetTime = 0.4f;
+	VisualRecoilLocation = FVector(1.5f, 0.2f, 0.3f);
+	VisualRecoilRotation = FRotator(3.f, 2.f, 1.5f);   // FRotator(Pitch, Yaw, Roll)
+	VisualRecoilAimMultiplier = 0.4f;
+	VisualRecoilKickSpeed = 30.f;
+	VisualRecoilRecoverySpeed = 10.f;
 	Damage = 15.f;
 	HeadshotMultiplier = 2.f;
 	LimbMultiplier = 0.75f;
@@ -683,12 +689,40 @@ float AWeapon::GetRecoilMultiplier() const
 float AWeapon::GetEffectiveAimFOV() const
 {
 	const UAttachmentData* Optic = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Optic);
+	// 可变倍率瞄具：用当前档
+	if (IsValid(Optic) && Optic->IsVariableOptic())
+	{
+		const float LevelFOV = Optic->ZoomLevelsFOV[FMath::Clamp(CurrentZoomIndex, 0, Optic->ZoomLevelsFOV.Num() - 1)];
+		if (LevelFOV > 0.f)
+		{
+			return LevelFOV;
+		}
+	}
 	// 优先级：瞄具配件的 AimFOV（勾了 bOverridesAimFOV 且 > 0）→ 枪的 AimFeildOfView（> 0）→ 0 表示“不变焦，用默认 FOV”
 	if (IsValid(Optic) && Optic->bOverridesAimFOV && Optic->AimFOV > 0.f)
 	{
 		return Optic->AimFOV;
 	}
 	return AimFeildOfView > 0.f ? AimFeildOfView : 0.f;
+}
+
+float AWeapon::GetEffectiveAdsTime() const
+{
+	float Time = FMath::Max(0.f, AimDownSightTime);
+	for (const UAttachmentData* Attachment : EquippedAttachments)
+	{
+		if (IsValid(Attachment))
+		{
+			Time *= FMath::Max(0.05f, Attachment->AdsTimeMultiplier);   // 相乘叠加：1.1 * 0.9 = 0.99
+		}
+	}
+	return Time;
+}
+
+int32 AWeapon::GetZoomLevelCount() const
+{
+	const UAttachmentData* Optic = GetOpticAttachment();
+	return (IsValid(Optic) && Optic->IsVariableOptic()) ? Optic->ZoomLevelsFOV.Num() : 0;
 }
 
 UAttachmentData* AWeapon::GetOpticAttachment() const

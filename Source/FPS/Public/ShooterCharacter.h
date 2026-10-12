@@ -133,6 +133,9 @@ public:
 	TArray<TObjectPtr<UAnimMontage>> HitReacts;
 
 	UCameraComponent* GetFirstPersonCamera() const { return FirstPersonCamera; }
+
+	// 每发开火由 CombatComponent 调用：给第一人称手臂加一次视觉后坐（镜头空间的位移和旋转）
+	void AddVisualRecoil(const FVector& KickLocation, const FRotator& KickRotation);
 	UCombatComponent* GetCombatComponent() const { return Combat; }
 	float GetDefaultFieldOfView() const { return DefaultFOV; }
 
@@ -158,6 +161,15 @@ protected:
 	// 开镜/关镜时 FOV 的插值速度（越大越快，0 = 瞬间切换）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming", meta = (ClampMin = "0"))
 	float AimFOVInterpSpeed = 20.f;
+
+	// 勾上：开镜时手臂位置由 C++ 按 AimAlpha 在腰射位置和开镜位置之间插值（蓝图 OnAim 里就不要再移动 Mesh1P）
+	// 不勾：和以前一样，C++ 只算 AdsMesh1PLoc，由蓝图时间轴去移动
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming")
+	bool bDriveAdsInCode = true;
+
+	// 开镜进度 0（腰射）~ 1（完全开镜）。按武器的开镜时间推进，手臂位置和 FOV 都按它混合
+	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
+	float GetAimAlpha() const { return AimAlpha; }
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
@@ -216,6 +228,7 @@ private:
 	void Input_CycleWeapon();
 	void Input_ReloadWeapon();
 	void Input_SwitchFireMode();
+	void Input_SwitchZoom();
 	void Input_FireWeapon_Pressed();
 	void Input_FireWeapon_Released();
 	void Input_Aim_Pressed();
@@ -254,6 +267,28 @@ private:
 
 	float InterpAO_Yaw;
 	float AimAlignAlpha = 0.f;
+
+	// 开镜进度（线性）和开镜时用的平滑 FOV
+	float AimAlpha = 0.f;
+	float SmoothedAimFOV = 90.f;
+	void UpdateAimAlpha(float DeltaTime);
+	// 算出“瞄准点正好在屏幕中心”时 Mesh1P 的相对位置；算不出（没枪/没瞄准点）返回 false
+	bool ComputeAdsMeshLocation(FVector& OutLocation);
+
+	// ---------- 枪身视觉后坐 ----------
+	// 先把上一帧加在 Mesh1P 上的偏移撤掉，让开镜对准按“没有后坐”的位置算，算完再加回去
+	void RemoveVisualRecoilFromMesh();
+	void ApplyVisualRecoilToMesh(float DeltaTime);
+
+	FVector VisualRecoilLocTarget = FVector::ZeroVector;    // 被踢到的目标（会慢慢回 0）
+	FRotator VisualRecoilRotTarget = FRotator::ZeroRotator;
+	FVector VisualRecoilLocCurrent = FVector::ZeroVector;   // 当前实际偏移（追向目标）
+	FRotator VisualRecoilRotCurrent = FRotator::ZeroRotator;
+	FVector AppliedRecoilLocParent = FVector::ZeroVector;   // 上一帧真正写进 Mesh1P 的量
+	FQuat AppliedRecoilQuat = FQuat::Identity;
+	FVector LastWrittenMeshLoc = FVector::ZeroVector;
+	FQuat LastWrittenMeshQuat = FQuat::Identity;
+	bool bVisualRecoilWritten = false;
 
 	bool bIsHealing = false;
 	TWeakObjectPtr<AWeapon> HealHiddenWeapon;
@@ -312,6 +347,10 @@ private:
 	// 单发/自动切换键（IA_SwitchFireMode）
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>SwitchFireModeAction;
+
+	// 可变倍率瞄具切档键（IA_SwitchZoom）
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction>SwitchZoomAction;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>VersionWeaponAction;

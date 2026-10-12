@@ -35,6 +35,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCurrentWeaponChanged, AWeapon*, New
 // 射击模式切换后广播（本地），UI 绑它显示 单发/自动
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFireModeChanged, AWeapon*, Weapon, EFireType, NewFireType);
 
+// 可变倍率瞄具切档后广播（本地），UI 可以显示当前倍率档
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FZoomLevelChanged, int32, ZoomIndex, float, AimFOV);
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCurrentReserveAmmoChanged, int32, RoundsInServe, int32, RoundsInWeapon, UTexture2D*, WeaponIcon);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
@@ -60,6 +63,13 @@ public:
 	// 单发/自动切换：本地先改，再发服务器。换弹、拉栓、切枪中或这把枪不允许切换时无效
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_SwitchFireMode();
+
+	// 可变倍率瞄具：开镜时切到下一档（只改本地镜头 FOV，不需要服务器）
+	UFUNCTION(BlueprintCallable, Category = "FPS|Aiming")
+	void Initiate_CycleZoom();
+
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Aiming")
+	FZoomLevelChanged OnZoomLevelChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon")
 	FFireModeChanged OnFireModeChanged;

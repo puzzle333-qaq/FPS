@@ -288,6 +288,23 @@ void UCombatComponent::ApplyFireRecoil()
 	UnrecoveredRecoil.Y += AppliedPitch;
 	SecondsSinceRecoilShot = 0.f;
 	++RecoilShotIndex;
+
+	// 枪身视觉后坐：用同一步图案和同一套倍率（配件 + 开镜），只推第一人称画面，准星不受影响
+	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(OwningPawn))
+	{
+		const float AimVisual = bAiming ? FMath::Max(0.f, CurrentWeapon->VisualRecoilAimMultiplier) : 1.f;
+		const FVector& L = CurrentWeapon->VisualRecoilLocation;
+		const FRotator& R = CurrentWeapon->VisualRecoilRotation;
+		const FVector KickLocation(
+			-L.X * Scale.Pitch,
+			FMath::FRandRange(-L.Y, L.Y) * Scale.Yaw,
+			L.Z * Scale.Pitch);
+		const FRotator KickRotation(
+			Step.Pitch * R.Pitch * Scale.Pitch,
+			Step.Yaw * R.Yaw * Scale.Yaw,
+			FMath::FRandRange(-R.Roll, R.Roll));
+		Shooter->AddVisualRecoil(KickLocation * AimVisual, KickRotation * AimVisual);
+	}
 }
 
 void UCombatComponent::TickRecoil(float DeltaTime)
@@ -1034,6 +1051,17 @@ void UCombatComponent::PlayBoltMontage3P()
 	{
 		AnimInstance->Montage_Play(BoltMontage);
 	}
+}
+
+void UCombatComponent::Initiate_CycleZoom()
+{
+	if (!bAiming || !IsValid(CurrentWeapon)) return;
+	const int32 Count = CurrentWeapon->GetZoomLevelCount();
+	if (Count < 2) return;
+
+	// 倍率只影响自己的镜头 FOV（UpdateAimFieldOfView 会平滑过去），命中仍走准星，所以不发服务器
+	CurrentWeapon->CurrentZoomIndex = (FMath::Clamp(CurrentWeapon->CurrentZoomIndex, 0, Count - 1) + 1) % Count;
+	OnZoomLevelChanged.Broadcast(CurrentWeapon->CurrentZoomIndex, CurrentWeapon->GetEffectiveAimFOV());
 }
 
 bool UCombatComponent::CanSwitchFireMode() const

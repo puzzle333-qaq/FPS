@@ -16,7 +16,9 @@ enum class EOpticType : uint8
 	None         UMETA(DisplayName = "None"),
 	RedDot       UMETA(DisplayName = "Red Dot"),
 	Holographic  UMETA(DisplayName = "Holographic"),
-	Magnified    UMETA(DisplayName = "Magnified (PiP Scope)")
+	Magnified    UMETA(DisplayName = "Magnified (PiP Scope)"),
+	// 可变倍率：开镜时按键在 ZoomLevelsFOV 的几档之间切换（整屏变焦，例如 1x/4x）
+	Variable     UMETA(DisplayName = "Variable Zoom")
 };
 
 // 一个配件 = 一份数据资产（在内容浏览器里右键 -> Miscellaneous -> Data Asset -> AttachmentData）
@@ -119,6 +121,18 @@ public:
 	int32 RenderTargetSize = 512;
 
 	bool IsMagnifiedOptic() const { return OpticType == EOpticType::Magnified; }
+
+	// ---------- 可变倍率（只有 OpticType = Variable 才用） ----------
+	// 每一档的开镜 FOV，第 0 档是默认档。例如 1x/4x 填 [55, 23]，1x/2x/4x 填 [55, 45, 23]
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Variable", meta = (EditCondition = "OpticType == EOpticType::Variable", EditConditionHides))
+	TArray<float> ZoomLevelsFOV;
+
+	bool IsVariableOptic() const { return OpticType == EOpticType::Variable && ZoomLevelsFOV.Num() > 0; }
+
+	// ---------- 开镜速度 ----------
+	// 开镜时间倍率：1.1 = 开镜慢 10%，0.9 = 快 10%。多个配件相乘（和后坐倍率一样）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|ADS", meta = (ClampMin = "0.05"))
+	float AdsTimeMultiplier = 1.f;
 
 	// ---------- 手电筒 ----------
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Flashlight")
