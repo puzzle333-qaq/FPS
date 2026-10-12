@@ -90,20 +90,29 @@ void AShooterPlayerController::Input_ToggleAttachmentMenu()
 
 	if (AttachmentMenu->IsInViewport())
 	{
-		// 关闭：回到纯游戏输入，隐藏鼠标
+		// 关闭：回到纯游戏输入，隐藏鼠标，恢复转视角
 		AttachmentMenu->RemoveFromParent();
 		SetInputMode(FInputModeGameOnly());
 		SetShowMouseCursor(false);
+		SetIgnoreLookInput(false);
 	}
 	else
 	{
-		// 打开：游戏+UI 输入（还能按键关菜单），显示鼠标
+		// 松开扳机，避免菜单开着时连发还在继续
+		if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
+		{
+			Combat->Initiate_FireWeapon_Released();
+		}
+
+		// 打开：游戏+UI（B 仍能关掉），显示鼠标，鼠标移动不再转视角
 		AttachmentMenu->AddToViewport(10);
 		FInputModeGameAndUI Mode;
+		Mode.SetWidgetToFocus(AttachmentMenu->TakeWidget());
 		Mode.SetHideCursorDuringCapture(false);
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		SetInputMode(Mode);
 		SetShowMouseCursor(true);
+		SetIgnoreLookInput(true);
 	}
 }
 

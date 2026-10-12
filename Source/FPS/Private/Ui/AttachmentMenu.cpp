@@ -5,6 +5,27 @@
 #include "Weapon/Weapon.h"
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
+#include "TimerManager.h"
+
+namespace
+{
+	// 配件变化发生在按钮的 OnClicked 里。当场 Refresh 会拆掉正在处理点击的控件。
+	void ScheduleMenuRefresh(UAttachmentMenu* Menu)
+	{
+		if (!IsValid(Menu)) return;
+
+		UWorld* World = Menu->GetWorld();
+		if (!World) return;
+
+		World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(Menu, [Menu]()
+		{
+			if (IsValid(Menu) && Menu->IsInViewport())
+			{
+				Menu->Refresh();
+			}
+		}));
+	}
+}
 
 void UAttachmentMenu::NativeConstruct()
 {
@@ -59,7 +80,8 @@ void UAttachmentMenu::Refresh()
 
 	if (IsValid(Text_WeaponName))
 	{
-		Text_WeaponName->SetText(IsValid(Weapon) ? FText::FromString(Weapon->GetName()) : FText::GetEmpty());
+		// 用蓝图类的显示名。GetName() 是 BP_RIfle_C_0 这种实例名。
+		Text_WeaponName->SetText(IsValid(Weapon) ? Weapon->GetClass()->GetDisplayNameText() : FText::GetEmpty());
 	}
 
 	if (!IsValid(Weapon) || !RowClass) return;
@@ -76,10 +98,10 @@ void UAttachmentMenu::Refresh()
 
 void UAttachmentMenu::OnAttachmentsChanged(AWeapon* Weapon)
 {
-	Refresh();
+	ScheduleMenuRefresh(this);
 }
 
 void UAttachmentMenu::OnCurrentWeaponChanged(AWeapon* NewWeapon)
 {
-	Refresh();
+	ScheduleMenuRefresh(this);
 }

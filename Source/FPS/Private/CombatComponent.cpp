@@ -1070,8 +1070,10 @@ AWeapon* UCombatComponent::SpawnWeapon(TSubclassOf<AWeapon> WeaponClass) const
 void UCombatComponent::Initiate_EquipAttachment(UAttachmentData* Attachment)
 {
 	if (!IsValid(Attachment)) return;
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner)) return;
 	// 服务器（或单机）直接装；客户端发 RPC 让服务器装，结果再同步回来
-	if (GetOwner()->HasAuthority())
+	if (Owner->HasAuthority())
 	{
 		Server_EquipAttachment_Implementation(Attachment);
 	}
@@ -1083,7 +1085,9 @@ void UCombatComponent::Initiate_EquipAttachment(UAttachmentData* Attachment)
 
 void UCombatComponent::Initiate_RemoveAttachment(FGameplayTag SlotTag)
 {
-	if (GetOwner()->HasAuthority())
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner)) return;
+	if (Owner->HasAuthority())
 	{
 		Server_RemoveAttachment_Implementation(SlotTag);
 	}
@@ -1095,7 +1099,9 @@ void UCombatComponent::Initiate_RemoveAttachment(FGameplayTag SlotTag)
 
 void UCombatComponent::Initiate_ToggleFlashlight()
 {
-	if (GetOwner()->HasAuthority())
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner)) return;
+	if (Owner->HasAuthority())
 	{
 		Server_ToggleFlashlight_Implementation();
 	}

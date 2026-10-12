@@ -478,6 +478,14 @@ void AShooterCharacter::Input_ReloadWeapon()
 
 void AShooterCharacter::Input_FireWeapon_Pressed()
 {
+	// 配件菜单打开时鼠标留给界面。Enhanced Input 仍会收到左键，这里不要再开枪。
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (PC->bShowMouseCursor)
+		{
+			return;
+		}
+	}
 	if (IsValid(Combat)) Combat->Initiate_FireWeapon_Pressed();
 }
 

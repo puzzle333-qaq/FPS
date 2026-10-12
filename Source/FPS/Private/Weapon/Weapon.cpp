@@ -13,7 +13,9 @@
 #include "Net/UnrealNetwork.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SpotLightComponent.h"
+#include "Camera/CameraComponent.h"
 #include "Engine/StaticMesh.h"
+#include "ShooterCharacter.h"
 #include "ShooterGamePlayTags.h"
 
 AWeapon::AWeapon()
@@ -234,6 +236,8 @@ void AWeapon::SetHiddenForHeal(bool bHideWeapon)
 	}
 
 	SetMeshVisibility(GetInstigator());
+	// 父网格 SetHiddenInGame(propagate) 会改掉手电子组件的隐藏标记，这里按开关状态写回去
+	ApplyFlashlightState();
 }
 
 void AWeapon::DetachFromPawn()
@@ -345,9 +349,21 @@ void AWeapon::BeginPlay()
 	// 默认配件只由服务器装，客户端通过同步拿到
 	if (HasAuthority())
 	{
+		TSet<FGameplayTag> SeenSlots;
 		// 每个槽位装上自己的默认配件
 		for (const FWeaponAttachmentSlot& Slot : AttachmentSlots)
 		{
+			if (!Slot.SlotTag.IsValid())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s has a slot with an empty SlotTag."), *GetName());
+				continue;
+			}
+			if (SeenSlots.Contains(Slot.SlotTag))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s has more than one slot tagged '%s'. Only the first is used."), *GetName(), *Slot.SlotTag.ToString());
+			}
+			SeenSlots.Add(Slot.SlotTag);
+
 			if (IsValid(Slot.DefaultAttachment))
 			{
 				EquipAttachment(Slot.DefaultAttachment);
@@ -541,6 +557,21 @@ void AWeapon::OnRep_EquippedAttachments()
 {
 	RebuildAttachmentVisuals();
 	OnAttachmentsChanged.Broadcast(this);
+
+	// 开镜时间轴停在终点后不会再采样。瞄具换了就直接把镜头推到新的 FOV。
+	APawn* Pawn = GetInstigator();
+	if (!IsValid(Pawn) || !Pawn->IsLocallyControlled()) return;
+
+	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(Pawn);
+	if (!IsValid(Combat) || !Combat->bAiming || Combat->CurrentWeapon != this) return;
+
+	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(Pawn))
+	{
+		if (UCameraComponent* Camera = Shooter->GetFirstPersonCamera())
+		{
+			Camera->SetFieldOfView(GetEffectiveAimFOV());
+		}
+	}
 }
 
 void AWeapon::OnRep_FlashlightOn()
@@ -570,6 +601,7 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 
 	// 运行时创建组件：NewObject + 挂到 Socket + RegisterComponent
 	UStaticMeshComponent* Comp = NewObject<UStaticMeshComponent>(this);
+	Comp->SetMobility(EComponentMobility::Movable);
 	Comp->SetStaticMesh(Data->Mesh);
 	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Comp->bReceivesDecals = false;
@@ -584,6 +616,12 @@ void AWeapon::RebuildAttachmentVisuals()
 {
 	// 专用服务器不需要画面
 	if (GetNetMode() == NM_DedicatedServer) return;
+
+	// 手电挂在配件模型上。先拆下来，避免销毁模型时被带到枪根上并留下隐藏标记。
+	if (IsValid(Flashlight))
+	{
+		Flashlight->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+	}
 
 	// 1. 清掉旧模型
 	for (FAttachmentVisual& Visual : AttachmentVisuals)
@@ -610,6 +648,7 @@ void AWeapon::RebuildAttachmentVisuals()
 		if (!IsValid(Flashlight))
 		{
 			Flashlight = NewObject<USpotLightComponent>(this);
+			Flashlight->SetMobility(EComponentMobility::Movable);
 			Flashlight->SetupAttachment(Mesh1P);
 			Flashlight->RegisterComponent();
 		}
@@ -662,14 +701,16 @@ void AWeapon::UpdateFlashlightAttachment()
 
 	const FName Socket = Parent->DoesSocketExist(Visual->Data->LightSocketName) ? Visual->Data->LightSocketName : NAME_None;
 	Flashlight->AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
+	// 从被隐藏的 3P 模型挪到 1P 后，父级传播留下的 bHiddenInGame 不会自己清掉
+	ApplyFlashlightState();
 }
 
 void AWeapon::ApplyFlashlightState()
 {
-	if (IsValid(Flashlight))
-	{
-		Flashlight->SetVisibility(bFlashlightOn);
-	}
+	if (!IsValid(Flashlight)) return;
+
+	Flashlight->SetHiddenInGame(!bFlashlightOn);
+	Flashlight->SetVisibility(bFlashlightOn);
 }
 
 void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
