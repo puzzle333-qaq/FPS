@@ -1,4 +1,4 @@
-﻿
+
 
 
 #include "Weapon/Weapon.h"
@@ -142,17 +142,58 @@ bool AWeapon::HasAimSocket() const
 
 bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 {
-	// 装了瞄具且瞄具模型上有 SightSocket：开镜对准红点中心
+	// 1) 瞄具 SightSocket：开镜对准红点/全息中心
 	if (const FAttachmentVisual* Optic = FindVisual(ShooterTags::Tag_Attachment_Slot_Optic))
 	{
-		if (IsValid(Optic->Mesh1P) && !Optic->Data->SightSocketName.IsNone() && Optic->Mesh1P->DoesSocketExist(Optic->Data->SightSocketName))
+		if (IsValid(Optic->Mesh1P) && IsValid(Optic->Data)
+			&& !Optic->Data->SightSocketName.IsNone()
+			&& Optic->Mesh1P->DoesSocketExist(Optic->Data->SightSocketName))
 		{
 			OutLocation = Optic->Mesh1P->GetSocketLocation(Optic->Data->SightSocketName);
 			return true;
 		}
 	}
 
-	// 否则用枪自己的 AimSocket（机瞄）
+	// 2) 机瞄 AimSocket 可能在配件上（常见：枪管）。先枪管，再其它配件的 1P 模型
+	if (!AimSocketName.IsNone())
+	{
+		auto TryAttachmentAim = [this, &OutLocation](const FGameplayTag& SlotTag) -> bool
+		{
+			const FAttachmentVisual* Visual = FindVisual(SlotTag);
+			if (!Visual || !IsValid(Visual->Mesh1P) || !Visual->Mesh1P->DoesSocketExist(AimSocketName))
+			{
+				return false;
+			}
+			OutLocation = Visual->Mesh1P->GetSocketLocation(AimSocketName);
+			return true;
+		};
+
+		if (TryAttachmentAim(ShooterTags::Tag_Attachment_Slot_Barrel))
+		{
+			return true;
+		}
+
+		for (const FAttachmentVisual& Visual : AttachmentVisuals)
+		{
+			if (!IsValid(Visual.Data) || !IsValid(Visual.Mesh1P))
+			{
+				continue;
+			}
+			// 枪管已查过；瞄具走 SightSocket，这里跳过
+			if (Visual.Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Barrel
+				|| Visual.Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Optic)
+			{
+				continue;
+			}
+			if (Visual.Mesh1P->DoesSocketExist(AimSocketName))
+			{
+				OutLocation = Visual.Mesh1P->GetSocketLocation(AimSocketName);
+				return true;
+			}
+		}
+	}
+
+	// 3) 退回枪 Mesh1P 上的 AimSocket
 	if (!IsValid(Mesh1P) || AimSocketName.IsNone() || !Mesh1P->DoesSocketExist(AimSocketName))
 	{
 		return false;
