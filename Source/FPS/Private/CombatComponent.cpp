@@ -1067,33 +1067,56 @@ AWeapon* UCombatComponent::SpawnWeapon(TSubclassOf<AWeapon> WeaponClass) const
 
 // ================= 配件 =================
 
+const TArray<AWeapon*>& UCombatComponent::GetInventory() const
+{
+	return Inventory;
+}
+
 void UCombatComponent::Initiate_EquipAttachment(UAttachmentData* Attachment)
 {
-	if (!IsValid(Attachment)) return;
-	AActor* Owner = GetOwner();
-	if (!IsValid(Owner)) return;
-	// 服务器（或单机）直接装；客户端发 RPC 让服务器装，结果再同步回来
-	if (Owner->HasAuthority())
-	{
-		Server_EquipAttachment_Implementation(Attachment);
-	}
-	else
-	{
-		Server_EquipAttachment(Attachment);
-	}
+	Initiate_EquipAttachmentOnWeapon(CurrentWeapon, Attachment);
 }
 
 void UCombatComponent::Initiate_RemoveAttachment(FGameplayTag SlotTag)
 {
+	Initiate_RemoveAttachmentOnWeapon(CurrentWeapon, SlotTag);
+}
+
+void UCombatComponent::Initiate_EquipAttachmentOnWeapon(AWeapon* Weapon, UAttachmentData* Attachment)
+{
+	if (!IsValid(Attachment)) return;
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner)) return;
+
+	AWeapon* Target = IsValid(Weapon) ? Weapon : CurrentWeapon.Get();
+	if (!IsValid(Target) || !Inventory.Contains(Target)) return;
+
+	// 服务器（或单机）直接装；客户端发 RPC 让服务器装，结果再同步回来
 	if (Owner->HasAuthority())
 	{
-		Server_RemoveAttachment_Implementation(SlotTag);
+		Server_EquipAttachment_Implementation(Target, Attachment);
 	}
 	else
 	{
-		Server_RemoveAttachment(SlotTag);
+		Server_EquipAttachment(Target, Attachment);
+	}
+}
+
+void UCombatComponent::Initiate_RemoveAttachmentOnWeapon(AWeapon* Weapon, FGameplayTag SlotTag)
+{
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner)) return;
+
+	AWeapon* Target = IsValid(Weapon) ? Weapon : CurrentWeapon.Get();
+	if (!IsValid(Target) || !Inventory.Contains(Target)) return;
+
+	if (Owner->HasAuthority())
+	{
+		Server_RemoveAttachment_Implementation(Target, SlotTag);
+	}
+	else
+	{
+		Server_RemoveAttachment(Target, SlotTag);
 	}
 }
 
@@ -1111,19 +1134,19 @@ void UCombatComponent::Initiate_ToggleFlashlight()
 	}
 }
 
-void UCombatComponent::Server_EquipAttachment_Implementation(UAttachmentData* Attachment)
+void UCombatComponent::Server_EquipAttachment_Implementation(AWeapon* Weapon, UAttachmentData* Attachment)
 {
-	if (IsValid(CurrentWeapon))
+	if (IsValid(Weapon) && Inventory.Contains(Weapon))
 	{
-		CurrentWeapon->EquipAttachment(Attachment);
+		Weapon->EquipAttachment(Attachment);
 	}
 }
 
-void UCombatComponent::Server_RemoveAttachment_Implementation(FGameplayTag SlotTag)
+void UCombatComponent::Server_RemoveAttachment_Implementation(AWeapon* Weapon, FGameplayTag SlotTag)
 {
-	if (IsValid(CurrentWeapon))
+	if (IsValid(Weapon) && Inventory.Contains(Weapon))
 	{
-		CurrentWeapon->RemoveAttachment(SlotTag);
+		Weapon->RemoveAttachment(SlotTag);
 	}
 }
 

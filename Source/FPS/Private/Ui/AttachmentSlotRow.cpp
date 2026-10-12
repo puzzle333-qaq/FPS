@@ -29,7 +29,7 @@ void UAttachmentSlotRow::Setup(AWeapon* Weapon, const FWeaponAttachmentSlot& Slo
 	{
 		if (UAttachmentOptionEntry* Entry = CreateWidget<UAttachmentOptionEntry>(this, EntryClass))
 		{
-			Entry->Setup(nullptr, SlotInfo.SlotTag, Equipped == nullptr);
+			Entry->Setup(nullptr, SlotInfo.SlotTag, Equipped == nullptr, true, Weapon);
 			EntryContainer->AddChild(Entry);
 		}
 	}
@@ -40,7 +40,7 @@ void UAttachmentSlotRow::Setup(AWeapon* Weapon, const FWeaponAttachmentSlot& Slo
 		if (!IsValid(Data)) continue;
 		if (UAttachmentOptionEntry* Entry = CreateWidget<UAttachmentOptionEntry>(this, EntryClass))
 		{
-			Entry->Setup(Data, SlotInfo.SlotTag, Data == Equipped, Weapon->CanEquipAttachment(Data));
+			Entry->Setup(Data, SlotInfo.SlotTag, Data == Equipped, Weapon->CanEquipAttachment(Data), Weapon);
 			EntryContainer->AddChild(Entry);
 		}
 	}

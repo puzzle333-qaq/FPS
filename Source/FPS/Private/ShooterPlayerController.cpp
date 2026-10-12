@@ -10,6 +10,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Ui/AttachmentMenu.h"
+#include "Ui/LoadoutScreen.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -25,11 +28,14 @@ void AShooterPlayerController::BeginPlay()
 	{
 		Subsystem->AddMappingContext(ShooterIMC, 0);
 	}
+	EnsureLoadoutInput();
 }
 
 void AShooterPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+
+	EnsureLoadoutInput();
 
 	UEnhancedInputComponent* ShooterInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!IsValid(ShooterInputComponent)) return;
@@ -66,6 +72,72 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		ShooterInputComponent->BindAction(ToggleAttachmentMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleAttachmentMenu);
 	}
+	if (LoadoutAction)
+	{
+		ShooterInputComponent->BindAction(LoadoutAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleLoadout);
+	}
+}
+
+void AShooterPlayerController::EnsureLoadoutInput()
+{
+	if (!LoadoutAction)
+	{
+		LoadoutAction = NewObject<UInputAction>(this, TEXT("IA_Loadout_Runtime"));
+		LoadoutAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!LoadoutIMC)
+	{
+		LoadoutIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Loadout_Runtime"));
+		LoadoutIMC->MapKey(LoadoutAction, EKeys::Tab);
+	}
+
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(LoadoutIMC))
+	{
+		Subsystem->AddMappingContext(LoadoutIMC, 1);
+	}
+}
+
+void AShooterPlayerController::Input_ToggleLoadout()
+{
+	if (!IsLocalController()) return;
+
+	if (!IsValid(LoadoutScreen))
+	{
+		LoadoutScreen = CreateWidget<ULoadoutScreen>(this, ULoadoutScreen::StaticClass());
+		if (!IsValid(LoadoutScreen)) return;
+	}
+
+	if (LoadoutScreen->IsInViewport())
+	{
+		LoadoutScreen->RemoveFromParent();
+		SetInputMode(FInputModeGameOnly());
+		SetShowMouseCursor(false);
+		SetIgnoreLookInput(false);
+		SetIgnoreMoveInput(false);
+		return;
+	}
+
+	// 整备界面自己管鼠标。B 菜单如果还开着，先按它自己的方式关掉，避免视角锁定计数对不上。
+	if (IsValid(AttachmentMenu) && AttachmentMenu->IsInViewport())
+	{
+		Input_ToggleAttachmentMenu();
+	}
+
+	if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
+	{
+		Combat->Initiate_FireWeapon_Released();
+	}
+
+	LoadoutScreen->AddToViewport(20);
+	FInputModeGameAndUI Mode;
+	Mode.SetWidgetToFocus(LoadoutScreen->TakeWidget());
+	Mode.SetHideCursorDuringCapture(false);
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(Mode);
+	SetShowMouseCursor(true);
+	SetIgnoreLookInput(true);
+	SetIgnoreMoveInput(true);
 }
 
 void AShooterPlayerController::Input_ToggleFlashlight()
@@ -79,8 +151,9 @@ void AShooterPlayerController::Input_ToggleFlashlight()
 
 void AShooterPlayerController::Input_ToggleAttachmentMenu()
 {
-	// UI 只存在于本地玩家
+	// UI 只存在于本地玩家。整备界面开着时 B 不再叠一层菜单。
 	if (!IsLocalController() || !AttachmentMenuClass) return;
+	if (IsValid(LoadoutScreen) && LoadoutScreen->IsInViewport()) return;
 
 	if (!IsValid(AttachmentMenu))
 	{

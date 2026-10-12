@@ -8,6 +8,7 @@
 class UInputMappingContext;
 class UInputAction;
 class UAttachmentMenu;
+class ULoadoutScreen;
 struct FInputActionValue;
 /**
  * 
@@ -70,6 +71,19 @@ private:
 	TObjectPtr<UAttachmentMenu> AttachmentMenu;
 
 	void Input_ToggleAttachmentMenu();
+
+	// Tab 打开的整备界面。按键在运行时注册，不写进 IMC_Shooter。
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> LoadoutAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> LoadoutIMC;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULoadoutScreen> LoadoutScreen;
+
+	void EnsureLoadoutInput();
+	void Input_ToggleLoadout();
 
 	void Input_Crouch();
 	void Input_Jump();

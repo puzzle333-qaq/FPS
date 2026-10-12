@@ -9,8 +9,9 @@ class UButton;
 class UTextBlock;
 class UImage;
 class UAttachmentData;
+class AWeapon;
 
-// 一个配件按钮：点一下就把这个配件装到当前枪上
+// 一个配件按钮：点一下就把这个配件装到指定的枪上
 // Data 为空时表示“卸下”按钮（只给可以卸空的槽位用）
 UCLASS()
 class FPS_API UAttachmentOptionEntry : public UUserWidget
@@ -18,7 +19,7 @@ class FPS_API UAttachmentOptionEntry : public UUserWidget
 	GENERATED_BODY()
 public:
 	// 由 SlotRow 调用：告诉按钮显示哪个配件、属于哪个槽、现在是否已装上
-	void Setup(UAttachmentData* InData, FGameplayTag InSlotTag, bool bInEquipped, bool bInAllowed = true);
+	void Setup(UAttachmentData* InData, FGameplayTag InSlotTag, bool bInEquipped, bool bInAllowed = true, AWeapon* InWeapon = nullptr);
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -49,6 +50,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UAttachmentData> Data;
+
+	UPROPERTY()
+	TObjectPtr<AWeapon> Weapon;
 
 	FGameplayTag SlotTag;
 	bool bEquipped = false;

@@ -234,30 +234,55 @@ void AShooterCharacter::TurnInPlace(float DeltaTime)
 
 void AShooterCharacter::CalculateFABRIKSocket()
 {
-	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon)) return;
+	auto WriteHandSpace = [](USkeletalMeshComponent* PoseMesh, const FTransform& World, FTransform& Out)
+	{
+		if (!IsValid(PoseMesh))
+		{
+			Out = FTransform::Identity;
+			return;
+		}
 
-	USkeletalMeshComponent* WeaponMesh = Combat->CurrentWeapon->GetMesh3P();
-	if (!IsValid(WeaponMesh) || !WeaponMesh->DoesSocketExist(TEXT("FABRIK")))
+		FVector OutLocation;
+		FRotator OutRotation;
+		PoseMesh->TransformToBoneSpace(
+			TEXT("hand_r"),
+			World.GetLocation(),
+			World.Rotator(),
+			OutLocation,
+			OutRotation);
+		Out.SetLocation(OutLocation);
+		Out.SetRotation(OutRotation.Quaternion());
+		Out.SetScale3D(FVector::OneVector);
+	};
+
+	FABRIK_Alpha1P = 0.f;
+	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon))
 	{
 		FABRIK_SocketTransform = FTransform::Identity;
+		FABRIK_SocketTransform1P = FTransform::Identity;
 		return;
 	}
 
-	// A hidden third-person gun does not tick, so force a pose before reading the grip.
-	WeaponMesh->RefreshBoneTransforms();
+	// 握把配件上的 FABRIK 优先。没有握把，或握把模型上没有那个 Socket，才用枪骨骼上的 FABRIK。
+	FTransform SocketWorld;
+	if (Combat->CurrentWeapon->GetFabrikWorldTransform(false, SocketWorld))
+	{
+		WriteHandSpace(GetMesh(), SocketWorld, FABRIK_SocketTransform);
+	}
+	else
+	{
+		FABRIK_SocketTransform = FTransform::Identity;
+	}
 
-	const FTransform SocketWorld = WeaponMesh->GetSocketTransform(TEXT("FABRIK"), RTS_World);
-	FVector OutLocation;
-	FRotator OutRotation;
-	GetMesh()->TransformToBoneSpace(
-		TEXT("hand_r"),
-		SocketWorld.GetLocation(),
-		SocketWorld.Rotator(),
-		OutLocation,
-		OutRotation);
-	FABRIK_SocketTransform.SetLocation(OutLocation);
-	FABRIK_SocketTransform.SetRotation(OutRotation.Quaternion());
-	FABRIK_SocketTransform.SetScale3D(FVector::OneVector);
+	if (Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld))
+	{
+		WriteHandSpace(Mesh1P, SocketWorld, FABRIK_SocketTransform1P);
+		FABRIK_Alpha1P = 1.f;
+	}
+	else
+	{
+		FABRIK_SocketTransform1P = FTransform::Identity;
+	}
 }
 
 void AShooterCharacter::ConfigureAimTickOrder()

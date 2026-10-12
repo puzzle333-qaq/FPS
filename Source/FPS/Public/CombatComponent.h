@@ -72,6 +72,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
 	void Initiate_RemoveAttachment(FGameplayTag SlotTag);
 
+	// 整备界面用：给背包里指定的那把枪装/卸，不要求它正在手上
+	void Initiate_EquipAttachmentOnWeapon(AWeapon* Weapon, UAttachmentData* Attachment);
+	void Initiate_RemoveAttachmentOnWeapon(AWeapon* Weapon, FGameplayTag SlotTag);
+
+	const TArray<AWeapon*>& GetInventory() const;
+
 	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
 	void Initiate_ToggleFlashlight();
 
@@ -215,12 +221,12 @@ private:
 	UFUNCTION(Server, Reliable)
 	void Server_EquipSlot(EWeaponSlot Slot);
 
-	// 客户端 -> 服务器：给当前枪装/卸配件、开关手电
+	// 客户端 -> 服务器：给背包里的一把枪装/卸配件、开关手电
 	UFUNCTION(Server, Reliable)
-	void Server_EquipAttachment(UAttachmentData* Attachment);
+	void Server_EquipAttachment(AWeapon* Weapon, UAttachmentData* Attachment);
 
 	UFUNCTION(Server, Reliable)
-	void Server_RemoveAttachment(FGameplayTag SlotTag);
+	void Server_RemoveAttachment(AWeapon* Weapon, FGameplayTag SlotTag);
 
 	UFUNCTION(Server, Reliable)
 	void Server_ToggleFlashlight();

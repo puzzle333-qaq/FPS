@@ -76,6 +76,14 @@ public:
 	UPROPERTY(BlueprintReadOnly,Category = "FPS|FABRIK")
 	FTransform FABRIK_SocketTransform;
 
+	// 第一人称左手目标，手臂网格 hand_r 的骨骼空间。ABP_FirstPerson 的 FABRIK 读它。
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
+	FTransform FABRIK_SocketTransform1P;
+
+	// 第一人称 FABRIK 强度。没有可用插槽时为 0，左手留在持枪动画上。
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
+	float FABRIK_Alpha1P = 0.f;
+
 	UFUNCTION(BlueprintCallable)
 	bool HasCurrentWeapon() const;
 

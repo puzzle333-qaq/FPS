@@ -41,7 +41,8 @@ struct FWeaponAttachmentSlot
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment", meta = (Categories = "Attachment.Slot"))
 	FGameplayTag SlotTag;
 
-	// 配件模型挂在枪骨骼网格体的哪个 Socket（1P 和 3P 网格体都要有同名 Socket）
+	// 配件挂在哪个 Socket。先在枪骨骼上找；枪上没有时，再在已经装上的配件上找。
+	// 护木/枪管上的握把插槽就这样用：护木挂枪的 Barrel_sckt，握把再挂护木的 AFGrip_sckt。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
 	FName SocketName;
 
@@ -207,6 +208,14 @@ public:
 	bool HasAimSocket() const;
 	bool GetAimSocketWorldLocation(FVector& OutLocation) const;
 
+	// 扶枪点的世界变换。bFirstPerson 用 1P 枪和握把，否则用 3P。
+	// 握把挂住且模型上有 FabrikSocketName 时用握把，否则用枪骨骼上的 FABRIK。
+	bool GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) const;
+
+	// 枪口挂点。枪口配件优先，其次枪管，最后是枪自己的 Muzzle Socket。
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	bool GetMuzzleAttachPoint(bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
 	EFireType FireType;
 
@@ -309,6 +318,8 @@ private:
 	void ApplyFlashlightState();
 	UStaticMeshComponent* SpawnAttachmentMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson);
 	const FAttachmentVisual* FindVisual(const FGameplayTag& SlotTag) const;
+	FName GetFallbackMuzzleSocketName() const;
+	bool TryAttachmentMuzzle(const FGameplayTag& SlotTag, bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const;
 
 	UPROPERTY(Transient)
 	TArray<FAttachmentVisual> AttachmentVisuals;

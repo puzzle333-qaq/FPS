@@ -17,6 +17,39 @@
 #include "Engine/StaticMesh.h"
 #include "ShooterCharacter.h"
 #include "ShooterGamePlayTags.h"
+#include "UObject/UnrealType.h"
+
+namespace
+{
+	bool ComponentHasSocket(const USceneComponent* Component, FName SocketName)
+	{
+		return IsValid(Component) && !SocketName.IsNone() && Component->DoesSocketExist(SocketName);
+	}
+
+	// 槽位 Socket 先挂枪。枪上没有时，挂到已经生成、并且自己带这个 Socket 的配件上。
+	USceneComponent* FindAttachmentMount(USkeletalMeshComponent* WeaponMesh, const TArray<FAttachmentVisual>& Visuals, bool bFirstPerson, FName SocketName)
+	{
+		if (!IsValid(WeaponMesh))
+		{
+			return nullptr;
+		}
+		if (SocketName.IsNone() || WeaponMesh->DoesSocketExist(SocketName))
+		{
+			return WeaponMesh;
+		}
+
+		for (const FAttachmentVisual& Visual : Visuals)
+		{
+			UStaticMeshComponent* Mesh = bFirstPerson ? Visual.Mesh1P.Get() : Visual.Mesh3P.Get();
+			if (ComponentHasSocket(Mesh, SocketName))
+			{
+				return Mesh;
+			}
+		}
+
+		return nullptr;
+	}
+}
 
 AWeapon::AWeapon()
 {
@@ -127,6 +160,97 @@ bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 
 	OutLocation = Mesh1P->GetSocketLocation(AimSocketName);
 	return true;
+}
+
+bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) const
+{
+	USkeletalMeshComponent* WeaponMesh = bFirstPerson ? Mesh1P : Mesh3P;
+	// 隐藏的枪不 Tick。读 Socket 前先刷新骨骼，握把才跟着枪走。
+	if (IsValid(WeaponMesh))
+	{
+		WeaponMesh->RefreshBoneTransforms();
+		WeaponMesh->UpdateComponentToWorld();
+	}
+
+	if (const FAttachmentVisual* Grip = FindVisual(ShooterTags::Tag_Attachment_Slot_Grip))
+	{
+		const FName SocketName = IsValid(Grip->Data) ? Grip->Data->FabrikSocketName : NAME_None;
+		UStaticMeshComponent* GripMesh = bFirstPerson ? Grip->Mesh1P.Get() : Grip->Mesh3P.Get();
+		const USceneComponent* GripParent = IsValid(GripMesh) ? GripMesh->GetAttachParent() : nullptr;
+		const FName MountSocket = IsValid(GripMesh) ? GripMesh->GetAttachSocketName() : NAME_None;
+		// 握把没挂到真实插槽上时，它的 FABRIK 在枪根，不能拿来改扶手。
+		const bool bGripMounted = IsValid(GripParent) && (MountSocket.IsNone() || GripParent->DoesSocketExist(MountSocket));
+		if (bGripMounted && ComponentHasSocket(GripMesh, SocketName))
+		{
+			GripMesh->UpdateComponentToWorld();
+			OutWorld = GripMesh->GetSocketTransform(SocketName, RTS_World);
+			return true;
+		}
+	}
+
+	if (!ComponentHasSocket(WeaponMesh, TEXT("FABRIK")))
+	{
+		return false;
+	}
+
+	OutWorld = WeaponMesh->GetSocketTransform(TEXT("FABRIK"), RTS_World);
+	return true;
+}
+
+FName AWeapon::GetFallbackMuzzleSocketName() const
+{
+	if (const FNameProperty* Property = FindFProperty<FNameProperty>(GetClass(), TEXT("MuzzleSocketName")))
+	{
+		const FName AuthoredName = Property->GetPropertyValue_InContainer(this);
+		if (!AuthoredName.IsNone())
+		{
+			return AuthoredName;
+		}
+	}
+
+	return TEXT("Muzzle");
+}
+
+bool AWeapon::TryAttachmentMuzzle(const FGameplayTag& SlotTag, bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const
+{
+	const FAttachmentVisual* Visual = FindVisual(SlotTag);
+	if (!Visual || !IsValid(Visual->Data))
+	{
+		return false;
+	}
+
+	UStaticMeshComponent* Mesh = bFirstPerson ? Visual->Mesh1P.Get() : Visual->Mesh3P.Get();
+	if (!ComponentHasSocket(Mesh, Visual->Data->MuzzleSocketName))
+	{
+		return false;
+	}
+
+	OutComponent = Mesh;
+	OutSocketName = Visual->Data->MuzzleSocketName;
+	return true;
+}
+
+bool AWeapon::GetMuzzleAttachPoint(bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const
+{
+	OutComponent = nullptr;
+	OutSocketName = NAME_None;
+
+	// 消音器在枪管前面，所以枪口配件优先于枪管。
+	if (TryAttachmentMuzzle(ShooterTags::Tag_Attachment_Slot_Muzzle, bFirstPerson, OutComponent, OutSocketName)
+		|| TryAttachmentMuzzle(ShooterTags::Tag_Attachment_Slot_Barrel, bFirstPerson, OutComponent, OutSocketName))
+	{
+		return true;
+	}
+
+	USkeletalMeshComponent* WeaponMesh = bFirstPerson ? Mesh1P : Mesh3P;
+	if (!IsValid(WeaponMesh))
+	{
+		return false;
+	}
+
+	OutComponent = WeaponMesh;
+	OutSocketName = GetFallbackMuzzleSocketName();
+	return !OutSocketName.IsNone();
 }
 
 USkeletalMeshComponent* AWeapon::GetMesh3P() const
@@ -591,12 +715,17 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 {
 	if (!IsValid(Parent) || !IsValid(Data) || !IsValid(Data->Mesh)) return nullptr;
 
-	// Socket 来自枪的槽位表，而不是配件本身
+	// Socket 来自枪的槽位表。枪骨骼上没有时，挂到已经装上的配件（例如护木上的握把插槽）。
 	const FWeaponAttachmentSlot* Slot = FindSlot(Data->SlotTag);
 	const FName SocketName = Slot ? Slot->SocketName : NAME_None;
-	if (!SocketName.IsNone() && !Parent->DoesSocketExist(SocketName))
+	USceneComponent* Mount = FindAttachmentMount(Parent, AttachmentVisuals, bFirstPerson, SocketName);
+	if (!IsValid(Mount))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Attachment %s: socket '%s' is missing on %s."), *GetNameSafe(Data), *SocketName.ToString(), *GetNameSafe(Parent->GetSkeletalMeshAsset()));
+		Mount = Parent;
+		if (!SocketName.IsNone())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Attachment %s: socket '%s' is missing on %s and on equipped attachments."), *GetNameSafe(Data), *SocketName.ToString(), *GetNameSafe(Parent->GetSkeletalMeshAsset()));
+		}
 	}
 
 	// 运行时创建组件：NewObject + 挂到 Socket + RegisterComponent
@@ -606,7 +735,7 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Comp->bReceivesDecals = false;
 	Comp->CastShadow = !bFirstPerson;   // 和枪一样：1P 不投影，3P 投影
-	Comp->SetupAttachment(Parent, SocketName);
+	Comp->SetupAttachment(Mount, SocketName);
 	Comp->SetRelativeTransform(Data->MeshOffset);
 	Comp->RegisterComponent();
 	return Comp;
@@ -631,11 +760,44 @@ void AWeapon::RebuildAttachmentVisuals()
 	}
 	AttachmentVisuals.Reset();
 
-	// 2. 按当前配件重新生成
+	// 2. 先装挂在枪上的配件，再装挂在那些配件上的（握把插槽在护木上时，护木必须先在）。
+	TArray<UAttachmentData*> Pending;
 	for (UAttachmentData* Attachment : EquippedAttachments)
 	{
-		if (!IsValid(Attachment)) continue;
+		if (IsValid(Attachment))
+		{
+			Pending.Add(Attachment);
+		}
+	}
 
+	bool bProgress = true;
+	while (Pending.Num() > 0 && bProgress)
+	{
+		bProgress = false;
+		for (int32 Index = 0; Index < Pending.Num();)
+		{
+			UAttachmentData* Attachment = Pending[Index];
+			const FWeaponAttachmentSlot* Slot = FindSlot(Attachment->SlotTag);
+			const FName SocketName = Slot ? Slot->SocketName : NAME_None;
+			const bool bMount1P = !IsValid(Mesh1P) || FindAttachmentMount(Mesh1P, AttachmentVisuals, true, SocketName) != nullptr;
+			const bool bMount3P = !IsValid(Mesh3P) || FindAttachmentMount(Mesh3P, AttachmentVisuals, false, SocketName) != nullptr;
+			if (!bMount1P || !bMount3P)
+			{
+				++Index;
+				continue;
+			}
+
+			FAttachmentVisual& Visual = AttachmentVisuals.AddDefaulted_GetRef();
+			Visual.Data = Attachment;
+			Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);
+			Visual.Mesh3P = SpawnAttachmentMesh(Mesh3P, Attachment, false);
+			Pending.RemoveAt(Index);
+			bProgress = true;
+		}
+	}
+
+	for (UAttachmentData* Attachment : Pending)
+	{
 		FAttachmentVisual& Visual = AttachmentVisuals.AddDefaulted_GetRef();
 		Visual.Data = Attachment;
 		Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);

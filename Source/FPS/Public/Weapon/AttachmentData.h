@@ -39,6 +39,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
 	FTransform MeshOffset = FTransform::Identity;
 
+	// 握把模型上的扶手点。装上后，第一人称和第三人称的左手 FABRIK 都跟这个 Socket。
+	// 握把没挂住，或模型上没有这个 Socket 时，用枪骨骼上的 FABRIK。
+	// 在握把 StaticMesh 的 Socket Manager 里加同名 Socket，放在手应该握住的位置。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
+	FName FabrikSocketName = TEXT("FABRIK");
+
+	// 枪管或枪口配件模型上的枪口。开火闪光和弹道视觉起点用它。
+	// 枪口配件（消音器）优先于枪管。都没有可用 Socket 时，用枪蓝图上的 MuzzleSocketName。
+	// 在配件 StaticMesh 上加同名 Socket，X 轴朝枪口前方。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Muzzle")
+	FName MuzzleSocketName = TEXT("Muzzle");
+
 	// ---------- 后座 ----------
 	// 后座倍率：0.8 = 后座减少 20%。多个配件会相乘
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Recoil", meta = (ClampMin = "0"))

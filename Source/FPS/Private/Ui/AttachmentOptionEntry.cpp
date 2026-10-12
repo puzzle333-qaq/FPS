@@ -16,9 +16,10 @@ void UAttachmentOptionEntry::NativeOnInitialized()
 	}
 }
 
-void UAttachmentOptionEntry::Setup(UAttachmentData* InData, FGameplayTag InSlotTag, bool bInEquipped, bool bInAllowed)
+void UAttachmentOptionEntry::Setup(UAttachmentData* InData, FGameplayTag InSlotTag, bool bInEquipped, bool bInAllowed, AWeapon* InWeapon)
 {
 	Data = InData;
+	Weapon = InWeapon;
 	SlotTag = InSlotTag;
 	bEquipped = bInEquipped;
 
@@ -65,10 +66,10 @@ void UAttachmentOptionEntry::OnSelectClicked()
 	// 只发请求，真正装不装由服务器校验；装好后武器广播 OnAttachmentsChanged，菜单会自动刷新
 	if (IsValid(Data))
 	{
-		Combat->Initiate_EquipAttachment(Data);
+		Combat->Initiate_EquipAttachmentOnWeapon(Weapon, Data);
 	}
 	else
 	{
-		Combat->Initiate_RemoveAttachment(SlotTag);
+		Combat->Initiate_RemoveAttachmentOnWeapon(Weapon, SlotTag);
 	}
 }
