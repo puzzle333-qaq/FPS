@@ -35,8 +35,11 @@
 21. [配件数据资产 —— `UAttachmentData`](#21-配件数据资产--uattachmentdata)
 22. [配件与整备界面](#22-配件与整备界面)
 23. [瞄具、手电与第一人称扶枪 IK](#23-瞄具手电与第一人称扶枪-ik)
+24. [武器手感与开镜修订（第 1–8 步）](#24-武器手感与开镜修订第-18-步)
 
-> **最新修订（武器配件 / 整备界面 / 画中画倍镜）：** 新增顶层章节 `21–23`，分别说明配件数据资产、配件与整备界面、以及画中画倍镜 + 手电 + 第一人称扶枪 IK；蓝图契约新增项见 `19.2`，新增已知问题见 `20.1.2`。
+> **最新修订（武器手感与开镜，第 1–8 步）：** 新增顶层章节 `24`，说明换弹分种类、拉栓、左手 IK 渐变、开火模式切换、C++ 开镜 FOV 与开镜时间、可变倍率瞄具、按瞄具类型决定画中画（狙击不再特殊处理）、视觉后坐、每把枪的腰射偏移与开镜眼距。与 §16、§18.5、§23.1 冲突时以 §24 为准。
+>
+> **更早修订（武器配件 / 整备界面 / 画中画倍镜）：** 新增顶层章节 `21–23`，分别说明配件数据资产、配件与整备界面、以及画中画倍镜 + 手电 + 第一人称扶枪 IK；蓝图契约新增项见 `19.2`，新增已知问题见 `20.1.2`。
 >
 > **上一次修订（后坐力 / 耐力 / 治疗 / 移动步态）：** 子章节 `4.11`、`6.5–6.7`、`7.7–7.9`、`8.4–8.6`、`11.1`、`12.1–12.2`、`19.1`、`20.1.1`。
 
@@ -1160,6 +1163,8 @@ if (Ammo > 0) Local_FireWeapon();
 
 ## 16. 狙击镜 — USniperScopeComponent / USniperScopeWidget
 
+> **已被取代（第 6 步）：** `USniperScopeComponent::UpdateView()` 现在只调用 `SetScopeActive(false)`。狙击枪和其他武器一样按装的瞄具走，见 §24.6。下面的说明仅作历史保留。
+
 **位置**：[SniperScopeComponent.h](<Source/FPS/Public/Weapon/SniperScopeComponent.h>) / [.cpp](<Source/FPS/Private/Weapon/SniperScopeComponent.cpp>)
 
 ### 16.1 设计思想
@@ -1610,3 +1615,54 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 ---
 
 *本文档基于当前 `master` 分支源码（提交 `ab816ba Repair Weapon review rotation error` 时的本地状态）通读整理。*
+
+---
+
+## 24. 武器手感与开镜修订（第 1–8 步）
+
+> 中文改动记录（含编辑器步骤和调参值）：`Saved/武器逻辑改动记录.md`。每一步改代码前都备份到 `Saved/CodeBackup_<时间戳>`。
+
+### 24.1 换弹分种类与拉栓
+
+- `EReloadType`（WeaponData.h）：`Tactical`、`Empty`、`First`。`FMontageData` 新增 `EmptyReloadMontage`、`TacticalReloadMontage`、`FirstReloadMontage`、`BoltMontage`；`ResolveReloadMontage(EReloadType)` 没配时回落到 `ReloadMontage`。
+- `UCombatComponent::ChooseReloadType()`：`AWeapon::bHasReloadedOnce` 为 false 时选 `First`，弹匣空选 `Empty`，否则 `Tactical`。种类随 `Server_ReloadWeapon` / `Multicast_ReloadWeapon` 传递，1P 和 3P 播同一种。
+- `EWeaponStatus::BoltCycling`：配了 `BoltMontage` 的枪开火后，`BeginBoltCycleAfterShot()` 进入该状态，`PlayBoltMontage1P()` / `PlayBoltMontage3P()` 播放，`OnBoltMontageEnded` 回到 `Idle`。期间不能开火、换弹、切枪、治疗；服务器用 `ServerBoltEndTime` 拒绝提前的开火/换弹。
+
+### 24.2 换弹和拉栓时的左手 IK
+
+`CalculateFABRIKSocket(float DeltaTime)` 不再把 `FABRIK_Alpha1P` 写死为 1，而是插值。换弹或拉栓时（`bDisableLeftHandIKDuringReload`），或动画曲线 `DisableLeftHandIKCurveName` 大于 0 时，目标为 0，按 `LeftHandIKBlendSpeed` 渐变。狙击的握把特例保持不变。
+
+### 24.3 开火模式切换
+
+`AWeapon::bCanSwitchFireMode`（每把枪可改）和同步的 `FireType`（`COND_SkipOwner`）。`UCombatComponent::Initiate_SwitchFireMode()` 先检查 `CanSwitchFireMode()`（不在换弹 / 拉栓），本地切换，调用 `Server_SetFireMode`，并广播 `OnFireModeChanged`（`FFireModeChanged`）。输入：`AShooterCharacter::SwitchFireModeAction` → `Input_SwitchFireMode()`。
+
+### 24.4 开镜 FOV、开镜时间与开镜进度
+
+- `AShooterCharacter::UpdateAimAlpha()` 按 `AWeapon::GetEffectiveAdsTime()`（`AimDownSightTime` × 所有已装配件的 `AdsTimeMultiplier`）推进 `AimAlpha`。`GetAimAlpha()` 是 BlueprintPure。
+- `UpdateAimFieldOfView()`（本地玩家，`bDriveAimFOVInCode`）按进度和 `AimFOVInterpSpeed` 把相机从 `DefaultFOV` 混到 `UCombatComponent::GetCurrentAimFOV()`；关镜、切枪、死亡时回默认。`AWeapon::GetEffectiveAimFOV()` 顺序：可变倍率当前档（仅非画中画）→ 勾了 `bOverridesAimFOV` 的瞄具 `AimFOV` → 枪 `AimFeildOfView` → 0（不变焦）。
+- `bDriveAdsInCode`（默认 true）让 C++ 每帧写 Mesh1P；关掉则保留旧的蓝图 `AdsMesh1PLoc` 方案。
+
+### 24.5 瞄具类型、可变倍率与画中画
+
+- `EOpticType` 新增 `Variable`。配件新增 `ZoomLevelsFOV`（数组）、`AdsTimeMultiplier`；镜片相关字段对 Magnified 和 Variable 都可编辑。
+- `AWeapon::UsesLensPiP()` 只有在 `Magnified` / `Variable` 瞄具的 1P 模型有 `LensSocketName` 或 `SightSocketName`，并且有画面材质（`LensMaterial`；Magnified 也可用 `LensMaterialIndex` 槽上现成的材质）时才为 true。`GetPiPCaptureFOV()`：可变倍率 → 当前 `ZoomLevelsFOV` 档；固定倍镜 → `AimFOV` / 由 `Magnification` 换算。
+- `UOpticScopeComponent::UpdateView()`（角色 Tick 调用）只在本地玩家开镜且 `UsesLensPiP()` 时启用。拍摄机不挂在瞄具上：`PlaceCapture()` 每帧把它放到玩家镜头位置，画面中心就是子弹线；拍摄时隐藏角色和武器；不启用时关掉 `bCaptureEveryFrame`。只替换画面槽为动态材质，准心槽保持原材质。切档时 `SmoothedCaptureFOV` 平滑过渡。
+- `UCombatComponent::Initiate_CycleZoom()` 轮换 `AWeapon::CurrentZoomIndex` 并广播 `OnZoomLevelChanged`（`FZoomLevelChanged`）。输入：`SwitchZoomAction` → `Input_SwitchZoom()`。
+
+### 24.6 狙击不再特殊处理
+
+相机 FOV、瞄具组件、画中画的判断不再看 `WeaponType == Sniper`。狙击装红点 / 全息 = 步枪行为；不装瞄具 = 对准枪或枪管的 `AimSocket`，用 `AimFeildOfView`；画中画只按 §24.5。`USniperScopeComponent` 保持停用（§16）。
+
+### 24.7 枪身视觉后坐（默认关闭）
+
+`ApplyFireRecoil` 用同一个 `FRecoilStep`、配件倍率和开镜倍率调用 `AShooterCharacter::AddVisualRecoil()`。踢动（位置往后/往上，小幅随机俯仰/偏航/翻滚）是只在本地作用于 Mesh1P 的弹簧：开镜对准前 `RemoveVisualRecoilFromMesh()`，之后 `ApplyVisualRecoilToMesh()`，不会干扰对准。武器调参：`VisualRecoilLocation`、`VisualRecoilRotation`、`VisualRecoilAimMultiplier`、`VisualRecoilKickSpeed`、`VisualRecoilRecoverySpeed`。总开关 `AShooterCharacter::bEnableVisualRecoil`（分类 `FPS|Recoil|Visual`）默认 **false**；关闭时不施加并清掉已有偏移。
+
+### 24.8 每把枪的腰射偏移与开镜眼距
+
+- `AWeapon::HipMesh1POffset`（FVector，厘米，相机父空间；X 负数把枪往后拉）和 `HipMesh1PRotationOffset`（FRotator）。`UpdateAimSocketAlignment` 里腰射目标 = `AuthoredHipMeshLocation + HipMesh1POffset`；旋转在测量开镜目标之前，按 `AimAlignAlpha` 从 `AuthoredHipMeshRotation + HipMesh1PRotationOffset` 球面插值回默认旋转，所以完全开镜时对准精确。每帧读当前武器，切枪即更新。
+- `AWeapon::AdsEyeDistance`（厘米，0 = 保持）以及 `UAttachmentData::bOverridesEyeDistance` + `EyeDistance`。`ComputeAdsMeshLocation()` 把瞄准点放到镜头空间 `(眼距, 0, 0)`。为 0 时用瞄准点在腰射姿态下的距离（当前距离减去 Mesh1P 相对腰射目标已向前移动的量），它与 Mesh1P 当前位置无关，所以会收敛而不是漂移。
+- `AdsOffset` 曾短暂存在，已**删除**：它会造成反馈漂移，只用眼距就够了。
+
+### 24.9 已撤回：第 7 步的试验
+
+第 7 步加过的自动镜片平面、开镜鼠标灵敏度缩放、可选第一人称视野（UE first-person rendering），之后已从代码里撤掉，当前源码中不存在。

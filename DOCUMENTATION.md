@@ -35,8 +35,11 @@
 21. [Attachment data asset — `UAttachmentData`](#21-attachment-data-asset--uattachmentdata)
 22. [Attachment and loadout UI](#22-attachment-and-loadout-ui)
 23. [Optics, flashlight and first-person FABRIK](#23-optics-flashlight-and-first-person-fabrik)
+24. [Weapon feel and ADS revision (Steps 1–8)](#24-weapon-feel-and-ads-revision-steps-18)
 
-> **Latest revision (weapon attachments, loadout, PiP optics):** new top-level sections `21–23` document the attachment data asset, the attachment/loadout UI and the picture-in-picture optic + flashlight + first-person FABRIK, with contract additions in `19.2` and new known issues in `20.1.2`.
+> **Latest revision (weapon feel and ADS, Steps 1–8):** new top-level section `24` covers reload variants, bolt action, left-hand IK blending, the fire-mode toggle, C++ ADS FOV and ADS time, variable-zoom optics, PiP rules by optic type (the sniper is no longer special-cased), visual recoil, per-weapon hip offset and ADS eye distance. Where it disagrees with §16, §18.5 or §23.1, §24 wins.
+>
+> **Earlier revision (weapon attachments, loadout, PiP optics):** new top-level sections `21–23` document the attachment data asset, the attachment/loadout UI and the picture-in-picture optic + flashlight + first-person FABRIK, with contract additions in `19.2` and new known issues in `20.1.2`.
 >
 > **Previous revision (recoil / stamina / healing / locomotion):** subsections `4.11`, `6.5–6.7`, `7.7–7.9`, `8.4–8.6`, `11.1`, `12.1–12.2`, `19.1` and `20.1.1`.
 
@@ -1160,6 +1163,8 @@ Automatic cancellations: sprint is refused while aiming or crouched, cancelled w
 
 ## 16. Sniper scope — USniperScopeComponent / USniperScopeWidget
 
+> **Superseded (Step 6):** `USniperScopeComponent::UpdateView()` now only calls `SetScopeActive(false)`. The sniper follows its equipped optic like every other weapon; see §24.6. The description below is kept for history.
+
 **Location**: [SniperScopeComponent.h](<Source/FPS/Public/Weapon/SniperScopeComponent.h>) / [.cpp](<Source/FPS/Private/Weapon/SniperScopeComponent.cpp>)
 
 ### 16.1 Design idea
@@ -1610,3 +1615,54 @@ Difference from `USniperScopeComponent` (section 16): the sniper scope renders a
 ---
 
 *This document was compiled by reading the source on the current `master` branch (local state at commit `ab816ba Repair Weapon review rotation error`).*
+
+---
+
+## 24. Weapon feel and ADS revision (Steps 1–8)
+
+> Change history (Chinese, with editor steps and tuning values): `Saved/武器逻辑改动记录.md`. Every step was backed up to `Saved/CodeBackup_<timestamp>` before editing.
+
+### 24.1 Reload variants and bolt action
+
+- `EReloadType` (WeaponData.h): `Tactical`, `Empty`, `First`. `FMontageData` gains `EmptyReloadMontage`, `TacticalReloadMontage`, `FirstReloadMontage`, `BoltMontage`; `ResolveReloadMontage(EReloadType)` falls back to `ReloadMontage`.
+- `UCombatComponent::ChooseReloadType()` picks `First` while `AWeapon::bHasReloadedOnce` is false, `Empty` when the magazine is empty, otherwise `Tactical`. The type travels through `Server_ReloadWeapon` / `Multicast_ReloadWeapon` so 1P and 3P play the same variant.
+- `EWeaponStatus::BoltCycling`: after a shot on a weapon with a `BoltMontage`, `BeginBoltCycleAfterShot()` enters the state and `PlayBoltMontage1P()` / `PlayBoltMontage3P()` play the montage; `OnBoltMontageEnded` returns to `Idle`. Fire, reload, weapon switch and heal are blocked meanwhile; the server rejects early shots/reloads with `ServerBoltEndTime`.
+
+### 24.2 Left-hand IK during reload and bolt
+
+`CalculateFABRIKSocket(float DeltaTime)` now interpolates `FABRIK_Alpha1P` instead of forcing 1. Target alpha is 0 while reloading or bolt-cycling (`bDisableLeftHandIKDuringReload`) or when the anim curve named `DisableLeftHandIKCurveName` is above 0, and blends at `LeftHandIKBlendSpeed`. The sniper grip exception is unchanged.
+
+### 24.3 Fire-mode toggle
+
+`AWeapon::bCanSwitchFireMode` (editable per weapon) and replicated `FireType` (`COND_SkipOwner`). `UCombatComponent::Initiate_SwitchFireMode()` checks `CanSwitchFireMode()` (not reloading / bolting), flips locally, calls `Server_SetFireMode` and broadcasts `OnFireModeChanged` (`FFireModeChanged`). Input: `AShooterCharacter::SwitchFireModeAction` → `Input_SwitchFireMode()`.
+
+### 24.4 ADS FOV, ADS time and alpha
+
+- `AShooterCharacter::UpdateAimAlpha()` moves `AimAlpha` toward 1/0 at the rate given by `AWeapon::GetEffectiveAdsTime()` (`AimDownSightTime` × every equipped attachment's `AdsTimeMultiplier`). `GetAimAlpha()` is BlueprintPure.
+- `UpdateAimFieldOfView()` (local player, `bDriveAimFOVInCode`) blends the camera from `DefaultFOV` to `UCombatComponent::GetCurrentAimFOV()` using the alpha and `AimFOVInterpSpeed`; it returns to the default on un-aim, weapon switch and death. `AWeapon::GetEffectiveAimFOV()` order: variable optic level (non-PiP only) → optic `AimFOV` when `bOverridesAimFOV` → weapon `AimFeildOfView` → 0 (no zoom).
+- `bDriveAdsInCode` (default true) makes C++ write Mesh1P every frame; false keeps the legacy blueprint `AdsMesh1PLoc` path.
+
+### 24.5 Optic types, variable zoom and PiP
+
+- `EOpticType` adds `Variable`. New attachment properties: `ZoomLevelsFOV` (array), `AdsTimeMultiplier`; the lens fields are editable for Magnified and Variable.
+- `AWeapon::UsesLensPiP()` is true only for `Magnified` / `Variable` optics whose 1P mesh has `LensSocketName` or `SightSocketName` and a picture material: `LensMaterial`, or (Magnified only) the existing material in slot `LensMaterialIndex`. `GetPiPCaptureFOV()`: variable → current `ZoomLevelsFOV` level, magnified → `AimFOV` / converted `Magnification`.
+- `UOpticScopeComponent::UpdateView()` (called from the character Tick) activates only for the local aiming player when `UsesLensPiP()`. The capture is not attached to the optic: `PlaceCapture()` puts it on the player camera each frame so the image centre is the bullet line; character and weapon are hidden from the capture; `bCaptureEveryFrame` is off when inactive. Only the picture slot is replaced by the dynamic material; the reticle slot keeps its own material. `SmoothedCaptureFOV` interpolates on zoom changes.
+- `UCombatComponent::Initiate_CycleZoom()` steps `AWeapon::CurrentZoomIndex` and broadcasts `OnZoomLevelChanged` (`FZoomLevelChanged`). Input: `SwitchZoomAction` → `Input_SwitchZoom()`.
+
+### 24.6 Sniper no longer special-cased
+
+The camera FOV, scope component and PiP decisions no longer test `WeaponType == Sniper`. Red dot / holo on a sniper = rifle behaviour; no optic = align to the weapon/barrel `AimSocket` with `AimFeildOfView`; PiP only through §24.5. `USniperScopeComponent` stays idle (§16).
+
+### 24.7 Visual weapon recoil (off by default)
+
+`ApplyFireRecoil` calls `AShooterCharacter::AddVisualRecoil()` with the same `FRecoilStep`, attachment multipliers and ADS multiplier. The kick (location back/up, small random pitch/yaw/roll) is a local-only spring on Mesh1P: `RemoveVisualRecoilFromMesh()` before ADS alignment, `ApplyVisualRecoilToMesh()` after, so alignment is never disturbed. Weapon tuning: `VisualRecoilLocation`, `VisualRecoilRotation`, `VisualRecoilAimMultiplier`, `VisualRecoilKickSpeed`, `VisualRecoilRecoverySpeed`. Master switch `AShooterCharacter::bEnableVisualRecoil` (category `FPS|Recoil|Visual`) defaults to **false**; when false nothing is applied and any offset is cleared.
+
+### 24.8 Per-weapon hip offset and ADS eye distance
+
+- `AWeapon::HipMesh1POffset` (FVector, cm, camera-parent space; negative X pulls the gun back) and `HipMesh1PRotationOffset` (FRotator). In `UpdateAimSocketAlignment` the hip target is `AuthoredHipMeshLocation + HipMesh1POffset`; the rotation is slerped from `AuthoredHipMeshRotation + HipMesh1PRotationOffset` back to the authored rotation by `AimAlignAlpha`, before the ADS target is measured, so alignment is exact at full ADS. The current weapon is read every frame, so switching weapons updates it.
+- `AWeapon::AdsEyeDistance` (cm, 0 = keep) and `UAttachmentData::bOverridesEyeDistance` + `EyeDistance`. `ComputeAdsMeshLocation()` places the sight socket at `(EyeDistance, 0, 0)` in camera space. When the value is 0 it uses the socket's distance in the hip pose (current distance minus the forward distance Mesh1P has already moved from the hip target), which is independent of Mesh1P's current location and therefore converges instead of drifting.
+- `AdsOffset` existed briefly and was **removed**: it caused feedback drift and eye distance alone is enough.
+
+### 24.9 Removed again: Step 7 experiments
+
+An auto-spawned lens plane, ADS look-sensitivity scaling and an optional viewmodel FOV (UE first-person rendering) were added in Step 7 and later removed from the code. They are not present in the current source.

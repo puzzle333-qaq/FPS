@@ -43,18 +43,18 @@ Enabled plugins ([FPS.uproject](<FPS.uproject>)): `ModelingToolsEditorMode` (edi
 | Stamina | Server-authoritative drain/regen, jump cost, `OnStaminaDepleted`, stamina bar HUD | [StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
 | Locomotion feel | `GroundSpeed`, walk-gait BlendSpace swap (`Strafe_Walking`), per-frame locomotion play rate pushed into the AnimBPs | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
 | Weapons | Three kinds (long gun / pistol / melee), four slots (main / secondary / pistol / melee), cycling, equip montages, auto un-aim when switching | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
-| Shooting | Sphere-sweep hit detection, single / automatic fire, **recoil pattern with recovery and attachment modifiers**, server-side rate limiting, blueprint-driven muzzle and impact FX, magazine and reserve ammo | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>), [RecoilModifierInterface.h](<Source/FPS/Public/Interface/RecoilModifierInterface.h>) |
-| Reloading | 1P/3P reload montages, animation-notify-driven ammo transfer, auto-reload on empty, weapon re-gripped by a C++ anim notify | [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>), [AnimNotify_WeaponGrip.cpp](<Source/FPS/Private/AnimNotify/AnimNotify_WeaponGrip.cpp>) |
+| Shooting | Sphere-sweep hit detection, single / automatic fire with a per-weapon **fire-mode toggle** (`bCanSwitchFireMode`, replicated `FireType`), bolt-action cycling (`BoltCycling` state), **recoil pattern with recovery and attachment modifiers**, server-side rate limiting, blueprint-driven muzzle and impact FX, magazine and reserve ammo | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>), [RecoilModifierInterface.h](<Source/FPS/Public/Interface/RecoilModifierInterface.h>) |
+| Reloading | 1P/3P reload montages with **variants** (first / empty / tactical, falling back to the default montage), left-hand IK blended off during reload and bolt, animation-notify-driven ammo transfer, auto-reload on empty, weapon re-gripped by a C++ anim notify | [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>), [AnimNotify_WeaponGrip.cpp](<Source/FPS/Private/AnimNotify/AnimNotify_WeaponGrip.cpp>) |
 | Healing | Heal montage with weapon hidden during the animation, server-clamped heal amount, 3P multicast for other players | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
-| ADS | Replicated `bAiming` (owner skipped), `OnAimStateChanged` broadcast, 1P arms/weapon sight alignment via the blueprint variable `AdsMesh1PLoc` | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
-| Sniper scope | SceneCapture2D + render target + full-screen UMG mask material; 3x zoom shown only inside the scope disc; the main camera keeps its normal FOV | [SniperScopeComponent.cpp](<Source/FPS/Private/Weapon/SniperScopeComponent.cpp>) |
+| ADS | Replicated `bAiming` (owner skipped), `OnAimStateChanged` broadcast, C++-driven ADS: `AimAlpha` advances over the weapon's ADS time (scaled by attachments), Mesh1P is interpolated from a **per-weapon hip offset** to the sight-aligned position at a configurable **eye distance**, and the camera FOV is interpolated in C++ (optic `AimFOV` → weapon `AimFeildOfView` → default). Optional visual weapon recoil (off by default). See §10.1 | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| Sniper scope | **Legacy, now idle.** `USniperScopeComponent` only keeps itself switched off; the sniper follows its equipped optic like every other gun (see §10.1) | [SniperScopeComponent.cpp](<Source/FPS/Private/Weapon/SniperScopeComponent.cpp>) |
 | Damage | Bone name → hit zone (head / torso / limb) → multiplier (headshot ×2, limb ×0.75), resolved on the server | [ShooterType.cpp](<Source/FPS/Private/ShooterType/ShooterType.cpp>), [StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
 | Animation driving | `AO_Yaw`, `MovementOffsetYaw`, `TurningStatus`, `FABRIK_SocketTransform`, `FPlayerAnim` struct injection into the ABPs | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [WeaponData.h](<Source/FPS/Public/WeaponData.h>) |
 | Hit reactions | Random montage from `HitReacts`, broadcast with a NetMulticast | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
 | UI | Dynamic reticle material (per weapon), ammo/reserve + weapon icon HUD, health bar, stamina bar, reticle hidden while aiming | [ShooterReticle.cpp](<Source/FPS/Private/Ui/ShooterReticle.cpp>), [ReserveAmmo.cpp](<Source/FPS/Private/Ui/ReserveAmmo.cpp>) |
 | Weapon attachments | Data-asset driven attachments per slot, server-validated whitelist, default loadout per weapon, replicated, live 1P/3P meshes, and redirection of the grip / muzzle / aim sockets | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [AttachmentData.h](<Source/FPS/Public/Weapon/AttachmentData.h>) |
 | Attachment UI | In-game attachment menu (one row per slot), Tab loadout screen with a three-weapon preview render and a draggable attachment window | [AttachmentMenu.cpp](<Source/FPS/Private/Ui/AttachmentMenu.cpp>), [LoadoutScreen.cpp](<Source/FPS/Private/Ui/LoadoutScreen.cpp>) |
-| Optics & flashlight | Red dot / holographic sights align on the optic's own socket, magnified optics render a picture-in-picture scope, and the flashlight is a spotlight driven by the attachment data | [OpticScopeComponent.cpp](<Source/FPS/Private/Weapon/OpticScopeComponent.cpp>) |
+| Optics & flashlight | Red dot / holographic sights align on the optic's own socket and use camera FOV; only `Magnified` / `Variable` optics with a usable lens render a picture-in-picture scope (variable optics cycle zoom levels), and the flashlight is a spotlight driven by the attachment data | [OpticScopeComponent.cpp](<Source/FPS/Private/Weapon/OpticScopeComponent.cpp>) |
 | 1P hand IK | `UFirstPersonAnimInstance` pulls `FABRIK_Socket1P` / `FABRIK_Alpha1P` so the left hand follows the weapon or the mounted grip | [FirstPersonAnimInstance.cpp](<Source/FPS/Private/Animation/FirstPersonAnimInstance.cpp>) |
 | Networking | Server-authoritative spawning, equipping, attachments, damage, stamina and healing; client-side magazine prediction and recoil; NetMulticast FX and third-person montages | [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 
@@ -173,6 +173,8 @@ Input is dispatched through Enhanced Input: movement and movement modes live on 
 | Secondary weapon | `IA_EquipSecondaryWeapon` | Character | `Started` | Equips the second long gun and drops out of ADS |
 | Pistol | `IA_EquipPistol` | Character | `Started` | Equips the first pistol and drops out of ADS |
 | Melee | `IA_EquipMeleeWeapon` | Character | `Started` | Equips the first melee weapon and drops out of ADS |
+| Switch fire mode | your IA asset → `SwitchFireModeAction` | Character | `Started` | Toggles single / automatic on weapons with `bCanSwitchFireMode`; blocked while reloading or bolting; server RPC + `OnFireModeChanged` |
+| Switch zoom | your IA asset → `SwitchZoomAction` | Character | `Started` | While aiming a `Variable` optic, cycles `ZoomLevelsFOV`; `OnZoomLevelChanged` for UI |
 
 > Note: `IMC_Shooter` contains `LeftMouseButton`, `RightMouseButton`, `SpaceBar`, `LeftControl`, `LeftShift`, `LeftAlt`, `One`–`Four`, `R`, `Q`, `E` and gamepad triggers. The mapping in the table above reflects the common configuration — **`IMC_Shooter` inside the editor is the source of truth**.
 
@@ -242,14 +244,15 @@ graph TD
 ## 9. Known Limitations
 
 - `EWeaponStatus::Firing` is never written by any code path.
-- `AimTimeline`, `GetAimTimelineAlpha()` and `AimAlignAlpha` are declared but not wired into any call chain (ADS alignment currently works by rewriting a blueprint variable).
+- `AimTimeline` is still declared but unused; ADS is now driven in C++ by `AimAlpha` / `AimAlignAlpha` (set `bDriveAdsInCode = false` to fall back to the old blueprint `AdsMesh1PLoc` path).
 - `Input_VersionWeapon()` is empty and `VersionWeaponAction` is never bound — dead code.
 - Recoil is a pure local effect: it cannot be used as a server-side accuracy penalty.
 - The locomotion gait/play-rate push finds AnimInstance properties **by name** (with `PlayRate` / `LocomotionPlayRate` / `BS_PlayRate` aliases); a renamed property silently does nothing.
 - `UStatsComponent::DeathState` is now *read* by the heal path but still never written — death handling is still missing; `OnRep_DeathState` is empty and `ChangeHealthByAmout` always returns `false`.
 - `ChangeMaxHealthByAmout` / `ChangeMaxStaminaAmout` have no floor or ceiling.
 - `AShooterCharacter::DoDamage_Implementation` picks a random index into `HitReacts` without checking for an empty array; keep at least one montage configured.
-- Scope magnification, disc radius and reticle thickness are compile-time constants in `SniperScopeComponent.cpp` and are not exposed as properties.
+- `USniperScopeComponent` is kept only for compatibility and is permanently idle; its constants no longer matter.
+- The Step 7 experiments (auto lens plane, ADS sensitivity scaling, optional viewmodel FOV) were removed from the code again; a PiP optic still needs a lens material slot (`LensMaterialIndex`) or a `LensMaterial`, and look sensitivity is not scaled while aiming.
 - The attachment window loads its rows from a hard-coded path (`/Game/FPS/UI/WBP_AttachmentSlotRow.WBP_AttachmentSlotRow_C`); renaming that widget breaks the loadout window rows (a warning is logged).
 - `BP_M700` (the sniper) has no `AttachmentSlots` configured, so the attachment menu reports "this weapon has no attachment slots" for it.
 - `DA_Sight` sets `bOverridesAimFOV` but has no lens material, so it behaves as a red-dot style sight; a magnified optic needs the full `OpticType = Magnified` block (lens socket, lens material, material index, render-target size) or the picture-in-picture scope logs a warning and stays off.
@@ -273,6 +276,25 @@ graph TD
 | Grip / muzzle / scope | The 1P hand IK follows the grip attachment's `FABRIK` socket when it is mounted; muzzle FX use muzzle attachment → barrel attachment → weapon socket; snipers keep the full-screen `SniperScopeComponent`, while `UOpticScopeComponent` handles picture-in-picture magnified optics on other weapons |
 
 Networking summary: the client only **requests** through `UCombatComponent` (`Initiate_EquipAttachment`, `Initiate_RemoveAttachment`, `Initiate_ToggleFlashlight` and their `…OnWeapon` variants), which forwards to reliable server RPCs; `AWeapon` re-validates the slot and the whitelist, applies the change, and the replicated array drives `OnRep_EquippedAttachments` → visual rebuild + `OnAttachmentsChanged` so the UI refreshes.
+
+### 10.1 ADS, optics and weapon feel (weapon-logic Steps 1–8)
+
+Change history in Chinese: `Saved/武器逻辑改动记录.md`.
+
+| Area | Behaviour | Where to configure |
+| --- | --- | --- |
+| Reload variants | `ChooseReloadType()` picks `First` (first reload of this weapon), `Empty` (magazine empty) or `Tactical`; `FMontageData::ResolveReloadMontage()` falls back to `ReloadMontage` when a variant is empty | `UWeaponData` → `FirstReloadMontage`, `EmptyReloadMontage`, `TacticalReloadMontage` |
+| Bolt action | After a shot a weapon with `BoltMontage` enters `EWeaponStatus::BoltCycling`; fire, reload, switch and heal are blocked until the montage ends; the server checks `ServerBoltEndTime` | `UWeaponData` → `BoltMontage` |
+| Left-hand IK | `FABRIK_Alpha1P` blends to 0 during reload / bolt (or when the anim curve `DisableLeftHandIKCurveName` is > 0) and back at `LeftHandIKBlendSpeed` | Character → `bDisableLeftHandIKDuringReload`, `LeftHandIKBlendSpeed` |
+| Fire mode | `Initiate_SwitchFireMode()` flips `FireType` locally and through `Server_SetFireMode`; `FireType` is replicated (skip owner) | Weapon → `bCanSwitchFireMode`; bind `SwitchFireModeAction` |
+| ADS FOV | Local-only FOV interpolation in C++: variable optic level → optic `AimFOV` (if `bOverridesAimFOV`) → weapon `AimFeildOfView` → `DefaultFOV`; returns to default on un-aim, weapon switch and death | Character → `bDriveAimFOVInCode`, `AimFOVInterpSpeed`, `DefaultFOV` |
+| ADS time | `AimAlpha` moves 0→1 over `GetEffectiveAdsTime()` = `AimDownSightTime` × every equipped attachment's `AdsTimeMultiplier` | Weapon → `AimDownSightTime`; attachment → `AdsTimeMultiplier` |
+| Optic types | `None`, `RedDot`, `Holographic` → camera FOV only. `Magnified` / `Variable` → picture-in-picture through `UOpticScopeComponent` when the optic mesh has a `LensSocket` or `SightSocket` and a picture material (`LensMaterial`, or for `Magnified` the existing material in `LensMaterialIndex`). The capture sits on the player camera, so the image centre is the bullet line; capture is off when not aiming | Attachment → `OpticType`, `AimFOV`, `Magnification`, `ZoomLevelsFOV`, `LensSocketName`, `LensMaterial`, `LensTextureParameterName`, `LensMaterialIndex`, `RenderTargetSize` |
+| Variable zoom | `Initiate_CycleZoom()` steps `CurrentZoomIndex` through `ZoomLevelsFOV`; the PiP capture FOV interpolates to the new level | Attachment → `ZoomLevelsFOV`; bind `SwitchZoomAction` |
+| Sniper | No longer hard-coded: with a red dot it behaves like a rifle; with no optic it aligns to its `AimSocket` with `AimFeildOfView`; PiP only for Magnified / Variable optics | — |
+| Hip position | Hip target = Mesh1P default location (captured at BeginPlay) + the weapon's offset; the rotation offset fades back to the default rotation while aiming; read every frame, so it follows weapon switches | Weapon → `HipMesh1POffset`, `HipMesh1PRotationOffset` |
+| Eye distance | ADS target puts the sight on the camera axis at the eye distance: optic `EyeDistance` (if `bOverridesEyeDistance`) → weapon `AdsEyeDistance` → 0 = keep the sight's natural distance (computed from the hip pose, so it does not drift). The earlier `AdsOffset` property was **removed** | Weapon → `AdsEyeDistance`; attachment → `bOverridesEyeDistance`, `EyeDistance` |
+| Visual recoil | Local-only kick of Mesh1P on top of the pattern recoil (bullets still follow the crosshair), scaled by attachment and ADS multipliers. **Off by default** | Character → `bEnableVisualRecoil`; weapon → `VisualRecoilLocation`, `VisualRecoilRotation`, `VisualRecoilAimMultiplier`, `VisualRecoilKickSpeed`, `VisualRecoilRecoverySpeed` |
 
 ## 11. Further Reading
 
