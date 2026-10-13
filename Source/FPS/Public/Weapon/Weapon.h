@@ -173,6 +173,15 @@ public:
 	// 瞄具在第一人称枪上生成的模型（倍镜画中画要把 SceneCapture 挂到它的 LensSocket 上）
 	UStaticMeshComponent* GetOpticMesh1P() const;
 
+	// 开镜时是不是用镜片画中画（UOpticScopeComponent）：
+	// 瞄具是 Variable 或 Magnified，并且填了 LensMaterial、模型上有 LensSocket。
+	// 其他情况（红点/全息/机瞄/没配镜片的倍镜）都用整屏镜头 FOV。不再按武器类型（狙击）判断。
+	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
+	bool UsesLensPiP() const;
+
+	// 画中画拍摄 FOV：Variable = 当前档的 ZoomLevelsFOV；Magnified = AimFOV（勾了覆盖且 > 0），否则按 Magnification 换算
+	float GetPiPCaptureFOV(float BaseFOV) const;
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool IsFlashlightOn() const { return bFlashlightOn; }
 

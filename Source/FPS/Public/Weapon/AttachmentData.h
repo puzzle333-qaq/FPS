@@ -101,23 +101,23 @@ public:
 	float BaseFOVForMagnification = 0.f;
 
 	// 镜片位置的 Socket（倍镜模型上，放在物镜前方，X 轴朝枪口）。SceneCapture 挂在这里
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides))
 	FName LensSocketName = TEXT("LensSocket");
 
 	// 镜片材质。必须有一个 Texture 参数（名字见下面），代码会把放大画面塞进去
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides))
 	TObjectPtr<UMaterialInterface> LensMaterial;
 
 	// 镜片材质里贴图参数的名字
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides))
 	FName LensTextureParameterName = TEXT("ScopeView");
 
 	// 倍镜模型上镜片那块的材质槽序号（Static Mesh 编辑器 -> Material Slots 里看）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified", EditConditionHides, ClampMin = "0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides, ClampMin = "0"))
 	int32 LensMaterialIndex = 0;
 
 	// 渲染目标分辨率（正方形）。越大越清晰也越耗性能，512 一般够用
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified", EditConditionHides, ClampMin = "64", ClampMax = "2048"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides, ClampMin = "64", ClampMax = "2048"))
 	int32 RenderTargetSize = 512;
 
 	bool IsMagnifiedOptic() const { return OpticType == EOpticType::Magnified; }

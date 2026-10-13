@@ -25,13 +25,13 @@ void UOpticScopeComponent::UpdateView()
 	const UAttachmentData* Optic = IsValid(Weapon) ? Weapon->GetOpticAttachment() : nullptr;
 	UStaticMeshComponent* OpticMesh = IsValid(Weapon) ? Weapon->GetOpticMesh1P() : nullptr;
 
-	// 条件全部满足才开：本地玩家、正在开镜、不是狙击枪（狙击枪走原来的全屏镜）、瞄具是倍镜
+	// 条件全部满足才开：本地玩家、正在开镜、瞄具要画中画（Variable / 配了镜片的 Magnified）。
+	// 按瞄具类型判断，不再看武器是不是狙击
 	const bool bWant = IsValid(Character)
 		&& Character->IsLocallyControlled()
-		&& Combat->bAiming
-		&& !Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper)
-		&& IsValid(Optic) && Optic->IsMagnifiedOptic()
-		&& IsValid(OpticMesh);
+		&& IsValid(Combat) && Combat->bAiming
+		&& IsValid(Weapon) && Weapon->UsesLensPiP()
+		&& IsValid(Optic) && IsValid(OpticMesh);
 
 	if (!bWant)
 	{
@@ -46,7 +46,20 @@ void UOpticScopeComponent::UpdateView()
 	}
 
 	// 每帧更新：倍率可能在编辑器里改，隐藏列表要跟着当前武器
-	Capture->FOVAngle = ComputeCaptureFOV(Optic);
+	// 拍摄 FOV 来自瞄具（可变倍率 = 当前档）。切档时平滑过去，刚开镜时直接对齐
+	const float TargetFOV = ComputeCaptureFOV(Optic);
+	if (!bActive || SmoothedCaptureFOV <= 0.f)
+	{
+		SmoothedCaptureFOV = TargetFOV;
+	}
+	else
+	{
+		const float Speed = Character->GetAimFOVInterpSpeed();
+		SmoothedCaptureFOV = Speed > 0.f
+			? FMath::FInterpTo(SmoothedCaptureFOV, TargetFOV, GetWorld()->GetDeltaSeconds(), Speed)
+			: TargetFOV;
+	}
+	Capture->FOVAngle = SmoothedCaptureFOV;
 	Capture->HiddenActors.Reset();
 	Capture->HiddenActors.Add(Character);   // 别拍到自己的手臂
 	Capture->HiddenActors.Add(Weapon);      // 别拍到枪和倍镜自己（配件模型是枪的组件）
@@ -170,18 +183,14 @@ void UOpticScopeComponent::RestoreLensMaterial()
 	}
 }
 
-float UOpticScopeComponent::ComputeCaptureFOV(const UAttachmentData* Optic) const
+float UOpticScopeComponent::ComputeCaptureFOV(const UAttachmentData* /*Optic*/) const
 {
-	// 倍率 -> FOV：tan(拍摄半角) = tan(基准半角) / 倍率
-	float BaseFOV = Optic->BaseFOVForMagnification;
-	if (BaseFOV <= 0.f)
-	{
-		const AShooterCharacter* Character = Cast<AShooterCharacter>(GetOwner());
-		BaseFOV = IsValid(Character) ? Character->GetDefaultFieldOfView() : 90.f;
-	}
-	const float Mag = FMath::Max(1.f, Optic->Magnification);
-	const float HalfBase = FMath::DegreesToRadians(BaseFOV * 0.5f);
-	return FMath::RadiansToDegrees(2.f * FMath::Atan(FMath::Tan(HalfBase) / Mag));
+	// 统一交给武器算：Variable = 当前档，Magnified = AimFOV 或按 Magnification 换算
+	const AShooterCharacter* Character = Cast<AShooterCharacter>(GetOwner());
+	const UCombatComponent* Combat = IsValid(Character) ? Character->GetCombatComponent() : nullptr;
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	const float BaseFOV = IsValid(Character) ? Character->GetDefaultFieldOfView() : 90.f;
+	return IsValid(Weapon) ? Weapon->GetPiPCaptureFOV(BaseFOV) : BaseFOV;
 }
 
 void UOpticScopeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

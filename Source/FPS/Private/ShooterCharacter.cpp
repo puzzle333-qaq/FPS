@@ -360,10 +360,10 @@ void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
 {
 	if (!bDriveAimFOVInCode || !IsLocallyControlled() || !IsValid(FirstPersonCamera)) return;
 
-	// 开镜 FOV 目标：狙击用画中画，整屏不变焦（SniperScopeComponent 也会把镜头压回默认）
+	// 开镜 FOV 目标：所有武器一样按瞄具算（画中画瞄具只用枪的 AimFeildOfView，放大在镜片里）
 	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
 	float AimTargetFOV = DefaultFOV;
-	if (IsValid(Combat) && IsValid(Weapon) && !Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper))
+	if (IsValid(Combat) && IsValid(Weapon))
 	{
 		AimTargetFOV = Combat->GetCurrentAimFOV(DefaultFOV);
 	}
@@ -391,7 +391,7 @@ void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
 
 void AShooterCharacter::AddVisualRecoil(const FVector& KickLocation, const FRotator& KickRotation)
 {
-	if (!IsLocallyControlled()) return;
+	if (!IsLocallyControlled() || !bEnableVisualRecoil) return;
 
 	VisualRecoilLocTarget += KickLocation;
 	VisualRecoilRotTarget += KickRotation;
@@ -427,6 +427,16 @@ void AShooterCharacter::RemoveVisualRecoilFromMesh()
 void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 {
 	if (!IsLocallyControlled() || !IsValid(Mesh1P) || !IsValid(FirstPersonCamera)) return;
+
+	// 关掉时清空残留偏移（上一帧的偏移已在 RemoveVisualRecoilFromMesh 撤掉），之后不再碰 Mesh1P
+	if (!bEnableVisualRecoil)
+	{
+		VisualRecoilLocTarget = FVector::ZeroVector;
+		VisualRecoilRotTarget = FRotator::ZeroRotator;
+		VisualRecoilLocCurrent = FVector::ZeroVector;
+		VisualRecoilRotCurrent = FRotator::ZeroRotator;
+		return;
+	}
 
 	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
 	const float KickSpeed = IsValid(Weapon) ? Weapon->VisualRecoilKickSpeed : 30.f;

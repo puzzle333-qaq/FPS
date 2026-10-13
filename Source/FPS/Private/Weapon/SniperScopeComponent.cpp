@@ -145,30 +145,10 @@ void USniperScopeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void USniperScopeComponent::UpdateView()
 {
-	AShooterCharacter* Character = Cast<AShooterCharacter>(GetOwner());
-	UCombatComponent* Combat = IsValid(Character) ? Character->GetCombatComponent() : nullptr;
-	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
-	const bool bWantScope = IsValid(Character)
-		&& Character->IsLocallyControlled()
-		&& IsValid(Combat)
-		&& Combat->bAiming
-		&& IsValid(Weapon)
-		&& Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper);
-
-	if (!bWantScope)
-	{
-		SetScopeActive(false);
-		return;
-	}
-
-	EnsureResources();
-	if (!bResourcesReady)
-	{
-		return;
-	}
-
-	SetScopeActive(true);
-	ApplyScopeFrame();
+	// 第 6 步起停用：狙击和其他枪一样按瞄具走（红点/机瞄 = 镜头 FOV，Variable/倍镜 = UOpticScopeComponent 画中画）。
+	// 这里永远不开，保证拍摄关闭（bCaptureEveryFrame = false）、全屏遮罩隐藏，也不会再把镜头压回默认 FOV。
+	// 下面的 EnsureResources / ApplyScopeFrame 保留没删，以后想恢复全屏狙击镜可以参考。
+	SetScopeActive(false);
 }
 
 void USniperScopeComponent::SetScopeActive(bool bActive)

@@ -689,7 +689,13 @@ float AWeapon::GetRecoilMultiplier() const
 float AWeapon::GetEffectiveAimFOV() const
 {
 	const UAttachmentData* Optic = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Optic);
-	// 可变倍率瞄具：用当前档
+
+	// 画中画瞄具：放大在镜片里，整屏镜头只用枪自己的开镜 FOV（轻微变焦）
+	if (UsesLensPiP())
+	{
+		return AimFeildOfView > 0.f ? AimFeildOfView : 0.f;
+	}
+	// 可变倍率但没配镜片：整屏按当前档变焦
 	if (IsValid(Optic) && Optic->IsVariableOptic())
 	{
 		const float LevelFOV = Optic->ZoomLevelsFOV[FMath::Clamp(CurrentZoomIndex, 0, Optic->ZoomLevelsFOV.Num() - 1)];
@@ -698,12 +704,43 @@ float AWeapon::GetEffectiveAimFOV() const
 			return LevelFOV;
 		}
 	}
-	// 优先级：瞄具配件的 AimFOV（勾了 bOverridesAimFOV 且 > 0）→ 枪的 AimFeildOfView（> 0）→ 0 表示“不变焦，用默认 FOV”
+	// 红点/全息/没配镜片的倍镜：瞄具 AimFOV（勾了覆盖且 > 0）→ 枪的 AimFeildOfView（> 0）→ 0 表示“不变焦”
 	if (IsValid(Optic) && Optic->bOverridesAimFOV && Optic->AimFOV > 0.f)
 	{
 		return Optic->AimFOV;
 	}
 	return AimFeildOfView > 0.f ? AimFeildOfView : 0.f;
+}
+
+bool AWeapon::UsesLensPiP() const
+{
+	const UAttachmentData* Optic = GetOpticAttachment();
+	if (!IsValid(Optic)) return false;
+	const bool bPiPType = Optic->IsVariableOptic() || Optic->OpticType == EOpticType::Magnified;
+	if (!bPiPType || !IsValid(Optic->LensMaterial) || Optic->LensSocketName.IsNone()) return false;
+
+	const UStaticMeshComponent* OpticMesh = GetOpticMesh1P();
+	return IsValid(OpticMesh) && OpticMesh->DoesSocketExist(Optic->LensSocketName);
+}
+
+float AWeapon::GetPiPCaptureFOV(float BaseFOV) const
+{
+	const UAttachmentData* Optic = GetOpticAttachment();
+	if (!IsValid(Optic)) return BaseFOV;
+
+	if (Optic->IsVariableOptic())
+	{
+		const float LevelFOV = Optic->ZoomLevelsFOV[FMath::Clamp(CurrentZoomIndex, 0, Optic->ZoomLevelsFOV.Num() - 1)];
+		if (LevelFOV > 0.f) return LevelFOV;
+	}
+	if (Optic->bOverridesAimFOV && Optic->AimFOV > 0.f)
+	{
+		return Optic->AimFOV;
+	}
+	// 倍率 -> FOV：tan(拍摄半角) = tan(基准半角) / 倍率
+	const float Base = Optic->BaseFOVForMagnification > 0.f ? Optic->BaseFOVForMagnification : BaseFOV;
+	const float Mag = FMath::Max(1.f, Optic->Magnification);
+	return FMath::RadiansToDegrees(2.f * FMath::Atan(FMath::Tan(FMath::DegreesToRadians(Base * 0.5f)) / Mag));
 }
 
 float AWeapon::GetEffectiveAdsTime() const

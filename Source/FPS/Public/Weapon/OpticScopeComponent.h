@@ -14,7 +14,7 @@ class UTextureRenderTarget2D;
 // 倍镜画中画：只在“本地玩家 + 开镜 + 瞄具是 Magnified”时工作。
 // 原理：在倍镜模型的 LensSocket 上挂一个 SceneCapture，用很小的 FOV 拍一张放大画面到 RenderTarget，
 // 再把 RenderTarget 塞进镜片材质。镜片外面还是正常画面，所以叫“画中画”。
-// 和狙击枪的 SniperScopeComponent（全屏遮罩）是两套东西，互不影响：狙击枪类型的武器这里直接跳过。
+// 现在所有武器（包括狙击）都按瞄具类型走这里：Variable / 配了镜片的 Magnified 才开画中画。
 UCLASS()
 class FPS_API UOpticScopeComponent : public UActorComponent
 {
@@ -51,4 +51,5 @@ private:
 	int32 BoundMaterialIndex = INDEX_NONE;
 
 	bool bActive = false;
+	float SmoothedCaptureFOV = 0.f;
 };

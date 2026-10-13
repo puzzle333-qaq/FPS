@@ -134,10 +134,15 @@ public:
 
 	UCameraComponent* GetFirstPersonCamera() const { return FirstPersonCamera; }
 
+	// 枪身视觉后坐总开关（第 4 步）。关掉时不加任何偏移，Mesh1P 完全不受影响，方便对比手感
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Recoil|Visual")
+	bool bEnableVisualRecoil = false;
+
 	// 每发开火由 CombatComponent 调用：给第一人称手臂加一次视觉后坐（镜头空间的位移和旋转）
 	void AddVisualRecoil(const FVector& KickLocation, const FRotator& KickRotation);
 	UCombatComponent* GetCombatComponent() const { return Combat; }
 	float GetDefaultFieldOfView() const { return DefaultFOV; }
+	float GetAimFOVInterpSpeed() const { return AimFOVInterpSpeed; }
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Health")
