@@ -5,16 +5,17 @@
 #include "OpticScopeComponent.generated.h"
 
 class UAttachmentData;
+class UCameraComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class USceneCaptureComponent2D;
 class UStaticMeshComponent;
 class UTextureRenderTarget2D;
 
-// 倍镜画中画：只在“本地玩家 + 开镜 + 瞄具是 Magnified”时工作。
-// 原理：在倍镜模型的 LensSocket 上挂一个 SceneCapture，用很小的 FOV 拍一张放大画面到 RenderTarget，
-// 再把 RenderTarget 塞进镜片材质。镜片外面还是正常画面，所以叫“画中画”。
-// 现在所有武器（包括狙击）都按瞄具类型走这里：Variable / 配了镜片的 Magnified 才开画中画。
+// 倍镜画中画：只在“本地玩家 + 开镜 + 瞄具要画中画”时工作。
+// 玩家镜头用瞄具的 AimFOV（勾了覆盖），否则用枪的 AimFeildOfView。放大只发生在 SceneCapture 里。
+// 实时画面只写进画面槽（LensMaterialIndex）。准心槽保持镜子自带材质，这里不替换。
+// 拍摄机跟玩家镜头重合，画面中心和子弹是同一条射线。
 UCLASS()
 class FPS_API UOpticScopeComponent : public UActorComponent
 {
@@ -28,12 +29,14 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	// 关掉拍摄，并把镜片材质还原
+	// 关掉拍摄，并把画面槽材质还原
 	void Deactivate();
-	// 倍镜模型或配件数据变了：重新挂 SceneCapture、换镜片材质
+	// 倍镜模型或配件数据变了：准备 RenderTarget，只改画面槽
 	bool BindToOptic(UStaticMeshComponent* OpticMesh, const UAttachmentData* Optic);
+	void PlaceCapture(const UCameraComponent* Camera);
 	void RestoreLensMaterial();
 	float ComputeCaptureFOV(const UAttachmentData* Optic) const;
+	UMaterialInterface* ResolvePictureMaterial(const UStaticMeshComponent* OpticMesh, const UAttachmentData* Optic) const;
 
 	UPROPERTY()
 	TObjectPtr<USceneCaptureComponent2D> Capture;

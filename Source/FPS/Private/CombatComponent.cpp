@@ -289,10 +289,12 @@ void UCombatComponent::ApplyFireRecoil()
 	SecondsSinceRecoilShot = 0.f;
 	++RecoilShotIndex;
 
-	// 枪身视觉后坐：用同一步图案和同一套倍率（配件 + 开镜），只推第一人称画面，准星不受影响
+	// 枪身视觉后坐只推模型和手臂。开镜时装了瞄具时准心在模型上，不能再踢，否则线会跟着后坐往上爬。
+	// 镜头后坐仍然在，子弹还是跟着镜头中心。
 	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(OwningPawn))
 	{
-		const float AimVisual = bAiming ? FMath::Max(0.f, CurrentWeapon->VisualRecoilAimMultiplier) : 1.f;
+		const bool bSightStaysPut = bAiming && IsValid(CurrentWeapon->GetOpticAttachment());
+		const float AimVisual = bSightStaysPut ? 0.f : (bAiming ? FMath::Max(0.f, CurrentWeapon->VisualRecoilAimMultiplier) : 1.f);
 		const FVector& L = CurrentWeapon->VisualRecoilLocation;
 		const FRotator& R = CurrentWeapon->VisualRecoilRotation;
 		const FVector KickLocation(

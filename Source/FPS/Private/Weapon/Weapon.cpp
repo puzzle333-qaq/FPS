@@ -690,13 +690,8 @@ float AWeapon::GetEffectiveAimFOV() const
 {
 	const UAttachmentData* Optic = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Optic);
 
-	// 画中画瞄具：放大在镜片里，整屏镜头只用枪自己的开镜 FOV（轻微变焦）
-	if (UsesLensPiP())
-	{
-		return AimFeildOfView > 0.f ? AimFeildOfView : 0.f;
-	}
-	// 可变倍率但没配镜片：整屏按当前档变焦
-	if (IsValid(Optic) && Optic->IsVariableOptic())
+	// 可变倍率但没配画面：整屏按当前档变焦。画中画时切档只改镜片里的画面。
+	if (IsValid(Optic) && Optic->IsVariableOptic() && !UsesLensPiP())
 	{
 		const float LevelFOV = Optic->ZoomLevelsFOV[FMath::Clamp(CurrentZoomIndex, 0, Optic->ZoomLevelsFOV.Num() - 1)];
 		if (LevelFOV > 0.f)
@@ -704,7 +699,8 @@ float AWeapon::GetEffectiveAimFOV() const
 			return LevelFOV;
 		}
 	}
-	// 红点/全息/没配镜片的倍镜：瞄具 AimFOV（勾了覆盖且 > 0）→ 枪的 AimFeildOfView（> 0）→ 0 表示“不变焦”
+	// 镜外镜头：瞄具勾了覆盖且 AimFOV > 0 就用它，否则用枪自己的 AimFeildOfView。
+	// 画中画的放大不走这里，镜片里的倍率由 GetPiPCaptureFOV 单独算。
 	if (IsValid(Optic) && Optic->bOverridesAimFOV && Optic->AimFOV > 0.f)
 	{
 		return Optic->AimFOV;
@@ -717,10 +713,22 @@ bool AWeapon::UsesLensPiP() const
 	const UAttachmentData* Optic = GetOpticAttachment();
 	if (!IsValid(Optic)) return false;
 	const bool bPiPType = Optic->IsVariableOptic() || Optic->OpticType == EOpticType::Magnified;
-	if (!bPiPType || !IsValid(Optic->LensMaterial) || Optic->LensSocketName.IsNone()) return false;
+	if (!bPiPType) return false;
 
 	const UStaticMeshComponent* OpticMesh = GetOpticMesh1P();
-	return IsValid(OpticMesh) && OpticMesh->DoesSocketExist(Optic->LensSocketName);
+	if (!IsValid(OpticMesh)) return false;
+
+	const bool bHasLensSocket = !Optic->LensSocketName.IsNone() && OpticMesh->DoesSocketExist(Optic->LensSocketName);
+	const bool bHasSightSocket = !Optic->SightSocketName.IsNone() && OpticMesh->DoesSocketExist(Optic->SightSocketName);
+	if (!bHasLensSocket && !bHasSightSocket) return false;
+
+	// 填了画面材质就用它。Magnified 没填时，用画面槽上现成的材质（准心在另一槽，不会被换掉）。
+	// Variable 仍要 LensMaterial，否则继续走整屏 FOV。
+	if (IsValid(Optic->LensMaterial)) return true;
+	if (Optic->OpticType != EOpticType::Magnified) return false;
+	return Optic->LensMaterialIndex >= 0
+		&& Optic->LensMaterialIndex < OpticMesh->GetNumMaterials()
+		&& OpticMesh->GetMaterial(Optic->LensMaterialIndex) != nullptr;
 }
 
 float AWeapon::GetPiPCaptureFOV(float BaseFOV) const
@@ -733,11 +741,8 @@ float AWeapon::GetPiPCaptureFOV(float BaseFOV) const
 		const float LevelFOV = Optic->ZoomLevelsFOV[FMath::Clamp(CurrentZoomIndex, 0, Optic->ZoomLevelsFOV.Num() - 1)];
 		if (LevelFOV > 0.f) return LevelFOV;
 	}
-	if (Optic->bOverridesAimFOV && Optic->AimFOV > 0.f)
-	{
-		return Optic->AimFOV;
-	}
-	// 倍率 -> FOV：tan(拍摄半角) = tan(基准半角) / 倍率
+	// 倍率 -> 镜片内 FOV。镜外镜头用瞄具 AimFOV，不进这里。
+	// tan(拍摄半角) = tan(基准半角) / 倍率
 	const float Base = Optic->BaseFOVForMagnification > 0.f ? Optic->BaseFOVForMagnification : BaseFOV;
 	const float Mag = FMath::Max(1.f, Optic->Magnification);
 	return FMath::RadiansToDegrees(2.f * FMath::Atan(FMath::Tan(FMath::DegreesToRadians(Base * 0.5f)) / Mag));

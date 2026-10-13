@@ -159,7 +159,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	float GetRecoilMultiplier() const;
 
-	// 开镜 FOV：可变倍率瞄具用当前档；其他瞄具覆盖了（且 > 0）就用配件的，否则用枪自己的 AimFeildOfView；都 <= 0 时返回 0（不变焦）
+	// 镜外开镜 FOV：瞄具覆盖了（且 > 0）就用配件的 AimFOV，否则用枪自己的。都 <= 0 时返回 0（不变焦）。
+	// 画中画的镜片倍率不在这里。可变倍率但没配画面时，整屏按当前档变焦。
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
 	float GetEffectiveAimFOV() const;
 
@@ -170,16 +171,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	UAttachmentData* GetOpticAttachment() const;
 
-	// 瞄具在第一人称枪上生成的模型（倍镜画中画要把 SceneCapture 挂到它的 LensSocket 上）
+	// 瞄具在第一人称枪上生成的模型。画中画只替换它的画面槽材质。
 	UStaticMeshComponent* GetOpticMesh1P() const;
 
 	// 开镜时是不是用镜片画中画（UOpticScopeComponent）：
-	// 瞄具是 Variable 或 Magnified，并且填了 LensMaterial、模型上有 LensSocket。
-	// 其他情况（红点/全息/机瞄/没配镜片的倍镜）都用整屏镜头 FOV。不再按武器类型（狙击）判断。
+	// Magnified，或配了画面材质的 Variable。画面材质用 LensMaterial，没填则用画面槽上现成的材质。
+	// 模型上有 LensSocket，或至少有 SightSocket。
+	// 红点、全息、机瞄走整屏镜头 FOV。不再按武器类型判断。
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
 	bool UsesLensPiP() const;
 
-	// 画中画拍摄 FOV：Variable = 当前档的 ZoomLevelsFOV；Magnified = AimFOV（勾了覆盖且 > 0），否则按 Magnification 换算
+	// 镜片内拍摄 FOV：Variable = 当前档的 ZoomLevelsFOV；Magnified = 按 Magnification 换算。镜外镜头不进这里。
 	float GetPiPCaptureFOV(float BaseFOV) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
@@ -222,6 +224,21 @@ public:
 	// 开镜所需时间（秒），不装配件时。配件的 AdsTimeMultiplier 会乘上去
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming", meta = (ClampMin = "0"))
 	float AimDownSightTime;
+
+	// 第 8 步：腰射时手臂/枪的位置偏移（厘米，相对角色 Mesh1P 默认位置，在相机空间里）。
+	// X 负数 = 往后拉近镜头，Y = 左右，Z = 上下。开镜时会平滑过渡到瞄准位置，这个偏移只影响腰射。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming|Hip")
+	FVector HipMesh1POffset = FVector::ZeroVector;
+
+	// 第 8 步：腰射时的旋转偏移（度）。开镜时过渡回角色默认旋转，所以不影响瞄准对齐
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming|Hip")
+	FRotator HipMesh1PRotationOffset = FRotator::ZeroRotator;
+
+	// 第 8 步：开镜时瞄准点（AimSocket/SightSocket）离眼睛（镜头）的距离，厘米，沿镜头前方。
+	// 0 = 保持原来的距离不变（现在的行为）。数值越小枪越贴脸
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming|ADS", meta = (ClampMin = "0"))
+	float AdsEyeDistance = 0.f;
+
 
 	// 实际开镜时间 = AimDownSightTime × 所有已装配件的 AdsTimeMultiplier
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")

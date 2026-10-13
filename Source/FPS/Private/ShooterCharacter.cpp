@@ -360,7 +360,7 @@ void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
 {
 	if (!bDriveAimFOVInCode || !IsLocallyControlled() || !IsValid(FirstPersonCamera)) return;
 
-	// 开镜 FOV 目标：所有武器一样按瞄具算（画中画瞄具只用枪的 AimFeildOfView，放大在镜片里）
+	// 开镜 FOV 目标：镜外镜头按瞄具 AimFOV（没覆盖就用枪的）。画中画的放大在镜片里另算。
 	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
 	float AimTargetFOV = DefaultFOV;
 	if (IsValid(Combat) && IsValid(Weapon))
@@ -496,12 +496,19 @@ void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 	// C++ 驱动开镜：先算出开镜位置，再按开镜进度在腰射位置和它之间插值，写进 Mesh1P
 	if (bDriveAdsInCode)
 	{
-		FVector AdsLocation = AdsLocationProperty ? *AdsLocationProperty : AuthoredHipMeshLocation;
+		// 第 8 步：腰射目标 = 角色默认位置 + 当前武器的腰射偏移。每帧读当前武器，切枪自动生效
+		const AWeapon* HipWeapon = Combat->CurrentWeapon.Get();
+		const FVector HipLocation = AuthoredHipMeshLocation + (IsValid(HipWeapon) ? HipWeapon->HipMesh1POffset : FVector::ZeroVector);
+		const FRotator HipRotation = AuthoredHipMeshRotation + (IsValid(HipWeapon) ? HipWeapon->HipMesh1PRotationOffset : FRotator::ZeroRotator);
+		// 先按开镜进度把旋转从腰射偏移过渡回默认旋转，再算开镜位置（完全开镜时旋转=默认，对准是精确的）
+		Mesh1P->SetRelativeRotation(FQuat::Slerp(HipRotation.Quaternion(), AuthoredHipMeshRotation.Quaternion(), AimAlignAlpha));
+
+		FVector AdsLocation = AdsLocationProperty ? *AdsLocationProperty : HipLocation;
 		if (ComputeAdsMeshLocation(AdsLocation) && AdsLocationProperty)
 		{
 			*AdsLocationProperty = AdsLocation;   // 蓝图里还读这个变量的话，值也是对的
 		}
-		const FVector NewLocation = FMath::Lerp(AuthoredHipMeshLocation, AdsLocation, AimAlignAlpha);
+		const FVector NewLocation = FMath::Lerp(HipLocation, AdsLocation, AimAlignAlpha);
 		if (!NewLocation.ContainsNaN())
 		{
 			Mesh1P->SetRelativeLocation(NewLocation);
@@ -556,7 +563,28 @@ bool AShooterCharacter::ComputeAdsMeshLocation(FVector& OutLocation)
 	// slide the current relative location by that parent-space delta.
 	const FTransform CameraTransform = FirstPersonCamera->GetComponentTransform();
 	const FVector SocketCamera = CameraTransform.InverseTransformPosition(SocketWorld);
-	const FVector DesiredWorld = CameraTransform.TransformPosition(FVector(SocketCamera.X, 0.f, 0.f));
+	// 第 8 步：眼距。瞄具勾了覆盖就用瞄具的，否则用武器的 AdsEyeDistance；都为 0 时保持原距离（旧行为）
+	float EyeDistance = Weapon->AdsEyeDistance;
+	if (const UAttachmentData* EyeOptic = Weapon->GetOpticAttachment())
+	{
+		if (EyeOptic->bOverridesEyeDistance)
+		{
+			EyeDistance = EyeOptic->EyeDistance;
+		}
+	}
+	// 第 8 步修正：眼距为 0 时，不能直接用当前瞄准点距离当目标（Mesh1P 每帧在动，会形成反馈漂移）。
+	// 改用 Mesh1P 在腰射位置时瞄准点的距离：当前距离减去 Mesh1P 相对腰射位置沿镜头前方已挪过的量。
+	// 这个值和 Mesh1P 当前位置无关，所以目标稳定、能收敛。
+	float BaseEyeX = EyeDistance;
+	if (BaseEyeX <= 0.f)
+	{
+		const FVector HipRelLocation = AuthoredHipMeshLocation + Weapon->HipMesh1POffset;
+		const FVector MovedWorld = Parent->GetComponentTransform().TransformVector(Mesh1P->GetRelativeLocation() - HipRelLocation);
+		const float MovedForward = CameraTransform.InverseTransformVector(MovedWorld).X;
+		BaseEyeX = SocketCamera.X - MovedForward;
+	}
+	const FVector DesiredCamera(BaseEyeX, 0.f, 0.f);
+	const FVector DesiredWorld = CameraTransform.TransformPosition(DesiredCamera);
 	const FVector DeltaParent = Parent->GetComponentTransform().InverseTransformVector(DesiredWorld - SocketWorld);
 	const FVector CenteredLocation = Mesh1P->GetRelativeLocation() + DeltaParent;
 	if (CenteredLocation.ContainsNaN())

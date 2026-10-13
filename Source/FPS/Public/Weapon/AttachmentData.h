@@ -74,11 +74,13 @@ public:
 	float RecoilRecoveryMultiplier = 1.f;
 
 	// ---------- 瞄具（红点 / 倍镜） ----------
-	// 勾上后，开镜 FOV 用下面的 AimFOV，而不是枪自己的 AimFeildOfView
+	// 勾上后，镜外的开镜 FOV 用下面的 AimFOV，而不是枪自己的 AimFeildOfView。
+	// 画中画的镜片倍率另看 Magnification，不受这个角度影响。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic")
 	bool bOverridesAimFOV = false;
 
-	// 开镜视野：越小放大倍率越高（红点约 60，4 倍镜约 20）
+	// 镜外开镜视野（玩家镜头）。画中画时这是看着镜子外壳的视野，镜片里的放大不看它。
+	// 红点/全息勾上后，整屏就用这个角度。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic", meta = (EditCondition = "bOverridesAimFOV", ClampMin = "5", ClampMax = "170"))
 	float AimFOV = 55.f;
 
@@ -100,11 +102,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified", EditConditionHides, ClampMin = "0", ClampMax = "170"))
 	float BaseFOVForMagnification = 0.f;
 
-	// 镜片位置的 Socket（倍镜模型上，放在物镜前方，X 轴朝枪口）。SceneCapture 挂在这里
+	// 镜片位置的 Socket。模型和这个 Socket 或 SightSocket 至少有一个，画中画才会启用。
+	// 拍摄机不挂在这里，它跟玩家镜头重合，避免预览模型跟着镜子放大。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides))
 	FName LensSocketName = TEXT("LensSocket");
 
-	// 镜片材质。必须有一个 Texture 参数（名字见下面），代码会把放大画面塞进去
+	// 画面槽材质。必须有一个贴图参数（名字见下面），代码会把实时画面塞进去。
+	// 留空时，Magnified 使用模型上 LensMaterialIndex 那一槽的现成材质。
+	// 这一槽是放大画面，不是准心。准心留在模型的另一层材质上。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides))
 	TObjectPtr<UMaterialInterface> LensMaterial;
 
@@ -119,6 +124,14 @@ public:
 	// 渲染目标分辨率（正方形）。越大越清晰也越耗性能，512 一般够用
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides, ClampMin = "64", ClampMax = "2048"))
 	int32 RenderTargetSize = 512;
+
+	// 第 8 步：这面瞄具要求的眼距。勾上后覆盖武器的 AdsEyeDistance（例如倍镜要离眼睛远一点）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic")
+	bool bOverridesEyeDistance = false;
+
+	// 眼距（厘米，瞄准点到镜头）。只有勾了 bOverridesEyeDistance 才用
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic", meta = (EditCondition = "bOverridesEyeDistance", ClampMin = "0"))
+	float EyeDistance = 10.f;
 
 	bool IsMagnifiedOptic() const { return OpticType == EOpticType::Magnified; }
 
