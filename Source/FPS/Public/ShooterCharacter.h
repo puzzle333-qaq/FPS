@@ -17,6 +17,7 @@ class UCombatComponent;
 class UCameraComponent;
 class USpringArmComponent;
 class UInputAction;
+class UInputMappingContext;
 class UTimelineComponent;
 class UAnimMontage;
 class AWeapon;
@@ -192,6 +193,51 @@ public:
 	float GetDefaultFieldOfView() const { return DefaultFOV; }
 	float GetAimFOVInterpSpeed() const { return AimFOVInterpSpeed; }
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	// ===== 左右探头（Lean）=====
+	// 平滑后的探头值：-1 = 左探，0 = 不探，1 = 右探。所有端都有（3P 动画蓝图读它驱动脊椎）
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Lean")
+	float LeanAlpha = 0.f;
+
+	// 目标探头值（服务器同步给其他玩家；本地玩家自己算）
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "FPS|Lean")
+	float LeanTarget = 0.f;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Lean")
+	float GetLeanAlpha() const { return LeanAlpha; }
+
+	// 1P 相机横移距离（cm）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
+	float LeanCameraOffset = 30.f;
+
+	// 1P 相机侧倾角度（度）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
+	float LeanRollDegrees = 12.f;
+
+	// 插值速度（越大越快）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
+	float LeanInterpSpeed = 10.f;
+
+	// 3P 动画蓝图建议用的脊椎侧倾角度（ABP 里 LeanAlpha * 这个值）
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Lean")
+	float LeanSpineDegrees = 20.f;
+
+	// true = 按一下切换，false = 按住探头
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
+	bool bLeanToggleMode = false;
+
+	// 防穿墙：探测球半径
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
+	float LeanWallProbeRadius = 12.f;
+
+	// 留空时运行时自动创建并绑定 Q / E
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> LeanLeftAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> LeanRightAction;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Health")
 	TObjectPtr<UStatsComponent>Stats;
@@ -289,7 +335,28 @@ private:
 	void RefreshControllerMovementSpeed();
 	void UpdateLocomotionGait(bool bNotifyCombat);
 
-	void Input_CycleWeapon();
+	void Input_LeanLeft_Started();
+	void Input_LeanLeft_Completed();
+	void Input_LeanRight_Started();
+	void Input_LeanRight_Completed();
+	void HandleLeanInput(int32 Dir, bool bPressed);
+	void EnsureLeanInput(class UEnhancedInputComponent* InputComp);
+	void UpdateLean(float DeltaTime);
+	bool IsLeanBlocked() const;
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetLeanTarget(float NewTarget);
+
+	// 当前按住/切换的方向：-1 左 0 无 1 右
+	int32 LeanInputDir = 0;
+	bool bLeanLeftHeld = false;
+	bool bLeanRightHeld = false;
+	FVector CameraBaseLocation = FVector::ZeroVector;
+	FRotator CameraBaseRotation = FRotator::ZeroRotator;
+	bool bCameraBaseCaptured = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> LeanRuntimeIMC;
 	void Input_ReloadWeapon();
 	void Input_SwitchFireMode();
 	void Input_SwitchZoom();
@@ -386,8 +453,6 @@ private:
 	TObjectPtr<USpringArmComponent> SpringArm;
 
 
-	UPROPERTY(EditAnywhere,Category = "FPS|Input")
-	TObjectPtr<UInputAction> CycleWeaponAction;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> FireWeaponAction;

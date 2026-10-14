@@ -23,6 +23,11 @@
 #include "UObject/UnrealType.h"
 #include "ShooterPlayerController.h"
 #include "ShooterGamePlayTags.h"
+#include "Net/UnrealNetwork.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "InputCoreTypes.h"
+#include "Engine/LocalPlayer.h"
 
 namespace
 {
@@ -113,6 +118,9 @@ void AShooterCharacter::BeginPlay()
 	ConfigureWeaponHitCollision();
 
 	FirstPersonCamera->SetFieldOfView(DefaultFOV);
+	CameraBaseLocation = FirstPersonCamera->GetRelativeLocation();
+	CameraBaseRotation = FirstPersonCamera->GetRelativeRotation();
+	bCameraBaseCaptured = true;
 
 	StartingAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
 
@@ -173,6 +181,7 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateAimSocketAlignment(DeltaTime);
 	ApplyVisualRecoilToMesh(DeltaTime);    // 算完再把枪身后坐叠回去
 	UpdateAimFieldOfView(DeltaTime);
+	UpdateLean(DeltaTime);
 
 	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
 	{
@@ -657,7 +666,11 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 	UEnhancedInputComponent* ShooterInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
 
-	ShooterInputComponent->BindAction(CycleWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_CycleWeapon);
+	EnsureLeanInput(ShooterInputComponent);
+	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanLeft_Started);
+	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanLeft_Completed);
+	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanRight_Started);
+	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanRight_Completed);
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_FireWeapon_Pressed);
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_FireWeapon_Released);
 	ShooterInputComponent->BindAction(AimWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_Aim_Pressed);
@@ -863,9 +876,133 @@ void AShooterCharacter::ConfigureWeaponHitCollision()
 	}
 }
 
-void AShooterCharacter::Input_CycleWeapon()
+void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
-	if (IsValid(Combat)) Combat->Initiate_CycleWeapon();
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME_CONDITION(AShooterCharacter, LeanTarget, COND_SkipOwner);
+}
+
+// ===== 左右探头 =====
+void AShooterCharacter::EnsureLeanInput(UEnhancedInputComponent* InputComp)
+{
+	const bool bNeedLeft = !LeanLeftAction;
+	const bool bNeedRight = !LeanRightAction;
+	if (!bNeedLeft && !bNeedRight) return;
+
+	// 没配资产：运行时建 IA + 一个小 IMC（Q 左 / E 右）
+	if (!LeanRuntimeIMC)
+	{
+		LeanRuntimeIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Lean_Runtime"));
+	}
+	if (bNeedLeft)
+	{
+		LeanLeftAction = NewObject<UInputAction>(this, TEXT("IA_LeanLeft_Runtime"));
+		LeanLeftAction->ValueType = EInputActionValueType::Boolean;
+		LeanRuntimeIMC->MapKey(LeanLeftAction, EKeys::Q);
+	}
+	if (bNeedRight)
+	{
+		LeanRightAction = NewObject<UInputAction>(this, TEXT("IA_LeanRight_Runtime"));
+		LeanRightAction->ValueType = EInputActionValueType::Boolean;
+		LeanRuntimeIMC->MapKey(LeanRightAction, EKeys::E);
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+			{
+				if (Subsystem->HasMappingContext(LeanRuntimeIMC))
+				{
+					Subsystem->RemoveMappingContext(LeanRuntimeIMC);
+				}
+				Subsystem->AddMappingContext(LeanRuntimeIMC, 1);
+			}
+		}
+	}
+}
+
+void AShooterCharacter::Input_LeanLeft_Started()    { HandleLeanInput(-1, true); }
+void AShooterCharacter::Input_LeanLeft_Completed()  { HandleLeanInput(-1, false); }
+void AShooterCharacter::Input_LeanRight_Started()   { HandleLeanInput(1, true); }
+void AShooterCharacter::Input_LeanRight_Completed() { HandleLeanInput(1, false); }
+
+void AShooterCharacter::HandleLeanInput(int32 Dir, bool bPressed)
+{
+	if (bLeanToggleMode)
+	{
+		if (bPressed)
+		{
+			LeanInputDir = (LeanInputDir == Dir) ? 0 : Dir;
+		}
+		return;
+	}
+
+	if (Dir < 0) bLeanLeftHeld = bPressed; else bLeanRightHeld = bPressed;
+	if (bPressed)
+	{
+		LeanInputDir = Dir;   // 后按的优先
+	}
+	else
+	{
+		LeanInputDir = bLeanLeftHeld ? -1 : (bLeanRightHeld ? 1 : 0);
+	}
+}
+
+bool AShooterCharacter::IsLeanBlocked() const
+{
+	if (const AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
+	{
+		if (PC->IsSprinting() && GetVelocity().Size2D() > 10.f) return true;
+	}
+	return false;
+}
+
+void AShooterCharacter::Server_SetLeanTarget_Implementation(float NewTarget)
+{
+	LeanTarget = FMath::Clamp(FMath::RoundToFloat(NewTarget), -1.f, 1.f);
+}
+
+void AShooterCharacter::UpdateLean(float DeltaTime)
+{
+	if (IsLocallyControlled())
+	{
+		const float Desired = IsLeanBlocked() ? 0.f : static_cast<float>(LeanInputDir);
+		if (!FMath::IsNearlyEqual(Desired, LeanTarget))
+		{
+			LeanTarget = Desired;
+			if (!HasAuthority())
+			{
+				Server_SetLeanTarget(Desired);
+			}
+		}
+	}
+
+	LeanAlpha = FMath::FInterpTo(LeanAlpha, LeanTarget, DeltaTime, LeanInterpSpeed);
+	if (FMath::Abs(LeanAlpha) < KINDA_SMALL_NUMBER && LeanTarget == 0.f) LeanAlpha = 0.f;
+
+	if (!IsLocallyControlled() || !IsValid(FirstPersonCamera) || !bCameraBaseCaptured) return;
+
+	// 防穿墙：从相机原位往探头位置扫一个球，撞墙就缩短横移
+	float OffsetScale = 1.f;
+	if (FMath::Abs(LeanAlpha) > KINDA_SMALL_NUMBER)
+	{
+		const USceneComponent* Parent = FirstPersonCamera->GetAttachParent();
+		const FTransform ParentXf = IsValid(Parent) ? FirstPersonCamera->GetAttachParent()->GetSocketTransform(FirstPersonCamera->GetAttachSocketName()) : GetActorTransform();
+		const FVector Start = ParentXf.TransformPosition(CameraBaseLocation);
+		const FVector End = ParentXf.TransformPosition(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset, 0.f));
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(LeanProbe), false, this);
+		if (IsValid(Combat) && IsValid(Combat->CurrentWeapon)) Params.AddIgnoredActor(Combat->CurrentWeapon);
+		FHitResult Hit;
+		if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(LeanWallProbeRadius), Params))
+		{
+			OffsetScale = Hit.Time;
+		}
+	}
+
+	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * OffsetScale, 0.f));
+	FirstPersonCamera->SetRelativeRotation(CameraBaseRotation + FRotator(0.f, 0.f, LeanAlpha * LeanRollDegrees));
 }
 
 void AShooterCharacter::Input_SwitchZoom()

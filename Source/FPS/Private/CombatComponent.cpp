@@ -101,6 +101,11 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 
 	if (IsValid(CurrentWeapon) && CurrentWeapon != Weapon)
 	{
+		// 换弹中被切枪：停掉换弹动画，Notify 不会再触发，所以不给子弹
+		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
+		{
+			StopReloadMontages(CurrentWeapon);
+		}
 		CurrentWeapon->DetachFromPawn();
 		CurrentWeapon->SetActorHiddenInGame(true);
 		CurrentWeapon->WeaponStatus = EWeaponStatus::UnEquipped;
@@ -377,28 +382,15 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME_CONDITION(UCombatComponent, CurrentReserveAmmo, COND_OwnerOnly);
 }
 
-void UCombatComponent::Initiate_CycleWeapon()
-{
-	CancelInspect();
-	if (!IsValid(CurrentWeapon)) return;
-	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
-	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
-	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;   // 拉栓中不能切枪
-	if (Inventory.Num() < 2) return;
-
-	StopAimForWeaponSwitch();   // 切枪前先关镜
-
-	const int32 NextIndex = AdvanceWeaponIndex();
-	Local_CycleWeapon(NextIndex, true);
-	Server_CycleWeapon(NextIndex);
-}
-
 void UCombatComponent::Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson)
 {
 	if (!Inventory.IsValidIndex(WeaponIndex)) return;
 
 	AWeapon* NextWeapon = Inventory[WeaponIndex];
 	if (!IsValid(NextWeapon)) return;
+
+	// 打断上一次拔枪：先停掉旧 montage，再完整走一遍新枪的拔枪流程
+	StopActiveEquipMontages();
 
 	if (NextWeapon != CurrentWeapon)
 	{
@@ -514,24 +506,96 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 		MontageInstance->bEnableAutoBlendOut = true;
 	}
 
+	const int32 ViewIdx = bFirstPerson ? 0 : 1;
+	ActiveEquipAnim[ViewIdx] = AnimInstance;
+	ActiveEquipMontage[ViewIdx] = EquipMontage;
+
 	FOnMontageEnded EndDelegate;
-	EndDelegate.BindUObject(this, &UCombatComponent::OnEquipMontageEnded);
+	EndDelegate.BindUObject(this, &UCombatComponent::OnEquipMontageEnded, TWeakObjectPtr<AWeapon>(Weapon));
 	AnimInstance->Montage_SetEndDelegate(EndDelegate, EquipMontage);
 	Weapon->WeaponStatus = EWeaponStatus::Cycling;
 }
 
-void UCombatComponent::OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+void UCombatComponent::OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted, TWeakObjectPtr<AWeapon> EquippingWeapon)
 {
-	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling)
+	// 只解锁这次拔枪对应的那把枪；被打断的旧拔枪结束回调不能把新枪提前设成 Idle
+	AWeapon* Weapon = EquippingWeapon.Get();
+	if (IsValid(Weapon) && Weapon == CurrentWeapon && Weapon->WeaponStatus == EWeaponStatus::Cycling)
 	{
-		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+		Weapon->WeaponStatus = EWeaponStatus::Idle;
 	}
+}
+
+void UCombatComponent::StopActiveEquipMontages()
+{
+	for (int32 i = 0; i < 2; ++i)
+	{
+		UAnimInstance* Anim = ActiveEquipAnim[i].Get();
+		UAnimMontage* Montage = ActiveEquipMontage[i].Get();
+		if (IsValid(Anim) && IsValid(Montage) && Anim->Montage_IsPlaying(Montage))
+		{
+			// 先解绑结束回调，免得它晚到把新枪状态改掉
+			if (FAnimMontageInstance* Inst = Anim->GetActiveInstanceForMontage(Montage))
+			{
+				Inst->OnMontageEnded.Unbind();
+			}
+			Anim->Montage_Stop(0.1f, Montage);
+		}
+		ActiveEquipAnim[i] = nullptr;
+		ActiveEquipMontage[i] = nullptr;
+	}
+}
+
+void UCombatComponent::StopReloadMontages(AWeapon* Weapon)
+{
+	if (!IsValid(Weapon) || !IsValid(WeaponData)) return;
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
+
+	TArray<UAnimMontage*> Montages;
+	auto Collect = [&Montages, Weapon](const TMap<FGameplayTag, FMontageData>& Map)
+	{
+		if (const FMontageData* Data = Map.Find(Weapon->WeaponType))
+		{
+			for (EReloadType Type : { EReloadType::First, EReloadType::Empty, EReloadType::Tactical })
+			{
+				if (UAnimMontage* M = Data->ResolveReloadMontage(Type)) Montages.AddUnique(M);
+			}
+		}
+	};
+	Collect(WeaponData->FirstPersonMontages);
+	Collect(WeaponData->ThirdPersonMontages);
+	Collect(WeaponData->WeaponMontages);
+
+	TArray<UAnimInstance*> Anims;
+	if (USkeletalMeshComponent* M1 = IPlayerInterface::Execute_GetMesh1P(Owner)) Anims.Add(M1->GetAnimInstance());
+	if (USkeletalMeshComponent* M3 = IPlayerInterface::Execute_GetMesh3P(Owner)) Anims.Add(M3->GetAnimInstance());
+	if (USkeletalMeshComponent* MW = Weapon->GetMesh1P()) Anims.Add(MW->GetAnimInstance());
+
+	for (UAnimInstance* Anim : Anims)
+	{
+		if (!IsValid(Anim)) continue;
+		for (UAnimMontage* M : Montages)
+		{
+			if (Anim->Montage_IsPlaying(M))
+			{
+				if (FAnimMontageInstance* Inst = Anim->GetActiveInstanceForMontage(M))
+				{
+					Inst->OnMontageEnded.Unbind();
+				}
+				Anim->Montage_Stop(0.1f, M);
+			}
+		}
+	}
+	Weapon->WeaponStatus = EWeaponStatus::Idle;
+	Weapon->AttachToOwingPawn();
 }
 
 void UCombatComponent::Server_CycleWeapon_Implementation(int32 WeaponIndex)
 {
 	if (!Inventory.IsValidIndex(WeaponIndex)) return;
-	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+	// 换弹中允许切枪（会打断换弹、不给子弹）；拉栓中仍然不行
+	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;
 
 	// 服务器这边也关镜，bAiming 会同步给其他玩家
 	Local_Aim(false);
@@ -544,10 +608,9 @@ void UCombatComponent::Server_CycleWeapon_Implementation(int32 WeaponIndex)
 	if (!bListenServerOwner)
 	{
 		AWeapon* NextWeapon = Inventory[WeaponIndex];
-		if (IsValid(NextWeapon) && NextWeapon != CurrentWeapon)
-		{
-			Equip(NextWeapon);
-		}
+		// 同一把枪：忽略（不重播拔枪）
+		if (!IsValid(NextWeapon) || NextWeapon == CurrentWeapon) return;
+		Equip(NextWeapon);
 	}
 
 	Multicast_CycleWeapon(WeaponIndex);
@@ -928,10 +991,17 @@ void UCombatComponent::OnReloadMontageEnded(UAnimMontage* Montage, bool bInterru
 }
 
 
-void UCombatComponent::Client_ReloadWeapon_Implementation(int32 NewWeaponAmmo, int32 NewCarryAmmo)
+void UCombatComponent::Client_ReloadWeapon_Implementation(AWeapon* ReloadedWeapon, int32 NewWeaponAmmo, int32 NewCarryAmmo)
 {
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	if (!IsValid(CurrentWeapon) || !IsValid(OwningPawn) || !OwningPawn->IsLocallyControlled()) return;
+	// 客户端已经切到别的枪：只把子弹记到那把换弹的枪上，不碰当前枪
+	if (IsValid(ReloadedWeapon) && ReloadedWeapon != CurrentWeapon)
+	{
+		ReloadedWeapon->Ammo = NewWeaponAmmo;
+		ReserveAmmo.Add(ReloadedWeapon->WeaponType, NewCarryAmmo);
+		return;
+	}
 
 	CurrentWeapon->Ammo = NewWeaponAmmo;
 	CurrentReserveAmmo = NewCarryAmmo;
@@ -1157,8 +1227,8 @@ void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 
 	if (IsValid(CurrentWeapon))
 	{
-		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
-		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+		// 拔枪中按别的枪：打断并完整重走新枪拔枪；按同一把在上面已经 return（不重播）
+		// 换弹中按别的枪：打断换弹，不给子弹（Equip 里处理）
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;   // 拉栓中不能切枪
 		// 以前开镜时直接 return（按数字键没反应），现在改成切枪前自动关镜
 	}
@@ -1279,6 +1349,8 @@ void UCombatComponent::Notify_ReloadWeapon()
 	// Client RPCs only run when invoked with authority. A 1P notify on a remote client
 	// must not call Client_ReloadWeapon; the server's 3P notify sends the result.
 	if (GetOwnerRole() != ROLE_Authority) return;
+	// 换弹已被切枪打断：不给子弹
+	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return;
 
 	const int32 EmptySpace = CurrentWeapon->MagCapacity - CurrentWeapon->Ammo;
 	const int32 AmountToRefill = FMath::Min(EmptySpace, CurrentReserveAmmo);
@@ -1290,7 +1362,7 @@ void UCombatComponent::Notify_ReloadWeapon()
 	}
 
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
-	Client_ReloadWeapon(CurrentWeapon->Ammo, CurrentReserveAmmo);
+	Client_ReloadWeapon(CurrentWeapon, CurrentWeapon->Ammo, CurrentReserveAmmo);
 }
 
 void UCombatComponent::Server_Aim_Implementation(bool bPressed)

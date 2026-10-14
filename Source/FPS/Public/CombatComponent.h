@@ -54,7 +54,6 @@ public:
 	static UCombatComponent* FindCombatComponent(const AActor* Actor){ return(IsValid(Actor)?Actor->FindComponentByClass<UCombatComponent>():nullptr); }
 
 	//Cycle to the next weapon in the inventory
-	void Initiate_CycleWeapon();
 	void Initiate_FireWeapon_Pressed();
 	void Initiate_FireWeapon_Released();
 	void Initiate_ReloadWeapon();
@@ -252,7 +251,7 @@ private:
 	void Server_ReloadWeapon(EReloadType ReloadType);
 
 	UFUNCTION(Client,Reliable)
-	void Client_ReloadWeapon(int32 NewWeaponAmmo, int32 NewCarryAmmo);
+	void Client_ReloadWeapon(AWeapon* ReloadedWeapon, int32 NewWeaponAmmo, int32 NewCarryAmmo);
 
 	UFUNCTION(Server, Reliable)
 	void Server_EndReload();
@@ -269,7 +268,13 @@ private:
 	void Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson);
 	void ApplyEquippedWeaponAnim(AWeapon* Weapon);
 	void PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson);
-	void OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	void OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted, TWeakObjectPtr<AWeapon> EquippingWeapon);
+	// 切枪打断：停掉上一把的拔枪 montage（1P/3P 各记一份）
+	void StopActiveEquipMontages();
+	TWeakObjectPtr<UAnimInstance> ActiveEquipAnim[2];
+	TWeakObjectPtr<UAnimMontage> ActiveEquipMontage[2];
+	// 切枪打断换弹：停掉这把枪的所有换弹 montage（手臂/3P/枪身），不给子弹
+	void StopReloadMontages(AWeapon* Weapon);
 
 	UFUNCTION(Server,Reliable)
 	void Server_CycleWeapon(int32 WeaponIndex);
