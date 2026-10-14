@@ -39,10 +39,11 @@ Enabled plugins ([FPS.uproject](<FPS.uproject>)): `ModelingToolsEditorMode` (edi
 | System | What is implemented | Main code |
 | --- | --- | --- |
 | Character | First-person camera (zero-length spring arm + camera lag), separate 1P/3P skeletal meshes, crouch, jump, movement | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [ShooterPlayerController.cpp](<Source/FPS/Private/ShooterPlayerController.cpp>) |
+| Lean (peek) | Q / E lean left / right (hold, optional toggle), replicated `LeanTarget` + smoothed `LeanAlpha`, 1P camera slide + roll with wall probe, blocked while sprinting, 3P spine lean in `ABP_ThirdPerson`; the weapon trace follows the leaned camera | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>) |
 | Movement modes | Toggle walk and toggle sprint, multiplicative speed model (walk / crouch / ADS), sprint cancelled by ADS or crouch, sprint cancelled when stamina runs out | [ShooterPlayerController.cpp](<Source/FPS/Private/ShooterPlayerController.cpp>) |
 | Stamina | Server-authoritative drain/regen, jump cost, `OnStaminaDepleted`, stamina bar HUD | [StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
 | Locomotion feel | `GroundSpeed`, walk-gait BlendSpace swap (`Strafe_Walking`), per-frame locomotion play rate pushed into the AnimBPs | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
-| Weapons | Three kinds (long gun / pistol / melee), four slots (main / secondary / pistol / melee), cycling, equip montages, auto un-aim when switching | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| Weapons | Three kinds (long gun / pistol / melee), four slots (main / secondary / pistol / melee) selected by number keys (the old cycle-weapon action was removed), equip montages, interruptible equip/reload (see §10.2), auto un-aim when switching | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 | Shooting | Sphere-sweep hit detection, single / automatic fire with a per-weapon **fire-mode toggle** (`bCanSwitchFireMode`, replicated `FireType`), bolt-action cycling (`BoltCycling` state), **recoil pattern with recovery and attachment modifiers**, server-side rate limiting, blueprint-driven muzzle and impact FX, magazine and reserve ammo | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>), [RecoilModifierInterface.h](<Source/FPS/Public/Interface/RecoilModifierInterface.h>) |
 | Reloading | 1P/3P reload montages with **variants** (first / empty / tactical, falling back to the default montage), left-hand IK blended off during reload and bolt, animation-notify-driven ammo transfer, auto-reload on empty, weapon re-gripped by a C++ anim notify | [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>), [AnimNotify_WeaponGrip.cpp](<Source/FPS/Private/AnimNotify/AnimNotify_WeaponGrip.cpp>) |
 | Healing | Heal montage with weapon hidden during the animation, server-clamped heal amount, 3P multicast for other players | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
@@ -50,8 +51,8 @@ Enabled plugins ([FPS.uproject](<FPS.uproject>)): `ModelingToolsEditorMode` (edi
 | Sniper scope | **Legacy, now idle.** `USniperScopeComponent` only keeps itself switched off; the sniper follows its equipped optic like every other gun (see §10.1) | [SniperScopeComponent.cpp](<Source/FPS/Private/Weapon/SniperScopeComponent.cpp>) |
 | Damage | Bone name → hit zone (head / torso / limb) → multiplier (headshot ×2, limb ×0.75), resolved on the server | [ShooterType.cpp](<Source/FPS/Private/ShooterType/ShooterType.cpp>), [StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
 | Animation driving | `AO_Yaw`, `MovementOffsetYaw`, `TurningStatus`, `FABRIK_SocketTransform`, `FPlayerAnim` struct injection into the ABPs | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [WeaponData.h](<Source/FPS/Public/WeaponData.h>) |
-| Hit reactions | Random montage from `HitReacts`, broadcast with a NetMulticast | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
-| UI | Dynamic reticle material (per weapon), ammo/reserve + weapon icon HUD, health bar, stamina bar, reticle hidden while aiming | [ShooterReticle.cpp](<Source/FPS/Private/Ui/ShooterReticle.cpp>), [ReserveAmmo.cpp](<Source/FPS/Private/Ui/ReserveAmmo.cpp>) |
+| Hit reactions | **Directional** hit reacts (front / back / left / right pools, falling back to `HitReacts`), broadcast with a NetMulticast; the victim gets a damage-direction ring and the shooter gets hit-confirm marks | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
+| UI | Dynamic reticle material (per weapon), ammo/reserve + weapon icon HUD, health bar, stamina bar, reticle hidden while aiming, **damage direction ring** and **hit confirm marks** drawn by `UShooterReticle` | [ShooterReticle.cpp](<Source/FPS/Private/Ui/ShooterReticle.cpp>), [ReserveAmmo.cpp](<Source/FPS/Private/Ui/ReserveAmmo.cpp>) |
 | Weapon attachments | Data-asset driven attachments per slot, server-validated whitelist, default loadout per weapon, replicated, live 1P/3P meshes, and redirection of the grip / muzzle / aim sockets | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [AttachmentData.h](<Source/FPS/Public/Weapon/AttachmentData.h>) |
 | Attachment UI | In-game attachment menu (one row per slot), Tab loadout screen with a three-weapon preview render and a draggable attachment window | [AttachmentMenu.cpp](<Source/FPS/Private/Ui/AttachmentMenu.cpp>), [LoadoutScreen.cpp](<Source/FPS/Private/Ui/LoadoutScreen.cpp>) |
 | Optics & flashlight | Red dot / holographic sights align on the optic's own socket and use camera FOV; only `Magnified` / `Variable` optics with a usable lens render a picture-in-picture scope (variable optics cycle zoom levels), and the flashlight is a spotlight driven by the attachment data | [OpticScopeComponent.cpp](<Source/FPS/Private/Weapon/OpticScopeComponent.cpp>) |
@@ -121,7 +122,7 @@ FPS/
 4. **Required character setup** (`BP_ShooterCharacter`; the code `checkf`s some of these):
    - `Combat → WeaponData` must point at `DA_WeaponData`, otherwise `GetWeaponAttachPoint` trips a `checkf` assertion.
    - `Combat → DefaultWeaponClass` must contain at least one weapon blueprint.
-   - Every input field (`IA_FireWeapon`, `IA_CycleWeapon`, `IA_ReloadWeapon`, `IA_AimWeapon`, `IA_Heal` and the four `IA_Equip*`) must be assigned.
+   - Every input field (`IA_FireWeapon`, `IA_ReloadWeapon`, `IA_AimWeapon`, `IA_Heal` and the four `IA_Equip*`) must be assigned.
    - `HealMontage` must be set, otherwise heal input logs a warning and does nothing. `HealAmout` defaults to `30`.
    - The blueprint variable `AdsMesh1PLoc` (`FVector`) must exist — the ADS sight alignment writes straight into it.
    - `HitReacts` should contain at least one montage: `Multicast_HitReact` picks a random index with no empty-array guard.
@@ -168,7 +169,8 @@ Input is dispatched through Enhanced Input: movement and movement modes live on 
 | Aim | `IA_AimWeapon` | Character | `Started` | Toggles ADS; broadcast through `OnAimStateChanged` (blueprint `OnAim`, speed, gait) |
 | Reload | `IA_ReloadWeapon` | Character | `Started` | Plays the reload montage; ammo is moved by the animation notify |
 | Heal | `IA_Heal` | Character | `Started` | Plays `HealMontage`, weapon hidden meanwhile; the server clamps and commits the heal |
-| Cycle weapon | `IA_CycleWeapon` | Character | `Started` | Cycles to the next weapon and drops out of ADS |
+| Lean left / right | `LeanLeftAction` / `LeanRightAction` (empty → runtime `IA_LeanLeft_Runtime` / `IA_LeanRight_Runtime` on **Q / E**) | Character | `Started` / `Completed` | Hold to lean (`bLeanToggleMode` = press to toggle); blocked while sprinting and moving |
+| Inspect weapon | `IA_VersionWeapon` → `VersionWeaponAction` | Character | `Started` | Plays the weapon's `InspectMontage1P` (local 1P only); cancelled by fire, aim, reload, switch, sprint |
 | Main weapon | `IA_EquipMainWeapon` | Character | `Started` | Equips the first long gun and drops out of ADS |
 | Secondary weapon | `IA_EquipSecondaryWeapon` | Character | `Started` | Equips the second long gun and drops out of ADS |
 | Pistol | `IA_EquipPistol` | Character | `Started` | Equips the first pistol and drops out of ADS |
@@ -178,7 +180,7 @@ Input is dispatched through Enhanced Input: movement and movement modes live on 
 
 > Note: `IMC_Shooter` contains `LeftMouseButton`, `RightMouseButton`, `SpaceBar`, `LeftControl`, `LeftShift`, `LeftAlt`, `One`–`Four`, `R`, `Q`, `E` and gamepad triggers. The mapping in the table above reflects the common configuration — **`IMC_Shooter` inside the editor is the source of truth**.
 
-> `IA_VersionWeapon` / `Input_VersionWeapon()` is declared in C++ but never bound — a placeholder.
+> The cycle-weapon action was **removed** (C++ binding, `Input_CycleWeapon`, `Initiate_CycleWeapon`, `CycleWeaponAction`). Delete the leftover `IA_CycleWeapon` mapping in `IMC_Shooter` (and the asset) if you still have it. Weapons are selected only with the slot keys.
 
 ---
 
@@ -245,7 +247,8 @@ graph TD
 
 - `EWeaponStatus::Firing` is never written by any code path.
 - `AimTimeline` is still declared but unused; ADS is now driven in C++ by `AimAlpha` / `AimAlignAlpha` (set `bDriveAdsInCode = false` to fall back to the old blueprint `AdsMesh1PLoc` path).
-- `Input_VersionWeapon()` is empty and `VersionWeaponAction` is never bound — dead code.
+- If you assign your own `LeanLeftAction` / `LeanRightAction` assets, you must map their keys in `IMC_Shooter`; the runtime Q/E mapping is only created when the fields are empty. Q/E may clash with other mappings in `IMC_Shooter`.
+- The 3P spine lean lives in `ABP_ThirdPerson` (Transform (Modify) Bone on `spine_03`, Pitch = `LeanAlpha` × 20); if the direction looks wrong on another skeleton, flip the sign.
 - Recoil is a pure local effect: it cannot be used as a server-side accuracy penalty.
 - The locomotion gait/play-rate push finds AnimInstance properties **by name** (with `PlayRate` / `LocomotionPlayRate` / `BS_PlayRate` aliases); a renamed property silently does nothing.
 - `UStatsComponent::DeathState` is now *read* by the heal path but still never written — death handling is still missing; `OnRep_DeathState` is empty and `ChangeHealthByAmout` always returns `false`.
@@ -295,6 +298,33 @@ Change history in Chinese: `Saved/武器逻辑改动记录.md`.
 | Hip position | Hip target = Mesh1P default location (captured at BeginPlay) + the weapon's offset; the rotation offset fades back to the default rotation while aiming; read every frame, so it follows weapon switches | Weapon → `HipMesh1POffset`, `HipMesh1PRotationOffset` |
 | Eye distance | ADS target puts the sight on the camera axis at the eye distance: optic `EyeDistance` (if `bOverridesEyeDistance`) → weapon `AdsEyeDistance` → 0 = keep the sight's natural distance (computed from the hip pose, so it does not drift). The earlier `AdsOffset` property was **removed** | Weapon → `AdsEyeDistance`; attachment → `bOverridesEyeDistance`, `EyeDistance` |
 | Visual recoil | Local-only kick of Mesh1P on top of the pattern recoil (bullets still follow the crosshair), scaled by attachment and ADS multipliers. **Off by default** | Character → `bEnableVisualRecoil`; weapon → `VisualRecoilLocation`, `VisualRecoilRotation`, `VisualRecoilAimMultiplier`, `VisualRecoilKickSpeed`, `VisualRecoilRecoverySpeed` |
+
+### 10.2 Combat feedback, lean, loadout UI and switching rules (since Step 8)
+
+Change history in Chinese: `Saved/武器逻辑改动记录.md`; loadout WBP guide: `Saved/背包UI自定义说明.md`.
+
+| Area | Behaviour | Where to configure |
+| --- | --- | --- |
+| PiP scope exposure | The optic capture meters itself with **Histogram auto exposure** (min/max brightness 0.03–8, low/high percent 10/90), ignores the main view's post process, disables bloom / local exposure / film grain / physical-camera exposure, and uses **Lumen** GI + reflections by default. Anti-aliasing is **FXAA** unless TAA is enabled. The project-wide default auto exposure is off (`r.DefaultFeature.AutoExposure=False`) | Attachment → `PiPExposureBias` (EV, −4…4), `bPiPUseLumen` (default on), `bPiPTemporalAA` (default off = FXAA) |
+| Impact decals | When the hit has no physical material, the surface passed to `FireEffect` defaults to `SurfaceType2` (**Concrete**) instead of `SurfaceType1` | Physical materials / blueprint FX tables |
+| Directional hit reacts | Server computes front / back / left / right from the attacker (±45° cones) and multicasts `(Direction, Index)`; empty pools fall back to `HitReacts` | Character → `HitReactsFront`, `HitReactsBack`, `HitReactsLeft`, `HitReactsRight`, `HitReacts` |
+| Damage direction ring | Victim gets `Client_ShowDamageIndicator(attacker location)` → `OnDamageIndicator`; `UShooterReticle` lights the quadrant arc (front / right / back / left, relative to the view yaw) facing the attacker; each arc fades out independently. The widget must be in the HUD (e.g. `HitFeedbackReticle` in `WBP_ShooterOverlay`) | Reticle → `DamageRingRadius`, `DamageRingThickness`, `DamageRingColor`, `DamageRingFadeTime`, `DamageRingGapDegrees`, `DamageRingSegments` |
+| Hit confirm marks | Shooter gets `Client_ConfirmHit()` → `OnHitConfirmed`; the reticle draws four diagonal marks around the centre (optional sound) | Reticle → `HitMarkerInnerOffset`, `HitMarkerLength`, `HitMarkerThickness`, `HitMarkerColor`, `HitMarkerDuration`, `HitMarkerSound` |
+| Loadout preview | Each weapon's preview pose in the loadout render is per weapon; the rig's render target and spacing are editable | Weapon → `PreviewRotationOffset` (0,90,0), `PreviewLocationOffset` (0,−28,0), `PreviewScale`; rig → `RenderTargetWidth/Height`, `OrthoWidth`, `RowSpacing` |
+| Loadout UI in WBP | `ULoadoutScreen`, `ULoadoutAttachmentWindow` and the new `ULoadoutWeaponCard` can be designed as WBPs (named `BindWidget`s, see the table below); empty class fields keep the C++ default layout. The attachment popup is closed by default and has a close button | Controller → `LoadoutScreenClass`; screen → `CardClass`, `AttachmentWindowClass`, `PreviewRigClass`, `WindowDefaultPosition`, `NumCards`; window → `RowClass`, `RowPadding` |
+| Lean (Q / E) | Hold to lean (or toggle). `LeanTarget` is replicated (skip owner) through `Server_SetLeanTarget`; every machine interpolates `LeanAlpha` (−1…1). Locally the 1P camera slides `LeanCameraOffset` and rolls `LeanRollDegrees`; a sphere sweep shortens the slide near walls. Blocked while sprinting and moving. 3P: `ABP_ThirdPerson` reads `LeanAlpha` and rotates `spine_03` | Character → `LeanCameraOffset` (30), `LeanRollDegrees` (12), `LeanInterpSpeed` (10), `LeanSpineDegrees` (20), `bLeanToggleMode`, `LeanWallProbeRadius` (12), `LeanLeftAction`, `LeanRightAction` |
+| Lean-aware weapon trace | `AWeapon::WeaponTrace` starts at the pawn's active camera (location + rotation, i.e. what the player sees, including lean and ADS) and falls back to `GetPlayerViewPoint`; it no longer uses `GetActorEyesViewPoint` | — |
+| Switch interrupts | Pressing a **different** slot key during an equip stops the old equip montage and runs a full normal equip for the new weapon (same timing); the **same** key during its own equip is ignored. Switching during a reload stops every reload montage (arms, body, weapon) and **grants no ammo**. Bolt cycling still blocks switching | — |
+| Reload | Reload while reloading is ignored. `Notify_ReloadWeapon` only refills if the weapon is still `Reloading`; `Client_ReloadWeapon` now carries the weapon so a late result never lands on the newly equipped gun | — |
+| Inspect, canted sight, laser | `VersionWeaponAction` plays `InspectMontage1P`; attachments with `bProvidesCantedSight` / `bProvidesLaser` add a 45° canted sight reached by cycling zoom past the last main level (remembered per weapon), and a laser beam + dot toggled with the flashlight key (auto-on when entering the canted sight) | `FMontageData::InspectMontage1P`; attachment → `CantedSightSocketName`, `CantedAimFOV`, `CantedEyeDistance`, `LaserSocketName`, `LaserColor`, `LaserBrightness`, `LaserRange`, `LaserDotSize`, `bHideBeamWhenAiming` |
+
+Required widget names for the loadout WBPs (`BindWidget` = must exist with exactly this name, `Optional` = may be omitted):
+
+| Widget class | Required | Optional |
+| --- | --- | --- |
+| `ULoadoutScreen` | `PopupLayer` (CanvasPanel, full screen), `CardContainer` (any panel) | `PreviewImage` (Image), `Text_Title`, `Text_Hint` (TextBlock) |
+| `ULoadoutAttachmentWindow` | `DragHandle` (any widget), `SlotList` (panel, e.g. VerticalBox / ScrollBox) | `CloseButton` (Button), `Text_WeaponName`, `Text_Empty` (TextBlock) |
+| `ULoadoutWeaponCard` | `Button` (Button) | `Text_Name` (TextBlock), `Image_Icon` (Image); BP event `OnCardStateChanged(bSelected, bEmpty, Weapon)` |
 
 ## 11. Further Reading
 

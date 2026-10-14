@@ -36,8 +36,11 @@
 22. [Attachment and loadout UI](#22-attachment-and-loadout-ui)
 23. [Optics, flashlight and first-person FABRIK](#23-optics-flashlight-and-first-person-fabrik)
 24. [Weapon feel and ADS revision (Steps 1–8)](#24-weapon-feel-and-ads-revision-steps-18)
+25. [Combat feedback, lean, loadout WBP and switch/reload rules (since Step 8)](#25-combat-feedback-lean-loadout-wbp-and-switchreload-rules-since-step-8)
 
-> **Latest revision (weapon feel and ADS, Steps 1–8):** new top-level section `24` covers reload variants, bolt action, left-hand IK blending, the fire-mode toggle, C++ ADS FOV and ADS time, variable-zoom optics, PiP rules by optic type (the sniper is no longer special-cased), visual recoil, per-weapon hip offset and ADS eye distance. Where it disagrees with §16, §18.5 or §23.1, §24 wins.
+> **Latest revision (since Step 8):** new top-level section `25` covers PiP scope exposure, the Concrete impact default, directional hit reacts, the damage direction ring and hit confirm marks, per-weapon preview offsets, the WBP-designable loadout UI, Q/E lean (C++ + 3P ABP spine), the lean-aware weapon trace, the removal of CycleWeapon, the switch/reload interrupt rules, and a summary of Steps 9–14 (inspect, canted sight, laser). Where it disagrees with §6.3, §7.3, §7.5, §8.2 or §18.4, §25 wins.
+>
+> **Previous revision (weapon feel and ADS, Steps 1–8):** new top-level section `24` covers reload variants, bolt action, left-hand IK blending, the fire-mode toggle, C++ ADS FOV and ADS time, variable-zoom optics, PiP rules by optic type (the sniper is no longer special-cased), visual recoil, per-weapon hip offset and ADS eye distance. Where it disagrees with §16, §18.5 or §23.1, §24 wins.
 >
 > **Earlier revision (weapon attachments, loadout, PiP optics):** new top-level sections `21–23` document the attachment data asset, the attachment/loadout UI and the picture-in-picture optic + flashlight + first-person FABRIK, with contract additions in `19.2` and new known issues in `20.1.2`.
 >
@@ -429,7 +432,7 @@ Uses `CastChecked<UEnhancedInputComponent>` (a mismatch asserts) to bind nine ac
 
 | Input action | Trigger event | Callback | Effect |
 | --- | --- | --- | --- |
-| `CycleWeaponAction` | `Started` | `Input_CycleWeapon` | Cycle weapons |
+| `LeanLeftAction` / `LeanRightAction` | `Started` / `Completed` | `Input_LeanLeft_*` / `Input_LeanRight_*` | Lean (Q / E runtime default, §25.7). `CycleWeaponAction` was removed (§25.9) |
 | `FireWeaponAction` | `Started` | `Input_FireWeapon_Pressed` | Fire (press) |
 | `FireWeaponAction` | `Completed` | `Input_FireWeapon_Released` | Stop firing (release; drives automatic fire) |
 | `AimWeaponAction` | `Started` | `Input_Aim_Pressed` | Toggle ADS + blueprint event `OnAim` |
@@ -443,7 +446,7 @@ Uses `CastChecked<UEnhancedInputComponent>` (a mismatch asserts) to bind nine ac
 
 | Function | Behaviour |
 | --- | --- |
-| `Input_CycleWeapon` | `Combat->Initiate_CycleWeapon()` |
+| `Input_LeanLeft_Started/Completed`, `Input_LeanRight_Started/Completed` | `HandleLeanInput(±1, bPressed)` (§25.7) |
 | `Input_ReloadWeapon` | `Combat->Initiate_ReloadWeapon()` |
 | `Input_FireWeapon_Pressed` | `Combat->Initiate_FireWeapon_Pressed()` |
 | `Input_FireWeapon_Released` | `Combat->Initiate_FireWeapon_Released()` |
@@ -472,6 +475,8 @@ Every callback is guarded by `IsValid(Combat)`.
 | `DoDamage_Implementation(DamageAmount, Instigator)` | `Stats->ChangeHealthByAmout(-DamageAmount, Instigator)`; picks a random `HitReacts` index and calls `Multicast_HitReact`; **always returns false** (⚠ the return value is unused, and an empty `HitReacts` array will index out of bounds) |
 
 #### `Multicast_HitReact_Implementation(int32 MontageIndex)` ⇄
+
+> **Updated:** now `Multicast_HitReact(EHitReactDirection, int32)` with directional pools — see §25.3.
 
 - Condition: `GetNetMode() != NM_DedicatedServer` **and** not locally controlled → i.e. this is "someone else's" client.
 - Calls `Montage_Play(HitReacts[MontageIndex])` on the 3P body's `AnimInstance`.
@@ -550,7 +555,7 @@ Effects: slow movement (walk / ADS) no longer plays the jog cycle at 1× speed, 
 | `HandleAimStateChanged(bool bIsAiming)` (private, bound in `BeginPlay` to `Combat->OnAimStateChanged`) | Calls the blueprint event `OnAim(bIsAiming)` **only when locally controlled**, and always calls `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` — the server needs the new speed as well, otherwise it would pull the client back |
 | `RefreshControllerMovementSpeed()` (private) | `Cast<AShooterPlayerController>(GetController())->RefreshMovementSpeed()`. Simulated proxies (your character on someone else's machine) have no local controller and are skipped |
 | `Input_Aim_Pressed()` | No longer calls `OnAim` directly — the aim state is broadcast from `UCombatComponent::Local_Aim` through `OnAimStateChanged` (see 7.8) |
-| ⚠`Input_VersionWeapon()` | Empty body and **not bound** in `SetupPlayerInputComponent` (`VersionWeaponAction` is declared but unused) — dead placeholder |
+| `Input_VersionWeapon()` | Bound to `VersionWeaponAction` (when set) → `Combat->Initiate_VersionWeapon()` (inspect, §25.10) |
 
 ---
 
@@ -638,7 +643,9 @@ DOREPLIFETIME_CONDITION(CurrentReserveAmmo, COND_OwnerOnly);
 #### `AdvanceWeaponIndex()` (private)
 - With 2+ weapons, `LocalWeaponIndex = (LocalWeaponIndex + 1) % Inventory.Num()` and returns the new index.
 
-#### `Initiate_CycleWeapon()` — cycle entry point
+#### `Initiate_CycleWeapon()` — cycle entry point (**removed**, §25.9)
+
+> Removed together with `Input_CycleWeapon` and `CycleWeaponAction`. The description below is kept for history; slot keys still use `Local/Server/Multicast_CycleWeapon`.
 
 Guards: a current weapon exists, status is neither `Cycling` nor `Reloading`, and the inventory holds at least 2 weapons.
 Flow: `AdvanceWeaponIndex()` → `Local_CycleWeapon(NextIndex, /*bFirstPerson=*/true)` (instant local feedback) → `Server_CycleWeapon(NextIndex)` (server).
@@ -647,7 +654,7 @@ Flow: `AdvanceWeaponIndex()` → `Local_CycleWeapon(NextIndex, /*bFirstPerson=*/
 - Returns on an invalid index or weapon; calls `Equip()` when the weapon differs; then `PlayEquipMontage(Weapon, bFirstPerson)`.
 
 #### `Server_CycleWeapon_Implementation(int32 WeaponIndex)` ⇄
-- Returns on an invalid index; refuses while the current weapon is reloading.
+- Returns on an invalid index; refuses during `BoltCycling` (reloading no longer blocks — the reload is interrupted, §25.9); a non-listen-owner request for the current weapon returns.
 - **Listen-server special case**: on `NM_ListenServer` when the owner is locally controlled, it skips the duplicate `Equip` (the local machine already did it) and only updates `LocalWeaponIndex`.
 - Finally calls `Multicast_CycleWeapon(WeaponIndex)`.
 
@@ -678,14 +685,14 @@ Only write when the type matches FPlayerAnim::StaticStruct() (CopyCompleteValue)
 - The code comment explains that playing the equip animation on the 1P arms mesh is **intentional**, even though the clip belongs to the full-body skeleton (an earlier "reject mismatched skeletons" check is what silenced 1P).
 
 #### `OnEquipMontageEnded(UAnimMontage*, bool)` (private)
-- If the current weapon is still `Cycling` → restore `Idle`.
+- Now `OnEquipMontageEnded(UAnimMontage*, bool, TWeakObjectPtr<AWeapon>)`: only the bound weapon, if still current and `Cycling`, returns to `Idle` (§25.9).
 
 #### Slot equipping
 
 | Function | Behaviour |
 | --- | --- |
 | `FindWeaponForSlot(EWeaponSlot) const` (private) | Iterates the inventory: `Pistol`/`Melee` return the first matching kind; `Main`/`Secondary` return the 1st/2nd `LongGun` (tracked with `LongGunIndex`). Returns `nullptr` if absent |
-| `Initiate_EquipSlot(EWeaponSlot)` (private) | Requires a found weapon that is not already current; refuses while the current weapon is `Cycling`/`Reloading`; `LocalWeaponIndex = Index` → `Local_CycleWeapon(Index, true)` → `Server_EquipSlot(Slot)` |
+| `Initiate_EquipSlot(EWeaponSlot)` (private) | Requires a found weapon that is not already current; refuses only during `BoltCycling` (an equip or reload in progress is interrupted, §25.9); `LocalWeaponIndex = Index` → `Local_CycleWeapon(Index, true)` → `Server_EquipSlot(Slot)` |
 | `Server_EquipSlot_Implementation(EWeaponSlot)` ⇄ | **Re-resolves the weapon from the slot on the server** (the comment notes a client must not be able to put a pistol in the main slot) and then goes through `Server_CycleWeapon_Implementation` |
 | `Initiate_EquipMainWeapon()` ◆ / `Initiate_EquipSeconedaryWeapon()` ◆ / `Initiate_EquipMeleeWeapon()` ◆ / `Initiate_EquipPistolWeapon()` ◆ | Call `Initiate_EquipSlot(Main/Secondary/Melee/Pistol)` respectively |
 
@@ -779,6 +786,8 @@ Flow: status → `Reloading` → `Server_ReloadWeapon()` → `PlayReloadMontage(
 - Restores `Idle` when the status is `Reloading`.
 
 #### `Client_ReloadWeapon_Implementation(int32 NewWeaponAmmo, int32 NewCarryAmmo)` ⇄
+
+> **Updated:** now `Client_ReloadWeapon(AWeapon* ReloadedWeapon, int32, int32)`; `Notify_ReloadWeapon` only refills while the weapon is still `Reloading` (§25.9).
 - Only the locally controlled pawn handles it: writes back magazine / reserve / `ReserveAmmo`, sets `Idle`, calls `NotifyAmmoChanged()`.
 - If the trigger is still held and the magazine is non-empty → immediately `Local_FireWeapon()` (resume fire on reload completion).
 
@@ -837,7 +846,7 @@ Defaults authored on `AWeapon` (see 8.4): a 12-step pattern (climb → drift rig
 | --- | --- |
 | `Local_Aim(bool bPressed)` (private) | Returns immediately when `bAiming == bPressed` (this is what prevents duplicate broadcasts on a listen server), otherwise assigns `bAiming` and broadcasts `OnAimStateChanged(bAiming)` |
 | `StopAimForWeaponSwitch()` (public) | If aiming: `Local_Aim(false)` for instant local feedback **and** `Server_Aim(false)` (reliable RPC, delivered in order) |
-| Call sites | `Initiate_CycleWeapon()` and `Initiate_EquipSlot()` |
+| Call sites | `Initiate_EquipSlot()` (`Initiate_CycleWeapon()` was removed) |
 | `Server_CycleWeapon_Implementation` | Also calls `Local_Aim(false)` so remote players see the aim state drop |
 
 Behaviour change: `Initiate_EquipSlot` used to `return` while aiming (pressing a number key did nothing). It now switches weapons and drops out of ADS instead.
@@ -899,8 +908,8 @@ Behaviour change: `Initiate_EquipSlot` used to `return` while aiming (pressing a
 #### Hit detection, `WeaponTrace` in detail
 
 ```cpp
-Start     = PlayerController->GetActorEyesViewPoint()   // world eye position
-Direction = the eyes rotation's forward vector
+Start     = active UCameraComponent world location  // fallback: PC->GetPlayerViewPoint (§25.8)
+Direction = camera world rotation forward vector    // follows lean and ADS
 End       = Start + Direction * TraceLength
 ```
 - `FCollisionQueryParams`: `bReturnPhysicalMaterial = true` (the surface type feeds `FireEffect`); ignores **the weapon itself** and **the owning pawn**.
@@ -1299,8 +1308,8 @@ Client_ReloadWeapon: writes back authoritative rounds, status Idle, UI refresh, 
 ### 18.4 Weapon cycling
 
 ```
-Initiate_CycleWeapon / Initiate_EquipSlot
-  → local: Equip(new weapon) + PlayEquipMontage(1P) → status Cycling
+Initiate_EquipSlot (CycleWeapon removed; interrupt rules §25.9)
+  → local: StopActiveEquipMontages, Equip(new weapon) + PlayEquipMontage(1P) → status Cycling
   → Server_CycleWeapon / Server_EquipSlot (server re-resolves the slot)
       → listen-server owner: skips the duplicate Equip
       → Multicast_CycleWeapon → other clients Equip + PlayEquipMontage(3P)
@@ -1407,7 +1416,7 @@ Several C++/Blueprint contracts are implicit (by name or by interface). Changing
 
 | # | Location | Issue | Impact / suggestion |
 | --- | --- | --- | --- |
-| 14 | `AShooterCharacter::Input_VersionWeapon` + `VersionWeaponAction` | Empty body and never bound | Dead code; wire it to something or delete it |
+| 14 | `AShooterCharacter::Input_VersionWeapon` + `VersionWeaponAction` | **Resolved** — now bound to weapon inspect (§25.10) | — |
 | 15 | `ApplyFireRecoil` / `TickRecoil` | The kick is applied to the local control rotation only | Intended (UE aim is client-authoritative) but it is a feel feature, not a server-side accuracy penalty |
 | 16 | `UpdateLocomotionGait` | AnimInstance properties are found **by name** with several aliases | A renamed/missing property is a silent no-op — when the feet stop matching the speed, check the ABP variable names first |
 | 17 | `UStatsComponent::ChangeMaxStaminaAmout` | No floor/ceiling | A negative amount can produce 0 or a negative ceiling |
@@ -1666,3 +1675,101 @@ The camera FOV, scope component and PiP decisions no longer test `WeaponType == 
 ### 24.9 Removed again: Step 7 experiments
 
 An auto-spawned lens plane, ADS look-sensitivity scaling and an optional viewmodel FOV (UE first-person rendering) were added in Step 7 and later removed from the code. They are not present in the current source.
+
+---
+
+## 25. Combat feedback, lean, loadout WBP and switch/reload rules (since Step 8)
+
+Change history in Chinese: `Saved/武器逻辑改动记录.md`. Steps 9–14 (inspect, canted sight, laser) are summarised in §25.10.
+
+### 25.1 PiP scope exposure — `UOpticScopeComponent::ApplyCaptureExposure(const UAttachmentData*)`
+
+Called when the capture is created / rebound (`BindToOptic`) and every `UpdateView()` frame. The capture no longer inherits the main view's post process (`bInheritMainViewCameraPostProcessSettings = false`, `PostProcessBlendWeight = 1`, `bAlwaysPersistRenderingState = true`) and meters itself:
+
+| Setting | Value |
+| --- | --- |
+| Show flags | `EyeAdaptation` on, `Bloom` / `LocalExposure` / `Grain` off, `AntiAliasing` on, `TemporalAA = bPiPTemporalAA` (default off → **FXAA**) |
+| Auto exposure | `AEM_Histogram`, bias = `PiPExposureBias`, physical-camera exposure off, min/max brightness `0.03` / `8`, speed up/down `3` / `1`, low/high percent `10` / `90` |
+| Local exposure / grain | highlight / shadow contrast `1`, detail strength `1`, film grain `0` |
+| GI / reflections | `bPiPUseLumen` (default **true**) → Lumen GI + Lumen reflections (+ show flags); false → no dynamic GI + screen-space reflections |
+
+New `UAttachmentData` fields (Magnified / Variable only): `PiPExposureBias` (EV, UI −4…4, default 0), `bPiPUseLumen` (true), `bPiPTemporalAA` (false). `UpdateView()` also skips the main-optic capture while the canted sight is active. The project default auto exposure is turned off in `DefaultEngine.ini` (`r.DefaultFeature.AutoExposure=False`).
+
+### 25.2 Impact surface default
+
+`Local_FireWeapon()` and `Multicast_FireWeapon_Implementation()` pass `SurfaceType2` (Concrete in the project's physical-surface list) to `Local_Fire` / `FireEffect` when the hit has no physical material (was `SurfaceType1`), so untagged geometry gets concrete decals and impacts.
+
+### 25.3 Directional hit reacts
+
+- New enum `EHitReactDirection { Front, Back, Left, Right }` and montage pools `HitReactsFront / Back / Left / Right` on `AShooterCharacter` (`HitReacts` stays as the fallback).
+- `DoDamage_Implementation` (server): if the instigator is valid and not self, `ComputeHitReactDirection(InstigatorLocation)` uses the flattened dot product with the actor forward (±45° → Front / Back) and the sign of the cross product (Right / Left). `GetHitReactPool(Direction)` returns the pool or `HitReacts` if it is empty; an empty result plays nothing (the old empty-array crash risk is gone).
+- `Multicast_HitReact(EHitReactDirection Direction, int32 MontageIndex)` replaces the old `(int32)` signature; remote machines resolve the same pool and play the montage on the 3P mesh.
+
+### 25.4 Damage direction ring and hit confirm marks
+
+| Piece | Behaviour |
+| --- | --- |
+| `Client_ShowDamageIndicator(FVector_NetQuantize InstigatorLocation)` (Client, Reliable) | Sent by the server to a player-controlled victim; broadcasts `OnDamageIndicator(FVector)` |
+| `Client_ConfirmHit()` (Client, Reliable) | Sent to a player-controlled shooter whose damage landed; broadcasts `OnHitConfirmed` |
+| `UShooterReticle` | Binds both delegates when the pawn changes. `ShowDamageFrom()` converts the source to view-relative yaw and sets the intensity of one of four 90° arcs (front / right / back / left); `NativePaint` draws the arcs with `MakeLines` and fades each over `DamageRingFadeTime`. `ShowHitMarker()` draws four diagonal strokes for `HitMarkerDuration` and plays `HitMarkerSound` (2D) |
+| Reticle properties | `DamageRingRadius` 60, `DamageRingThickness` 4, `DamageRingColor` red, `DamageRingFadeTime` 1.2, `DamageRingGapDegrees` 6, `DamageRingSegments` 16; `HitMarkerInnerOffset` 8, `HitMarkerLength` 10, `HitMarkerThickness` 2, `HitMarkerColor` white, `HitMarkerDuration` 0.25, `HitMarkerSound` |
+
+The reticle widget must be present in the HUD (`HitFeedbackReticle` in `WBP_ShooterOverlay`).
+
+### 25.5 Per-weapon loadout preview offsets
+
+`AWeapon::PreviewRotationOffset` (default `(0, 90, 0)`), `PreviewLocationOffset` (`(0, −28, 0)`) and `PreviewScale` (1) replace the hard-coded transform in `ALoadoutPreviewRig`. The rig adds `RowSpacing` (90) per row and exposes `RenderTargetWidth` / `RenderTargetHeight` (512 × 768) and `OrthoWidth` (180).
+
+### 25.6 WBP-designable loadout UI
+
+- `AShooterPlayerController::LoadoutScreenClass` — the class created by Tab (empty → C++ `ULoadoutScreen`).
+- `ULoadoutScreen` settings: `CardClass` (`ULoadoutWeaponCard`), `AttachmentWindowClass`, `PreviewRigClass`, `WindowDefaultPosition` (x < 1 = fraction of the width), `NumCards` (3). The attachment window is hidden by default; selecting a card shows it, its close button / toggle hides it.
+- `ULoadoutAttachmentWindow` settings: `RowClass` (`UAttachmentSlotRow`), `RowPadding`; it listens to `OnAttachmentsChanged` and rebuilds its rows.
+- New `ULoadoutWeaponCard` (`LoadoutWeaponCard.h/.cpp`): `GetWeapon()`, `GetCardIndex()`, `IsSelected()`, `IsEmptySlot()`, `EmptyText`, BP event `OnCardStateChanged(bIsSelected, bIsEmpty, Weapon)`.
+
+| Class | `BindWidget` (required name) | `BindWidgetOptional` |
+| --- | --- | --- |
+| `ULoadoutScreen` | `PopupLayer` (`UCanvasPanel`, full screen — the window is positioned/dragged through its canvas slot), `CardContainer` (`UPanelWidget`) | `PreviewImage` (`UImage`), `Text_Title`, `Text_Hint` (`UTextBlock`) |
+| `ULoadoutAttachmentWindow` | `DragHandle` (`UWidget`), `SlotList` (`UPanelWidget`) | `CloseButton` (`UButton`), `Text_WeaponName`, `Text_Empty` (`UTextBlock`) |
+| `ULoadoutWeaponCard` | `Button` (`UButton`) | `Text_Name` (`UTextBlock`), `Image_Icon` (`UImage`, hidden when the weapon has no icon) |
+
+A step-by-step WBP guide (Chinese) is in `Saved/背包UI自定义说明.md`.
+
+### 25.7 Lean (Q / E)
+
+| Member | Default | Notes |
+| --- | --- | --- |
+| `LeanAlpha` | 0 | `BlueprintReadOnly`, smoothed −1 (left) … 1 (right) on every machine; `GetLeanAlpha()` (`BlueprintPure`) |
+| `LeanTarget` | 0 | `Replicated`, `COND_SkipOwner`; set locally and through `Server_SetLeanTarget(float)` (reliable, clamped/rounded to −1/0/1) |
+| `LeanCameraOffset` | 30 | 1P camera side slide (cm, camera-parent Y) |
+| `LeanRollDegrees` | 12 | 1P camera roll |
+| `LeanInterpSpeed` | 10 | `FInterpTo` speed for `LeanAlpha` |
+| `LeanSpineDegrees` | 20 | Suggested spine angle for the ABP |
+| `bLeanToggleMode` | false | false = hold, true = press toggles |
+| `LeanWallProbeRadius` | 12 | Sphere sweep (`ECC_Camera`) from the base camera position to the leaned one; the slide is scaled by the hit time |
+| `LeanLeftAction` / `LeanRightAction` | empty | Empty → `EnsureLeanInput()` creates `IA_LeanLeft_Runtime` / `IA_LeanRight_Runtime` and `IMC_Lean_Runtime` (Q / E, priority 1) |
+
+Flow: input → `HandleLeanInput(Dir, bPressed)` (hold: last pressed wins; toggle: same key cancels) → `UpdateLean()` in Tick. The local player computes the desired target (0 when `IsLeanBlocked()` — sprinting via `AShooterPlayerController::IsSprinting()` and moving faster than 10 cm/s), updates `LeanTarget` and calls the server RPC; every machine interpolates `LeanAlpha`; only the local player moves `FirstPersonCamera` (base relative transform captured at BeginPlay + slide + roll; Mesh1P is attached to the camera so the arms follow). `GetLifetimeReplicatedProps` was added to the character.
+
+3P: `ABP_ThirdPerson` has a float `LeanAlpha`, set in Event Blueprint Update Animation after `UpdateGaitFlags` (guarded by `IsValid(ShooterCharacter)`); the AnimGraph inserts **Transform (Modify) Bone** (`spine_03`, rotation *Add to Existing*, *Component Space*, Rotation = `MakeRotator(Pitch = LeanAlpha × 20)`) between `OrientationWarping` and the final Component To Local before Output Pose, so montages lean as well. Pitch is used because SK_Mannequin faces +Y in component space.
+
+### 25.8 Lean-aware weapon trace
+
+`AWeapon::WeaponTrace` now takes `Start` / direction from the instigator's active `UCameraComponent` (`GetComponentLocation` / `GetComponentRotation`), falling back to `PC->GetPlayerViewPoint()`; it used to call `GetActorEyesViewPoint`, which ignores the camera, so leaning shots went to the un-leaned centre. The server still trusts the client `FHitResult` in `Server_FireWeapon`, so no server change was needed. The canted-ADS laser uses `GetPlayerViewPoint` (camera manager = leaned camera) and ADS alignment uses the camera transform, so both already followed the lean.
+
+### 25.9 CycleWeapon removed; switch and reload interrupt rules
+
+- Removed: `Initiate_CycleWeapon`, `Input_CycleWeapon`, `CycleWeaponAction` and its binding. `Local_CycleWeapon` / `Server_CycleWeapon` / `Multicast_CycleWeapon` remain — the slot keys use them.
+- `Initiate_EquipSlot`: the same weapon as `CurrentWeapon` is ignored (since `Equip` runs immediately, that also covers "same key during its own equip"); `Cycling` and `Reloading` no longer block; `BoltCycling` still does.
+- `Local_CycleWeapon` calls `StopActiveEquipMontages()` first (stops the tracked 1P/3P equip montage and unbinds its end delegate), then `Equip` + `PlayEquipMontage` — a full normal equip with the usual timing.
+- `OnEquipMontageEnded(Montage, bInterrupted, TWeakObjectPtr<AWeapon>)` only returns the bound weapon to `Idle` if it is still current and `Cycling`.
+- `Equip()`: if the outgoing weapon is `Reloading`, `StopReloadMontages(Weapon)` stops every reload variant on Mesh1P, the 3P mesh and the weapon mesh (end delegates unbound), sets `Idle` and re-attaches the weapon.
+- `Server_CycleWeapon`: no longer refuses while reloading; refuses during `BoltCycling`; a non-listen-owner request for the current weapon returns.
+- `Notify_ReloadWeapon` refills only while `CurrentWeapon` is `Reloading` → a switched-away reload grants no ammo. `Client_ReloadWeapon(AWeapon* ReloadedWeapon, int32, int32)` writes to the reloaded weapon only; if it is no longer current, the current weapon is untouched.
+- Reload while reloading is still ignored (`Initiate_ReloadWeapon`).
+
+### 25.10 Steps 9–14 summary (inspect, canted sight, laser)
+
+- **Inspect**: `VersionWeaponAction` → `Initiate_VersionWeapon()` plays `FMontageData::InspectMontage1P` (arms, and the weapon mesh if `WeaponMontages` has one), local only. `CancelInspect()` (0.15 s blend) runs on fire, aim, reload, slot switch and sprint start.
+- **Canted sight**: attachments with `bProvidesCantedSight` (or `bProvidesLaser`) provide `CantedSightSocketName`, `CantedAimFOV`, `CantedEyeDistance`. While aiming, `SwitchZoomAction` cycles main zoom levels → canted → first main level; switching is instant; `AWeapon::bRememberCanted` restores it on the next ADS; `OnCantedSightChanged` fires; the main-optic PiP is off while canted.
+- **Laser**: `bProvidesLaser` adds a beam mesh and a decal dot (`LaserSocketName`, `LaserBeamMesh/Material`, `LaserDotDecalMaterial`, `LaserRange`, `LaserBrightness`, `LaserColor`, `LaserDotSize`, `LaserDotSizePerMeter`, `bHideBeamWhenAiming`). Replicated `bLaserOn`; the flashlight key toggles flashlight and laser together (`Initiate_ToggleLaser` / `Server_ToggleLaser`); entering the canted sight calls `Initiate_SetLaserOn(true)`. Only canted ADS aims the beam at the crosshair; otherwise it points along the socket.

@@ -36,8 +36,11 @@
 22. [配件与整备界面](#22-配件与整备界面)
 23. [瞄具、手电与第一人称扶枪 IK](#23-瞄具手电与第一人称扶枪-ik)
 24. [武器手感与开镜修订（第 1–8 步）](#24-武器手感与开镜修订第-18-步)
+25. [战斗反馈、探头、整备界面 WBP 与切枪/换弹规则（第 8 步之后）](#25-战斗反馈探头整备界面-wbp-与切枪换弹规则第-8-步之后)
 
-> **最新修订（武器手感与开镜，第 1–8 步）：** 新增顶层章节 `24`，说明换弹分种类、拉栓、左手 IK 渐变、开火模式切换、C++ 开镜 FOV 与开镜时间、可变倍率瞄具、按瞄具类型决定画中画（狙击不再特殊处理）、视觉后坐、每把枪的腰射偏移与开镜眼距。与 §16、§18.5、§23.1 冲突时以 §24 为准。
+> **最新修订（第 8 步之后）：** 新增顶层章节 `25`，说明画中画曝光、命中默认 Concrete 表面、分方向受击、受伤方向环与命中确认标记、每把枪的预览偏移、可用 WBP 设计的整备界面、Q/E 探头（C++ + 3P ABP 脊椎）、射线跟随探头、删除循环切枪、切枪/换弹打断规则，以及第 9–14 步（检视、侧瞄、激光）汇总。与 §6.3、§7.3、§7.5、§8.2、§18.4 冲突时以 §25 为准。
+>
+> **上一次修订（武器手感与开镜，第 1–8 步）：** 新增顶层章节 `24`，说明换弹分种类、拉栓、左手 IK 渐变、开火模式切换、C++ 开镜 FOV 与开镜时间、可变倍率瞄具、按瞄具类型决定画中画（狙击不再特殊处理）、视觉后坐、每把枪的腰射偏移与开镜眼距。与 §16、§18.5、§23.1 冲突时以 §24 为准。
 >
 > **更早修订（武器配件 / 整备界面 / 画中画倍镜）：** 新增顶层章节 `21–23`，分别说明配件数据资产、配件与整备界面、以及画中画倍镜 + 手电 + 第一人称扶枪 IK；蓝图契约新增项见 `19.2`，新增已知问题见 `20.1.2`。
 >
@@ -429,7 +432,7 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 
 | 输入动作 | 触发事件 | 回调 | 效果 |
 | --- | --- | --- | --- |
-| `CycleWeaponAction` | `Started` | `Input_CycleWeapon` | 循环切枪 |
+| `LeanLeftAction` / `LeanRightAction` | `Started` / `Completed` | `Input_LeanLeft_*` / `Input_LeanRight_*` | 探头（运行时默认 Q / E，§25.7）。`CycleWeaponAction` 已删除（§25.9） |
 | `FireWeaponAction` | `Started` | `Input_FireWeapon_Pressed` | 按下开火 |
 | `FireWeaponAction` | `Completed` | `Input_FireWeapon_Released` | 松开停火（全自动） |
 | `AimWeaponAction` | `Started` | `Input_Aim_Pressed` | 切换 ADS + 蓝图事件 `OnAim` |
@@ -443,7 +446,7 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 
 | 函数 | 行为 |
 | --- | --- |
-| `Input_CycleWeapon` | `Combat->Initiate_CycleWeapon()` |
+| `Input_LeanLeft_Started/Completed`、`Input_LeanRight_Started/Completed` | `HandleLeanInput(±1, bPressed)`（§25.7） |
 | `Input_ReloadWeapon` | `Combat->Initiate_ReloadWeapon()` |
 | `Input_FireWeapon_Pressed` | `Combat->Initiate_FireWeapon_Pressed()` |
 | `Input_FireWeapon_Released` | `Combat->Initiate_FireWeapon_Released()` |
@@ -472,6 +475,8 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 | `DoDamage_Implementation(DamageAmount, Instigator)` | 扣血 `Stats->ChangeHealthByAmout(-DamageAmount, Instigator)`；随机抽一个 `HitReacts` 下标并 `Multicast_HitReact`；**恒返回 false**（⚠ 返回值语义未使用；`HitReacts` 为空会越界） |
 
 #### `Multicast_HitReact_Implementation(int32 MontageIndex)` ⇄
+
+> **已更新：** 现在是 `Multicast_HitReact(EHitReactDirection, int32)`，按方向分组 —— 见 §25.3。
 
 - 条件：非专用服务器（`GetNetMode() != NM_DedicatedServer`）**且**非本地控制 → 说明是"别人"的客户端。
 - 在 3P 身体网格体的 `AnimInstance` 上 `Montage_Play(HitReacts[MontageIndex])`。
@@ -550,7 +555,7 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 | `HandleAimStateChanged(bool bIsAiming)`（private，`BeginPlay` 中绑定到 `Combat->OnAimStateChanged`） | **仅在本地控制时**调用蓝图事件 `OnAim(bIsAiming)`；并且总是调用 `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` —— 服务器也需要新速度，否则会把客户端拉回旧速度 |
 | `RefreshControllerMovementSpeed()`（private） | `Cast<AShooterPlayerController>(GetController())->RefreshMovementSpeed()`。模拟代理（别人电脑上的你）没有本地控制器，直接跳过 |
 | `Input_Aim_Pressed()` | 不再直接调 `OnAim` —— 开镜状态统一由 `UCombatComponent::Local_Aim` 通过 `OnAimStateChanged` 广播（见 7.8） |
-| ⚠`Input_VersionWeapon()` | 空函数，且 `SetupInputComponent` 里**没有绑定**（`VersionWeaponAction` 声明了但没用）—— 占位死代码 |
+| `Input_VersionWeapon()` | 已绑定到 `VersionWeaponAction`（填了才绑）→ `Combat->Initiate_VersionWeapon()`（检视，§25.10） |
 
 ---
 
@@ -638,7 +643,9 @@ DOREPLIFETIME_CONDITION(CurrentReserveAmmo, COND_OwnerOnly);
 #### `AdvanceWeaponIndex()`（private）
 - 库存 ≥ 2 时 `LocalWeaponIndex = (LocalWeaponIndex + 1) % Inventory.Num()`，返回新下标。
 
-#### `Initiate_CycleWeapon()` — 循环切枪入口
+#### `Initiate_CycleWeapon()` — 循环切枪入口（**已删除**，§25.9）
+
+> 已和 `Input_CycleWeapon`、`CycleWeaponAction` 一起删除。下面的说明仅作历史保留；槽位键仍使用 `Local/Server/Multicast_CycleWeapon`。
 
 守卫：有当前武器、状态不是 `Cycling`/`Reloading`、库存 ≥ 2。
 流程：`AdvanceWeaponIndex()` → `Local_CycleWeapon(NextIndex, /*bFirstPerson=*/true)`（本地立即表现）→ `Server_CycleWeapon(NextIndex)`（服务端）。
@@ -647,7 +654,7 @@ DOREPLIFETIME_CONDITION(CurrentReserveAmmo, COND_OwnerOnly);
 - 下标越界或武器无效则返回；武器不同则先 `Equip()`；然后 `PlayEquipMontage(Weapon, bFirstPerson)`。
 
 #### `Server_CycleWeapon_Implementation(int32 WeaponIndex)` ⇄
-- 越界返回；当前武器正在换弹则拒绝。
+- 越界返回；`BoltCycling` 时拒绝（换弹中不再拒绝 —— 换弹会被打断，§25.9）；非监听主机请求当前武器时直接返回。
 - **监听服务器特判**：`NM_ListenServer` 且拥有者本地控制时，不重复 `Equip`（本地已做过），只更新 `LocalWeaponIndex`。
 - 最后 `Multicast_CycleWeapon(WeaponIndex)`。
 
@@ -678,14 +685,14 @@ DOREPLIFETIME_CONDITION(CurrentReserveAmmo, COND_OwnerOnly);
 - 代码注释特别说明：把装备动画播在 1P 手臂网格上是**有意为之**，即使动画属于全身骨架（早期"拒绝播放"的逻辑导致了 1P 静音）。
 
 #### `OnEquipMontageEnded(UAnimMontage*, bool)`（private）
-- 若当前武器仍处于 `Cycling` → 恢复 `Idle`。
+- 现在是 `OnEquipMontageEnded(UAnimMontage*, bool, TWeakObjectPtr<AWeapon>)`：只有绑定的那把枪仍是当前武器且处于 `Cycling` 时才恢复 `Idle`（§25.9）。
 
 #### 槽位装备
 
 | 函数 | 作用 |
 | --- | --- |
 | `FindWeaponForSlot(EWeaponSlot) const`（private） | 遍历库存：`Pistol`/`Melee` 取第一个匹配的 kind；`Main`/`Secondary` 取第 1/第 2 把 `LongGun`（用 `LongGunIndex` 计数）。找不到返回 `nullptr` |
-| `Initiate_EquipSlot(EWeaponSlot)`（private） | 找到武器且不是当前武器；当前武器 `Cycling`/`Reloading` 时拒绝；`LocalWeaponIndex = Index` → `Local_CycleWeapon(Index, true)` → `Server_EquipSlot(Slot)` |
+| `Initiate_EquipSlot(EWeaponSlot)`（private） | 找到武器且不是当前武器；只在 `BoltCycling` 时拒绝（拔枪或换弹中会被打断，§25.9）；`LocalWeaponIndex = Index` → `Local_CycleWeapon(Index, true)` → `Server_EquipSlot(Slot)` |
 | `Server_EquipSlot_Implementation(EWeaponSlot)` ⇄ | **服务端按槽位重新解析**武器（注释：客户端不能把手枪塞进主武器槽），再走 `Server_CycleWeapon_Implementation` |
 | `Initiate_EquipMainWeapon()` ◆ / `Initiate_EquipSeconedaryWeapon()` ◆ / `Initiate_EquipMeleeWeapon()` ◆ / `Initiate_EquipPistolWeapon()` ◆ | 分别调用 `Initiate_EquipSlot(Main/Secondary/Melee/Pistol)` |
 
@@ -779,6 +786,8 @@ if (Ammo > 0) Local_FireWeapon();
 - 状态是 `Reloading` 时恢复 `Idle`。
 
 #### `Client_ReloadWeapon_Implementation(int32 NewWeaponAmmo, int32 NewCarryAmmo)` ⇄
+
+> **已更新：** 现在是 `Client_ReloadWeapon(AWeapon* ReloadedWeapon, int32, int32)`；`Notify_ReloadWeapon` 只在武器仍为 `Reloading` 时填弹（§25.9）。
 - 只有本地控制者处理：写回弹匣/备弹/`ReserveAmmo`，状态 `Idle`，`NotifyAmmoChanged()`。
 - 若扳机仍按着且弹匣 > 0 → 立刻 `Local_FireWeapon()`（换弹结束立即续火）。
 
@@ -837,7 +846,7 @@ if (Ammo > 0) Local_FireWeapon();
 | --- | --- |
 | `Local_Aim(bool bPressed)`（private） | `bAiming == bPressed` 时直接返回（这正是避免监听服务器重复广播的关键），否则赋值并广播 `OnAimStateChanged(bAiming)` |
 | `StopAimForWeaponSwitch()`（public） | 若正在开镜：`Local_Aim(false)` 保证本地手感即时，**同时** `Server_Aim(false)`（可靠 RPC，按顺序到达） |
-| 调用点 | `Initiate_CycleWeapon()` 与 `Initiate_EquipSlot()` |
+| 调用点 | `Initiate_EquipSlot()`（`Initiate_CycleWeapon()` 已删除） |
 | `Server_CycleWeapon_Implementation` | 也会调用 `Local_Aim(false)`，让其他玩家看到开镜状态被取消 |
 
 行为变化：`Initiate_EquipSlot` 以前在开镜时会直接 `return`（按数字键没反应），现在改成"切枪并自动关镜"。
@@ -899,8 +908,8 @@ if (Ammo > 0) Local_FireWeapon();
 #### 命中检测 `WeaponTrace` 细节
 
 ```cpp
-起点 = PlayerController->GetActorEyesViewPoint()   // 眼睛世界位置
-方向 = 眼睛朝向的 Forward
+起点 = 当前激活的 UCameraComponent 世界位置   // 兜底：PC->GetPlayerViewPoint（§25.8）
+方向 = 相机世界旋转的 Forward                 // 跟随探头和开镜
 终点 = 起点 + 方向 * TraceLength
 ```
 - `FCollisionQueryParams`：`bReturnPhysicalMaterial = true`（拿表面类型给 `FireEffect`）；忽略**武器自身**与**持有者 Pawn**。
@@ -1299,8 +1308,8 @@ Client_ReloadWeapon: 写回权威弹数、状态 Idle、UI 刷新，若扳机仍
 ### 18.4 切枪
 
 ```
-Initiate_CycleWeapon / Initiate_EquipSlot
-  → 本地：Equip(新枪) + PlayEquipMontage(1P) → 状态 Cycling
+Initiate_EquipSlot（循环切枪已删除；打断规则见 §25.9）
+  → 本地：StopActiveEquipMontages、Equip(新枪) + PlayEquipMontage(1P) → 状态 Cycling
   → Server_CycleWeapon / Server_EquipSlot（服务端重新解析槽位）
       → 监听服务器拥有者：跳过重复 Equip
       → Multicast_CycleWeapon → 其他客户端 Equip + PlayEquipMontage(3P)
@@ -1407,7 +1416,7 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 
 | # | 位置 | 问题 | 影响 / 建议 |
 | --- | --- | --- | --- |
-| 14 | `AShooterCharacter::Input_VersionWeapon` + `VersionWeaponAction` | 空函数且从未绑定 | 死代码；要么接上功能，要么删掉 |
+| 14 | `AShooterCharacter::Input_VersionWeapon` + `VersionWeaponAction` | **已解决** —— 现在绑定到武器检视（§25.10） | — |
 | 15 | `ApplyFireRecoil` / `TickRecoil` | 只作用在本地控制旋转上 | 符合设计（UE 瞄准由客户端决定），但它只是手感表现，不能当作服务端的精度惩罚 |
 | 16 | `UpdateLocomotionGait` | AnimInstance 变量是**按名字**查找的，且带多个别名 | 改名或缺失会静默失效 —— 发现脚步和速度对不上时，先检查 ABP 变量名 |
 | 17 | `UStatsComponent::ChangeMaxStaminaAmout` | 没有上下限 | 传入负值可能得到 0 或负上限 |
@@ -1666,3 +1675,101 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 ### 24.9 已撤回：第 7 步的试验
 
 第 7 步加过的自动镜片平面、开镜鼠标灵敏度缩放、可选第一人称视野（UE first-person rendering），之后已从代码里撤掉，当前源码中不存在。
+
+---
+
+## 25. 战斗反馈、探头、整备界面 WBP 与切枪/换弹规则（第 8 步之后）
+
+中文改动记录：`Saved/武器逻辑改动记录.md`。第 9–14 步（检视、侧瞄、激光）汇总在 §25.10。
+
+### 25.1 画中画曝光 — `UOpticScopeComponent::ApplyCaptureExposure(const UAttachmentData*)`
+
+在创建 / 重新绑定拍摄机（`BindToOptic`）时以及每帧 `UpdateView()` 中调用。拍摄机不再继承主视角后处理（`bInheritMainViewCameraPostProcessSettings = false`、`PostProcessBlendWeight = 1`、`bAlwaysPersistRenderingState = true`），自己测光：
+
+| 设置 | 值 |
+| --- | --- |
+| Show flags | `EyeAdaptation` 开，`Bloom` / `LocalExposure` / `Grain` 关，`AntiAliasing` 开，`TemporalAA = bPiPTemporalAA`（默认关 → **FXAA**） |
+| 自动曝光 | `AEM_Histogram`，补偿 = `PiPExposureBias`，关掉物理相机曝光，最小/最大亮度 `0.03` / `8`，变亮/变暗速度 `3` / `1`，低/高百分比 `10` / `90` |
+| 局部曝光 / 颗粒 | 高光 / 阴影对比 `1`，细节强度 `1`，胶片颗粒 `0` |
+| GI / 反射 | `bPiPUseLumen`（默认 **true**）→ Lumen GI + Lumen 反射（含 show flags）；false → 无动态 GI + 屏幕空间反射 |
+
+`UAttachmentData` 新字段（仅 Magnified / Variable）：`PiPExposureBias`（EV，UI −4…4，默认 0）、`bPiPUseLumen`（true）、`bPiPTemporalAA`（false）。侧瞄时 `UpdateView()` 也不拍主镜。项目默认自动曝光已在 `DefaultEngine.ini` 关闭（`r.DefaultFeature.AutoExposure=False`）。
+
+### 25.2 命中表面默认值
+
+命中没有物理材质时，`Local_FireWeapon()` 和 `Multicast_FireWeapon_Implementation()` 传给 `Local_Fire` / `FireEffect` 的是 `SurfaceType2`（项目物理表面列表里的 Concrete，原来是 `SurfaceType1`），所以没标表面的几何体会出混凝土弹孔和命中特效。
+
+### 25.3 分方向受击
+
+- 新枚举 `EHitReactDirection { Front, Back, Left, Right }`，`AShooterCharacter` 新增 Montage 组 `HitReactsFront / Back / Left / Right`（`HitReacts` 作为回落）。
+- `DoDamage_Implementation`（服务器）：攻击者有效且不是自己时，`ComputeHitReactDirection(攻击者位置)` 用水平面上与角色朝向的点积（±45° → 前 / 后）和叉积符号（右 / 左）判断。`GetHitReactPool(Direction)` 返回对应组，空则用 `HitReacts`；结果仍为空就不播（原来空数组可能崩溃的问题没了）。
+- `Multicast_HitReact(EHitReactDirection Direction, int32 MontageIndex)` 取代原来的 `(int32)` 签名；远端按同样的组在 3P 网格上播放。
+
+### 25.4 受伤方向环与命中确认标记
+
+| 部分 | 行为 |
+| --- | --- |
+| `Client_ShowDamageIndicator(FVector_NetQuantize InstigatorLocation)`（Client，Reliable） | 服务器发给玩家控制的受害者；广播 `OnDamageIndicator(FVector)` |
+| `Client_ConfirmHit()`（Client，Reliable） | 发给造成伤害的玩家控制的射手；广播 `OnHitConfirmed` |
+| `UShooterReticle` | Pawn 变化时绑定两个委托。`ShowDamageFrom()` 把来源换算成相对视角的偏航，点亮四段 90° 弧之一（前 / 右 / 后 / 左）；`NativePaint` 用 `MakeLines` 画弧，每段在 `DamageRingFadeTime` 内淡出。`ShowHitMarker()` 在 `HitMarkerDuration` 内画四条斜线，并播放 `HitMarkerSound`（2D） |
+| 准星属性 | `DamageRingRadius` 60、`DamageRingThickness` 4、`DamageRingColor` 红、`DamageRingFadeTime` 1.2、`DamageRingGapDegrees` 6、`DamageRingSegments` 16；`HitMarkerInnerOffset` 8、`HitMarkerLength` 10、`HitMarkerThickness` 2、`HitMarkerColor` 白、`HitMarkerDuration` 0.25、`HitMarkerSound` |
+
+准星控件需要放在 HUD 里（`WBP_ShooterOverlay` 里的 `HitFeedbackReticle`）。
+
+### 25.5 每把枪的整备预览偏移
+
+`AWeapon::PreviewRotationOffset`（默认 `(0, 90, 0)`）、`PreviewLocationOffset`（`(0, −28, 0)`）、`PreviewScale`（1）取代 `ALoadoutPreviewRig` 里写死的变换。预览台每行加 `RowSpacing`（90），并开放 `RenderTargetWidth` / `RenderTargetHeight`（512 × 768）和 `OrthoWidth`（180）。
+
+### 25.6 可用 WBP 设计的整备界面
+
+- `AShooterPlayerController::LoadoutScreenClass` —— Tab 创建的界面类（留空 → C++ 的 `ULoadoutScreen`）。
+- `ULoadoutScreen` 设置：`CardClass`（`ULoadoutWeaponCard`）、`AttachmentWindowClass`、`PreviewRigClass`、`WindowDefaultPosition`（x < 1 表示宽度比例）、`NumCards`（3）。配件弹窗默认隐藏；选中卡片时显示，关闭按钮 / 再点一次隐藏。
+- `ULoadoutAttachmentWindow` 设置：`RowClass`（`UAttachmentSlotRow`）、`RowPadding`；监听 `OnAttachmentsChanged` 重建行。
+- 新增 `ULoadoutWeaponCard`（`LoadoutWeaponCard.h/.cpp`）：`GetWeapon()`、`GetCardIndex()`、`IsSelected()`、`IsEmptySlot()`、`EmptyText`、蓝图事件 `OnCardStateChanged(bIsSelected, bIsEmpty, Weapon)`。
+
+| 类 | `BindWidget`（必须的名字） | `BindWidgetOptional` |
+| --- | --- | --- |
+| `ULoadoutScreen` | `PopupLayer`（`UCanvasPanel`，铺满全屏 —— 弹窗靠它的 CanvasSlot 定位和拖动）、`CardContainer`（`UPanelWidget`） | `PreviewImage`（`UImage`）、`Text_Title`、`Text_Hint`（`UTextBlock`） |
+| `ULoadoutAttachmentWindow` | `DragHandle`（`UWidget`）、`SlotList`（`UPanelWidget`） | `CloseButton`（`UButton`）、`Text_WeaponName`、`Text_Empty`（`UTextBlock`） |
+| `ULoadoutWeaponCard` | `Button`（`UButton`） | `Text_Name`（`UTextBlock`）、`Image_Icon`（`UImage`，武器没图标时隐藏） |
+
+WBP 分步说明见 `Saved/背包UI自定义说明.md`。
+
+### 25.7 探头（Q / E）
+
+| 成员 | 默认 | 说明 |
+| --- | --- | --- |
+| `LeanAlpha` | 0 | `BlueprintReadOnly`，各端平滑的 −1（左）… 1（右）；`GetLeanAlpha()`（`BlueprintPure`） |
+| `LeanTarget` | 0 | `Replicated`，`COND_SkipOwner`；本地设置并经 `Server_SetLeanTarget(float)`（可靠，钳制取整到 −1/0/1） |
+| `LeanCameraOffset` | 30 | 1P 相机横移（厘米，相机父空间 Y） |
+| `LeanRollDegrees` | 12 | 1P 相机侧倾 |
+| `LeanInterpSpeed` | 10 | `LeanAlpha` 的 `FInterpTo` 速度 |
+| `LeanSpineDegrees` | 20 | 建议 ABP 用的脊椎角度 |
+| `bLeanToggleMode` | false | false = 按住，true = 按一下切换 |
+| `LeanWallProbeRadius` | 12 | 从相机原位到探头位置的球形扫描（`ECC_Camera`），横移按命中比例缩短 |
+| `LeanLeftAction` / `LeanRightAction` | 空 | 留空 → `EnsureLeanInput()` 创建 `IA_LeanLeft_Runtime` / `IA_LeanRight_Runtime` 和 `IMC_Lean_Runtime`（Q / E，优先级 1） |
+
+流程：输入 → `HandleLeanInput(Dir, bPressed)`（按住：后按的优先；切换：再按同键取消）→ Tick 里 `UpdateLean()`。本地玩家算目标值（`IsLeanBlocked()` 时为 0 —— 通过 `AShooterPlayerController::IsSprinting()` 判断冲刺且速度 > 10 cm/s），更新 `LeanTarget` 并调用服务器 RPC；各端插值 `LeanAlpha`；只有本地玩家移动 `FirstPersonCamera`（BeginPlay 记录的相对变换 + 横移 + 侧倾；Mesh1P 挂在相机下，手臂跟着动）。角色新增了 `GetLifetimeReplicatedProps`。
+
+3P：`ABP_ThirdPerson` 新增 float `LeanAlpha`，在 Event Blueprint Update Animation 的 `UpdateGaitFlags` 之后设置（用 `IsValid(ShooterCharacter)` 保护）；AnimGraph 在 `OrientationWarping` 与接 Output Pose 的最后一个 Component To Local 之间插入 **Transform (Modify) Bone**（`spine_03`，旋转 *Add to Existing*，*Component Space*，Rotation = `MakeRotator(Pitch = LeanAlpha × 20)`），所以 Montage 也会跟着侧倾。用 Pitch 是因为 SK_Mannequin 在组件空间朝 +Y。
+
+### 25.8 射线跟随探头
+
+`AWeapon::WeaponTrace` 现在从发起者当前激活的 `UCameraComponent` 取起点 / 方向（`GetComponentLocation` / `GetComponentRotation`），找不到再用 `PC->GetPlayerViewPoint()`；原来调用 `GetActorEyesViewPoint`，它不管相机，所以探头时子弹打向没探头的中心。服务器 `Server_FireWeapon` 仍直接信任客户端的 `FHitResult`，无需改服务器。侧瞄开镜的激光用 `GetPlayerViewPoint`（相机管理器 = 探头后的镜头），开镜对准用相机变换，二者本来就跟随探头。
+
+### 25.9 删除循环切枪；切枪与换弹打断规则
+
+- 已删除：`Initiate_CycleWeapon`、`Input_CycleWeapon`、`CycleWeaponAction` 及其绑定。`Local_CycleWeapon` / `Server_CycleWeapon` / `Multicast_CycleWeapon` 保留 —— 槽位键还在用。
+- `Initiate_EquipSlot`：和 `CurrentWeapon` 相同的武器被忽略（因为 `Equip` 立即执行，这也覆盖了"拔枪中按同一把的键"）；`Cycling`、`Reloading` 不再阻止；`BoltCycling` 仍阻止。
+- `Local_CycleWeapon` 先调用 `StopActiveEquipMontages()`（停掉记录的 1P/3P 拔枪 Montage 并解绑结束回调），再 `Equip` + `PlayEquipMontage` —— 完整的正常拔枪，时长不变。
+- `OnEquipMontageEnded(Montage, bInterrupted, TWeakObjectPtr<AWeapon>)` 只在绑定的那把枪仍是当前武器且处于 `Cycling` 时设回 `Idle`。
+- `Equip()`：换出的枪正在 `Reloading` 时，`StopReloadMontages(Weapon)` 停掉 Mesh1P、3P 网格和枪身上所有换弹变体（解绑结束回调），设 `Idle` 并重新挂枪。
+- `Server_CycleWeapon`：换弹中不再拒绝；`BoltCycling` 时拒绝；非监听主机请求当前武器时直接返回。
+- `Notify_ReloadWeapon` 只在 `CurrentWeapon` 仍为 `Reloading` 时填弹 → 被切枪打断的换弹不给子弹。`Client_ReloadWeapon(AWeapon* ReloadedWeapon, int32, int32)` 只写入那把换弹的枪；它已不是当前武器时，当前武器不受影响。
+- 换弹中再按换弹仍被忽略（`Initiate_ReloadWeapon`）。
+
+### 25.10 第 9–14 步汇总（检视、侧瞄、激光）
+
+- **检视**：`VersionWeaponAction` → `Initiate_VersionWeapon()` 播放 `FMontageData::InspectMontage1P`（手臂；`WeaponMontages` 里有就连枪身一起），只在本地。开火、开镜、换弹、切枪、开始冲刺时 `CancelInspect()`（0.15 秒淡出）。
+- **侧瞄**：带 `bProvidesCantedSight`（或 `bProvidesLaser`）的配件提供 `CantedSightSocketName`、`CantedAimFOV`、`CantedEyeDistance`。开镜时 `SwitchZoomAction` 循环：主镜各档 → 侧瞄 → 主镜第一档；切换瞬间完成；`AWeapon::bRememberCanted` 让下次开镜回到侧瞄；触发 `OnCantedSightChanged`；侧瞄时主镜画中画关闭。
+- **激光**：`bProvidesLaser` 添加光束网格和贴花光点（`LaserSocketName`、`LaserBeamMesh/Material`、`LaserDotDecalMaterial`、`LaserRange`、`LaserBrightness`、`LaserColor`、`LaserDotSize`、`LaserDotSizePerMeter`、`bHideBeamWhenAiming`）。`bLaserOn` 同步；手电键同时开关手电和激光（`Initiate_ToggleLaser` / `Server_ToggleLaser`）；进入侧瞄调用 `Initiate_SetLaserOn(true)`。只有侧瞄开镜时光束指向准星，其他时候沿插槽方向。

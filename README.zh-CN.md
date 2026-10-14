@@ -42,16 +42,17 @@
 | 移动模式 | 静步 / 冲刺均为切换式；速度倍率相乘（静步 / 下蹲 / 开镜）；开镜或下蹲会打断冲刺；耐力耗尽自动退出冲刺 | [ShooterPlayerController.cpp](<Source/FPS/Private/ShooterPlayerController.cpp>) |
 | 耐力 | 服务器权威的消耗/回复、跳跃消耗、`OnStaminaDepleted` 广播、耐力条 HUD | [StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
 | 移动手感 | `GroundSpeed`、慢走步态 BlendSpace 替换（`Strafe_Walking`）、每帧把 Locomotion 播放速率写进 AnimBP | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
-| 武器 | 长枪 / 手枪 / 近战三类；主 / 副 / 手枪 / 近战四个槽位；循环切枪；切枪 Montage；切枪自动关镜 | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| 武器 | 长枪 / 手枪 / 近战三类；主 / 副 / 手枪 / 近战四个槽位，用数字键选择（循环切枪已删除）；切枪 Montage；拔枪/换弹可被打断（见 §10.2）；切枪自动关镜 | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 | 射击 | 球形 Sweep 命中判定、单发 / 全自动（每把枪可选**切换开火模式**：`bCanSwitchFireMode`，`FireType` 已同步）、拉栓（`BoltCycling` 状态）、**后坐力弹道 + 回正 + 配件修正接口**、服务端射速节流、蓝图枪口/命中特效、弹匣与备弹 | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>)、[RecoilModifierInterface.h](<Source/FPS/Public/Interface/RecoilModifierInterface.h>) |
 | 换弹 | 1P/3P 换弹 Montage，**分种类**（首次 / 空仓 / 战术，没配就回落到默认 Montage），换弹和拉栓时左手 IK 渐隐、动画通知填弹、空仓自动换弹、C++ 动画通知把枪重新握到手上 | [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>)、[AnimNotify_WeaponGrip.cpp](<Source/FPS/Private/AnimNotify/AnimNotify_WeaponGrip.cpp>) |
 | 治疗 | 治疗 Montage（播放期间隐藏武器）、服务端钳制治疗量、多播给其他玩家播 3P 动画 | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
 | 瞄准 ADS | `bAiming` 复制（跳过 Owner）、`OnAimStateChanged` 广播、C++ 驱动开镜：`AimAlpha` 按武器开镜时间推进（配件可乘倍率），Mesh1P 从**每把枪的腰射偏移**插值到瞄具对准位置（**眼距**可配），相机 FOV 在 C++ 里插值（瞄具 `AimFOV` → 枪 `AimFeildOfView` → 默认）；可选枪身视觉后坐（默认关）。见 §10.1 | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 | 狙击镜 | **旧方案，已停用。** `USniperScopeComponent` 只会让自己保持关闭；狙击枪和其他枪一样按装的瞄具走（见 §10.1） | [SniperScopeComponent.cpp](<Source/FPS/Private/Weapon/SniperScopeComponent.cpp>) |
 | 伤害 | 骨骼名 → 命中部位（头 / 躯干 / 四肢）→ 倍率（爆头 ×2、四肢 ×0.75），服务端结算 | [ShooterType.cpp](<Source/FPS/Private/ShooterType/ShooterType.cpp>)、[StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
+| 探头 | Q / E 左右探头（按住，可选切换模式），同步 `LeanTarget` + 平滑 `LeanAlpha`，1P 相机横移 + 侧倾并防穿墙，冲刺时禁止，3P 在 `ABP_ThirdPerson` 里转脊椎；射线跟随探头后的镜头 | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>)、[Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>) |
 | 动画驱动 | `AO_Yaw`、`MovementOffsetYaw`、`TurningStatus`、`FABRIK_SocketTransform`、`FPlayerAnim` 结构体注入 ABP | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>)、[WeaponData.h](<Source/FPS/Public/WeaponData.h>) |
-| 受击反馈 | `HitReacts` 随机 Montage，NetMulticast 广播 | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
-| UI | 动态准星材质（跟随武器）、弹药/备弹 + 武器图标 HUD、血条、耐力条、瞄准时隐藏准星 | [ShooterReticle.cpp](<Source/FPS/Private/Ui/ShooterReticle.cpp>)、[ReserveAmmo.cpp](<Source/FPS/Private/Ui/ReserveAmmo.cpp>) |
+| 受击反馈 | **分方向**受击动画（前 / 后 / 左 / 右四组，空的回落到 `HitReacts`），NetMulticast 广播；被打的人看到受伤方向环，开枪的人看到命中确认标记 | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
+| UI | 动态准星材质（跟随武器）、弹药/备弹 + 武器图标 HUD、血条、耐力条、瞄准时隐藏准星，`UShooterReticle` 绘制**受伤方向环**和**命中确认标记** | [ShooterReticle.cpp](<Source/FPS/Private/Ui/ShooterReticle.cpp>)、[ReserveAmmo.cpp](<Source/FPS/Private/Ui/ReserveAmmo.cpp>) |
 | 武器配件 | 每个槽位一份数据资产的配件、服务器校验白名单、每把枪的默认配件、网络同步、1P/3P 实时生成模型，并重定向握把 / 枪口 / 瞄准插槽 | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[AttachmentData.h](<Source/FPS/Public/Weapon/AttachmentData.h>) |
 | 配件界面 | 游戏内配件菜单（一个槽位一行）、Tab 整备界面（三把枪预览渲染 + 可拖动配件窗） | [AttachmentMenu.cpp](<Source/FPS/Private/Ui/AttachmentMenu.cpp>)、[LoadoutScreen.cpp](<Source/FPS/Private/Ui/LoadoutScreen.cpp>) |
 | 瞄具与手电 | 红点 / 全息对准瞄具自己的 Socket、只改相机 FOV；只有能用的 `Magnified` / `Variable` 瞄具才做画中画放大（可变倍率可切档），手电是按配件数据生成的聚光灯 | [OpticScopeComponent.cpp](<Source/FPS/Private/Weapon/OpticScopeComponent.cpp>) |
@@ -121,7 +122,7 @@ FPS/
 4. **角色必需配置**（`BP_ShooterCharacter`，代码里有 `checkf` 强校验）：
    - `Combat → WeaponData` 必须指向 `DA_WeaponData`，否则 `GetWeaponAttachPoint` 会触发 `checkf` 断言。
    - `Combat → DefaultWeaponClass` 至少填一把武器蓝图。
-   - 输入字段（`IA_FireWeapon`、`IA_CycleWeapon`、`IA_ReloadWeapon`、`IA_AimWeapon`、`IA_Heal` 以及四个 `IA_Equip*`）都要赋值。
+   - 输入字段（`IA_FireWeapon`、`IA_ReloadWeapon`、`IA_AimWeapon`、`IA_Heal` 以及四个 `IA_Equip*`）都要赋值。
    - `HealMontage` 必须赋值，否则按治疗键只会打一条 Warning 且没有任何效果；`HealAmout` 默认 30。
    - 蓝图变量 `AdsMesh1PLoc`（`FVector`）必须存在 —— ADS 瞄具对齐会直接写这个变量。
    - `HitReacts` 至少填一个受击 Montage，否则 `Multicast_HitReact` 的随机下标会越界（当前代码未做空数组保护）。
@@ -168,7 +169,8 @@ FPS/
 | 瞄准 | `IA_AimWeapon` | 角色 | `Started` | 切换 ADS；通过 `OnAimStateChanged` 广播（蓝图 `OnAim`、速度、步态） |
 | 换弹 | `IA_ReloadWeapon` | 角色 | `Started` | 播放换弹 Montage，由动画通知填弹 |
 | 治疗 | `IA_Heal` | 角色 | `Started` | 播放 `HealMontage`，期间隐藏武器；服务端钳制并结算治疗量 |
-| 切枪 | `IA_CycleWeapon` | 角色 | `Started` | 循环到下一把武器，并自动关镜 |
+| 左 / 右探头 | `LeanLeftAction` / `LeanRightAction`（留空 → 运行时创建 `IA_LeanLeft_Runtime` / `IA_LeanRight_Runtime`，绑 **Q / E**） | 角色 | `Started` / `Completed` | 按住探头（`bLeanToggleMode` = 按一下切换）；冲刺移动中禁止 |
+| 检视武器 | `IA_VersionWeapon` → `VersionWeaponAction` | 角色 | `Started` | 播放武器的 `InspectMontage1P`（只在本地 1P）；开火、开镜、换弹、切枪、冲刺会打断 |
 | 主武器 | `IA_EquipMainWeapon` | 角色 | `Started` | 切到第一把长枪，并自动关镜 |
 | 副武器 | `IA_EquipSecondaryWeapon` | 角色 | `Started` | 切到第二把长枪，并自动关镜 |
 | 手枪 | `IA_EquipPistol` | 角色 | `Started` | 切到第一把手枪，并自动关镜 |
@@ -178,7 +180,7 @@ FPS/
 
 > 说明：`IMC_Shooter` 中存在 `LeftMouseButton`、`RightMouseButton`、`SpaceBar`、`LeftControl`、`LeftShift`、`LeftAlt`、`One`~`Four`、`R`、`Q`、`E` 及手柄扳机等按键；上表"哪个键对应哪个动作"是常见配置，**最终以编辑器内 `IMC_Shooter` 的实际绑定为准**。
 
-> `IA_VersionWeapon` / `Input_VersionWeapon()` 在 C++ 中已声明但**从未绑定**，属于占位代码。
+> 循环切枪已**删除**（C++ 绑定、`Input_CycleWeapon`、`Initiate_CycleWeapon`、`CycleWeaponAction`）。如果 `IMC_Shooter` 里还有 `IA_CycleWeapon` 映射（以及该资产），可以删掉。切枪只用槽位键。
 
 ---
 
@@ -245,7 +247,8 @@ graph TD
 
 - `EWeaponStatus::Firing` 未被任何代码写入。
 - `AimTimeline` 仍然声明但没用；开镜现在由 C++ 的 `AimAlpha` / `AimAlignAlpha` 驱动（把 `bDriveAdsInCode` 关掉可回到旧的蓝图 `AdsMesh1PLoc` 方案）。
-- `Input_VersionWeapon()` 是空函数，`VersionWeaponAction` 也从未被绑定 —— 死代码。
+- 如果给 `LeanLeftAction` / `LeanRightAction` 填了自己的资产，需要自己在 `IMC_Shooter` 里映射按键；只有字段为空时才会运行时创建 Q/E 映射。Q/E 可能和 `IMC_Shooter` 里的其他映射冲突。
+- 3P 脊椎探头在 `ABP_ThirdPerson` 里（`spine_03` 上的 Transform (Modify) Bone，Pitch = `LeanAlpha` × 20）；换骨架后方向不对就把符号取反。
 - 后坐力是纯本地表现，不能当作服务端的"精度惩罚"使用。
 - 步态/播放速率是通过**变量名**写进 AnimInstance 的（兼容 `PlayRate` / `LocomotionPlayRate` / `BS_PlayRate` 等别名），改名后会静默失效。
 - `UStatsComponent::DeathState` 现在会被治疗逻辑**读取**，但仍然从未被写入 —— 死亡流程依旧缺失；`OnRep_DeathState` 为空，`ChangeHealthByAmout` 恒返回 `false`。
@@ -295,6 +298,33 @@ graph TD
 | 腰射位置 | 腰射目标 = Mesh1P 默认位置（BeginPlay 记下）+ 武器偏移；旋转偏移在开镜时过渡回默认旋转；每帧读当前武器，切枪即生效 | 武器 → `HipMesh1POffset`、`HipMesh1PRotationOffset` |
 | 眼距 | 开镜时把瞄准点放到镜头正前方的眼距处：瞄具 `EyeDistance`（勾了 `bOverridesEyeDistance`）→ 武器 `AdsEyeDistance` → 0 = 保持瞄准点本来的距离（按腰射姿态算，不会漂）。之前的 `AdsOffset` 已**删除** | 武器 → `AdsEyeDistance`；配件 → `bOverridesEyeDistance`、`EyeDistance` |
 | 视觉后坐 | 只在本地给 Mesh1P 加的枪身后坐，叠在图案后坐上（子弹仍跟准星），受配件和开镜倍率影响。**默认关** | 角色 → `bEnableVisualRecoil`；武器 → `VisualRecoilLocation`、`VisualRecoilRotation`、`VisualRecoilAimMultiplier`、`VisualRecoilKickSpeed`、`VisualRecoilRecoverySpeed` |
+
+### 10.2 战斗反馈、探头、整备界面与切枪规则（第 8 步之后）
+
+中文改动记录：`Saved/武器逻辑改动记录.md`；整备界面 WBP 说明：`Saved/背包UI自定义说明.md`。
+
+| 方面 | 行为 | 在哪里配置 |
+| --- | --- | --- |
+| 画中画曝光 | 倍镜拍摄机自己用 **Histogram 自动曝光**测光（亮度范围 0.03–8，低/高百分比 10/90），不继承主视角后处理，关掉泛光 / 局部曝光 / 胶片颗粒 / 物理相机曝光，默认用 **Lumen** GI + 反射。抗锯齿默认 **FXAA**，勾选后才用 TAA。项目默认自动曝光已关（`r.DefaultFeature.AutoExposure=False`） | 配件 → `PiPExposureBias`（EV，−4…4）、`bPiPUseLumen`（默认开）、`bPiPTemporalAA`（默认关 = FXAA） |
+| 弹孔贴花 | 命中没有物理材质时，传给 `FireEffect` 的表面类型默认是 `SurfaceType2`（**Concrete**，原来是 `SurfaceType1`） | 物理材质 / 蓝图特效表 |
+| 分方向受击 | 服务器按攻击者位置算前 / 后 / 左 / 右（±45° 扇区），多播 `(方向, 下标)`；某组为空时回落到 `HitReacts` | 角色 → `HitReactsFront`、`HitReactsBack`、`HitReactsLeft`、`HitReactsRight`、`HitReacts` |
+| 受伤方向环 | 被打的人收到 `Client_ShowDamageIndicator(攻击者位置)` → `OnDamageIndicator`；`UShooterReticle` 按视角朝向点亮朝向攻击者的那一象限弧（前 / 右 / 后 / 左），每段独立淡出。该控件要放在 HUD 里（例如 `WBP_ShooterOverlay` 里的 `HitFeedbackReticle`） | 准星 → `DamageRingRadius`、`DamageRingThickness`、`DamageRingColor`、`DamageRingFadeTime`、`DamageRingGapDegrees`、`DamageRingSegments` |
+| 命中确认标记 | 开枪的人收到 `Client_ConfirmHit()` → `OnHitConfirmed`；准星在中心画四条斜线（可选音效） | 准星 → `HitMarkerInnerOffset`、`HitMarkerLength`、`HitMarkerThickness`、`HitMarkerColor`、`HitMarkerDuration`、`HitMarkerSound` |
+| 整备预览 | 整备界面里每把枪的预览姿态按枪单独配置；预览台的渲染目标和间距可调 | 武器 → `PreviewRotationOffset`（0,90,0）、`PreviewLocationOffset`（0,−28,0）、`PreviewScale`；预览台 → `RenderTargetWidth/Height`、`OrthoWidth`、`RowSpacing` |
+| 整备界面 WBP | `ULoadoutScreen`、`ULoadoutAttachmentWindow` 和新的 `ULoadoutWeaponCard` 都可以用 WBP 设计（按名字绑定，见下表）；类字段留空就用 C++ 默认布局。配件弹窗默认关闭，并有关闭按钮 | 控制器 → `LoadoutScreenClass`；界面 → `CardClass`、`AttachmentWindowClass`、`PreviewRigClass`、`WindowDefaultPosition`、`NumCards`；弹窗 → `RowClass`、`RowPadding` |
+| 探头（Q / E） | 按住探头（或切换模式）。`LeanTarget` 通过 `Server_SetLeanTarget` 同步（跳过拥有者）；各端都插值 `LeanAlpha`（−1…1）。本地 1P 相机横移 `LeanCameraOffset` 并侧倾 `LeanRollDegrees`，球形扫描在墙边缩短横移。冲刺移动中禁止。3P：`ABP_ThirdPerson` 读 `LeanAlpha` 转 `spine_03` | 角色 → `LeanCameraOffset`（30）、`LeanRollDegrees`（12）、`LeanInterpSpeed`（10）、`LeanSpineDegrees`（20）、`bLeanToggleMode`、`LeanWallProbeRadius`（12）、`LeanLeftAction`、`LeanRightAction` |
+| 射线跟随探头 | `AWeapon::WeaponTrace` 从角色当前激活的相机出发（位置 + 旋转，即玩家实际画面，含探头和开镜），找不到再用 `GetPlayerViewPoint`；不再使用 `GetActorEyesViewPoint` | — |
+| 切枪打断 | 拔枪中按**另一把**的键：停掉旧拔枪动画，新枪完整走一遍正常拔枪（时长一样）；拔枪中按**同一把**的键：忽略。换弹中切枪：停掉所有换弹动画（手臂、身体、枪身），**不给子弹**。拉栓中仍不能切枪 | — |
+| 换弹 | 换弹中再按换弹：忽略。`Notify_ReloadWeapon` 只有武器仍在 `Reloading` 才填弹；`Client_ReloadWeapon` 现在带上武器，迟到的结果不会落到新枪上 | — |
+| 检视、侧瞄、激光 | `VersionWeaponAction` 播放 `InspectMontage1P`；带 `bProvidesCantedSight` / `bProvidesLaser` 的配件提供 45° 侧瞄（切倍率越过主镜最后一档进入，每把枪记住），以及用手电键开关的激光束 + 光点（进侧瞄自动开） | `FMontageData::InspectMontage1P`；配件 → `CantedSightSocketName`、`CantedAimFOV`、`CantedEyeDistance`、`LaserSocketName`、`LaserColor`、`LaserBrightness`、`LaserRange`、`LaserDotSize`、`bHideBeamWhenAiming` |
+
+整备界面 WBP 必须的控件名（`BindWidget` = 必须存在且名字完全一致，可选 = 可以不放）：
+
+| 控件类 | 必需 | 可选 |
+| --- | --- | --- |
+| `ULoadoutScreen` | `PopupLayer`（CanvasPanel，铺满全屏）、`CardContainer`（任意面板） | `PreviewImage`（Image）、`Text_Title`、`Text_Hint`（TextBlock） |
+| `ULoadoutAttachmentWindow` | `DragHandle`（任意控件）、`SlotList`（面板，如 VerticalBox / ScrollBox） | `CloseButton`（Button）、`Text_WeaponName`、`Text_Empty`（TextBlock） |
+| `ULoadoutWeaponCard` | `Button`（Button） | `Text_Name`（TextBlock）、`Image_Icon`（Image）；蓝图事件 `OnCardStateChanged(bSelected, bEmpty, Weapon)` |
 
 ## 11. 延伸阅读
 
