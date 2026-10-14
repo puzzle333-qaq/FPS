@@ -623,6 +623,10 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	{
 		ShooterInputComponent->BindAction(SwitchFireModeAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchFireMode);
 	}
+	if (VersionWeaponAction)
+	{
+		ShooterInputComponent->BindAction(VersionWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_VersionWeapon);
+	}
 
 }
 
@@ -798,6 +802,11 @@ void AShooterCharacter::EquipMeleeWeapon()
 void AShooterCharacter::EquipPistolWeapon()
 {
 	if (IsValid(Combat)) Combat->Initiate_EquipPistolWeapon();
+}
+
+void AShooterCharacter::VersionWeapon()
+{
+	if (IsValid(Combat)) Combat->Initiate_VersionWeapon();
 }
 
 bool AShooterCharacter::PlayHealMontage(USkeletalMeshComponent* HealMesh, bool bBindEnd)
@@ -1034,7 +1043,7 @@ void AShooterCharacter::Input_Heal()
 
 void AShooterCharacter::Input_VersionWeapon()
 {
-
+	VersionWeapon();   // 第 9 步：检视武器
 }
 
 void AShooterCharacter::HandleAimStateChanged(bool bIsAiming)

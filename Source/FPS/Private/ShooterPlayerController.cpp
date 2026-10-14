@@ -219,6 +219,14 @@ void AShooterPlayerController::Input_Sprint()
 {
 	bIsSprinting = !bIsSprinting;
 	if (bIsSprinting) bIsWalking = false;   // 冲刺会打断静步
+	// 第 9 步：开始冲刺时打断检视
+	if (bIsSprinting)
+	{
+		if (UCombatComponent* SprintCombat = UCombatComponent::FindCombatComponent(GetPawn()))
+		{
+			SprintCombat->CancelInspect();
+		}
+	}
 	UpdateMovementSpeed();
 }
 

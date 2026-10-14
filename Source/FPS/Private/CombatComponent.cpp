@@ -379,6 +379,7 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
 void UCombatComponent::Initiate_CycleWeapon()
 {
+	CancelInspect();
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
@@ -571,6 +572,7 @@ void UCombatComponent::Multicast_CycleWeapon_Implementation(int32 WeaponIndex)
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
+	CancelInspect();
 	if (!IsValid(CurrentWeapon))return;
 	bTriggerPressed = true;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
@@ -764,6 +766,7 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 
 void UCombatComponent::Initiate_ReloadWeapon()
 {
+	CancelInspect();
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
@@ -1102,6 +1105,7 @@ void UCombatComponent::Server_SetFireMode_Implementation(EFireType NewFireType)
 
 void UCombatComponent::Initiate_Aim_Pressed()
 {
+	CancelInspect();
 	const bool bNextAim = !bAiming;
 	Local_Aim(bNextAim);
 	Server_Aim(bNextAim);
@@ -1147,6 +1151,7 @@ AWeapon* UCombatComponent::FindWeaponForSlot(EWeaponSlot Slot) const
 
 void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 {
+	CancelInspect();
 	AWeapon* Weapon = FindWeaponForSlot(Slot);
 	if (!IsValid(Weapon) || Weapon == CurrentWeapon) return;
 
@@ -1197,6 +1202,75 @@ void UCombatComponent::Initiate_EquipMeleeWeapon()
 void UCombatComponent::Initiate_EquipPistolWeapon()
 {
 	Initiate_EquipSlot(EWeaponSlot::Pistol);
+}
+
+void UCombatComponent::Initiate_VersionWeapon()
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
+	// 只有空闲时能检视：不在换弹、拉栓、切枪、开火、开镜
+	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Idle) return;
+	if (bAiming || bTriggerPressed) return;
+	if (IsInspecting()) return;   // 正在检视就不重新开始
+
+	const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType);
+	UAnimMontage* InspectMontage = MontageData ? MontageData->InspectMontage1P.Get() : nullptr;
+	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+	UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+	if (!IsValid(InspectMontage) || !IsValid(AnimInstance)) return;
+	if (AnimInstance->Montage_Play(InspectMontage) <= 0.f) return;
+
+	ActiveInspectMontage = InspectMontage;
+	InspectWeapon = CurrentWeapon;
+	ActiveInspectWeaponMontage = nullptr;
+
+	// 枪身检视（可选）：WeaponMontages 里也填了就同时播
+	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+	{
+		USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
+		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
+		if (IsValid(WeaponMontageData->InspectMontage1P) && IsValid(WeaponAnim)
+			&& WeaponAnim->Montage_Play(WeaponMontageData->InspectMontage1P) > 0.f)
+		{
+			ActiveInspectWeaponMontage = WeaponMontageData->InspectMontage1P;
+		}
+	}
+}
+
+bool UCombatComponent::IsInspecting() const
+{
+	UAnimMontage* Montage = ActiveInspectMontage.Get();
+	if (!IsValid(Montage)) return false;
+	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+	UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+	return IsValid(AnimInstance) && AnimInstance->Montage_IsPlaying(Montage);
+}
+
+void UCombatComponent::CancelInspect()
+{
+	constexpr float InspectBlendOut = 0.15f;   // 短暂淡出，避免手臂突然跳回
+
+	if (UAnimMontage* Montage = ActiveInspectMontage.Get())
+	{
+		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+		UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+		if (IsValid(AnimInstance) && AnimInstance->Montage_IsPlaying(Montage))
+		{
+			AnimInstance->Montage_Stop(InspectBlendOut, Montage);
+		}
+	}
+	if (UAnimMontage* WeaponMontage = ActiveInspectWeaponMontage.Get())
+	{
+		AWeapon* Weapon = InspectWeapon.Get();
+		USkeletalMeshComponent* WeaponMesh = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
+		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
+		if (IsValid(WeaponAnim) && WeaponAnim->Montage_IsPlaying(WeaponMontage))
+		{
+			WeaponAnim->Montage_Stop(InspectBlendOut, WeaponMontage);
+		}
+	}
+	ActiveInspectMontage = nullptr;
+	ActiveInspectWeaponMontage = nullptr;
+	InspectWeapon = nullptr;
 }
 
 void UCombatComponent::Notify_ReloadWeapon()
@@ -1262,8 +1336,6 @@ AWeapon* UCombatComponent::SpawnWeapon(TSubclassOf<AWeapon> WeaponClass) const
 	return Weapon;
 }
 
-
-// ================= 配件 =================
 
 const TArray<AWeapon*>& UCombatComponent::GetInventory() const
 {

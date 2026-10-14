@@ -84,6 +84,17 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_EquipPistolWeapon();
+	
+	// 第 9 步：检视武器。只在本地第一人称播放，不走网络
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_VersionWeapon();
+
+	// 打断检视（开火、开镜、换弹、切枪、冲刺都会调用）。没在检视时什么都不做
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void CancelInspect();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	bool IsInspecting() const;
 
 	void Notify_ReloadWeapon();
 
@@ -217,6 +228,12 @@ private:
 	void OnBoltMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	// 其他玩家看到的第三人称拉栓，纯表现
 	void PlayBoltMontage3P();
+
+	// ---------- 检视（第 9 步） ----------
+	// 正在播的检视蒙太奇（手臂 / 枪身），打断时停掉
+	TWeakObjectPtr<UAnimMontage> ActiveInspectMontage;
+	TWeakObjectPtr<UAnimMontage> ActiveInspectWeaponMontage;
+	TWeakObjectPtr<AWeapon> InspectWeapon;
 	FTimerHandle BoltTimer3P;
 	// 服务器：拉栓结束前拒绝下一发和换弹
 	float ServerBoltEndTime = 0.f;

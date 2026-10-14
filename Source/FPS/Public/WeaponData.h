@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -87,6 +87,11 @@ struct FMontageData
 	// 拉栓/泵动。填了它，这把枪每打一发都要播完它才能开下一枪（狙击、泵动霰弹用）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bolt")
 	TObjectPtr<UAnimMontage>BoltMontage = nullptr;
+
+	// 第 9 步：检视武器（只在自己的第一人称播放，不同步）。
+	// 填在 FirstPersonMontages（手臂）里；想让枪身也动，在 WeaponMontages 里同样填一个
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspect")
+	TObjectPtr<UAnimMontage>InspectMontage1P = nullptr;
 
 	// 按换弹种类挑蒙太奇：First -> (Empty 或 Tactical) -> ReloadMontage，哪个没填就往后退
 	UAnimMontage* ResolveReloadMontage(EReloadType Type) const
