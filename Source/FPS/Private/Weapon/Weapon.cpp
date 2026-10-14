@@ -457,9 +457,20 @@ void AWeapon::WeaponTrace(FHitResult& OutHit, float TraceLength)
 	ResponseParams.CollisionResponse.SetResponse(ECC_WorldDynamic, ECR_Block);
 	ResponseParams.CollisionResponse.SetResponse(ECC_PhysicsBody, ECR_Block);
 
+	// 用玩家实际看到的镜头（含探头横移/侧倾、开镜位置）做射线起点和方向。
+	// 以前用 GetActorEyesViewPoint = 胶囊眼高 + 控制旋转，探头时子弹还从没探头的中心打出去。
 	FVector EyesWorldLocation;
 	FRotator EyesWorldRotation;
-	PC->GetActorEyesViewPoint(EyesWorldLocation, EyesWorldRotation);
+	const UCameraComponent* ViewCamera = InstigatorPawn->FindComponentByClass<UCameraComponent>();
+	if (IsValid(ViewCamera) && ViewCamera->IsActive())
+	{
+		EyesWorldLocation = ViewCamera->GetComponentLocation();
+		EyesWorldRotation = ViewCamera->GetComponentRotation();
+	}
+	else
+	{
+		PC->GetPlayerViewPoint(EyesWorldLocation, EyesWorldRotation);
+	}
 	const FVector EyesWorldDirection = UKismetMathLibrary::GetForwardVector(EyesWorldRotation);
 
 	const FVector Start = EyesWorldLocation;
