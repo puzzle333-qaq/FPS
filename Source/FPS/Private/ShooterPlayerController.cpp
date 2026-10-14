@@ -104,7 +104,8 @@ void AShooterPlayerController::Input_ToggleLoadout()
 
 	if (!IsValid(LoadoutScreen))
 	{
-		LoadoutScreen = CreateWidget<ULoadoutScreen>(this, ULoadoutScreen::StaticClass());
+		UClass* ScreenClass = LoadoutScreenClass ? LoadoutScreenClass.Get() : ULoadoutScreen::StaticClass();
+		LoadoutScreen = CreateWidget<ULoadoutScreen>(this, ScreenClass);
 		if (!IsValid(LoadoutScreen)) return;
 	}
 

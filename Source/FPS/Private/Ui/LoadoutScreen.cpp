@@ -1,6 +1,12 @@
 #include "Ui/LoadoutScreen.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 
 #include "Ui/LoadoutPreviewRig.h"
+#include "Ui/LoadoutWeaponCard.h"
+#include "Components/PanelWidget.h"
+#include "Components/PanelSlot.h"
+#include "Components/HorizontalBox.h"
 #include "Ui/AttachmentSlotRow.h"
 #include "CombatComponent.h"
 #include "Weapon/Weapon.h"
@@ -60,7 +66,19 @@ void ULoadoutAttachmentWindow::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 	SetIsFocusable(false);
-	BuildLayout();
+	// WBP 子类：树里已经有控件（绑定好了），不再生成默认布局
+	if (!WidgetTree || !WidgetTree->RootWidget)
+	{
+		BuildLayout();
+	}
+	if (IsValid(CloseButton))
+	{
+		CloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::OnCloseClicked);
+	}
+	if (IsValid(Text_Empty))
+	{
+		Text_Empty->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void ULoadoutAttachmentWindow::NativeDestruct()
@@ -71,8 +89,7 @@ void ULoadoutAttachmentWindow::NativeDestruct()
 
 void ULoadoutAttachmentWindow::BuildLayout()
 {
-	if (bBuilt || !WidgetTree) return;
-	bBuilt = true;
+	if (!WidgetTree) return;
 
 	USizeBox* RootSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("WindowSize"));
 	RootSize->SetMinDesiredWidth(420.f);
@@ -93,38 +110,54 @@ void ULoadoutAttachmentWindow::BuildLayout()
 	UVerticalBox* Body = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Body"));
 	Frame->AddChild(Body);
 
-	DragHandle = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DragHandle"));
+	UBorder* Handle = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DragHandle"));
 	FSlateBrush HandleBrush;
 	HandleBrush.DrawAs = ESlateBrushDrawType::Box;
 	HandleBrush.TintColor = FSlateColor(FLinearColor(0.16f, 0.13f, 0.07f, 1.f));
-	DragHandle->SetBrush(HandleBrush);
-	DragHandle->SetPadding(FMargin(10.f, 8.f, 10.f, 8.f));
-	if (UVerticalBoxSlot* HandleSlot = Body->AddChildToVerticalBox(DragHandle))
+	Handle->SetBrush(HandleBrush);
+	Handle->SetPadding(FMargin(10.f, 8.f, 10.f, 8.f));
+	DragHandle = Handle;
+	if (UVerticalBoxSlot* HandleSlot = Body->AddChildToVerticalBox(Handle))
 	{
 		HandleSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 	}
+
+	UHorizontalBox* HandleRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HandleRow"));
+	Handle->AddChild(HandleRow);
 
 	Text_WeaponName = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_WeaponName"));
 	Text_WeaponName->SetFont(LoadoutFont(20));
 	Text_WeaponName->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.82f, 0.35f, 1.f)));
 	Text_WeaponName->SetText(NSLOCTEXT("Loadout", "Attachments", "配件"));
-	DragHandle->AddChild(Text_WeaponName);
+	if (UHorizontalBoxSlot* NameSlot = HandleRow->AddChildToHorizontalBox(Text_WeaponName))
+	{
+		NameSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		NameSlot->SetVerticalAlignment(VAlign_Center);
+	}
+
+	// Close button (X) on the title bar.
+	CloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CloseButton"));
+	CloseButton->SetStyle(TransparentButtonStyle());
+	UTextBlock* CloseText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CloseText"));
+	CloseText->SetText(FText::FromString(TEXT("X")));
+	CloseText->SetFont(LoadoutFont(18));
+	CloseText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.82f, 0.35f, 1.f)));
+	CloseButton->AddChild(CloseText);
+	if (UHorizontalBoxSlot* CloseSlot = HandleRow->AddChildToHorizontalBox(CloseButton))
+	{
+		CloseSlot->SetVerticalAlignment(VAlign_Center);
+		CloseSlot->SetPadding(FMargin(12.f, 0.f, 0.f, 0.f));
+	}
 
 	Text_Empty = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Empty"));
 	Text_Empty->SetFont(LoadoutFont(14));
 	Text_Empty->SetColorAndOpacity(FSlateColor(FLinearColor(0.75f, 0.75f, 0.75f, 1.f)));
 	Text_Empty->SetText(NSLOCTEXT("Loadout", "NoSlots", "这把枪没有配件槽"));
-	Text_Empty->SetVisibility(ESlateVisibility::Collapsed);
 	Body->AddChildToVerticalBox(Text_Empty);
 
-	SlotList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SlotList"));
-	Body->AddChildToVerticalBox(SlotList);
-
-	RowClass = LoadClass<UAttachmentSlotRow>(nullptr, TEXT("/Game/FPS/UI/WBP_AttachmentSlotRow.WBP_AttachmentSlotRow_C"));
-	if (!RowClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Loadout attachment window could not load WBP_AttachmentSlotRow."));
-	}
+	UVerticalBox* List = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SlotList"));
+	Body->AddChildToVerticalBox(List);
+	SlotList = List;
 }
 
 void ULoadoutAttachmentWindow::ShowForWeapon(AWeapon* InWeapon)
@@ -132,6 +165,23 @@ void ULoadoutAttachmentWindow::ShowForWeapon(AWeapon* InWeapon)
 	SetVisibility(ESlateVisibility::Visible);
 	BindWeapon(InWeapon);
 	RebuildSlots();
+}
+
+void ULoadoutAttachmentWindow::HideWindow()
+{
+	bDragging = false;
+	SetVisibility(ESlateVisibility::Collapsed);
+	BindWeapon(nullptr);
+}
+
+bool ULoadoutAttachmentWindow::IsWindowShown() const
+{
+	return GetVisibility() != ESlateVisibility::Collapsed && GetVisibility() != ESlateVisibility::Hidden;
+}
+
+void ULoadoutAttachmentWindow::OnCloseClicked()
+{
+	HideWindow();
 }
 
 void ULoadoutAttachmentWindow::SetWindowPosition(FVector2D Position)
@@ -191,6 +241,14 @@ void ULoadoutAttachmentWindow::RebuildSlots()
 	{
 		Text_Empty->SetVisibility(Slots.Num() == 0 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
+	if (!RowClass)
+	{
+		RowClass = LoadClass<UAttachmentSlotRow>(nullptr, TEXT("/Game/FPS/UI/WBP_AttachmentSlotRow.WBP_AttachmentSlotRow_C"));
+		if (!RowClass)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Loadout attachment window has no RowClass and could not load WBP_AttachmentSlotRow."));
+		}
+	}
 	if (!bHasWeapon || !RowClass) return;
 
 	AWeapon* Target = Weapon.Get();
@@ -199,9 +257,10 @@ void ULoadoutAttachmentWindow::RebuildSlots()
 		if (UAttachmentSlotRow* Row = CreateWidget<UAttachmentSlotRow>(this, RowClass))
 		{
 			Row->Setup(Target, SlotInfo);
-			if (UVerticalBoxSlot* RowSlot = SlotList->AddChildToVerticalBox(Row))
+			UPanelSlot* RowSlot = SlotList->AddChild(Row);
+			if (UVerticalBoxSlot* VSlot = Cast<UVerticalBoxSlot>(RowSlot))
 			{
-				RowSlot->SetPadding(FMargin(0.f, 4.f, 0.f, 4.f));
+				VSlot->SetPadding(RowPadding);
 			}
 		}
 	}
@@ -214,6 +273,11 @@ FReply ULoadoutAttachmentWindow::NativeOnPreviewMouseButtonDown(const FGeometry&
 		return FReply::Unhandled();
 	}
 	if (!DragHandle->GetCachedGeometry().IsUnderLocation(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Unhandled();
+	}
+	// Let the close button receive its own click instead of starting a drag.
+	if (IsValid(CloseButton) && CloseButton->GetCachedGeometry().IsUnderLocation(InMouseEvent.GetScreenSpacePosition()))
 	{
 		return FReply::Unhandled();
 	}
@@ -271,12 +335,26 @@ ULoadoutScreen::ULoadoutScreen(const FObjectInitializer& ObjectInitializer)
 void ULoadoutScreen::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	BuildLayout();
+	// WBP 子类：树里已有控件，用绑定的；纯 C++ 类：生成默认布局
+	if (!WidgetTree || !WidgetTree->RootWidget)
+	{
+		BuildLayout();
+	}
+	if (!IsValid(PopupLayer) || !IsValid(CardContainer))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("LoadoutScreen %s is missing PopupLayer or CardContainer."), *GetName());
+	}
+	BuildCards();
 }
 
 void ULoadoutScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// The screen is reused between Tab presses. The attachment popup must start closed every time.
+	if (IsValid(AttachmentWindow))
+	{
+		AttachmentWindow->HideWindow();
+	}
 	RefreshWeapons();
 }
 
@@ -302,8 +380,7 @@ void ULoadoutScreen::NativeDestruct()
 
 void ULoadoutScreen::BuildLayout()
 {
-	if (bBuilt || !WidgetTree) return;
-	bBuilt = true;
+	if (!WidgetTree) return;
 
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
 	WidgetTree->RootWidget = Root;
@@ -336,20 +413,20 @@ void ULoadoutScreen::BuildLayout()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("WeaponColumn"));
 	WeaponPanel->AddChild(Column);
 
-	UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Title"));
-	Title->SetText(NSLOCTEXT("Loadout", "Weapons", "武器"));
-	Title->SetFont(LoadoutFont(28));
-	Title->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-	if (UVerticalBoxSlot* TitleSlot = Column->AddChildToVerticalBox(Title))
+	Text_Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Title"));
+	Text_Title->SetText(NSLOCTEXT("Loadout", "Weapons", "武器"));
+	Text_Title->SetFont(LoadoutFont(28));
+	Text_Title->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	if (UVerticalBoxSlot* TitleSlot = Column->AddChildToVerticalBox(Text_Title))
 	{
 		TitleSlot->SetPadding(FMargin(4.f, 0.f, 0.f, 2.f));
 	}
 
-	UTextBlock* Hint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Hint"));
-	Hint->SetText(NSLOCTEXT("Loadout", "CloseHint", "Tab 关闭"));
-	Hint->SetFont(LoadoutFont(14));
-	Hint->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.7f, 0.7f, 1.f)));
-	if (UVerticalBoxSlot* HintSlot = Column->AddChildToVerticalBox(Hint))
+	Text_Hint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Hint"));
+	Text_Hint->SetText(NSLOCTEXT("Loadout", "CloseHint", "Tab 关闭"));
+	Text_Hint->SetFont(LoadoutFont(14));
+	Text_Hint->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.7f, 0.7f, 1.f)));
+	if (UVerticalBoxSlot* HintSlot = Column->AddChildToVerticalBox(Text_Hint))
 	{
 		HintSlot->SetPadding(FMargin(4.f, 0.f, 0.f, 12.f));
 	}
@@ -370,59 +447,14 @@ void ULoadoutScreen::BuildLayout()
 		ImageSlot->SetVerticalAlignment(VAlign_Fill);
 	}
 
-	UVerticalBox* Hits = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("WeaponHits"));
-	if (UOverlaySlot* HitSlot = PreviewOverlay->AddChildToOverlay(Hits))
+	// Cards stack over the preview image: one transparent button per weapon row.
+	UVerticalBox* Container = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CardContainer"));
+	if (UOverlaySlot* HitSlot = PreviewOverlay->AddChildToOverlay(Container))
 	{
 		HitSlot->SetHorizontalAlignment(HAlign_Fill);
 		HitSlot->SetVerticalAlignment(VAlign_Fill);
 	}
-
-	const FButtonStyle Style = TransparentButtonStyle();
-	WeaponButtons.Reset();
-	WeaponLabels.Reset();
-	for (int32 Index = 0; Index < 3; ++Index)
-	{
-		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), *FString::Printf(TEXT("WeaponHit%d"), Index));
-		Button->SetStyle(Style);
-		if (UVerticalBoxSlot* ButtonSlot = Hits->AddChildToVerticalBox(Button))
-		{
-			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
-			ButtonSlot->SetVerticalAlignment(VAlign_Fill);
-		}
-
-		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), *FString::Printf(TEXT("WeaponLabel%d"), Index));
-		Label->SetFont(LoadoutFont(16));
-		Label->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-		Label->SetJustification(ETextJustify::Center);
-		Label->SetVisibility(ESlateVisibility::HitTestInvisible);
-		if (UOverlay* LabelOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass()))
-		{
-			Button->AddChild(LabelOverlay);
-			if (UOverlaySlot* LabelSlot = LabelOverlay->AddChildToOverlay(Label))
-			{
-				LabelSlot->SetHorizontalAlignment(HAlign_Center);
-				LabelSlot->SetVerticalAlignment(VAlign_Bottom);
-				LabelSlot->SetPadding(FMargin(8.f, 8.f, 8.f, 10.f));
-			}
-		}
-
-		WeaponButtons.Add(Button);
-		WeaponLabels.Add(Label);
-	}
-
-	if (WeaponButtons.IsValidIndex(0))
-	{
-		WeaponButtons[0]->OnClicked.AddDynamic(this, &ThisClass::OnClickedWeapon0);
-	}
-	if (WeaponButtons.IsValidIndex(1))
-	{
-		WeaponButtons[1]->OnClicked.AddDynamic(this, &ThisClass::OnClickedWeapon1);
-	}
-	if (WeaponButtons.IsValidIndex(2))
-	{
-		WeaponButtons[2]->OnClicked.AddDynamic(this, &ThisClass::OnClickedWeapon2);
-	}
+	CardContainer = Container;
 
 	PopupLayer = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("PopupLayer"));
 	PopupLayer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -433,15 +465,34 @@ void ULoadoutScreen::BuildLayout()
 	}
 }
 
-void ULoadoutScreen::SetCardLabel(int32 Index, const FText& Label, bool bEnabled)
+void ULoadoutScreen::BuildCards()
 {
-	if (WeaponLabels.IsValidIndex(Index) && IsValid(WeaponLabels[Index]))
+	Cards.Reset();
+	if (!IsValid(CardContainer)) return;
+	CardContainer->ClearChildren();
+
+	UClass* UseClass = CardClass ? CardClass.Get() : ULoadoutWeaponCard::StaticClass();
+	for (int32 Index = 0; Index < NumCards; ++Index)
 	{
-		WeaponLabels[Index]->SetText(Label);
-	}
-	if (WeaponButtons.IsValidIndex(Index) && IsValid(WeaponButtons[Index]))
-	{
-		WeaponButtons[Index]->SetIsEnabled(bEnabled);
+		ULoadoutWeaponCard* Card = CreateWidget<ULoadoutWeaponCard>(this, UseClass);
+		if (!IsValid(Card)) continue;
+
+		UPanelSlot* CardSlot = CardContainer->AddChild(Card);
+		if (UVerticalBoxSlot* VSlot = Cast<UVerticalBoxSlot>(CardSlot))
+		{
+			VSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			VSlot->SetHorizontalAlignment(HAlign_Fill);
+			VSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+		else if (UHorizontalBoxSlot* HSlot = Cast<UHorizontalBoxSlot>(CardSlot))
+		{
+			HSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			HSlot->SetHorizontalAlignment(HAlign_Fill);
+			HSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+
+		Card->OnCardClicked.AddUObject(this, &ThisClass::HandleCardClicked);
+		Cards.Add(Card);
 	}
 }
 
@@ -456,29 +507,31 @@ void ULoadoutScreen::RefreshWeapons()
 	}
 
 	ShownWeapons.Reset();
-	ShownWeapons.SetNum(3);
+	ShownWeapons.SetNum(NumCards);
 
 	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetOwningPlayerPawn());
 	static const TArray<AWeapon*> EmptyInventory;
 	const TArray<AWeapon*>& Inventory = IsValid(Combat) ? Combat->GetInventory() : EmptyInventory;
-	for (int32 Index = 0; Index < 3; ++Index)
+	for (int32 Index = 0; Index < NumCards; ++Index)
 	{
 		AWeapon* Weapon = Inventory.IsValidIndex(Index) ? Inventory[Index] : nullptr;
-		if (!IsValid(Weapon))
+		FText Name;
+		if (IsValid(Weapon))
 		{
-			SetCardLabel(Index, NSLOCTEXT("Loadout", "EmptySlot", "空"), false);
-			continue;
+			ShownWeapons[Index] = Weapon;
+			Weapon->OnAttachmentsChanged.AddUniqueDynamic(this, &ThisClass::HandleAttachmentsChanged);
+			Name = Weapon->GetClass()->GetDisplayNameText();
+			if (Name.IsEmpty())
+			{
+				Name = FText::FromString(Weapon->GetClass()->GetName());
+			}
 		}
-
-		ShownWeapons[Index] = Weapon;
-		Weapon->OnAttachmentsChanged.AddUniqueDynamic(this, &ThisClass::HandleAttachmentsChanged);
-		FText Name = Weapon->GetClass()->GetDisplayNameText();
-		if (Name.IsEmpty())
+		if (Cards.IsValidIndex(Index) && IsValid(Cards[Index]))
 		{
-			Name = FText::FromString(Weapon->GetClass()->GetName());
+			Cards[Index]->SetupCard(Index, IsValid(Weapon) ? Weapon : nullptr, Name);
 		}
-		SetCardLabel(Index, Name, true);
 	}
+	RefreshCardStates();
 
 	UWorld* World = GetWorld();
 	if (!IsValid(PreviewRig) && World)
@@ -486,13 +539,14 @@ void ULoadoutScreen::RefreshWeapons()
 		FActorSpawnParameters Params;
 		Params.ObjectFlags = RF_Transient;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		PreviewRig = World->SpawnActor<ALoadoutPreviewRig>(FVector(0.f, 0.f, -100000.f), FRotator::ZeroRotator, Params);
+		UClass* RigClass = PreviewRigClass ? PreviewRigClass.Get() : ALoadoutPreviewRig::StaticClass();
+		PreviewRig = World->SpawnActor<ALoadoutPreviewRig>(RigClass, FVector(0.f, 0.f, -100000.f), FRotator::ZeroRotator, Params);
 	}
 
 	if (IsValid(PreviewRig))
 	{
 		TArray<AWeapon*> Weapons;
-		Weapons.Reserve(3);
+		Weapons.Reserve(ShownWeapons.Num());
 		for (AWeapon* Weapon : ShownWeapons)
 		{
 			Weapons.Add(Weapon);
@@ -504,7 +558,7 @@ void ULoadoutScreen::RefreshWeapons()
 			FSlateBrush Brush;
 			Brush.SetResourceObject(PreviewRig->GetRenderTarget());
 			Brush.DrawAs = ESlateBrushDrawType::Image;
-			Brush.ImageSize = FVector2D(512.f, 768.f);
+			Brush.ImageSize = FVector2D(PreviewRig->RenderTargetWidth, PreviewRig->RenderTargetHeight);
 			PreviewImage->SetBrush(Brush);
 		}
 
@@ -522,6 +576,17 @@ void ULoadoutScreen::RefreshWeapons()
 	}
 }
 
+void ULoadoutScreen::RefreshCardStates()
+{
+	AWeapon* Open = (IsValid(AttachmentWindow) && AttachmentWindow->IsWindowShown()) ? AttachmentWindow->GetShownWeapon() : nullptr;
+	for (int32 Index = 0; Index < Cards.Num(); ++Index)
+	{
+		if (!IsValid(Cards[Index])) continue;
+		const AWeapon* CardWeapon = ShownWeapons.IsValidIndex(Index) ? ShownWeapons[Index].Get() : nullptr;
+		Cards[Index]->SetSelected(Open != nullptr && CardWeapon == Open);
+	}
+}
+
 void ULoadoutScreen::HandleAttachmentsChanged(AWeapon* ChangedWeapon)
 {
 	if (!IsValid(ChangedWeapon) || !ShownWeapons.Contains(ChangedWeapon) || !IsValid(PreviewRig)) return;
@@ -534,18 +599,34 @@ void ULoadoutScreen::HandleAttachmentsChanged(AWeapon* ChangedWeapon)
 	PreviewRig->ShowWeapons(Weapons);
 }
 
-void ULoadoutScreen::OnClickedWeapon0() { OpenWindow(0); }
-void ULoadoutScreen::OnClickedWeapon1() { OpenWindow(1); }
-void ULoadoutScreen::OnClickedWeapon2() { OpenWindow(2); }
+void ULoadoutScreen::HandleWindowVisibilityChanged(ESlateVisibility InVisibility)
+{
+	RefreshCardStates();
+}
+
+void ULoadoutScreen::HandleCardClicked(int32 Index)
+{
+	OpenWindow(Index);
+	RefreshCardStates();
+}
 
 void ULoadoutScreen::OpenWindow(int32 Index)
 {
 	if (!ShownWeapons.IsValidIndex(Index) || !IsValid(ShownWeapons[Index]) || !IsValid(PopupLayer)) return;
 
+	// Clicking the same weapon again closes the popup.
+	if (IsValid(AttachmentWindow) && AttachmentWindow->IsWindowShown() && AttachmentWindow->GetShownWeapon() == ShownWeapons[Index])
+	{
+		AttachmentWindow->HideWindow();
+		return;
+	}
+
 	if (!IsValid(AttachmentWindow))
 	{
-		AttachmentWindow = CreateWidget<ULoadoutAttachmentWindow>(GetOwningPlayer(), ULoadoutAttachmentWindow::StaticClass());
+		UClass* WindowClass = AttachmentWindowClass ? AttachmentWindowClass.Get() : ULoadoutAttachmentWindow::StaticClass();
+		AttachmentWindow = CreateWidget<ULoadoutAttachmentWindow>(GetOwningPlayer(), WindowClass);
 		if (!IsValid(AttachmentWindow)) return;
+		AttachmentWindow->OnVisibilityChanged.AddUniqueDynamic(this, &ThisClass::HandleWindowVisibilityChanged);
 
 		if (UCanvasPanelSlot* WindowSlot = PopupLayer->AddChildToCanvas(AttachmentWindow))
 		{
@@ -564,7 +645,7 @@ void ULoadoutScreen::OpenWindow(int32 Index)
 		{
 			PC->GetViewportSize(ViewX, ViewY);
 		}
-		AttachmentWindow->SetWindowPosition(FVector2D(ViewX * 0.42f, 72.f));
+		AttachmentWindow->SetWindowPosition(FVector2D(ViewX * WindowDefaultPosition.X, WindowDefaultPosition.Y));
 	}
 
 	AttachmentWindow->ShowForWeapon(ShownWeapons[Index]);

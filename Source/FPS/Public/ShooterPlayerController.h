@@ -79,6 +79,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> LoadoutIMC;
 
+	// Tab 整备界面用的控件类（填 WBP_LoadoutScreen）。为空用 C++ 默认布局
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Loadout")
+	TSubclassOf<ULoadoutScreen> LoadoutScreenClass;
+
 	UPROPERTY(Transient)
 	TObjectPtr<ULoadoutScreen> LoadoutScreen;
 

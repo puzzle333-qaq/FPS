@@ -51,9 +51,10 @@ void ALoadoutPreviewRig::BeginPlay()
 
 	RenderTarget = NewObject<UTextureRenderTarget2D>(this);
 	RenderTarget->ClearColor = FLinearColor(0.06f, 0.07f, 0.09f, 1.f);
-	RenderTarget->InitCustomFormat(512, 768, PF_B8G8R8A8, false);
+	RenderTarget->InitCustomFormat(FMath::Max(RenderTargetWidth, 16), FMath::Max(RenderTargetHeight, 16), PF_B8G8R8A8, false);
 	RenderTarget->UpdateResourceImmediate(true);
 
+	CaptureComponent->OrthoWidth = FMath::Max(OrthoWidth, 1.f);
 	CaptureComponent->TextureTarget = RenderTarget;
 	CaptureComponent->ShowOnlyActors.Add(this);
 }
@@ -115,10 +116,12 @@ void ALoadoutPreviewRig::SpawnPreview(AWeapon* Weapon, int32 Index)
 	}
 
 	// 原点偏在枪托一侧，往 -Y 挪一点让枪身落在格子中间。上中下各隔 90。
-	const float Height = (1 - Index) * 90.f;
+	const float Height = (1 - Index) * RowSpacing;
 	Mesh->SetupAttachment(GetRootComponent());
-	Mesh->SetRelativeLocation(FVector(0.f, -28.f, Height));
-	Mesh->SetRelativeRotation(FRotator(0.f, 90.f, 0.f)); // 模型朝向不对，Yaw 转 90 度
+	// Per-weapon preview transform (AWeapon::PreviewRotationOffset / PreviewLocationOffset / PreviewScale).
+	Mesh->SetRelativeLocation(Weapon->PreviewLocationOffset + FVector(0.f, 0.f, Height));
+	Mesh->SetRelativeRotation(Weapon->PreviewRotationOffset);
+	Mesh->SetRelativeScale3D(FVector(FMath::Max(Weapon->PreviewScale, 0.01f)));
 	Mesh->RegisterComponent();
 	PreviewComponents.Add(Mesh);
 

@@ -264,6 +264,19 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming|ADS", meta = (ClampMin = "0"))
 	float AdsEyeDistance = 0.f;
 
+	// Loadout preview (Tab screen): rotation applied to this weapon's mesh in the preview rig.
+	// The rig camera looks at the side of a gun lying along +Y. Default Yaw 90 matches the old hardcoded value.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Loadout")
+	FRotator PreviewRotationOffset = FRotator(0.f, 90.f, 0.f);
+
+	// Loadout preview: location offset inside the weapon's row (cm). Default matches the old (0,-28,0).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Loadout")
+	FVector PreviewLocationOffset = FVector(0.f, -28.f, 0.f);
+
+	// Loadout preview: uniform scale.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Loadout", meta = (ClampMin = "0.01"))
+	float PreviewScale = 1.f;
+
 
 	// 实际开镜时间 = AimDownSightTime × 所有已装配件的 AdsTimeMultiplier
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
