@@ -147,6 +147,24 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|ADS", meta = (ClampMin = "0.05"))
 	float AdsTimeMultiplier = 1.f;
 
+	// ---------- 侧瞄（第 10 步，45 度战术红点） ----------
+	// 第 12 步：激光配件（bProvidesLaser）也自动提供侧瞄，下面三项对它同样有效。
+	// 勾上：这个配件是侧瞄。装在哪个槽都行（一般是战术导轨或瞄具旁边的导轨）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Canted")
+	bool bProvidesCantedSight = false;
+
+	// 侧瞄模型上的瞄准插槽。X 轴朝枪口，Z 轴朝侧瞄自己的“上方”（歪 45 度）。开镜时枪会转到让这个插槽正对屏幕中心、Z 朝上
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Canted", meta = (EditCondition = "bProvidesCantedSight || bProvidesLaser"))
+	FName CantedSightSocketName = TEXT("CantedSightSocket");
+
+	// 侧瞄时的镜头 FOV。0 = 用枪的 AimFeildOfView
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Canted", meta = (EditCondition = "bProvidesCantedSight || bProvidesLaser", ClampMin = "0", ClampMax = "170"))
+	float CantedAimFOV = 0.f;
+
+	// 侧瞄眼距（厘米，插槽到镜头）。0 = 用枪的 AdsEyeDistance；都为 0 时保持原距离
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Canted", meta = (EditCondition = "bProvidesCantedSight || bProvidesLaser", ClampMin = "0"))
+	float CantedEyeDistance = 0.f;
+
 	// ---------- 手电筒 ----------
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Flashlight")
 	bool bProvidesFlashlight = false;
@@ -170,6 +188,40 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Flashlight", meta = (EditCondition = "bProvidesFlashlight"))
 	float LightOuterConeAngle = 24.f;
 
+	// ---------- 激光（第 11 步） ----------
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser")
+	bool bProvidesLaser = false;
+
+	// 光束从配件模型的哪个 Socket 射出（X 轴 = 射出方向；没有就用模型原点）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser"))
+	FName LaserSocketName = TEXT("LaserSocket");
+
+	// 光束模型：轴心在起点、沿 +X 延伸。运行时按命中距离拉伸 X
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser"))
+	TSoftObjectPtr<UStaticMesh> LaserBeamMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Game/FPSTP/Content/Weapons/Attachments/Param/StaticMesh/SM_LaserBeam.SM_LaserBeam")));
+
+	// 光束材质（空 = 用模型自带材质）。会做成动态材质并写入 Color / LaserColor 参数
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser"))
+	TSoftObjectPtr<UMaterialInterface> LaserBeamMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/FPSTP/Content/Weapons/Attachments/Param/Materials/M_LaserBeam.M_LaserBeam")));
+
+	// 命中点光斑（Decal 材质）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser"))
+	TSoftObjectPtr<UMaterialInterface> LaserDotDecalMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/FPSTP/Content/Weapons/Attachments/AttachmentsList/Tactical/TacticalLaser/Materials/M_LaserDecal.M_LaserDecal")));
+
+	// 射线最远距离（厘米）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser", ClampMin = "100"))
+	float LaserRange = 5000.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser"))
+	FLinearColor LaserColor = FLinearColor(1.f, 0.f, 0.f);
+
+	// 光斑大小（厘米，Decal 半径）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser", ClampMin = "0.1"))
+	float LaserDotSize = 1.5f;
+
+	// 开镜时隐藏光束（光斑保留）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser"))
+	bool bHideBeamWhenAiming = true;
 	// 让 AssetManager 能按 "Attachment" 类型找到所有配件（以后做选择界面有用）
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 };

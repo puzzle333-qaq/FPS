@@ -52,7 +52,7 @@ private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>WalkAction;
 
-	// 手电开关（例如 F 键）
+	// 战术配件开关（例如 F 键）：手电和激光一起开关（第 12 步）
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> FlashlightAction;
 

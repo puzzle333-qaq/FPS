@@ -1404,6 +1404,27 @@ void UCombatComponent::Initiate_ToggleFlashlight()
 	}
 }
 
+void UCombatComponent::Initiate_ToggleLaser()
+{
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner)) return;
+	if (Owner->HasAuthority())
+	{
+		Server_ToggleLaser_Implementation();
+	}
+	else
+	{
+		Server_ToggleLaser();
+	}
+}
+
+void UCombatComponent::Server_ToggleLaser_Implementation()
+{
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->ToggleLaser();
+	}
+}
 void UCombatComponent::Server_EquipAttachment_Implementation(AWeapon* Weapon, UAttachmentData* Attachment)
 {
 	if (IsValid(Weapon) && Inventory.Contains(Weapon))

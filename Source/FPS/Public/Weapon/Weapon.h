@@ -13,6 +13,7 @@
 class UMaterialInstanceDynamic;
 class UStaticMeshComponent;
 class USpotLightComponent;
+class UDecalComponent;
 
 // 一个已装配件在本地生成的模型（1P/3P 各一个）。只在本地存在，不同步
 USTRUCT()
@@ -145,7 +146,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool HasAttachmentSlot(FGameplayTag SlotTag) const { return FindSlot(SlotTag) != nullptr; }
 
-	// 只在服务器调用：开/关手电（没有手电配件时无效）
+	// 只在服务器调用：开/关手电和激光（第 12 步：两者一起；都没有时无效）
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
 	void ToggleFlashlight();
 
@@ -174,6 +175,9 @@ public:
 	// 瞄具在第一人称枪上生成的模型。画中画只替换它的画面槽材质。
 	UStaticMeshComponent* GetOpticMesh1P() const;
 
+	// 第 10/12 步：装了侧瞄（bProvidesCantedSight 或 bProvidesLaser，且模型上有 CantedSightSocketName）就返回 true
+	bool GetCantedSight(UStaticMeshComponent*& OutMesh, const UAttachmentData*& OutData) const;
+
 	// 开镜时是不是用镜片画中画（UOpticScopeComponent）：
 	// Magnified，或配了画面材质的 Variable。画面材质用 LensMaterial，没填则用画面槽上现成的材质。
 	// 模型上有 LensSocket，或至少有 SightSocket。
@@ -186,6 +190,20 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool IsFlashlightOn() const { return bFlashlightOn; }
+
+	// ---------- 激光（第 11 步） ----------
+	// 只在服务器调用：开/关激光（没有激光配件时无效）
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
+	void ToggleLaser();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	bool HasLaser() const { return GetLaserData() != nullptr; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	bool IsLaserOn() const { return bLaserOn; }
+
+	// 只有激光开着时才 Tick：本地射线、拉伸光束、放光斑
+	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Attachment")
 	FAttachmentsChanged OnAttachmentsChanged;
@@ -385,6 +403,12 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_FlashlightOn)
 	bool bFlashlightOn = false;
 
+	UPROPERTY(ReplicatedUsing = OnRep_LaserOn)
+	bool bLaserOn = false;
+
+	UFUNCTION()
+	void OnRep_LaserOn();
+
 	UFUNCTION()
 	void OnRep_EquippedAttachments();
 
@@ -406,6 +430,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USpotLightComponent> Flashlight;
+
+	// 激光（第 11 步）：光束和光斑都只在本地生成，不同步
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> LaserBeam;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDecalComponent> LaserDot;
+
+	float LaserBeamLength = 100.f;
+
+	const UAttachmentData* GetLaserData() const;
+	void RebuildLaser();
+	void UpdateLaserAttachment();
+	void ApplyLaserState();
+	void UpdateLaser();
 
 
 

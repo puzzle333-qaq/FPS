@@ -114,6 +114,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
 	void Initiate_ToggleFlashlight();
 
+	// 第 11 步：激光开关
+	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
+	void Initiate_ToggleLaser();
+
 	// 当前枪的开镜 FOV（已考虑瞄具配件）；没有枪时返回 Fallback
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
 	float GetCurrentAimFOV(float Fallback = 90.f) const;
@@ -285,6 +289,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_ToggleFlashlight();
+
+	UFUNCTION(Server, Reliable)
+	void Server_ToggleLaser();
 
 	UFUNCTION(Server, Reliable)
 	void Server_SetFireMode(EFireType NewFireType);

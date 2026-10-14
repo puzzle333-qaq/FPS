@@ -342,6 +342,24 @@ void AShooterCharacter::UpdateAimAlpha(float DeltaTime)
 	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
 	const float Target = (!bDead && IsValid(Combat) && Combat->bAiming) ? 1.f : 0.f;
 
+	// 第 10 步：侧瞄。关镜、死亡、侧瞄配件没了（切枪/卸配件）就退出侧瞄；退出和进入都瞬间完成
+	if (bCantedAim)
+	{
+		UStaticMeshComponent* CantedMesh = nullptr;
+		const UAttachmentData* CantedData = nullptr;
+		const bool bHasCanted = IsValid(Weapon) && Weapon->GetCantedSight(CantedMesh, CantedData);
+		if (Target <= 0.f || !bHasCanted)
+		{
+			SetCantedAim(false);
+			AimAlpha = Target;
+			AimAlignAlpha = Target;
+			return;
+		}
+		AimAlpha = 1.f;
+		AimAlignAlpha = 1.f;
+		return;
+	}
+
 	// 开镜和关镜都用同一个时间；时间为 0 就瞬间到位
 	const float AdsTime = IsValid(Weapon) ? Weapon->GetEffectiveAdsTime() : 0.2f;
 	if (AdsTime <= KINDA_SMALL_NUMBER)
@@ -366,6 +384,16 @@ void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
 	if (IsValid(Combat) && IsValid(Weapon))
 	{
 		AimTargetFOV = Combat->GetCurrentAimFOV(DefaultFOV);
+	}
+	// 第 10 步：侧瞄用自己的 FOV（0 = 枪的 AimFeildOfView），瞬间切换
+	if (bCantedAim && IsValid(Weapon))
+	{
+		UStaticMeshComponent* CantedMesh = nullptr;
+		const UAttachmentData* CantedData = nullptr;
+		Weapon->GetCantedSight(CantedMesh, CantedData);
+		const float CantedFOV = (IsValid(CantedData) && CantedData->CantedAimFOV > 0.f) ? CantedData->CantedAimFOV : Weapon->AimFeildOfView;
+		AimTargetFOV = CantedFOV > 0.f ? CantedFOV : DefaultFOV;
+		SmoothedAimFOV = AimTargetFOV;
 	}
 
 	if (AimAlpha <= KINDA_SMALL_NUMBER)
@@ -494,6 +522,18 @@ void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 	FVector* AdsLocationProperty = FindBlueprintStruct<FVector>(this, TEXT("AdsMesh1PLoc"));
 
 	// C++ 驱动开镜：先算出开镜位置，再按开镜进度在腰射位置和它之间插值，写进 Mesh1P
+	if (bDriveAdsInCode && bCantedAim)
+	{
+		// 第 10 步：侧瞄。旋转 + 位置都按侧瞄插槽算，瞬间到位
+		FQuat CantedRotation;
+		FVector CantedLocation;
+		if (ComputeCantedMeshTransform(CantedRotation, CantedLocation))
+		{
+			Mesh1P->SetRelativeLocationAndRotation(CantedLocation, CantedRotation);
+			return;
+		}
+	}
+
 	if (bDriveAdsInCode)
 	{
 		// 第 8 步：腰射目标 = 角色默认位置 + 当前武器的腰射偏移。每帧读当前武器，切枪自动生效
@@ -747,7 +787,90 @@ void AShooterCharacter::Input_CycleWeapon()
 
 void AShooterCharacter::Input_SwitchZoom()
 {
-	if (IsValid(Combat)) Combat->Initiate_CycleZoom();
+	if (!IsValid(Combat)) return;
+	AWeapon* Weapon = Combat->CurrentWeapon;
+	UStaticMeshComponent* CantedMesh = nullptr;
+	const UAttachmentData* CantedData = nullptr;
+	const bool bHasCanted = Combat->bAiming && IsValid(Weapon) && Weapon->GetCantedSight(CantedMesh, CantedData);
+	if (!bHasCanted)
+	{
+		Combat->Initiate_CycleZoom();
+		return;
+	}
+
+	// 第 12 步：循环 = 主镜各档 -> 侧瞄 -> 主镜第一档
+	if (bCantedAim)
+	{
+		Weapon->CurrentZoomIndex = 0;
+		SetCantedAim(false);
+		Combat->OnZoomLevelChanged.Broadcast(Weapon->CurrentZoomIndex, Weapon->GetEffectiveAimFOV());
+		return;
+	}
+	const int32 Count = Weapon->GetZoomLevelCount();
+	if (Count >= 2 && Weapon->CurrentZoomIndex < Count - 1)
+	{
+		Combat->Initiate_CycleZoom();
+		return;
+	}
+	SetCantedAim(true);
+}
+
+void AShooterCharacter::SetCantedAim(bool bNewCanted)
+{
+	if (bCantedAim == bNewCanted) return;
+	bCantedAim = bNewCanted;
+	// 切换是瞬间的：主镜和侧瞄之间不走开镜时间
+	if (IsValid(Combat) && Combat->bAiming)
+	{
+		AimAlpha = 1.f;
+		AimAlignAlpha = 1.f;
+		if (!bCantedAim)
+		{
+			// 回主镜也是瞬间的：FOV 直接跳到主镜目标
+			SmoothedAimFOV = Combat->GetCurrentAimFOV(DefaultFOV);
+		}
+	}
+	OnCantedSightChanged.Broadcast(bCantedAim);
+}
+
+bool AShooterCharacter::ComputeCantedMeshTransform(FQuat& OutRelRotation, FVector& OutRelLocation)
+{
+	AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	UStaticMeshComponent* CantedMesh = nullptr;
+	const UAttachmentData* CantedData = nullptr;
+	if (!IsValid(Weapon) || !Weapon->GetCantedSight(CantedMesh, CantedData)) return false;
+	USceneComponent* Parent = Mesh1P->GetAttachParent();
+	if (!IsValid(Parent)) return false;
+
+	const FTransform CameraTransform = FirstPersonCamera->GetComponentTransform();
+
+	// 1) 旋转：让侧瞄插槽的朝向和镜头一致（X 朝前、Z 朝上），枪就会按插槽的歪角整体转过去
+	Mesh1P->UpdateComponentToWorld();
+	CantedMesh->UpdateComponentToWorld();
+	const FQuat SocketWorldQuat = CantedMesh->GetSocketQuaternion(CantedData->CantedSightSocketName);
+	const FQuat MeshWorldQuat = Mesh1P->GetComponentQuat();
+	const FQuat SocketRelToMesh = MeshWorldQuat.Inverse() * SocketWorldQuat;   // 插槽相对手臂的固定旋转
+	const FQuat DesiredMeshWorld = CameraTransform.GetRotation() * SocketRelToMesh.Inverse();
+	OutRelRotation = Parent->GetComponentQuat().Inverse() * DesiredMeshWorld;
+	OutRelRotation.Normalize();
+
+	// 2) 先把旋转写进去，再量插槽位置，按和主镜一样的方法把插槽挪到镜头正前方
+	Mesh1P->SetRelativeRotation(OutRelRotation);
+	Mesh1P->UpdateComponentToWorld();
+	CantedMesh->UpdateComponentToWorld();
+	const FVector SocketWorld = CantedMesh->GetSocketLocation(CantedData->CantedSightSocketName);
+	const FVector SocketCamera = CameraTransform.InverseTransformPosition(SocketWorld);
+
+	// 眼距：侧瞄自己的 > 枪的 AdsEyeDistance > 保持当前距离（只取前后距离，侧向偏移都归零，不会累加漂移）
+	float EyeDistance = CantedData->CantedEyeDistance > 0.f ? CantedData->CantedEyeDistance : Weapon->AdsEyeDistance;
+	if (EyeDistance <= 0.f)
+	{
+		EyeDistance = SocketCamera.X;
+	}
+	const FVector DesiredWorld = CameraTransform.TransformPosition(FVector(EyeDistance, 0.f, 0.f));
+	const FVector DeltaParent = Parent->GetComponentTransform().InverseTransformVector(DesiredWorld - SocketWorld);
+	OutRelLocation = Mesh1P->GetRelativeLocation() + DeltaParent;
+	return !OutRelLocation.ContainsNaN() && !OutRelRotation.ContainsNaN();
 }
 
 void AShooterCharacter::Input_SwitchFireMode()

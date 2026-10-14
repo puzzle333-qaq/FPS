@@ -1,4 +1,4 @@
-
+﻿
 
 
 #include "Weapon/Weapon.h"
@@ -13,6 +13,9 @@
 #include "Net/UnrealNetwork.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SpotLightComponent.h"
+#include "Components/DecalComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/World.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/StaticMesh.h"
 #include "ShooterCharacter.h"
@@ -53,7 +56,10 @@ namespace
 
 AWeapon::AWeapon()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// 只有激光开着时才 Tick（第 11 步），放在动画和开镜对齐之后
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
 	bReplicates = true;
 	bNetUseOwnerRelevancy = true;
 
@@ -349,6 +355,7 @@ void AWeapon::AttachToOwingPawn()
 
 	// 现在知道是不是本地玩家了，把手电挂到正确的模型上
 	UpdateFlashlightAttachment();
+	UpdateLaserAttachment();
 }
 
 void AWeapon::AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName)
@@ -409,6 +416,7 @@ void AWeapon::SetHiddenForHeal(bool bHideWeapon)
 	SetMeshVisibility(GetInstigator());
 	// 父网格 SetHiddenInGame(propagate) 会改掉手电子组件的隐藏标记，这里按开关状态写回去
 	ApplyFlashlightState();
+	ApplyLaserState();
 }
 
 void AWeapon::DetachFromPawn()
@@ -552,6 +560,7 @@ void AWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AWeapon, EquippedAttachments);
 	DOREPLIFETIME(AWeapon, bFlashlightOn);
+	DOREPLIFETIME(AWeapon, bLaserOn);
 	DOREPLIFETIME_CONDITION(AWeapon, FireType, COND_SkipOwner);
 }
 
@@ -581,6 +590,10 @@ bool AWeapon::EquipAttachment(UAttachmentData* Attachment)
 	{
 		bFlashlightOn = false;
 	}
+	if (!HasLaser())
+	{
+		bLaserOn = false;
+	}
 
 	// 服务器不会收到 OnRep，所以手动调一次（监听服务器也要看到模型）
 	OnRep_EquippedAttachments();
@@ -609,6 +622,10 @@ bool AWeapon::RemoveAttachment(FGameplayTag SlotTag)
 	{
 		bFlashlightOn = false;
 	}
+	if (!HasLaser())
+	{
+		bLaserOn = false;
+	}
 
 	OnRep_EquippedAttachments();
 	ForceNetUpdate();
@@ -617,10 +634,22 @@ bool AWeapon::RemoveAttachment(FGameplayTag SlotTag)
 
 void AWeapon::ToggleFlashlight()
 {
-	if (!HasAuthority() || !HasFlashlight()) return;
+	// 第 12 步：战术键同时开关手电和激光（只有激光时也能开关激光）
+	const bool bHasLight = HasFlashlight();
+	const bool bHasLaser = HasLaser();
+	if (!HasAuthority() || (!bHasLight && !bHasLaser)) return;
 
-	bFlashlightOn = !bFlashlightOn;
-	OnRep_FlashlightOn();   // 服务器自己也要亮灯
+	const bool bNewOn = !(bHasLight ? bFlashlightOn : bLaserOn);
+	if (bHasLight)
+	{
+		bFlashlightOn = bNewOn;
+		OnRep_FlashlightOn();   // 服务器自己也要亮灯
+	}
+	if (bHasLaser)
+	{
+		bLaserOn = bNewOn;
+		OnRep_LaserOn();
+	}
 	ForceNetUpdate();
 }
 
@@ -778,6 +807,24 @@ UStaticMeshComponent* AWeapon::GetOpticMesh1P() const
 	return Optic ? Optic->Mesh1P.Get() : nullptr;
 }
 
+bool AWeapon::GetCantedSight(UStaticMeshComponent*& OutMesh, const UAttachmentData*& OutData) const
+{
+	OutMesh = nullptr;
+	OutData = nullptr;
+	for (const FAttachmentVisual& Visual : AttachmentVisuals)
+	{
+		if (IsValid(Visual.Data) && (Visual.Data->bProvidesCantedSight || Visual.Data->bProvidesLaser) && IsValid(Visual.Mesh1P)
+			&& !Visual.Data->CantedSightSocketName.IsNone()
+			&& Visual.Mesh1P->DoesSocketExist(Visual.Data->CantedSightSocketName))
+		{
+			OutMesh = Visual.Mesh1P;
+			OutData = Visual.Data;
+			return true;
+		}
+	}
+	return false;
+}
+
 bool AWeapon::HasFlashlight() const
 {
 	for (const UAttachmentData* Attachment : EquippedAttachments)
@@ -816,9 +863,215 @@ void AWeapon::OnRep_EquippedAttachments()
 	// 瞄具换了它下一帧自动追到新的 FOV，这里不用再手动设镜头。
 }
 
+// ================= 激光（第 11 步） =================
+
+void AWeapon::ToggleLaser()
+{
+	if (!HasAuthority() || !HasLaser()) return;
+
+	bLaserOn = !bLaserOn;
+	OnRep_LaserOn();   // 服务器自己也要看到
+	ForceNetUpdate();
+}
+
+void AWeapon::OnRep_LaserOn()
+{
+	ApplyLaserState();
+}
+
+const UAttachmentData* AWeapon::GetLaserData() const
+{
+	for (const UAttachmentData* Attachment : EquippedAttachments)
+	{
+		if (IsValid(Attachment) && Attachment->bProvidesLaser)
+		{
+			return Attachment;
+		}
+	}
+	return nullptr;
+}
+
+void AWeapon::RebuildLaser()
+{
+	const UAttachmentData* Data = GetLaserData();
+	if (!Data)
+	{
+		if (IsValid(LaserBeam)) { LaserBeam->DestroyComponent(); }
+		if (IsValid(LaserDot)) { LaserDot->DestroyComponent(); }
+		LaserBeam = nullptr;
+		LaserDot = nullptr;
+		ApplyLaserState();
+		return;
+	}
+
+	if (!IsValid(LaserBeam))
+	{
+		LaserBeam = NewObject<UStaticMeshComponent>(this);
+		LaserBeam->SetMobility(EComponentMobility::Movable);
+		LaserBeam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		LaserBeam->CastShadow = false;
+		LaserBeam->bReceivesDecals = false;
+		LaserBeam->SetupAttachment(Mesh1P);
+		LaserBeam->RegisterComponent();
+	}
+
+	UStaticMesh* BeamMesh = Data->LaserBeamMesh.LoadSynchronous();
+	LaserBeam->SetStaticMesh(BeamMesh);
+	LaserBeamLength = 100.f;
+	if (IsValid(BeamMesh))
+	{
+		LaserBeamLength = FMath::Max(1.f, static_cast<float>(BeamMesh->GetBoundingBox().GetSize().X));
+	}
+	UMaterialInterface* BeamMat = Data->LaserBeamMaterial.LoadSynchronous();
+	if (!IsValid(BeamMat))
+	{
+		BeamMat = LaserBeam->GetMaterial(0);
+	}
+	if (IsValid(BeamMat))
+	{
+		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BeamMat, this);
+		MID->SetVectorParameterValue(TEXT("Color"), Data->LaserColor);
+		MID->SetVectorParameterValue(TEXT("LaserColor"), Data->LaserColor);
+		LaserBeam->SetMaterial(0, MID);
+	}
+
+	if (!IsValid(LaserDot))
+	{
+		LaserDot = NewObject<UDecalComponent>(this);
+		LaserDot->SetupAttachment(Mesh1P);
+		LaserDot->SetUsingAbsoluteLocation(true);
+		LaserDot->SetUsingAbsoluteRotation(true);
+		LaserDot->SetUsingAbsoluteScale(true);
+		LaserDot->RegisterComponent();
+	}
+	LaserDot->DecalSize = FVector(Data->LaserDotSize * 2.f, Data->LaserDotSize, Data->LaserDotSize);
+	if (UMaterialInterface* DotMat = Data->LaserDotDecalMaterial.LoadSynchronous())
+	{
+		UMaterialInstanceDynamic* DotMID = UMaterialInstanceDynamic::Create(DotMat, this);
+		DotMID->SetVectorParameterValue(TEXT("Color"), Data->LaserColor);
+		DotMID->SetVectorParameterValue(TEXT("LaserColor"), Data->LaserColor);
+		LaserDot->SetDecalMaterial(DotMID);
+	}
+	LaserDot->MarkRenderStateDirty();
+
+	UpdateLaserAttachment();
+}
+
+void AWeapon::UpdateLaserAttachment()
+{
+	if (!IsValid(LaserBeam)) return;
+
+	const FAttachmentVisual* Visual = AttachmentVisuals.FindByPredicate([](const FAttachmentVisual& V)
+	{
+		return IsValid(V.Data) && V.Data->bProvidesLaser;
+	});
+	if (!Visual) return;
+
+	// 和手电一样：本地玩家用 1P 模型，其他人用 3P 模型
+	const APawn* OwningPawn = GetInstigator();
+	const bool bLocal = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
+	USceneComponent* Parent = bLocal ? Visual->Mesh1P.Get() : Visual->Mesh3P.Get();
+	if (!IsValid(Parent))
+	{
+		Parent = bLocal ? Mesh1P.Get() : Mesh3P.Get();
+	}
+	if (!IsValid(Parent)) return;
+
+	const FName Socket = Parent->DoesSocketExist(Visual->Data->LaserSocketName) ? Visual->Data->LaserSocketName : NAME_None;
+	LaserBeam->AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
+	LaserBeam->SetRelativeScale3D(FVector::OneVector);
+	ApplyLaserState();
+}
+
+void AWeapon::ApplyLaserState()
+{
+	const bool bActive = bLaserOn && IsValid(LaserBeam) && GetNetMode() != NM_DedicatedServer;
+	SetActorTickEnabled(bActive);
+	if (bActive)
+	{
+		UpdateLaser();
+		return;
+	}
+	if (IsValid(LaserBeam))
+	{
+		LaserBeam->SetHiddenInGame(true);
+		LaserBeam->SetVisibility(false);
+	}
+	if (IsValid(LaserDot))
+	{
+		LaserDot->SetHiddenInGame(true);
+		LaserDot->SetVisibility(false);
+	}
+}
+
+void AWeapon::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdateLaser();
+}
+
+void AWeapon::UpdateLaser()
+{
+	auto HideAll = [this]()
+	{
+		if (IsValid(LaserBeam)) { LaserBeam->SetHiddenInGame(true); LaserBeam->SetVisibility(false); }
+		if (IsValid(LaserDot)) { LaserDot->SetHiddenInGame(true); LaserDot->SetVisibility(false); }
+	};
+
+	const UAttachmentData* Data = GetLaserData();
+	UWorld* World = GetWorld();
+	USceneComponent* Parent = IsValid(LaserBeam) ? LaserBeam->GetAttachParent() : nullptr;
+	// 收枪（Actor 隐藏）、治疗隐藏、别人看不到的 1P 模型上：都不画
+	if (!bLaserOn || !Data || !World || IsHidden() || !IsValid(Parent) || !Parent->ShouldRender())
+	{
+		HideAll();
+		return;
+	}
+
+	const FVector Start = LaserBeam->GetComponentLocation();
+	const FVector Dir = LaserBeam->GetForwardVector();
+	const FVector End = Start + Dir * Data->LaserRange;
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WeaponLaser), true, this);
+	Params.AddIgnoredActor(GetInstigator());
+	Params.AddIgnoredActor(GetOwner());
+	FHitResult Hit;
+	const bool bHit = World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params);
+	const float Distance = bHit ? Hit.Distance : Data->LaserRange;
+
+	bool bHideBeam = false;
+	if (Data->bHideBeamWhenAiming)
+	{
+		if (const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetInstigator()))
+		{
+			bHideBeam = Combat->bAiming;
+		}
+	}
+
+	const float ParentScaleX = FMath::Max(KINDA_SMALL_NUMBER, static_cast<float>(Parent->GetComponentScale().X));
+	LaserBeam->SetRelativeScale3D(FVector(Distance / (LaserBeamLength * ParentScaleX), 1.f, 1.f));
+	LaserBeam->SetHiddenInGame(bHideBeam);
+	LaserBeam->SetVisibility(!bHideBeam);
+
+	if (IsValid(LaserDot))
+	{
+		if (bHit)
+		{
+			LaserDot->SetWorldLocationAndRotation(Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
+			LaserDot->SetHiddenInGame(false);
+			LaserDot->SetVisibility(true);
+		}
+		else
+		{
+			LaserDot->SetHiddenInGame(true);
+			LaserDot->SetVisibility(false);
+		}
+	}
+}
 void AWeapon::OnRep_FlashlightOn()
 {
 	ApplyFlashlightState();
+	ApplyLaserState();
 }
 
 const FAttachmentVisual* AWeapon::FindVisual(const FGameplayTag& SlotTag) const
@@ -870,6 +1123,10 @@ void AWeapon::RebuildAttachmentVisuals()
 		Flashlight->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
 	}
 
+	if (IsValid(LaserBeam))
+	{
+		LaserBeam->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+	}
 	// 1. 清掉旧模型
 	for (FAttachmentVisual& Visual : AttachmentVisuals)
 	{
@@ -952,12 +1209,15 @@ void AWeapon::RebuildAttachmentVisuals()
 		Flashlight = nullptr;
 	}
 
+	// 4. 激光：有就创建光束和光斑，没有就销毁
+	RebuildLaser();
 	// 新模型要跟枪一样：本地玩家只显示 1P，其他人只显示 3P
 	if (IsValid(GetInstigator()) && Mesh1P->GetAttachParent())
 	{
 		SetMeshVisibility(GetInstigator());
 	}
 	ApplyFlashlightState();
+	ApplyLaserState();
 }
 
 void AWeapon::UpdateFlashlightAttachment()
@@ -983,6 +1243,7 @@ void AWeapon::UpdateFlashlightAttachment()
 	Flashlight->AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
 	// 从被隐藏的 3P 模型挪到 1P 后，父级传播留下的 bHiddenInGame 不会自己清掉
 	ApplyFlashlightState();
+	ApplyLaserState();
 }
 
 void AWeapon::ApplyFlashlightState()

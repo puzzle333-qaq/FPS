@@ -52,6 +52,7 @@ void UOpticScopeComponent::UpdateView()
 	const bool bWant = IsValid(Character)
 		&& Character->IsLocallyControlled()
 		&& IsValid(Combat) && Combat->bAiming
+		&& !Character->IsCantedAiming()   // 第 10 步：侧瞄时主镜不拍
 		&& IsValid(Weapon) && Weapon->UsesLensPiP()
 		&& IsValid(Optic) && IsValid(OpticMesh);
 

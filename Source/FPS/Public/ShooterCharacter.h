@@ -21,6 +21,8 @@ class UAnimMontage;
 class AWeapon;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
+// 第 10 步：侧瞄开/关（只在本地）
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCantedSightChanged, bool, bCanted);
 
 UCLASS()
 class FPS_API AShooterCharacter : public ACharacter,public IPlayerInterface
@@ -179,6 +181,17 @@ protected:
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
 	float GetAimAlpha() const { return AimAlpha; }
 
+public:
+	// ---------- 侧瞄（第 10 步） ----------
+	// 当前是否在用侧瞄（只在本地有意义）。HUD 想单独处理时读它；准星本来就在 bAiming 时隐藏
+	UFUNCTION(BlueprintPure, Category = "FPS|Aiming|Canted")
+	bool IsCantedAiming() const { return bCantedAim; }
+
+	// 侧瞄切换时广播（本地）
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Aiming|Canted")
+	FCantedSightChanged OnCantedSightChanged;
+protected:
+
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly)
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
@@ -237,6 +250,11 @@ private:
 	void Input_ReloadWeapon();
 	void Input_SwitchFireMode();
 	void Input_SwitchZoom();
+	// 第 12 步：侧瞄是切档循环里的一档（主镜各档 -> 侧瞄 -> 第一档），不再有单独按键
+	void SetCantedAim(bool bNewCanted);
+	// 侧瞄时 Mesh1P 的相对旋转和位置（让侧瞄插槽正对屏幕中心）。算不出返回 false
+	bool ComputeCantedMeshTransform(FQuat& OutRelRotation, FVector& OutRelLocation);
+	bool bCantedAim = false;
 	void Input_FireWeapon_Pressed();
 	void Input_FireWeapon_Released();
 	void Input_Aim_Pressed();
@@ -359,6 +377,7 @@ private:
 	// 可变倍率瞄具切档键（IA_SwitchZoom）
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>SwitchZoomAction;
+
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>VersionWeaponAction;
