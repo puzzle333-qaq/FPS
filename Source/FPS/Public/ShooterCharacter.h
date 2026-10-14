@@ -10,6 +10,7 @@
 #include "Stats/StatsComponent.h"
 #include "ShooterType/ShooterType.h"
 #include "Interface/PlayerInterface.h"
+#include "Engine/NetSerialization.h"
 #include "ShooterCharacter.generated.h"
 
 class UCombatComponent;
@@ -23,6 +24,18 @@ class AWeapon;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
 // 第 10 步：侧瞄开/关（只在本地）
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCantedSightChanged, bool, bCanted);
+// Hit feedback (local only): victim damage ring / shooter hit confirm
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FDamageIndicatorSignature, FVector, InstigatorLocation);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FHitConfirmedSignature);
+
+UENUM(BlueprintType)
+enum class EHitReactDirection : uint8
+{
+	Front,
+	Back,
+	Left,
+	Right
+};
 
 UCLASS()
 class FPS_API AShooterCharacter : public ACharacter,public IPlayerInterface
@@ -137,6 +150,36 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
 	TArray<TObjectPtr<UAnimMontage>> HitReacts;
 
+	// Directional hit reacts (attacker relative to victim facing). Empty array -> falls back to HitReacts.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
+	TArray<TObjectPtr<UAnimMontage>> HitReactsFront;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
+	TArray<TObjectPtr<UAnimMontage>> HitReactsBack;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
+	TArray<TObjectPtr<UAnimMontage>> HitReactsLeft;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
+	TArray<TObjectPtr<UAnimMontage>> HitReactsRight;
+
+	// Victim's own client: someone damaged me from this location (drives the 4-arc ring).
+	UPROPERTY(BlueprintAssignable, Category = "FPS|HitFeedback")
+	FDamageIndicatorSignature OnDamageIndicator;
+
+	// Shooter's own client: my shot did damage (drives the hit marker).
+	UPROPERTY(BlueprintAssignable, Category = "FPS|HitFeedback")
+	FHitConfirmedSignature OnHitConfirmed;
+
+	UFUNCTION(Client, Unreliable)
+	void Client_ShowDamageIndicator(FVector_NetQuantize InstigatorLocation);
+
+	UFUNCTION(Client, Unreliable)
+	void Client_ConfirmHit();
+
+	EHitReactDirection ComputeHitReactDirection(const FVector& SourceLocation) const;
+	const TArray<TObjectPtr<UAnimMontage>>& GetHitReactPool(EHitReactDirection Direction) const;
+
 	UCameraComponent* GetFirstPersonCamera() const { return FirstPersonCamera; }
 
 	// 枪身视觉后坐总开关（第 4 步）。关掉时不加任何偏移，Mesh1P 完全不受影响，方便对比手感
@@ -235,7 +278,7 @@ protected:
 	ETurningInPlace TurningStatus;
 	
 	UFUNCTION(NetMulticast,Reliable)
-	void Multicast_HitReact(int32 MontageIndex);
+	void Multicast_HitReact(EHitReactDirection Direction, int32 MontageIndex);
 
 
 private:

@@ -748,6 +748,7 @@ void AShooterCharacter::Notify_ReloadWeapon_Implementation()
 	Combat->Notify_ReloadWeapon();
 }
 
+
 bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* DamageInstigator)
 {
 	if (!IsValid(Stats))return false;
@@ -755,21 +756,91 @@ bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* Damag
 	Stats->ChangeHealthByAmout(-DamageAmout, DamageInstigator);
 	//calculate whether or not damage lethal
 
-	const int32 MontageSelection = FMath::RandRange(0, HitReacts.Num() - 1);
-	Multicast_HitReact(MontageSelection);
+	const bool bSelfDamage = DamageInstigator == this;
+	const bool bHasSource = IsValid(DamageInstigator) && !bSelfDamage;
+
+	// Directional hit react: front = within +-45 deg of facing, etc.
+	EHitReactDirection Direction = EHitReactDirection::Front;
+	if (bHasSource)
+	{
+		Direction = ComputeHitReactDirection(DamageInstigator->GetActorLocation());
+	}
+	const TArray<TObjectPtr<UAnimMontage>>& Pool = GetHitReactPool(Direction);
+	if (Pool.Num() > 0)
+	{
+		Multicast_HitReact(Direction, FMath::RandRange(0, Pool.Num() - 1));
+	}
+
+	if (bHasSource)
+	{
+		// Victim: damage direction ring
+		if (IsPlayerControlled())
+		{
+			Client_ShowDamageIndicator(DamageInstigator->GetActorLocation());
+		}
+		// Shooter: hit confirm marks
+		if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(DamageInstigator))
+		{
+			if (Shooter->IsPlayerControlled())
+			{
+				Shooter->Client_ConfirmHit();
+			}
+		}
+	}
 
 	return false;
 }
 
+EHitReactDirection AShooterCharacter::ComputeHitReactDirection(const FVector& SourceLocation) const
+{
+	FVector ToSource = SourceLocation - GetActorLocation();
+	ToSource.Z = 0.f;
+	if (!ToSource.Normalize()) return EHitReactDirection::Front;
 
+	FVector Forward = GetActorForwardVector();
+	Forward.Z = 0.f;
+	Forward.Normalize();
 
-void AShooterCharacter::Multicast_HitReact_Implementation(int32 MontageIndex)
+	const float Dot = FVector::DotProduct(Forward, ToSource);
+	const float CrossZ = Forward.X * ToSource.Y - Forward.Y * ToSource.X; // > 0 = source on the right
+	const float Cos45 = 0.70710678f;
+	if (Dot >= Cos45) return EHitReactDirection::Front;
+	if (Dot <= -Cos45) return EHitReactDirection::Back;
+	return CrossZ > 0.f ? EHitReactDirection::Right : EHitReactDirection::Left;
+}
+
+const TArray<TObjectPtr<UAnimMontage>>& AShooterCharacter::GetHitReactPool(EHitReactDirection Direction) const
+{
+	const TArray<TObjectPtr<UAnimMontage>>* Pool = &HitReacts;
+	switch (Direction)
+	{
+	case EHitReactDirection::Front: Pool = &HitReactsFront; break;
+	case EHitReactDirection::Back:  Pool = &HitReactsBack;  break;
+	case EHitReactDirection::Left:  Pool = &HitReactsLeft;  break;
+	case EHitReactDirection::Right: Pool = &HitReactsRight; break;
+	default: break;
+	}
+	return Pool->Num() > 0 ? *Pool : HitReacts;
+}
+
+void AShooterCharacter::Client_ShowDamageIndicator_Implementation(FVector_NetQuantize InstigatorLocation)
+{
+	OnDamageIndicator.Broadcast(InstigatorLocation);
+}
+
+void AShooterCharacter::Client_ConfirmHit_Implementation()
+{
+	OnHitConfirmed.Broadcast();
+}
+
+void AShooterCharacter::Multicast_HitReact_Implementation(EHitReactDirection Direction, int32 MontageIndex)
 {
 	if (GetNetMode() != NM_DedicatedServer && !IsLocallyControlled())
 	{
-		if (HitReacts.IsValidIndex(MontageIndex))
+		const TArray<TObjectPtr<UAnimMontage>>& Pool = GetHitReactPool(Direction);
+		if (Pool.IsValidIndex(MontageIndex) && Pool[MontageIndex] && GetMesh()->GetAnimInstance())
 		{
-			GetMesh()->GetAnimInstance()->Montage_Play(HitReacts[MontageIndex]);
+			GetMesh()->GetAnimInstance()->Montage_Play(Pool[MontageIndex]);
 		}
 	}
 }
