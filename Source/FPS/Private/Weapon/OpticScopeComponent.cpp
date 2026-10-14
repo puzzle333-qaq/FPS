@@ -213,25 +213,65 @@ void UOpticScopeComponent::ApplyCaptureExposure(const UAttachmentData* Optic)
 		return;
 	}
 
-	const float Bias = IsValid(Optic) ? Optic->PiPExposureBias : -1.5f;
+	const float Bias = IsValid(Optic) ? Optic->PiPExposureBias : 0.f;
+	const bool bUseLumen = !IsValid(Optic) || Optic->bPiPUseLumen;
+	const bool bTemporalAA = IsValid(Optic) && Optic->bPiPTemporalAA;
 
-	// FinalColorLDR 仍走色调映射；关掉自动曝光（眼球适应），改用固定补偿
-	Capture->ShowFlags.SetEyeAdaptation(false);
-	Capture->ShowFlags.SetBloom(false);   // 小分辨率 RT 上 Bloom 容易发白
-	// Tonemapper 保持默认开着（FinalColorLDR 需要）
-
+	Capture->bAlwaysPersistRenderingState = true;
 	Capture->PostProcessBlendWeight = 1.f;
 	Capture->bInheritMainViewCameraPostProcessSettings = false;
+
+	// 拍摄自己做 Histogram 测光，不跟项目/主视角的自动曝光开关绑死
+	Capture->ShowFlags.SetEyeAdaptation(true);
+	Capture->ShowFlags.SetBloom(false);
+	Capture->ShowFlags.SetLocalExposure(false);
+	Capture->ShowFlags.SetGrain(false);
+	Capture->ShowFlags.SetAntiAliasing(true);
+	Capture->ShowFlags.SetTemporalAA(bTemporalAA);   // 默认 FXAA；勾了才用 TAA
+
 	FPostProcessSettings& PP = Capture->PostProcessSettings;
 	PP.bOverride_AutoExposureMethod = true;
-	PP.AutoExposureMethod = AEM_Manual;
+	PP.AutoExposureMethod = AEM_Histogram;
 	PP.bOverride_AutoExposureBias = true;
 	PP.AutoExposureBias = Bias;
-	// Manual 下把亮度锁死，避免残留的 auto 区间把画面拉亮
+	// 始终关掉物理相机曝光叠加，避免 Manual/物理路径把亮度拉飞
+	PP.bOverride_AutoExposureApplyPhysicalCameraExposure = true;
+	PP.AutoExposureApplyPhysicalCameraExposure = 0;
+	// 合理亮度区间：暗部不塌成纯黑，亮部也不轻易过曝
 	PP.bOverride_AutoExposureMinBrightness = true;
-	PP.AutoExposureMinBrightness = 1.f;
+	PP.AutoExposureMinBrightness = 0.03f;
 	PP.bOverride_AutoExposureMaxBrightness = true;
-	PP.AutoExposureMaxBrightness = 1.f;
+	PP.AutoExposureMaxBrightness = 8.f;
+	PP.bOverride_AutoExposureSpeedUp = true;
+	PP.AutoExposureSpeedUp = 3.f;
+	PP.bOverride_AutoExposureSpeedDown = true;
+	PP.AutoExposureSpeedDown = 1.f;
+	PP.bOverride_AutoExposureLowPercent = true;
+	PP.AutoExposureLowPercent = 10.f;
+	PP.bOverride_AutoExposureHighPercent = true;
+	PP.AutoExposureHighPercent = 90.f;
+
+	// 局部曝光中性化，胶片颗粒关掉（二者都会放大噪点或压死暗部）
+	PP.bOverride_LocalExposureHighlightContrastScale = true;
+	PP.LocalExposureHighlightContrastScale = 1.f;
+	PP.bOverride_LocalExposureShadowContrastScale = true;
+	PP.LocalExposureShadowContrastScale = 1.f;
+	PP.bOverride_LocalExposureDetailStrength = true;
+	PP.LocalExposureDetailStrength = 1.f;
+	PP.bOverride_FilmGrainIntensity = true;
+	PP.FilmGrainIntensity = 0.f;
+
+	// Lumen：默认开，室内阴影才有间接光
+	PP.bOverride_DynamicGlobalIlluminationMethod = true;
+	PP.DynamicGlobalIlluminationMethod = bUseLumen
+		? EDynamicGlobalIlluminationMethod::Lumen
+		: EDynamicGlobalIlluminationMethod::None;
+	PP.bOverride_ReflectionMethod = true;
+	PP.ReflectionMethod = bUseLumen
+		? EReflectionMethod::Lumen
+		: EReflectionMethod::ScreenSpace;
+	Capture->ShowFlags.SetLumenGlobalIllumination(bUseLumen);
+	Capture->ShowFlags.SetLumenReflections(bUseLumen);
 }
 
 void UOpticScopeComponent::PlaceCapture(const UCameraComponent* Camera)

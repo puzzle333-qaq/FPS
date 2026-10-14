@@ -34,7 +34,7 @@ private:
 	// 倍镜模型或配件数据变了：准备 RenderTarget，只改画面槽
 	bool BindToOptic(UStaticMeshComponent* OpticMesh, const UAttachmentData* Optic);
 	void PlaceCapture(const UCameraComponent* Camera);
-	// 手动曝光 + 关掉眼球适应，避免倍镜画中画过曝
+	// 画中画曝光：Histogram 自动曝光（与主视角自动曝光无关）+ 可选 Lumen/AA
 	void ApplyCaptureExposure(const UAttachmentData* Optic);
 	void RestoreLensMaterial();
 	float ComputeCaptureFOV(const UAttachmentData* Optic) const;

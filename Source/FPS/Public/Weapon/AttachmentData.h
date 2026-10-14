@@ -124,9 +124,18 @@ public:
 	// 渲染目标分辨率（正方形）。越大越清晰也越耗性能，512 一般够用
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides, ClampMin = "64", ClampMax = "2048"))
 	int32 RenderTargetSize = 512;
-	// 画中画曝光补偿（EV）。负数压暗。SceneCapture 用 Manual 曝光 + 这个值，避免开镜过亮
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides, UIMin = "-8", UIMax = "4"))
-	float PiPExposureBias = -1.5f;
+
+	// 画中画曝光补偿（EV）。0 = 不额外加减；正数更亮，负数更暗。拍摄用 Histogram 自动曝光，此项只是微调
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides, UIMin = "-4", UIMax = "4"))
+	float PiPExposureBias = 0.f;
+
+	// 画中画是否用 Lumen GI/反射。默认开：室内阴影有间接光，不会纯黑。关可省性能，但暗部会塌
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides))
+	bool bPiPUseLumen = true;
+
+	// 画中画时域抗锯齿。默认关 = FXAA（不依赖时域历史，不易出噪点）；开 = TAA/TSR
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides))
+	bool bPiPTemporalAA = false;
 
 	// 第 8 步：这面瞄具要求的眼距。勾上后覆盖武器的 AdsEyeDistance（例如倍镜要离眼睛远一点）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic")
