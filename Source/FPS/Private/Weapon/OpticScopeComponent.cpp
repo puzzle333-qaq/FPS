@@ -83,6 +83,7 @@ void UOpticScopeComponent::UpdateView()
 			: TargetFOV;
 	}
 	Capture->FOVAngle = SmoothedCaptureFOV;
+	ApplyCaptureExposure(Optic);
 	PlaceCapture(Character->GetFirstPersonCamera());
 	Capture->HiddenActors.Reset();
 	Capture->HiddenActors.Add(Character);   // 别拍到自己的手臂
@@ -174,6 +175,11 @@ bool UOpticScopeComponent::BindToOptic(UStaticMeshComponent* OpticMesh, const UA
 		Capture->PrimaryComponentTick.TickGroup = TG_PostUpdateWork;   // 等枪和相机都动完再拍
 		Capture->RegisterComponent();
 		Capture->SetComponentTickEnabled(false);
+		ApplyCaptureExposure(Optic);
+	}
+	else
+	{
+		ApplyCaptureExposure(Optic);
 	}
 	Capture->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 	Capture->SetUsingAbsoluteLocation(true);
@@ -198,6 +204,34 @@ bool UOpticScopeComponent::BindToOptic(UStaticMeshComponent* OpticMesh, const UA
 	BoundMesh = OpticMesh;
 	BoundData = Optic;
 	return true;
+}
+
+void UOpticScopeComponent::ApplyCaptureExposure(const UAttachmentData* Optic)
+{
+	if (!IsValid(Capture))
+	{
+		return;
+	}
+
+	const float Bias = IsValid(Optic) ? Optic->PiPExposureBias : -1.5f;
+
+	// FinalColorLDR 仍走色调映射；关掉自动曝光（眼球适应），改用固定补偿
+	Capture->ShowFlags.SetEyeAdaptation(false);
+	Capture->ShowFlags.SetBloom(false);   // 小分辨率 RT 上 Bloom 容易发白
+	// Tonemapper 保持默认开着（FinalColorLDR 需要）
+
+	Capture->PostProcessBlendWeight = 1.f;
+	Capture->bInheritMainViewCameraPostProcessSettings = false;
+	FPostProcessSettings& PP = Capture->PostProcessSettings;
+	PP.bOverride_AutoExposureMethod = true;
+	PP.AutoExposureMethod = AEM_Manual;
+	PP.bOverride_AutoExposureBias = true;
+	PP.AutoExposureBias = Bias;
+	// Manual 下把亮度锁死，避免残留的 auto 区间把画面拉亮
+	PP.bOverride_AutoExposureMinBrightness = true;
+	PP.AutoExposureMinBrightness = 1.f;
+	PP.bOverride_AutoExposureMaxBrightness = true;
+	PP.AutoExposureMaxBrightness = 1.f;
 }
 
 void UOpticScopeComponent::PlaceCapture(const UCameraComponent* Camera)

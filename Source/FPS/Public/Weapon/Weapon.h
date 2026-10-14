@@ -202,6 +202,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool IsLaserOn() const { return bLaserOn; }
 
+	// 第 13 步：只在服务器调用，直接设成开/关（侧瞄自动开激光用，不是切换）
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
+	void SetLaserOn(bool bOn);
+
+	// 第 13 步：记住这把枪上次用的是不是侧瞄（本地，不同步）。倍率档仍是 CurrentZoomIndex
+	bool bRememberCanted = false;
+
 	// 只有激光开着时才 Tick：本地射线、拉伸光束、放光斑
 	virtual void Tick(float DeltaSeconds) override;
 

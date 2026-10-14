@@ -118,6 +118,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
 	void Initiate_ToggleLaser();
 
+	// 第 13 步：直接把激光设成开/关（侧瞄进入时开）
+	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
+	void Initiate_SetLaserOn(bool bOn);
+
 	// 当前枪的开镜 FOV（已考虑瞄具配件）；没有枪时返回 Fallback
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
 	float GetCurrentAimFOV(float Fallback = 90.f) const;
@@ -292,6 +296,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_ToggleLaser();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetLaserOn(bool bOn);
 
 	UFUNCTION(Server, Reliable)
 	void Server_SetFireMode(EFireType NewFireType);

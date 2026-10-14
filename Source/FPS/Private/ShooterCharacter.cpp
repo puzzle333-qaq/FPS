@@ -360,6 +360,18 @@ void AShooterCharacter::UpdateAimAlpha(float DeltaTime)
 		return;
 	}
 
+	// 第 13 步：这把枪上次停在侧瞄，开镜时直接回到侧瞄（侧瞄没了就留在主镜）
+	if (Target > 0.f && IsValid(Weapon) && Weapon->bRememberCanted)
+	{
+		UStaticMeshComponent* CantedMesh = nullptr;
+		const UAttachmentData* CantedData = nullptr;
+		if (Weapon->GetCantedSight(CantedMesh, CantedData))
+		{
+			SetCantedAim(true);
+			return;
+		}
+	}
+
 	// 开镜和关镜都用同一个时间；时间为 0 就瞬间到位
 	const float AdsTime = IsValid(Weapon) ? Weapon->GetEffectiveAdsTime() : 0.2f;
 	if (AdsTime <= KINDA_SMALL_NUMBER)
@@ -802,6 +814,7 @@ void AShooterCharacter::Input_SwitchZoom()
 	if (bCantedAim)
 	{
 		Weapon->CurrentZoomIndex = 0;
+		Weapon->bRememberCanted = false;
 		SetCantedAim(false);
 		Combat->OnZoomLevelChanged.Broadcast(Weapon->CurrentZoomIndex, Weapon->GetEffectiveAimFOV());
 		return;
@@ -812,6 +825,7 @@ void AShooterCharacter::Input_SwitchZoom()
 		Combat->Initiate_CycleZoom();
 		return;
 	}
+	Weapon->bRememberCanted = true;
 	SetCantedAim(true);
 }
 
@@ -829,6 +843,11 @@ void AShooterCharacter::SetCantedAim(bool bNewCanted)
 			// 回主镜也是瞬间的：FOV 直接跳到主镜目标
 			SmoothedAimFOV = Combat->GetCurrentAimFOV(DefaultFOV);
 		}
+	}
+	// 第 13 步：进侧瞄自动开激光（服务器设成开，不是切换）。退出侧瞄不关，保持玩家当前状态
+	if (bCantedAim && IsValid(Combat))
+	{
+		Combat->Initiate_SetLaserOn(true);
 	}
 	OnCantedSightChanged.Broadcast(bCantedAim);
 }

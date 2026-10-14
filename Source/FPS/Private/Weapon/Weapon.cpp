@@ -874,6 +874,15 @@ void AWeapon::ToggleLaser()
 	ForceNetUpdate();
 }
 
+void AWeapon::SetLaserOn(bool bOn)
+{
+	if (!HasAuthority() || !HasLaser()) return;
+	if (bLaserOn == bOn) return;
+	bLaserOn = bOn;
+	OnRep_LaserOn();
+	ForceNetUpdate();
+}
+
 void AWeapon::OnRep_LaserOn()
 {
 	ApplyLaserState();
@@ -932,6 +941,10 @@ void AWeapon::RebuildLaser()
 		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BeamMat, this);
 		MID->SetVectorParameterValue(TEXT("Color"), Data->LaserColor);
 		MID->SetVectorParameterValue(TEXT("LaserColor"), Data->LaserColor);
+		for (const TCHAR* Param : { TEXT("Intensity"), TEXT("Emissive"), TEXT("Brightness"), TEXT("EmissiveIntensity") })
+		{
+			MID->SetScalarParameterValue(Param, Data->LaserBrightness);
+		}
 		LaserBeam->SetMaterial(0, MID);
 	}
 
@@ -950,8 +963,13 @@ void AWeapon::RebuildLaser()
 		UMaterialInstanceDynamic* DotMID = UMaterialInstanceDynamic::Create(DotMat, this);
 		DotMID->SetVectorParameterValue(TEXT("Color"), Data->LaserColor);
 		DotMID->SetVectorParameterValue(TEXT("LaserColor"), Data->LaserColor);
+		for (const TCHAR* Param : { TEXT("Intensity"), TEXT("Emissive"), TEXT("Brightness"), TEXT("EmissiveIntensity") })
+		{
+			DotMID->SetScalarParameterValue(Param, Data->LaserBrightness);
+		}
 		LaserDot->SetDecalMaterial(DotMID);
 	}
+	LaserDot->SetFadeScreenSize(0.f);   // 远处不淡出
 	LaserDot->MarkRenderStateDirty();
 
 	UpdateLaserAttachment();
@@ -1028,16 +1046,43 @@ void AWeapon::UpdateLaser()
 		return;
 	}
 
+	const float Range = FMath::Max(1500.f, Data->LaserRange);
 	const FVector Start = LaserBeam->GetComponentLocation();
-	const FVector Dir = LaserBeam->GetForwardVector();
-	const FVector End = Start + Dir * Data->LaserRange;
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(WeaponLaser), true, this);
 	Params.AddIgnoredActor(GetInstigator());
 	Params.AddIgnoredActor(GetOwner());
 	FHitResult Hit;
-	const bool bHit = World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params);
-	const float Distance = bHit ? Hit.Distance : Data->LaserRange;
+	bool bHit = false;
+	FVector Target;
+
+	// 第 13/14 步：只有本地玩家侧瞄开镜时，射线从镜头穿准星；腰射/奔跑等一律沿 LaserSocket 前方，避免光束飘在屏幕中心
+	const APawn* OwningPawn = GetInstigator();
+	const AShooterCharacter* Shooter = Cast<AShooterCharacter>(OwningPawn);
+	const bool bCantedLocal = IsValid(Shooter) && Shooter->IsLocallyControlled() && Shooter->IsCantedAiming();
+	AController* Controller = IsValid(OwningPawn) ? OwningPawn->GetController() : nullptr;
+	if (bCantedLocal && IsValid(Controller))
+	{
+		FVector ViewLoc;
+		FRotator ViewRot;
+		Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
+		const FVector ViewEnd = ViewLoc + ViewRot.Vector() * Range;
+		bHit = World->LineTraceSingleByChannel(Hit, ViewLoc, ViewEnd, ECC_Visibility, Params);
+		Target = bHit ? FVector(Hit.ImpactPoint) : ViewEnd;
+		const FVector ToTarget = Target - Start;
+		if (!ToTarget.IsNearlyZero())
+		{
+			LaserBeam->SetWorldRotation(ToTarget.Rotation());
+		}
+	}
+	else
+	{
+		LaserBeam->SetRelativeRotation(FRotator::ZeroRotator);
+		const FVector End = Start + LaserBeam->GetForwardVector() * Range;
+		bHit = World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params);
+		Target = bHit ? FVector(Hit.ImpactPoint) : End;
+	}
+	const float Distance = FVector::Dist(Start, Target);
 
 	bool bHideBeam = false;
 	if (Data->bHideBeamWhenAiming)
@@ -1057,7 +1102,11 @@ void AWeapon::UpdateLaser()
 	{
 		if (bHit)
 		{
+			// 光斑大小随距离变大，远处也看得见
+			const float DotRadius = FMath::Max(Data->LaserDotSize, Hit.Distance * 0.01f * Data->LaserDotSizePerMeter);
+			LaserDot->DecalSize = FVector(FMath::Max(DotRadius * 2.f, 10.f), DotRadius, DotRadius);
 			LaserDot->SetWorldLocationAndRotation(Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
+			LaserDot->MarkRenderStateDirty();
 			LaserDot->SetHiddenInGame(false);
 			LaserDot->SetVisibility(true);
 		}
@@ -1207,6 +1256,23 @@ void AWeapon::RebuildAttachmentVisuals()
 	{
 		Flashlight->DestroyComponent();
 		Flashlight = nullptr;
+	}
+
+	// 第 13 步：配了侧瞄（或激光）但模型上没有侧瞄插槽时，提示一次
+	for (const FAttachmentVisual& Visual : AttachmentVisuals)
+	{
+		if (IsValid(Visual.Data) && (Visual.Data->bProvidesCantedSight || Visual.Data->bProvidesLaser) && IsValid(Visual.Mesh1P)
+			&& !Visual.Mesh1P->DoesSocketExist(Visual.Data->CantedSightSocketName))
+		{
+			static TSet<FString> Warned;
+			const FString Key = Visual.Data->GetPathName();
+			if (!Warned.Contains(Key))
+			{
+				Warned.Add(Key);
+				UE_LOG(LogTemp, Warning, TEXT("[Canted] %s: mesh %s has no socket '%s', canted sight disabled."),
+					*GetNameSafe(Visual.Data), *GetNameSafe(Visual.Mesh1P->GetStaticMesh()), *Visual.Data->CantedSightSocketName.ToString());
+			}
+		}
 	}
 
 	// 4. 激光：有就创建光束和光斑，没有就销毁

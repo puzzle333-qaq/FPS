@@ -1418,6 +1418,29 @@ void UCombatComponent::Initiate_ToggleLaser()
 	}
 }
 
+void UCombatComponent::Initiate_SetLaserOn(bool bOn)
+{
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !IsValid(CurrentWeapon) || !CurrentWeapon->HasLaser()) return;
+	if (CurrentWeapon->IsLaserOn() == bOn) return;
+	if (Owner->HasAuthority())
+	{
+		Server_SetLaserOn_Implementation(bOn);
+	}
+	else
+	{
+		Server_SetLaserOn(bOn);
+	}
+}
+
+void UCombatComponent::Server_SetLaserOn_Implementation(bool bOn)
+{
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->SetLaserOn(bOn);
+	}
+}
+
 void UCombatComponent::Server_ToggleLaser_Implementation()
 {
 	if (IsValid(CurrentWeapon))

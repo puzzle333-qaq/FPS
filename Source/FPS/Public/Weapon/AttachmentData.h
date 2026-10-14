@@ -124,6 +124,9 @@ public:
 	// 渲染目标分辨率（正方形）。越大越清晰也越耗性能，512 一般够用
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides, ClampMin = "64", ClampMax = "2048"))
 	int32 RenderTargetSize = 512;
+	// 画中画曝光补偿（EV）。负数压暗。SceneCapture 用 Manual 曝光 + 这个值，避免开镜过亮
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic|Magnified", meta = (EditCondition = "OpticType == EOpticType::Magnified || OpticType == EOpticType::Variable", EditConditionHides, UIMin = "-8", UIMax = "4"))
+	float PiPExposureBias = -1.5f;
 
 	// 第 8 步：这面瞄具要求的眼距。勾上后覆盖武器的 AdsEyeDistance（例如倍镜要离眼睛远一点）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Optic")
@@ -208,9 +211,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser"))
 	TSoftObjectPtr<UMaterialInterface> LaserDotDecalMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/FPSTP/Content/Weapons/Attachments/AttachmentsList/Tactical/TacticalLaser/Materials/M_LaserDecal.M_LaserDecal")));
 
-	// 射线最远距离（厘米）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser", ClampMin = "100"))
-	float LaserRange = 5000.f;
+	// 射线最远距离（厘米）。第 13 步：最少 1500（代码里也会把更小的值抬到 1500）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser", ClampMin = "1500"))
+	float LaserRange = 10000.f;
+
+	// 光束和光斑亮度：写入材质的 Intensity / Emissive / Brightness / EmissiveIntensity 标量参数
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser", ClampMin = "0"))
+	float LaserBrightness = 50.f;
+
+	// 远处光斑放大：每米距离光斑半径至少多少厘米（0.25 = 15 米处约 3.75 厘米），保证远处看得见
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser", ClampMin = "0"))
+	float LaserDotSizePerMeter = 0.25f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Laser", meta = (EditCondition = "bProvidesLaser"))
 	FLinearColor LaserColor = FLinearColor(1.f, 0.f, 0.f);
