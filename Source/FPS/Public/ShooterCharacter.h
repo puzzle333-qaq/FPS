@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -92,13 +92,17 @@ public:
 	UPROPERTY(BlueprintReadOnly,Category = "FPS|FABRIK")
 	FTransform FABRIK_SocketTransform;
 
-	// 第一人称左手目标，手臂网格 hand_r 的骨骼空间。ABP_FirstPerson 的 FABRIK 读它。
+	// First-person left-hand FABRIK target (runtime unused). C++ keeps Identity/Alpha=0; grip from hold anims.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
 	FTransform FABRIK_SocketTransform1P;
 
-	// 第一人称 FABRIK 强度。没有可用插槽时为 0，左手留在持枪动画上。
+	// First-person FABRIK alpha: always 0 (design: no 1P FABRIK; grip from per-weapon hold anims).
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
 	float FABRIK_Alpha1P = 0.f;
+
+	// 第三人称左手 FABRIK 强度。近战为 0，ABP 的 FABRIK Alpha 应绑这个。
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
+	float FABRIK_Alpha = 0.f;
 
 	// 动画曲线名。手臂蒙太奇里这条曲线为 1 时左手 IK 完全关掉（让左手去拿弹匣/拉栓），0 时正常扶枪
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FABRIK")
@@ -238,6 +242,111 @@ public:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> LeanRightAction;
 
+	// ===== Prone (趴下/趴行) =====
+	// Server-authoritative: the owner predicts locally, the server validates and replicates bIsProne.
+	// Prone = CMC crouch with a smaller CrouchedHalfHeight, so capsule/network move prediction reuse crouch.
+	UFUNCTION(BlueprintPure, Category = "FPS|Prone")
+	bool IsProne() const { return bIsProne; }
+
+	// bExitToCrouch: when leaving prone, go to crouch instead of standing.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Prone")
+	void RequestSetProne(bool bNewProne, bool bExitToCrouch = false);
+
+	// True while prone (replicated to everyone). 3P ABP: drive the Prone state from this.
+	UPROPERTY(ReplicatedUsing = OnRep_IsProne, BlueprintReadOnly, Category = "FPS|Prone")
+	bool bIsProne = false;
+
+	// Smoothed 0..1 prone blend (all machines). Use for camera / optional ABP blends.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Prone")
+	float ProneAlpha = 0.f;
+
+	// Prone AND moving (ground speed > ProneCrawlSpeedThreshold). ABP: crawl full-body BS_Prone when true;
+	// when false (prone, stopped) use prone idle body + layered upper-body gun hold. 3P FABRIK only off while crawling.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Prone")
+	bool bProneCrawling = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone", meta = (ClampMin = "0.0"))
+	float ProneCrawlSpeedThreshold = 10.f;
+
+	// Empty = runtime IA bound to Z (like Lean Q/E).
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> ProneAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone", meta = (ClampMin = "10.0"))
+	float ProneCapsuleHalfHeight = 34.f;
+
+	// Extra 1P camera drop while prone (SpringArm relative Z), on top of the capsule shrinking.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone")
+	float ProneCameraZOffset = -50.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone", meta = (ClampMin = "0.0"))
+	float ProneCameraInterpSpeed = 6.f;
+
+	// Authored crawl speed of the prone BlendSpace (LocomotionPlayRate = GroundSpeed / this).
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Locomotion", meta = (ClampMin = "1.0"))
+	float ProneAnimReferenceSpeed = 100.f;
+
+	// Third-person: hide the weapon while prone (UnarmedProne anims hold no gun). False = keep it in hand, FABRIK off.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone")
+	bool bHideWeapon3PWhileProne = false;
+
+	// ===== Slide (滑铲) =====
+	// Pressing a crouch key (Ctrl hold / C toggle) above SlideMinSpeed slides instead of crouching.
+	// Server-authoritative like prone: owner predicts, Server_SetSliding validates, bIsSliding replicates.
+	UFUNCTION(BlueprintPure, Category = "FPS|Slide")
+	bool IsSliding() const { return bIsSliding; }
+
+	// Called by the controller on a crouch key press. Returns true if a slide started (then do not crouch).
+	bool TryStartSlide();
+
+	// Whether the slide should end crouched (C, or Ctrl still held) or standing (Ctrl released).
+	void SetSlideEndCrouch(bool bCrouch) { bSlideEndCrouch = bCrouch; }
+
+	// Jump while sliding: end the slide and stand up.
+	void CancelSlideToStand();
+
+	UPROPERTY(ReplicatedUsing = OnRep_IsSliding, BlueprintReadOnly, Category = "FPS|Slide")
+	bool bIsSliding = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideAlpha = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideMinSpeed = 600.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide", meta = (ClampMin = "0.1"))
+	float SlideDuration = 0.9f;
+
+	// Extra horizontal speed added at slide start (cm/s).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideSpeedBoost = 150.f;
+
+	// Linear deceleration while sliding (cm/s^2). ~ (800+150)/0.9 ≈ 1000 stops near the end.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideDeceleration = 800.f;
+
+	// The slide ends early below this speed.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideEndSpeed = 200.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideCameraZOffset = -15.f;
+
+	// 3P full-body slide. Montage wins if set; else SlideAnim is played as a dynamic montage in SlideSlotName.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
+	TObjectPtr<UAnimMontage> SlideMontage;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
+	TSoftObjectPtr<UAnimSequenceBase> SlideAnim;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
+	// Body-only slot: ABP must layer arms/spine back from locomotion/weapon pose (see CrouchSlide_REPORT.md).
+	FName SlideSlotName = TEXT("BodySlot");
+
+	// Optional 1P arms montage. Design rule: arms keep weapon hold during slide -> leave EMPTY.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
+	TObjectPtr<UAnimMontage> SlideMontage1P;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Health")
 	TObjectPtr<UStatsComponent>Stats;
@@ -346,6 +455,56 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_SetLeanTarget(float NewTarget);
+
+	// ---- Prone ----
+	UFUNCTION()
+	void OnRep_IsProne(bool bOldProne);
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetProne(bool bNewProne, bool bExitToCrouch);
+
+	// Server refused a predicted change: snap the owner back to the server value.
+	UFUNCTION(Client, Reliable)
+	void Client_ProneRejected(bool bServerProne);
+
+	void ApplyProneState(bool bNewProne, bool bExitToCrouch);
+	bool CanEnterProne() const;
+	bool CanExitProne(bool bToCrouch) const;
+	void Input_Prone();
+	void EnsureProneInput();
+	void UpdateProne(float DeltaTime);
+	void ApplyProneWeaponVisibility();
+
+	// ---- Slide ----
+	UFUNCTION()
+	void OnRep_IsSliding(bool bOldSliding);
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetSliding(bool bNewSliding);
+
+	UFUNCTION(Client, Reliable)
+	void Client_SlideRejected();
+
+	bool CanStartSlide(float SpeedScale) const;
+	void ApplySlideState(bool bNewSliding);
+	void EndSlideLocal();
+	void UpdateSlide(float DeltaTime);
+	void PlaySlideAnim(bool bPlay);
+
+	bool bSlideEndCrouch = true;
+	float SlideElapsed = 0.f;
+	float SavedGroundFriction = 8.f;
+	float SavedBrakingDecelWalking = 2048.f;
+	bool bSlideSavedMovement = false;
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimMontage> ActiveSlideMontage;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> ProneRuntimeIMC;
+
+	float DefaultCrouchedHalfHeight = 0.f;
+	FVector SpringArmBaseLocation = FVector::ZeroVector;
+	bool bSpringArmBaseCaptured = false;
 
 	// 当前按住/切换的方向：-1 左 0 无 1 右
 	int32 LeanInputDir = 0;

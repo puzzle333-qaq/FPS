@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
@@ -54,6 +54,7 @@ namespace
 AShooterCharacter::AShooterCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	SlideAnim = TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(TEXT("/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L.anim_Slide_L")));
 
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
@@ -122,6 +123,16 @@ void AShooterCharacter::BeginPlay()
 	CameraBaseRotation = FirstPersonCamera->GetRelativeRotation();
 	bCameraBaseCaptured = true;
 
+	if (IsValid(SpringArm))
+	{
+		SpringArmBaseLocation = SpringArm->GetRelativeLocation();
+		bSpringArmBaseCaptured = true;
+	}
+	if (UCharacterMovementComponent* ProneCMC = GetCharacterMovement())
+	{
+		DefaultCrouchedHalfHeight = ProneCMC->GetCrouchedHalfHeight();
+	}
+
 	StartingAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
 
 	if (IsValid(Mesh1P))
@@ -182,6 +193,8 @@ void AShooterCharacter::Tick(float DeltaTime)
 	ApplyVisualRecoilToMesh(DeltaTime);    // 算完再把枪身后坐叠回去
 	UpdateAimFieldOfView(DeltaTime);
 	UpdateLean(DeltaTime);
+	UpdateSlide(DeltaTime);
+	UpdateProne(DeltaTime);
 
 	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
 	{
@@ -283,57 +296,41 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon))
 	{
 		FABRIK_Alpha1P = 0.f;
+		FABRIK_Alpha = 0.f;
 		FABRIK_SocketTransform = FTransform::Identity;
 		FABRIK_SocketTransform1P = FTransform::Identity;
 		return;
 	}
 
-	// 握把配件上的 FABRIK 优先。没有握把，或握把模型上没有那个 Socket，才用枪骨骼上的 FABRIK。
+	// Melee: both hands follow knife anims only
+	if (Combat->CurrentWeapon->WeaponKind == EWeaponKind::Melee)
+	{
+		FABRIK_Alpha1P = 0.f;
+		FABRIK_Alpha = 0.f;
+		FABRIK_SocketTransform = FTransform::Identity;
+		FABRIK_SocketTransform1P = FTransform::Identity;
+		return;
+	}
+
+	// Third-person: grip attachment FABRIK preferred, else weapon bone FABRIK.
 	FTransform SocketWorld;
 	if (Combat->CurrentWeapon->GetFabrikWorldTransform(false, SocketWorld))
 	{
 		WriteHandSpace(GetMesh(), SocketWorld, FABRIK_SocketTransform);
+		// Crawling uses full-body unarmed anims (FABRIK off). Prone + stopped and sliding keep gun hold (FABRIK on).
+		FABRIK_Alpha = bProneCrawling ? 0.f : 1.f;
 	}
 	else
 	{
 		FABRIK_SocketTransform = FTransform::Identity;
+		FABRIK_Alpha = 0.f;
 	}
 
-	// 狙击枪第一人称扶手跟动画走。步枪和手枪仍用 FABRIK。
-	if (Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Sniper))
-	{
-		FABRIK_SocketTransform1P = FTransform::Identity;
-		FABRIK_Alpha1P = 0.f;
-	}
-	else if (Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld))
-	{
-		WriteHandSpace(Mesh1P, SocketWorld, FABRIK_SocketTransform1P);
-
-		// 目标强度 = 1 × (1 - 曲线值)。换弹/拉栓时直接把目标压到 0
-		float TargetAlpha = 1.f;
-		const UAnimInstance* ArmAnim = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
-		if (IsValid(ArmAnim) && !DisableLeftHandIKCurveName.IsNone())
-		{
-			TargetAlpha *= 1.f - FMath::Clamp(ArmAnim->GetCurveValue(DisableLeftHandIKCurveName), 0.f, 1.f);
-		}
-		const EWeaponStatus Status = Combat->CurrentWeapon->WeaponStatus;
-		if (bDisableLeftHandIKDuringReload && (Status == EWeaponStatus::Reloading || Status == EWeaponStatus::BoltCycling))
-		{
-			TargetAlpha = 0.f;
-		}
-
-		// 平滑过渡，避免左手瞬移
-		FABRIK_Alpha1P = LeftHandIKBlendSpeed > 0.f
-			? FMath::FInterpTo(FABRIK_Alpha1P, TargetAlpha, DeltaTime, LeftHandIKBlendSpeed)
-			: TargetAlpha;
-	}
-	else
-	{
-		FABRIK_SocketTransform1P = FTransform::Identity;
-		FABRIK_Alpha1P = 0.f;
-	}
+	// First-person: permanently disable left-hand FABRIK.
+	// Grip alignment comes from per-weapon hold/equip animations on WeaponData tags.
+	FABRIK_SocketTransform1P = FTransform::Identity;
+	FABRIK_Alpha1P = 0.f;
 }
-
 void AShooterCharacter::ConfigureAimTickOrder()
 {
 	// The aim socket follows the arm bones, so read it after Mesh1P animates.
@@ -667,6 +664,11 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	UEnhancedInputComponent* ShooterInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
 
 	EnsureLeanInput(ShooterInputComponent);
+	EnsureProneInput();
+	if (ProneAction)
+	{
+		ShooterInputComponent->BindAction(ProneAction, ETriggerEvent::Started, this, &ThisClass::Input_Prone);
+	}
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanLeft_Started);
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanLeft_Completed);
 	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanRight_Started);
@@ -880,6 +882,389 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME_CONDITION(AShooterCharacter, LeanTarget, COND_SkipOwner);
+	DOREPLIFETIME(AShooterCharacter, bIsProne);
+	DOREPLIFETIME(AShooterCharacter, bIsSliding);
+}
+
+// ===== 趴下 / 趴行 (Prone) =====
+void AShooterCharacter::EnsureProneInput()
+{
+	if (ProneAction) return;
+
+	// 没配资产：运行时建 IA + 小 IMC（Z 键），同 Lean 的做法
+	if (!ProneRuntimeIMC)
+	{
+		ProneRuntimeIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Prone_Runtime"));
+	}
+	ProneAction = NewObject<UInputAction>(this, TEXT("IA_Prone_Runtime"));
+	ProneAction->ValueType = EInputActionValueType::Boolean;
+	ProneRuntimeIMC->MapKey(ProneAction, EKeys::Z);
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+			{
+				if (Subsystem->HasMappingContext(ProneRuntimeIMC))
+				{
+					Subsystem->RemoveMappingContext(ProneRuntimeIMC);
+				}
+				Subsystem->AddMappingContext(ProneRuntimeIMC, 1);
+			}
+		}
+	}
+}
+
+void AShooterCharacter::Input_Prone()
+{
+	if (!IsLocallyControlled()) return;
+	RequestSetProne(!bIsProne, false);
+}
+
+bool AShooterCharacter::CanEnterProne() const
+{
+	const UCharacterMovementComponent* CMC = GetCharacterMovement();
+	return IsValid(CMC) && CMC->IsMovingOnGround() && !bIsHealing;
+}
+
+bool AShooterCharacter::CanExitProne(bool bToCrouch) const
+{
+	const UCapsuleComponent* Capsule = GetCapsuleComponent();
+	const UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(Capsule) || !IsValid(CMC) || !GetWorld()) return false;
+
+	const ACharacter* DefaultChar = GetClass()->GetDefaultObject<ACharacter>();
+	const float StandHalf = DefaultChar && DefaultChar->GetCapsuleComponent()
+		? DefaultChar->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()
+		: 88.f;
+	const float CrouchHalf = DefaultCrouchedHalfHeight > 0.f ? DefaultCrouchedHalfHeight : CMC->GetCrouchedHalfHeight();
+	const float Scale = Capsule->GetShapeScale();
+	const float TargetHalf = (bToCrouch ? CrouchHalf : StandHalf) * Scale;
+	const float CurrentHalf = Capsule->GetScaledCapsuleHalfHeight();
+	if (TargetHalf <= CurrentHalf) return true;
+
+	// Keep the feet where they are: the taller capsule's centre rises by the height difference.
+	const FVector TestLocation = GetActorLocation() + FVector(0.f, 0.f, TargetHalf - CurrentHalf + 1.f);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(ProneStandUp), false, this);
+	FCollisionResponseParams ResponseParams;
+	CMC->InitCollisionParams(Params, ResponseParams);
+	const FCollisionShape Shape = FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius() - 1.f, TargetHalf);
+	return !GetWorld()->OverlapBlockingTestByChannel(TestLocation, FQuat::Identity, Capsule->GetCollisionObjectType(), Shape, Params, ResponseParams);
+}
+
+void AShooterCharacter::RequestSetProne(bool bNewProne, bool bExitToCrouch)
+{
+	if (bNewProne == bIsProne) return;
+	if (bIsSliding) return;   // finish/cancel the slide first
+	if (bNewProne && !CanEnterProne()) return;
+	if (!bNewProne && !CanExitProne(bExitToCrouch)) return;   // ceiling above: stay prone
+
+	ApplyProneState(bNewProne, bExitToCrouch);   // local prediction (server: authoritative)
+	if (!HasAuthority())
+	{
+		Server_SetProne(bNewProne, bExitToCrouch);
+	}
+}
+
+void AShooterCharacter::Server_SetProne_Implementation(bool bNewProne, bool bExitToCrouch)
+{
+	if (bNewProne == bIsProne) return;
+	const bool bAllowed = bNewProne ? CanEnterProne() : CanExitProne(bExitToCrouch);
+	if (!bAllowed)
+	{
+		Client_ProneRejected(bIsProne);
+		return;
+	}
+	ApplyProneState(bNewProne, bExitToCrouch);
+}
+
+void AShooterCharacter::Client_ProneRejected_Implementation(bool bServerProne)
+{
+	if (bServerProne != bIsProne)
+	{
+		ApplyProneState(bServerProne, false);
+	}
+}
+
+void AShooterCharacter::OnRep_IsProne(bool bOldProne)
+{
+	// The owner already applied its prediction; only react if the server value really differs.
+	const bool bNew = bIsProne;
+	bIsProne = bOldProne;
+	if (bNew != bOldProne)
+	{
+		ApplyProneState(bNew, false);
+	}
+	else
+	{
+		bIsProne = bNew;
+	}
+}
+
+void AShooterCharacter::ApplyProneState(bool bNewProne, bool bExitToCrouch)
+{
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(CMC)) return;
+
+	if (DefaultCrouchedHalfHeight <= 0.f)
+	{
+		DefaultCrouchedHalfHeight = CMC->GetCrouchedHalfHeight();
+	}
+
+	const bool bSimProxy = GetLocalRole() == ROLE_SimulatedProxy;
+	const bool bWasProne = bIsProne;
+	bIsProne = bNewProne;
+
+	if (bNewProne)
+	{
+		// Already crouched (normal crouch height): release it so the next crouch uses the prone height.
+		if (bIsCrouched && !bWasProne)
+		{
+			CMC->UnCrouch(bSimProxy);
+		}
+		CMC->SetCrouchedHalfHeight(ProneCapsuleHalfHeight);
+		CMC->bWantsToCrouch = true;
+		if (bSimProxy && bIsCrouched)
+		{
+			CMC->Crouch(true);
+		}
+	}
+	else
+	{
+		CMC->SetCrouchedHalfHeight(DefaultCrouchedHalfHeight);
+		if (bIsCrouched)
+		{
+			CMC->UnCrouch(bSimProxy);
+		}
+		CMC->bWantsToCrouch = bExitToCrouch;
+		if (bSimProxy && bIsCrouched)
+		{
+			// Replicated bIsCrouched still true (prone -> crouch): re-crouch at normal height.
+			CMC->Crouch(true);
+		}
+	}
+
+	if (bNewProne)
+	{
+		LeanInputDir = 0;
+		bLeanLeftHeld = bLeanRightHeld = false;
+	}
+
+	ApplyProneWeaponVisibility();
+	RefreshControllerMovementSpeed();   // prone cancels sprint and switches to crawl speed
+	RefreshLocomotionGait();
+}
+
+void AShooterCharacter::ApplyProneWeaponVisibility()
+{
+	if (!bHideWeapon3PWhileProne || !IsValid(Combat) || !IsValid(Combat->CurrentWeapon)) return;
+	if (USkeletalMeshComponent* WeaponMesh3P = Combat->CurrentWeapon->GetMesh3P())
+	{
+		WeaponMesh3P->SetHiddenInGame(bIsProne);
+	}
+}
+
+void AShooterCharacter::UpdateProne(float DeltaTime)
+{
+	bProneCrawling = bIsProne && GetVelocity().Size2D() > ProneCrawlSpeedThreshold;
+
+	const float Target = bIsProne ? 1.f : 0.f;
+	ProneAlpha = ProneCameraInterpSpeed > 0.f ? FMath::FInterpTo(ProneAlpha, Target, DeltaTime, ProneCameraInterpSpeed) : Target;
+	if (FMath::IsNearlyEqual(ProneAlpha, Target, 0.001f)) ProneAlpha = Target;
+
+	if (IsLocallyControlled() && bSpringArmBaseCaptured && IsValid(SpringArm))
+	{
+		const FVector Desired = SpringArmBaseLocation + FVector(0.f, 0.f, ProneCameraZOffset * ProneAlpha + SlideCameraZOffset * SlideAlpha);
+		if (!SpringArm->GetRelativeLocation().Equals(Desired, 0.01f))
+		{
+			SpringArm->SetRelativeLocation(Desired);
+		}
+	}
+}
+
+// ===== 滑铲 (Slide) =====
+bool AShooterCharacter::CanStartSlide(float SpeedScale) const
+{
+	const UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(CMC) || bIsSliding || bIsProne || bIsHealing) return false;
+	if (!CMC->IsMovingOnGround()) return false;
+	return GetVelocity().Size2D() > SlideMinSpeed * SpeedScale;
+}
+
+bool AShooterCharacter::TryStartSlide()
+{
+	if (!IsLocallyControlled() || !CanStartSlide(1.f)) return false;
+	bSlideEndCrouch = true;
+	ApplySlideState(true);
+	if (!HasAuthority())
+	{
+		Server_SetSliding(true);
+	}
+	return true;
+}
+
+void AShooterCharacter::CancelSlideToStand()
+{
+	if (!bIsSliding) return;
+	bSlideEndCrouch = false;
+	EndSlideLocal();
+}
+
+void AShooterCharacter::EndSlideLocal()
+{
+	ApplySlideState(false);
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+	{
+		// Owner drives crouch via its move flags; if blocked overhead CMC stays crouched until clear.
+		CMC->bWantsToCrouch = bSlideEndCrouch;
+	}
+	if (!HasAuthority())
+	{
+		Server_SetSliding(false);
+	}
+}
+
+void AShooterCharacter::Server_SetSliding_Implementation(bool bNewSliding)
+{
+	if (bNewSliding == bIsSliding) return;
+	if (bNewSliding && !CanStartSlide(0.75f))   // small tolerance for client/server speed drift
+	{
+		Client_SlideRejected();
+		return;
+	}
+	ApplySlideState(bNewSliding);
+}
+
+void AShooterCharacter::Client_SlideRejected_Implementation()
+{
+	if (bIsSliding)
+	{
+		ApplySlideState(false);   // stays crouched (bWantsToCrouch already true)
+	}
+}
+
+void AShooterCharacter::OnRep_IsSliding(bool bOldSliding)
+{
+	const bool bNew = bIsSliding;
+	bIsSliding = bOldSliding;
+	if (bNew != bOldSliding)
+	{
+		ApplySlideState(bNew);
+	}
+	else
+	{
+		bIsSliding = bNew;
+	}
+}
+
+void AShooterCharacter::ApplySlideState(bool bNewSliding)
+{
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(CMC)) return;
+	const bool bWas = bIsSliding;
+	bIsSliding = bNewSliding;
+	if (bWas == bNewSliding) return;
+
+	const bool bSimulates = IsLocallyControlled() || HasAuthority();
+	if (bNewSliding)
+	{
+		SlideElapsed = 0.f;
+		if (!bSlideSavedMovement)
+		{
+			SavedGroundFriction = CMC->GroundFriction;
+			SavedBrakingDecelWalking = CMC->BrakingDecelerationWalking;
+			bSlideSavedMovement = true;
+		}
+		// No input acceleration while sliding (controller skips move input) -> CMC brakes linearly by this.
+		CMC->GroundFriction = 0.f;
+		CMC->BrakingDecelerationWalking = SlideDeceleration;
+		CMC->bWantsToCrouch = true;   // low capsule = normal crouch height
+		if (bSimulates)
+		{
+			FVector Vel2D = CMC->Velocity;
+			Vel2D.Z = 0.f;
+			const FVector Dir = Vel2D.GetSafeNormal();
+			CMC->Velocity += Dir * SlideSpeedBoost;
+		}
+		LeanInputDir = 0;
+		bLeanLeftHeld = bLeanRightHeld = false;
+	}
+	else if (bSlideSavedMovement)
+	{
+		CMC->GroundFriction = SavedGroundFriction;
+		CMC->BrakingDecelerationWalking = SavedBrakingDecelWalking;
+		bSlideSavedMovement = false;
+	}
+
+	PlaySlideAnim(bNewSliding);
+	RefreshControllerMovementSpeed();   // slide cancels sprint, raises the crouched speed cap
+	RefreshLocomotionGait();
+}
+
+void AShooterCharacter::PlaySlideAnim(bool bPlay)
+{
+	if (GetNetMode() == NM_DedicatedServer) return;
+
+	UAnimInstance* Anim3P = IsValid(GetMesh()) ? GetMesh()->GetAnimInstance() : nullptr;
+	UAnimInstance* Anim1P = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+
+	if (bPlay)
+	{
+		if (Anim3P)
+		{
+			if (SlideMontage)
+			{
+				Anim3P->Montage_Play(SlideMontage);
+				ActiveSlideMontage = SlideMontage;
+			}
+			else if (UAnimSequenceBase* Seq = SlideAnim.LoadSynchronous())
+			{
+				const float Rate = FMath::Max(0.1f, Seq->GetPlayLength() / SlideDuration);
+				ActiveSlideMontage = Anim3P->PlaySlotAnimationAsDynamicMontage(Seq, SlideSlotName, 0.15f, 0.25f, Rate, 1);
+			}
+		}
+		if (Anim1P && SlideMontage1P && IsLocallyControlled())
+		{
+			Anim1P->Montage_Play(SlideMontage1P);
+		}
+	}
+	else
+	{
+		if (Anim3P && IsValid(ActiveSlideMontage))
+		{
+			Anim3P->Montage_Stop(0.25f, ActiveSlideMontage);
+		}
+		ActiveSlideMontage = nullptr;
+		if (Anim1P && SlideMontage1P)
+		{
+			Anim1P->Montage_Stop(0.2f, SlideMontage1P);
+		}
+	}
+}
+
+void AShooterCharacter::UpdateSlide(float DeltaTime)
+{
+	const float Target = bIsSliding ? 1.f : 0.f;
+	SlideAlpha = FMath::FInterpTo(SlideAlpha, Target, DeltaTime, 10.f);
+	if (FMath::IsNearlyEqual(SlideAlpha, Target, 0.001f)) SlideAlpha = Target;
+
+	if (!bIsSliding) return;
+	SlideElapsed += DeltaTime;
+
+	const UCharacterMovementComponent* CMC = GetCharacterMovement();
+	const bool bDone = SlideElapsed >= SlideDuration
+		|| GetVelocity().Size2D() < SlideEndSpeed
+		|| (IsValid(CMC) && !CMC->IsMovingOnGround());
+
+	if (IsLocallyControlled())
+	{
+		if (bDone) EndSlideLocal();
+	}
+	else if (HasAuthority() && SlideElapsed >= SlideDuration + 0.5f)
+	{
+		ApplySlideState(false);   // safety: owner's end RPC never arrived
+	}
 }
 
 // ===== 左右探头 =====
@@ -956,7 +1341,7 @@ bool AShooterCharacter::IsLeanBlocked() const
 	{
 		if (PC->IsSprinting() && GetVelocity().Size2D() > 10.f) return true;
 	}
-	return false;
+	return bIsProne || bIsSliding;   // no leaning while lying down / sliding
 }
 
 void AShooterCharacter::Server_SetLeanTarget_Implementation(float NewTarget)
@@ -1434,7 +1819,7 @@ void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeig
 bool AShooterCharacter::CanJumpInternal_Implementation() const
 {
 	// 客户端用同步过来的耐力做预测，服务器用真实耐力做最终判断
-	return Super::CanJumpInternal_Implementation() && (!IsValid(Stats) || Stats->HasStaminaForJump());
+	return !bIsProne && !bIsSliding && Super::CanJumpInternal_Implementation() && (!IsValid(Stats) || Stats->HasStaminaForJump());
 }
 
 void AShooterCharacter::OnJumped_Implementation()
@@ -1474,7 +1859,11 @@ void AShooterCharacter::UpdateLocomotionGait(bool bNotifyCombat)
 	// of the BlendSpace that is ACTUALLY playing (not the gait we wish we had).
 	// Formula: LocomotionPlayRate = Clamp(GroundSpeed / RefSpeed, Min, Max)
 	float RefSpeed;
-	if (bIsCrouched)
+	if (bIsProne)
+	{
+		RefSpeed = ProneAnimReferenceSpeed; // Prone crawl BlendSpace
+	}
+	else if (bIsCrouched)
 	{
 		RefSpeed = CrouchAnimReferenceSpeed; // Strafe_Crouching
 	}

@@ -1,4 +1,4 @@
-﻿#include "ShooterPlayerController.h"
+#include "ShooterPlayerController.h"
 #include "ShooterCharacter.h"
 
 #include "EnhancedInputSubsystems.h"
@@ -29,6 +29,7 @@ void AShooterPlayerController::BeginPlay()
 		Subsystem->AddMappingContext(ShooterIMC, 0);
 	}
 	EnsureLoadoutInput();
+	EnsureCrouchInput();
 }
 
 void AShooterPlayerController::SetupInputComponent()
@@ -52,9 +53,22 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		ShooterInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ThisClass::Input_Jump);
 	}
-	if (CrouchAction)
+	EnsureCrouchInput();
+	// Legacy IA_Crouch (IMC_Shooter: Left Ctrl toggle) is NOT bound when the new C-toggle / Ctrl-hold actions exist,
+	// so Ctrl can never double-trigger a toggle. (Runtime IMC priority 2 also consumes Ctrl/C.)
+	if (CrouchAction && !CrouchToggleAction && !CrouchHoldAction)
 	{
+		// Legacy IA_Crouch (IMC_Shooter). Its key is consumed if it is C or Left Ctrl (runtime IMC priority 2).
 		ShooterInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ThisClass::Input_Crouch);
+	}
+	if (CrouchToggleAction)
+	{
+		ShooterInputComponent->BindAction(CrouchToggleAction, ETriggerEvent::Started, this, &ThisClass::Input_Crouch);
+	}
+	if (CrouchHoldAction)
+	{
+		ShooterInputComponent->BindAction(CrouchHoldAction, ETriggerEvent::Started, this, &ThisClass::Input_CrouchHold_Started);
+		ShooterInputComponent->BindAction(CrouchHoldAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchHold_Completed);
 	}
 	if (SprintAction)
 	{
@@ -190,9 +204,109 @@ void AShooterPlayerController::Input_ToggleAttachmentMenu()
 	}
 }
 
+void AShooterPlayerController::EnsureCrouchInput()
+{
+	const bool bNeedToggle = !CrouchToggleAction;
+	const bool bNeedHold = !CrouchHoldAction;
+	if (bNeedToggle || bNeedHold)
+	{
+		if (!CrouchRuntimeIMC)
+		{
+			CrouchRuntimeIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Crouch_Runtime"));
+		}
+		if (bNeedToggle)
+		{
+			CrouchToggleAction = NewObject<UInputAction>(this, TEXT("IA_CrouchToggle_Runtime"));
+			CrouchToggleAction->ValueType = EInputActionValueType::Boolean;
+			CrouchRuntimeIMC->MapKey(CrouchToggleAction, EKeys::C);
+		}
+		if (bNeedHold)
+		{
+			CrouchHoldAction = NewObject<UInputAction>(this, TEXT("IA_CrouchHold_Runtime"));
+			CrouchHoldAction->ValueType = EInputActionValueType::Boolean;
+			CrouchRuntimeIMC->MapKey(CrouchHoldAction, EKeys::LeftControl);
+		}
+	}
+	if (!CrouchRuntimeIMC) return;
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(CrouchRuntimeIMC))
+	{
+		Subsystem->AddMappingContext(CrouchRuntimeIMC, 2);
+	}
+}
+
+void AShooterPlayerController::Input_CrouchHold_Started()
+{
+	bCrouchHeld = true;
+	ACharacter* MyChar = GetCharacter();
+	if (!IsValid(MyChar)) return;
+	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyChar))
+	{
+		if (Shooter->IsProne())
+		{
+			Shooter->RequestSetProne(false, true);   // prone -> crouch
+			return;
+		}
+		if (Shooter->IsSliding())
+		{
+			Shooter->SetSlideEndCrouch(true);
+			return;
+		}
+		if (Shooter->TryStartSlide())
+		{
+			Shooter->SetSlideEndCrouch(true);
+			return;
+		}
+	}
+	if (UCharacterMovementComponent* CMC = MyChar->GetCharacterMovement())
+	{
+		CMC->bWantsToCrouch = true;
+	}
+}
+
+void AShooterPlayerController::Input_CrouchHold_Completed()
+{
+	bCrouchHeld = false;
+	ACharacter* MyChar = GetCharacter();
+	if (!IsValid(MyChar)) return;
+	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyChar))
+	{
+		if (Shooter->IsProne()) return;
+		if (Shooter->IsSliding())
+		{
+			Shooter->SetSlideEndCrouch(false);   // stand when the slide ends
+			return;
+		}
+	}
+	if (UCharacterMovementComponent* CMC = MyChar->GetCharacterMovement())
+	{
+		// CMC keeps trying to uncrouch every tick and stays crouched while blocked overhead.
+		CMC->bWantsToCrouch = false;
+	}
+}
+
 void AShooterPlayerController::Input_Crouch()
 {
 	if (!IsValid(GetCharacter())) return;
+	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(Shooter))
+	{
+		// 趴着按下蹲 = 起身到蹲姿
+		if (Shooter->IsProne())
+		{
+			Shooter->RequestSetProne(false, true);
+			return;
+		}
+		if (Shooter->IsSliding())
+		{
+			return;
+		}
+		// 高速按 C = 滑铲，结束后保持蹲姿
+		if (Shooter->TryStartSlide())
+		{
+			Shooter->SetSlideEndCrouch(true);
+			return;
+		}
+	}
 	if (UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();IsValid(CMC))
 	{
 		CMC->bWantsToCrouch = !CMC->bWantsToCrouch;
@@ -205,6 +319,20 @@ void AShooterPlayerController::Input_Jump()
 	if (!IsValid(GetCharacter())) return;
 	UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();
 	if (!IsValid(CMC)) return;
+
+	// 滑铲中按跳 = 取消滑铲并站起
+	if (AShooterCharacter* SlideShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(SlideShooter) && SlideShooter->IsSliding())
+	{
+		SlideShooter->CancelSlideToStand();
+		return;
+	}
+
+	// 趴着按跳 = 站起来（不跳）
+	if (AShooterCharacter* ProneShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(ProneShooter) && ProneShooter->IsProne())
+	{
+		ProneShooter->RequestSetProne(false, false);
+		return;
+	}
 
 	if (CMC->bWantsToCrouch)
 	{
@@ -251,6 +379,12 @@ void AShooterPlayerController::Input_Move(const FInputActionValue& InputActionVa
 	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
+	// 滑铲中不接受移动输入（保持惯性，靠 CMC 线性减速）
+	if (const AShooterCharacter* SlideChar = Cast<AShooterCharacter>(GetPawn()); IsValid(SlideChar) && SlideChar->IsSliding())
+	{
+		return;
+	}
+
 	if (APawn* ControlledPawn = GetPawn())
 	{
 		ControlledPawn->AddMovementInput(ForwardDirection, InputAxisVector.Y);
@@ -293,9 +427,13 @@ void AShooterPlayerController::ApplyMovementSpeed()
 	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(MyCharacter);
 	const bool bAiming = IsValid(Combat) && Combat->bAiming;
 	const bool bCrouched = MyCharacter->bIsCrouched;
+	const AShooterCharacter* ProneChar = Cast<AShooterCharacter>(MyCharacter);
+	const bool bProne = IsValid(ProneChar) && ProneChar->IsProne();
+	const bool bSliding = IsValid(ProneChar) && ProneChar->IsSliding();
+	if (bSliding) bIsSprinting = false;
 
-	// 下蹲或开镜时不能冲刺
-	if (bIsSprinting && (bAiming || bCrouched))
+	// 下蹲、趴下或开镜时不能冲刺
+	if (bIsSprinting && (bAiming || bCrouched || bProne))
 	{
 		bIsSprinting = false;
 	}
@@ -307,7 +445,13 @@ void AShooterPlayerController::ApplyMovementSpeed()
 
 	// 站立时角色用 MaxWalkSpeed，蹲下时用 MaxWalkSpeedCrouched，两个都设好
 	CMC->MaxWalkSpeed = Speed;
-	CMC->MaxWalkSpeedCrouched = Speed * CrouchSpeedMultiplier;
+	// 趴下复用 CMC 的蹲伏（更矮的胶囊），所以趴行速度也写在 MaxWalkSpeedCrouched
+	CMC->MaxWalkSpeedCrouched = bProne ? Speed * ProneSpeedMultiplier : Speed * CrouchSpeedMultiplier;
+	if (bSliding)
+	{
+		// 滑铲时速度高于蹲走上限：放宽上限，减速交给 BrakingDecelerationWalking
+		CMC->MaxWalkSpeedCrouched = SprintSpeed * 1.5f;
+	}
 
 	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyCharacter))
 	{

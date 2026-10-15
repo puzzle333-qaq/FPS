@@ -1,4 +1,4 @@
-﻿#include "ShooterGamePlayTags.h"
+#include "ShooterGamePlayTags.h"
 
 namespace ShooterTags
 {
@@ -7,6 +7,7 @@ namespace ShooterTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Pistol, "Weapon.type.pistol", "Pistol weapon type");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Sniper, "Weapon.type.sniper", "Sniper weapon type");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Melee, "Weapon.type.melee", "Knife weapon type");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_AK, "Weapon.type.ak", "AK rifle — separate montage set from Weapon.type.rifle");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Barrel, "Attachment.Slot.Barrel", "Attachment slot: Barrel");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Handguard, "Attachment.Slot.Handguard", "Attachment slot: Handguard");

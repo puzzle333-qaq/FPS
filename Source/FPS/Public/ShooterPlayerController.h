@@ -1,4 +1,4 @@
-﻿
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -90,7 +90,22 @@ private:
 	void EnsureLoadoutInput();
 	void Input_ToggleLoadout();
 
-	void Input_Crouch();
+	void Input_Crouch();          // C: toggle crouch / stand (prone -> crouch); slides when fast
+	void Input_CrouchHold_Started();   // Left Ctrl pressed: crouch (or slide when fast)
+	void Input_CrouchHold_Completed(); // Left Ctrl released: stand (CMC waits for headroom)
+	void EnsureCrouchInput();
+
+	// Empty = runtime IAs: C -> toggle, Left Ctrl -> hold. Runtime IMC has priority 2 and consumes those keys.
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> CrouchToggleAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> CrouchHoldAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> CrouchRuntimeIMC;
+
+	bool bCrouchHeld = false;
 	void Input_Jump();
 	void Input_Sprint();
 	void Input_Walk();
@@ -109,6 +124,10 @@ private:
 	// 下面三个倍率会相乘叠加，例如 下蹲+静步+开镜 = 500 * 0.6 * 0.5 * 0.7
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float CrouchSpeedMultiplier = 0.6f;
+
+	// 趴行速度 = RunSpeed * 这个倍率（再乘静步/开镜倍率）。不能冲刺
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ProneSpeedMultiplier = 0.25f;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float WalkSpeedMultiplier = 0.5f;
