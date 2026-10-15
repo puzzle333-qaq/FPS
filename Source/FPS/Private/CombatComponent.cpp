@@ -918,6 +918,7 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;   // 拉栓中不能换弹
+	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading && !bAiming) return;
 	if (CurrentWeapon->Ammo >= CurrentWeapon->MagCapacity) return;
 	if (CurrentReserveAmmo <= 0) return;
 
@@ -928,6 +929,7 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	UAnimInstance* AnimInstance = nullptr;
 	if (!GetReloadMontage(true, ReloadType, ReloadMontage, AnimInstance)) return;
 
+	StopAimForWeaponSwitch();
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Reloading;
 	CurrentWeapon->bHasReloadedOnce = true;
 	ResetRecoilPattern();
