@@ -1,4 +1,4 @@
-﻿
+
 
 #pragma once
 
@@ -12,6 +12,9 @@
 
 class UMaterialInstanceDynamic;
 class UStaticMeshComponent;
+class USkeletalMeshComponent;
+
+enum class EReloadType : uint8;
 class USpotLightComponent;
 class UDecalComponent;
 
@@ -29,6 +32,12 @@ struct FAttachmentVisual
 
 	UPROPERTY()
 	TObjectPtr<UStaticMeshComponent> Mesh3P;
+
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> SkelMesh1P;
+
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> SkelMesh3P;
 };
 
 // 枪上的一个配件槽位（在枪蓝图的 Class Defaults -> FPS|Attachment -> AttachmentSlots 里配置）
@@ -153,6 +162,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	UAttachmentData* GetAttachmentInSlot(FGameplayTag SlotTag) const;
 
+	/** Cradle if no grip or grip DA says Cradle; Grab for vertical grips. */
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment|Grip")
+	EGripHoldStyle GetGripHoldStyle() const;
+
+
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	TArray<UAttachmentData*> GetEquippedAttachments() const { return ObjectPtrDecay(EquippedAttachments); }
 
@@ -236,6 +251,17 @@ public:
 	void DetachFromPawn();
 	void SetHiddenForHeal(bool bHideWeapon);
 	void WeaponTrace(FHitResult& OutHit, float TraceLength);
+
+	/** 近战：从刀刃/武器插槽做短距碰撞查询，不用镜头射线。 */
+	void WeaponMeleeHit(FHitResult& OutHit);
+
+	/** 弹匣骨骼配件：换弹时播 MagReloadAnim（与手臂 reload 同步）。 */
+	void PlayMagazineReload(EReloadType ReloadType);
+	USkeletalMeshComponent* GetMagazineSkelMesh1P() const;
+
+	/** 刀不消耗弹药。 */
+	UFUNCTION(BlueprintPure, Category = "FPS|Ammo")
+	bool UsesAmmo() const { return WeaponKind != EWeaponKind::Melee; }
 
 	UPROPERTY(EditAnywhere,BlueprintReadOnly , Category = "FPS|WeaponType")
 	FGameplayTag WeaponType;
@@ -364,6 +390,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Trace")
 	float TraceRadius;
 
+	/** 近战挥砍：碰撞球半径（厘米），挂在 MeleeSocket 上扫出去。 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Melee", meta = (EditCondition = "WeaponKind==EWeaponKind::Melee", ClampMin = "1"))
+	float MeleeHitRadius = 40.f;
+
+	/** 近战挥砍：沿插槽前方的扫掠长度（厘米）。 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Melee", meta = (EditCondition = "WeaponKind==EWeaponKind::Melee", ClampMin = "1"))
+	float MeleeHitReach = 120.f;
+
+	/** 近战碰撞起点 Socket；没有则用 Mesh 根。 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Melee", meta = (EditCondition = "WeaponKind==EWeaponKind::Melee"))
+	FName MeleeSocketName = TEXT("Melee");
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage")
 	float Damage;
 
@@ -441,6 +479,7 @@ private:
 	void UpdateFlashlightAttachment();
 	void ApplyFlashlightState();
 	UStaticMeshComponent* SpawnAttachmentMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson);
+	USkeletalMeshComponent* SpawnAttachmentSkelMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson);
 	const FAttachmentVisual* FindVisual(const FGameplayTag& SlotTag) const;
 	FName GetFallbackMuzzleSocketName() const;
 	bool TryAttachmentMuzzle(const FGameplayTag& SlotTag, bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const;
@@ -469,6 +508,7 @@ private:
 
 
 	FTransform AuthoredMesh1PRelative = FTransform::Identity;
+
 	FTransform AuthoredMesh3PRelative = FTransform::Identity;
 	bool bCapturedAuthoredRelative = false;
 
@@ -480,3 +520,4 @@ private:
 	UPROPERTY()
 	TObjectPtr<UMaterialInstanceDynamic> DynMatInst_Reticle;
 };
+

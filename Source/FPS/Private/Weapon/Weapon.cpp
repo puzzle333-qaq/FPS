@@ -1,4 +1,4 @@
-﻿
+
 
 
 #include "Weapon/Weapon.h"
@@ -18,6 +18,9 @@
 #include "Engine/World.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/SkeletalMesh.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "ShooterCharacter.h"
 #include "ShooterGamePlayTags.h"
 #include "UObject/UnrealType.h"
@@ -47,6 +50,11 @@ namespace
 			if (ComponentHasSocket(Mesh, SocketName))
 			{
 				return Mesh;
+			}
+			USkeletalMeshComponent* Skel = bFirstPerson ? Visual.SkelMesh1P.Get() : Visual.SkelMesh3P.Get();
+			if (IsValid(Skel) && (SocketName.IsNone() || Skel->DoesSocketExist(SocketName)))
+			{
+				return Skel;
 			}
 		}
 
@@ -329,6 +337,60 @@ void AWeapon::CaptureAuthoredMeshRelative()
 	bCapturedAuthoredRelative = true;
 }
 
+
+namespace
+{
+	bool IsUsableAttachPoint(const USkeletalMeshComponent* Mesh, FName SocketOrBone)
+	{
+		if (!IsValid(Mesh) || SocketOrBone.IsNone())
+		{
+			return false;
+		}
+		// Prefer real sockets. Orphan bones (e.g. Simple weapon_r at root) are unusable.
+		if (Mesh->GetSocketByName(SocketOrBone) != nullptr)
+		{
+			return true;
+		}
+		const int32 BoneIdx = Mesh->GetBoneIndex(SocketOrBone);
+		if (BoneIdx == INDEX_NONE)
+		{
+			return false;
+		}
+		const FName Parent = Mesh->GetParentBone(SocketOrBone);
+		if (Parent.IsNone() && BoneIdx != 0)
+		{
+			return false;
+		}
+		return true;
+	}
+
+	FName ResolveAttachPoint(USkeletalMeshComponent* Mesh, FName Requested)
+	{
+		if (IsUsableAttachPoint(Mesh, Requested))
+		{
+			return Requested;
+		}
+		static const FName Fallbacks[] = {
+			FName(TEXT("RifleSocketak")), FName(TEXT("RifleSocket")),
+			FName(TEXT("hand_r")), FName(TEXT("HandGrip_R"))
+		};
+		for (const FName& Candidate : Fallbacks)
+		{
+			if (Candidate != Requested && IsUsableAttachPoint(Mesh, Candidate))
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[WeaponAttach] '%s' unusable on %s. Falling back to '%s'."),
+					*Requested.ToString(), *GetNameSafe(Mesh->GetSkeletalMeshAsset()), *Candidate.ToString());
+				return Candidate;
+			}
+		}
+		UE_LOG(LogTemp, Error,
+			TEXT("[WeaponAttach] No usable attach point for '%s' on %s."),
+			*Requested.ToString(), *GetNameSafe(Mesh->GetSkeletalMeshAsset()));
+		return Requested;
+	}
+}
+
 void AWeapon::AttachToOwingPawn()
 {
 	APawn* OwningPawn = GetInstigator();
@@ -342,18 +404,36 @@ void AWeapon::AttachToOwingPawn()
 	USkeletalMeshComponent* PawnMesh3P = IPlayerInterface::Execute_GetMesh3P(OwningPawn);
 	if (!IsValid(PawnMesh1P) || !IsValid(PawnMesh3P)) return;
 
-	// Snap onto this weapon's grip socket, then put back the offset authored on the mesh.
-	// KeepRelativeTransform leaves a holstered gun parented to the previous socket.
+	// 1P: GripPoints (AK = weapon_r on arms). 3P AK: always RifleSocketak + FABRIK (not weapon_r).
+	const FName Attach1P = ResolveAttachPoint(PawnMesh1P, AttachPoint);
+	FName Attach3P = AttachPoint;
+	if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_AK))
+	{
+		static const FName RifleSocketAkName(TEXT("RifleSocketak"));
+		Attach3P = IsUsableAttachPoint(PawnMesh3P, RifleSocketAkName)
+			? RifleSocketAkName
+			: ResolveAttachPoint(PawnMesh3P, FName(TEXT("RifleSocket")));
+	}
+	else
+	{
+		Attach3P = ResolveAttachPoint(PawnMesh3P, AttachPoint);
+	}
+
 	const FAttachmentTransformRules SnapRules = FAttachmentTransformRules::SnapToTargetNotIncludingScale;
-	Mesh1P->AttachToComponent(PawnMesh1P, SnapRules, AttachPoint);
+	Mesh1P->AttachToComponent(PawnMesh1P, SnapRules, Attach1P);
 	Mesh1P->SetRelativeTransform(AuthoredMesh1PRelative);
 
 	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-	Mesh3P->AttachToComponent(PawnMesh3P, SnapRules, AttachPoint);
+	Mesh3P->AttachToComponent(PawnMesh3P, SnapRules, Attach3P);
 	Mesh3P->SetRelativeTransform(AuthoredMesh3PRelative);
 	Mesh3P->RefreshBoneTransforms();
 
-	// 现在知道是不是本地玩家了，把手电挂到正确的模型上
+	UE_LOG(LogTemp, Log,
+		TEXT("[WeaponAttach] %s type=%s grip=%s -> 1P sock=%s | 3P sock=%s"),
+		*GetName(), *WeaponType.ToString(), *AttachPoint.ToString(),
+		*Mesh1P->GetAttachSocketName().ToString(),
+		*Mesh3P->GetAttachSocketName().ToString());
+
 	UpdateFlashlightAttachment();
 	UpdateLaserAttachment();
 }
@@ -499,6 +579,72 @@ void AWeapon::WeaponTrace(FHitResult& OutHit, float TraceLength)
 
 }
 
+
+void AWeapon::WeaponMeleeHit(FHitResult& OutHit)
+{
+	OutHit = FHitResult();
+	APawn* InstigatorPawn = GetInstigator();
+	if (!IsValid(InstigatorPawn) || !GetWorld())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* BladeMesh = nullptr;
+	if (IsValid(Mesh1P) && !Mesh1P->bHiddenInGame)
+	{
+		BladeMesh = Mesh1P;
+	}
+	else if (IsValid(Mesh3P))
+	{
+		BladeMesh = Mesh3P;
+	}
+	if (!IsValid(BladeMesh))
+	{
+		return;
+	}
+
+	FVector Start = BladeMesh->GetComponentLocation();
+	FVector Forward = BladeMesh->GetForwardVector();
+	if (!MeleeSocketName.IsNone() && BladeMesh->DoesSocketExist(MeleeSocketName))
+	{
+		const FTransform SocketXform = BladeMesh->GetSocketTransform(MeleeSocketName, RTS_World);
+		Start = SocketXform.GetLocation();
+		Forward = SocketXform.GetRotation().GetForwardVector();
+	}
+	const FVector End = Start + Forward * MeleeHitReach;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WeaponMeleeHit), false, this);
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.AddIgnoredActor(InstigatorPawn);
+
+	FCollisionResponseParams ResponseParams;
+	ResponseParams.CollisionResponse.SetAllChannels(ECR_Ignore);
+	ResponseParams.CollisionResponse.SetResponse(ECC_Pawn, ECR_Block);
+	ResponseParams.CollisionResponse.SetResponse(ECC_WorldStatic, ECR_Block);
+	ResponseParams.CollisionResponse.SetResponse(ECC_WorldDynamic, ECR_Block);
+	ResponseParams.CollisionResponse.SetResponse(ECC_PhysicsBody, ECR_Block);
+
+	const bool bHit = GetWorld()->SweepSingleByChannel(
+		OutHit,
+		Start,
+		End,
+		FQuat::Identity,
+		FPSTraceChannels::ECC_Weapon,
+		FCollisionShape::MakeSphere(MeleeHitRadius),
+		QueryParams,
+		ResponseParams);
+
+	if (!bHit)
+	{
+		OutHit.Location = End;
+		OutHit.ImpactPoint = End;
+		OutHit.Normal = -Forward;
+		OutHit.ImpactNormal = -Forward;
+		OutHit.Distance = MeleeHitReach;
+		OutHit.Time = 1.f;
+	}
+}
+
 void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson)
 {
 	FireEffect(ImpactPoint, ImpactNormal, ImpactSurfaceType, bIsFirstPerson);
@@ -508,7 +654,7 @@ void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal
 	if (!bIsFirstPerson) return;
 
 	APawn* InstigatorPawn = GetInstigator();
-	if (IsValid(InstigatorPawn) && InstigatorPawn->IsLocallyControlled())
+	if (IsValid(InstigatorPawn) && InstigatorPawn->IsLocallyControlled() && UsesAmmo())
 	{
 		Ammo = FMath::Clamp(Ammo - 1, 0, MagCapacity);
 		if (!GetInstigator()->HasAuthority())
@@ -520,6 +666,7 @@ void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal
 
 void AWeapon::Auth_Fire()
 {
+	if (!UsesAmmo()) { return; }
 	Ammo = FMath::Clamp(Ammo - 1, 0, MagCapacity);
 }
 
@@ -701,6 +848,15 @@ bool AWeapon::CanEquipAttachment(const UAttachmentData* Attachment) const
 	return Slot->AllowedAttachments.Contains(Attachment);
 }
 
+
+EGripHoldStyle AWeapon::GetGripHoldStyle() const
+{
+	if (const UAttachmentData* Grip = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip))
+	{
+		return Grip->GripHoldStyle;
+	}
+	return EGripHoldStyle::Cradle;
+}
 UAttachmentData* AWeapon::GetAttachmentInSlot(FGameplayTag SlotTag) const
 {
 	for (UAttachmentData* Attachment : EquippedAttachments)
@@ -869,6 +1025,15 @@ void AWeapon::OnRep_EquippedAttachments()
 {
 	RebuildAttachmentVisuals();
 	OnAttachmentsChanged.Broadcast(this);
+
+	if (APawn* Pawn = GetInstigator())
+	{
+		if (UCombatComponent* Combat = Pawn->FindComponentByClass<UCombatComponent>())
+		{
+			// Re-apply CurrenrAnim with Cradle/Grab idle overrides (no FABRIK).
+			Combat->RefreshLocomotionBlendSpaces(false);
+		}
+	}
 
 	// 开镜 FOV 现在由 AShooterCharacter::UpdateAimFieldOfView 每帧插值，
 	// 瞄具换了它下一帧自动追到新的 FOV，这里不用再手动设镜头。
@@ -1172,6 +1337,95 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 	return Comp;
 }
 
+USkeletalMeshComponent* AWeapon::SpawnAttachmentSkelMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson)
+{
+	if (!IsValid(Parent) || !IsValid(Data) || !IsValid(Data->SkeletalMesh)) return nullptr;
+
+	const FWeaponAttachmentSlot* Slot = FindSlot(Data->SlotTag);
+	const FName SocketName = Slot ? Slot->SocketName : NAME_None;
+	USceneComponent* Mount = FindAttachmentMount(Parent, AttachmentVisuals, bFirstPerson, SocketName);
+	if (!IsValid(Mount))
+	{
+		Mount = Parent;
+		if (!SocketName.IsNone())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Attachment %s: socket '%s' missing for skeletal mag on %s."), *GetNameSafe(Data), *SocketName.ToString(), *GetNameSafe(Parent->GetSkeletalMeshAsset()));
+		}
+	}
+
+	USkeletalMeshComponent* Comp = NewObject<USkeletalMeshComponent>(this);
+	Comp->SetMobility(EComponentMobility::Movable);
+	Comp->SetSkeletalMesh(Data->SkeletalMesh);
+	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Comp->bReceivesDecals = false;
+	Comp->CastShadow = !bFirstPerson;
+	Comp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	Comp->SetupAttachment(Mount, SocketName);
+	Comp->SetRelativeTransform(Data->MeshOffset);
+	Comp->RegisterComponent();
+	// Mag Armature rest pose is offset from root; park on MagReloadAnim frame 0.
+	if (UAnimSequence* RestPose = Data->MagReloadAnim.Get())
+	{
+		Comp->PlayAnimation(RestPose, false);
+		if (UAnimSingleNodeInstance* Node = Comp->GetSingleNodeInstance())
+		{
+			Node->SetPosition(0.f);
+			Node->SetPlaying(false);
+		}
+	}
+	// Hide spare mag_02 (SKM_AK_Mag) + any BonesToHide. Toggle: DA bHideSpareMagazineBone / BonesToHide.
+	if (Data->bHideSpareMagazineBone)
+	{
+		static const FName SpareMagBone(TEXT("mag_02"));
+		if (Comp->GetBoneIndex(SpareMagBone) != INDEX_NONE)
+		{
+			Comp->HideBoneByName(SpareMagBone, EPhysBodyOp::PBO_None);
+		}
+	}
+	for (const FName& BoneName : Data->BonesToHide)
+	{
+		if (!BoneName.IsNone() && Comp->GetBoneIndex(BoneName) != INDEX_NONE)
+		{
+			Comp->HideBoneByName(BoneName, EPhysBodyOp::PBO_None);
+		}
+	}
+	return Comp;
+}
+
+USkeletalMeshComponent* AWeapon::GetMagazineSkelMesh1P() const
+{
+	const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine);
+	return Mag ? Mag->SkelMesh1P.Get() : nullptr;
+}
+
+void AWeapon::PlayMagazineReload(EReloadType ReloadType)
+{
+	USkeletalMeshComponent* MagMesh = GetMagazineSkelMesh1P();
+	if (!IsValid(MagMesh)) return;
+
+	const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine);
+	if (!Mag || !IsValid(Mag->Data)) return;
+
+	UAnimSequence* Seq = Mag->Data->MagReloadAnim;
+	if (ReloadType == EReloadType::Empty && Mag->Data->MagEmptyReloadAnim)
+	{
+		Seq = Mag->Data->MagEmptyReloadAnim;
+	}
+	else if (ReloadType == EReloadType::Tactical && Mag->Data->MagTacticalReloadAnim)
+	{
+		Seq = Mag->Data->MagTacticalReloadAnim;
+	}
+	else if (ReloadType == EReloadType::First && Mag->Data->MagEmptyReloadAnim)
+	{
+		// First equip often shares empty-style mag motion; fall back to MagReloadAnim
+		Seq = Mag->Data->MagReloadAnim ? Mag->Data->MagReloadAnim.Get() : Mag->Data->MagEmptyReloadAnim.Get();
+	}
+	if (!IsValid(Seq)) return;
+
+	MagMesh->PlayAnimation(Seq, false);
+}
+
+
 void AWeapon::RebuildAttachmentVisuals()
 {
 	// 专用服务器不需要画面
@@ -1192,6 +1446,8 @@ void AWeapon::RebuildAttachmentVisuals()
 	{
 		if (IsValid(Visual.Mesh1P)) Visual.Mesh1P->DestroyComponent();
 		if (IsValid(Visual.Mesh3P)) Visual.Mesh3P->DestroyComponent();
+		if (IsValid(Visual.SkelMesh1P)) Visual.SkelMesh1P->DestroyComponent();
+		if (IsValid(Visual.SkelMesh3P)) Visual.SkelMesh3P->DestroyComponent();
 	}
 	AttachmentVisuals.Reset();
 
@@ -1224,8 +1480,16 @@ void AWeapon::RebuildAttachmentVisuals()
 
 			FAttachmentVisual& Visual = AttachmentVisuals.AddDefaulted_GetRef();
 			Visual.Data = Attachment;
-			Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);
-			Visual.Mesh3P = SpawnAttachmentMesh(Mesh3P, Attachment, false);
+			if (IsValid(Attachment->SkeletalMesh))
+			{
+				Visual.SkelMesh1P = SpawnAttachmentSkelMesh(Mesh1P, Attachment, true);
+				Visual.SkelMesh3P = SpawnAttachmentSkelMesh(Mesh3P, Attachment, false);
+			}
+			else
+			{
+				Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);
+				Visual.Mesh3P = SpawnAttachmentMesh(Mesh3P, Attachment, false);
+			}
 			Pending.RemoveAt(Index);
 			bProgress = true;
 		}
@@ -1235,8 +1499,16 @@ void AWeapon::RebuildAttachmentVisuals()
 	{
 		FAttachmentVisual& Visual = AttachmentVisuals.AddDefaulted_GetRef();
 		Visual.Data = Attachment;
-		Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);
-		Visual.Mesh3P = SpawnAttachmentMesh(Mesh3P, Attachment, false);
+		if (IsValid(Attachment->SkeletalMesh))
+		{
+			Visual.SkelMesh1P = SpawnAttachmentSkelMesh(Mesh1P, Attachment, true);
+			Visual.SkelMesh3P = SpawnAttachmentSkelMesh(Mesh3P, Attachment, false);
+		}
+		else
+		{
+			Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);
+			Visual.Mesh3P = SpawnAttachmentMesh(Mesh3P, Attachment, false);
+		}
 	}
 
 	// 3. 手电：有就创建，没有就销毁
@@ -1338,5 +1610,14 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
 	const bool bLocal = OwningPawn->IsLocallyControlled();
 	Mesh1P->SetHiddenInGame(!bLocal, true);
 	Mesh3P->SetHiddenInGame(bLocal, true);
+
+	// Keep mag/attachments from lingering visible on the wrong mesh (e.g. spare mag on back).
+	for (const FAttachmentVisual& Visual : AttachmentVisuals)
+	{
+		if (IsValid(Visual.SkelMesh1P)) { Visual.SkelMesh1P->SetHiddenInGame(!bLocal, true); }
+		if (IsValid(Visual.SkelMesh3P)) { Visual.SkelMesh3P->SetHiddenInGame(bLocal, true); }
+		if (IsValid(Visual.Mesh1P)) { Visual.Mesh1P->SetHiddenInGame(!bLocal, true); }
+		if (IsValid(Visual.Mesh3P)) { Visual.Mesh3P->SetHiddenInGame(bLocal, true); }
+	}
 }
 
