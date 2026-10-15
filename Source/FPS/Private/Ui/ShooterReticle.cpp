@@ -1,7 +1,8 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Ui/ShooterReticle.h"
+#include "Camera/PlayerCameraManager.h"
 
 #include "CombatComponent.h"
 #include "Interface/PlayerInterface.h"
@@ -153,7 +154,16 @@ int32 UShooterReticle::NativePaint(const FPaintArgs& Args, const FGeometry& Allo
 			&& IsValid(Wpn) && Wpn->WeaponKind != EWeaponKind::Melee;
 		if (!bAdsHide)
 		{
-			const float Gap = CrosshairBaseGap + CrosshairSpread;
+			// 真实散布换算成像素：Px = (半宽 / tan(FOV/2)) * tan(spread)；开火 kick 只叠加做视觉提示
+			float SpreadPx = 0.f;
+			const APlayerController* SpreadPC = GetOwningPlayer();
+			if (IsValid(Wpn) && IsValid(SpreadPC) && IsValid(SpreadPC->PlayerCameraManager))
+			{
+				const float HalfFOV = FMath::DegreesToRadians(FMath::Clamp(SpreadPC->PlayerCameraManager->GetFOVAngle(), 5.f, 170.f) * 0.5f);
+				const float HalfWidth = AllottedGeometry.GetLocalSize().X * 0.5f;
+				SpreadPx = (HalfWidth / FMath::Tan(HalfFOV)) * FMath::Tan(FMath::DegreesToRadians(Wpn->GetHipFireSpread()));
+			}
+			const float Gap = CrosshairBaseGap + SpreadPx + CrosshairSpread;
 			static const FVector2D Cardinals[4] = {
 				FVector2D(0.f, -1.f), FVector2D(1.f, 0.f), FVector2D(0.f, 1.f), FVector2D(-1.f, 0.f) };
 			for (const FVector2D& Dir : Cardinals)

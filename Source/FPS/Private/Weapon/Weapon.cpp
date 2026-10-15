@@ -1,4 +1,4 @@
-
+﻿
 
 
 #include "Weapon/Weapon.h"
@@ -551,7 +551,12 @@ void AWeapon::WeaponTrace(FHitResult& OutHit, float TraceLength)
 	{
 		PC->GetPlayerViewPoint(EyesWorldLocation, EyesWorldRotation);
 	}
-	const FVector EyesWorldDirection = UKismetMathLibrary::GetForwardVector(EyesWorldRotation);
+	FVector EyesWorldDirection = UKismetMathLibrary::GetForwardVector(EyesWorldRotation);
+	const float SpreadDeg = GetHipFireSpread();
+	if (SpreadDeg > 0.f)
+	{
+		EyesWorldDirection = FMath::VRandCone(EyesWorldDirection, FMath::DegreesToRadians(SpreadDeg));
+	}
 
 	const FVector Start = EyesWorldLocation;
 	const FVector End = Start + EyesWorldDirection * TraceLength;
@@ -880,6 +885,18 @@ float AWeapon::GetRecoilMultiplier() const
 		}
 	}
 	return Multiplier;
+}
+
+float AWeapon::GetHipFireSpread() const
+{
+	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetInstigator());
+	if (IsValid(Combat) && Combat->bAiming) return 0.f;
+	float Spread = FMath::Max(0.f, HipFireSpread);
+	for (const UAttachmentData* Attachment : EquippedAttachments)
+	{
+		if (IsValid(Attachment)) Spread *= FMath::Max(0.f, Attachment->HipFireSpreadMultiplier);
+	}
+	return Spread;
 }
 
 float AWeapon::GetEffectiveAimFOV() const

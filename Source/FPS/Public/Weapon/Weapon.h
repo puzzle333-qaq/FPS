@@ -1,4 +1,4 @@
-
+﻿
 
 #pragma once
 
@@ -67,6 +67,9 @@ struct FWeaponAttachmentSlot
 	// 勾上后这个槽不能被卸空（比如弹匣），只能换成别的
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
 	bool bRequired = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Hip")
+	float HipFireSpread;
 };
 
 // 配件变化时广播，UI 可以绑它刷新
@@ -174,6 +177,10 @@ public:
 	// 所有配件后座倍率相乘
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	float GetRecoilMultiplier() const;
+
+	// 当前腰射散布（度，半锥角）= HipFireSpread * 配件倍率；开镜时返回 0。以后移动/跳跃惩罚也加在这里
+	UFUNCTION(BlueprintPure, Category = "FPS|Spread")
+	float GetHipFireSpread() const;
 
 	// 镜外开镜 FOV：瞄具覆盖了（且 > 0）就用配件的 AimFOV，否则用枪自己的。都 <= 0 时返回 0（不变焦）。
 	// 画中画的镜片倍率不在这里。可变倍率但没配画面时，整屏按当前档变焦。
@@ -354,6 +361,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
 	float AimRecoilMultiplier;
+
+	// 腰射散布基础值（度，半锥角）。每把枪在自己的 BP 默认值里设
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Spread", meta = (ClampMin = "0", ClampMax = "30"))
+	float HipFireSpread = 3.f;
 
 	// Degrees per second given back after RecoilRecoveryDelay, once the trigger is up.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))

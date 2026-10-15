@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
@@ -108,6 +108,10 @@ public:
 	// 松开扳机后回正速度倍率：1.2 = 回正快 20%
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Recoil", meta = (ClampMin = "0"))
 	float RecoilRecoveryMultiplier = 1.f;
+
+	// 腰射散布倍率，所有配件相乘（垂直握把可设 0.8）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Spread", meta = (ClampMin = "0"))
+	float HipFireSpreadMultiplier = 1.f;
 
 	// ---------- 瞄具（红点 / 倍镜） ----------
 	// 勾上后，镜外的开镜 FOV 用下面的 AimFOV，而不是枪自己的 AimFeildOfView。
