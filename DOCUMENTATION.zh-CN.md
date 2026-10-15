@@ -37,8 +37,11 @@
 23. [瞄具、手电与第一人称扶枪 IK](#23-瞄具手电与第一人称扶枪-ik)
 24. [武器手感与开镜修订（第 1–8 步）](#24-武器手感与开镜修订第-18-步)
 25. [战斗反馈、探头、整备界面 WBP 与切枪/换弹规则（第 8 步之后）](#25-战斗反馈探头整备界面-wbp-与切枪换弹规则第-8-步之后)
+26. [趴下/滑行、蹲伏模式、握把持姿与弹匣配件](#26-趴下滑行蹲伏模式握把持姿与弹匣配件)
 
-> **最新修订（第 8 步之后）：** 新增顶层章节 `25`，说明画中画曝光、命中默认 Concrete 表面、分方向受击、受伤方向环与命中确认标记、每把枪的预览偏移、可用 WBP 设计的整备界面、Q/E 探头（C++ + 3P ABP 脊椎）、射线跟随探头、删除循环切枪、切枪/换弹打断规则，以及第 9–14 步（检视、侧瞄、激光）汇总。与 §6.3、§7.3、§7.5、§8.2、§18.4 冲突时以 §25 为准。
+> **最新修订（第 14 步之后）：** 新增顶层章节 `26`，说明**趴下 / 趴行**、**滑铲**、**Ctrl 按住 + C 切换的蹲伏**输入改造、**GripHoldStyle（Cradle / Grab）握把持姿**系统、**骨骼网格弹匣配件**（`SkeletalMesh`、`MagReloadAnim`、`bHideSpareMagazineBone`）、**近战扫掠**（`WeaponMeleeHit`）、**AK 武器 Tag 与 3P 挂点回退**、**扩散准星**以及**腰射散布锥角**（`HipFireSpread` × `HipFireSpreadMultiplier`，在 `WeaponTrace` 里掷骰）。与 §4.8、§4.9、§6.3、§6.7、§7.4、§7.5、§7.6、§8.2、§12、§14 或 §23.3 冲突时以 §26 为准。
+>
+> **上一次修订（第 8 步之后）：** 新增顶层章节 `25`，说明画中画曝光、命中默认 Concrete 表面、分方向受击、受伤方向环与命中确认标记、每把枪的预览偏移、可用 WBP 设计的整备界面、Q/E 探头（C++ + 3P ABP 脊椎）、射线跟随探头、删除循环切枪、切枪/换弹打断规则，以及第 9–14 步（检视、侧瞄、激光）汇总。与 §6.3、§7.3、§7.5、§8.2、§18.4 冲突时以 §25 为准。
 >
 > **上一次修订（武器手感与开镜，第 1–8 步）：** 新增顶层章节 `24`，说明换弹分种类、拉栓、左手 IK 渐变、开火模式切换、C++ 开镜 FOV 与开镜时间、可变倍率瞄具、按瞄具类型决定画中画（狙击不再特殊处理）、视觉后坐、每把枪的腰射偏移与开镜眼距。与 §16、§18.5、§23.1 冲突时以 §24 为准。
 >
@@ -59,6 +62,7 @@
 | 10–16 | 伤害、血量、输入、UI、狙击镜 | 按功能查 |
 | 17–19 | 配置、时序、蓝图契约 | 联调排错的人 |
 | 20 | 坑与待办 | 接手项目的人 |
+| 21–26 | 配件数据/界面、瞄具 + 手电、武器手感修订、战斗反馈 + 探头、趴下/滑行/握把持姿/弹匣配件 | 按功能查（这些章节的说明优先于它们引用的旧章节） |
 
 符号约定：
 
@@ -81,12 +85,18 @@ graph LR
     UActorComponent --> UCombatComponent
     UActorComponent --> UStatsComponent
     UActorComponent --> USniperScopeComponent
+    UActorComponent --> UOpticScopeComponent
+    UAnimInstance --> UFirstPersonAnimInstance
+    UAnimNotify --> UAnimNotify_WeaponGrip
     UUserWidget --> UShooterReticle
     UUserWidget --> UReserveAmmo
     UUserWidget --> USniperScopeWidget
     UDataAsset --> UWeaponData
+    UPrimaryDataAsset --> UAttachmentData
     UInterface --> UPlayerInterface
+    UInterface --> IRecoilModifier
     IPlayerInterface -.实现.-> AShooterCharacter
+    IRecoilModifier -.实现.-> AWeapon
 ```
 
 ### 2.2 所有权
@@ -114,12 +124,13 @@ BP_ShooterGameMode
 ```
 输入 IA_FireWeapon(Started)
  → AShooterCharacter::Input_FireWeapon_Pressed
- → UCombatComponent::Initiate_FireWeapon_Pressed   （记 bTriggerPressed，射速门控）
+ → UCombatComponent::Initiate_FireWeapon_Pressed   （冲刺打断，记 bTriggerPressed，射速门控）
  → UCombatComponent::Local_FireWeapon
-     ├─ 播 1P 开火 Montage
-     ├─ AWeapon::WeaponTrace         （球形 Sweep，得到 FHitResult）
-     ├─ AWeapon::Local_Fire          （→ 蓝图 FireEffect；本地预测扣弹匣）
+     ├─ 播 1P 开火 Montage（ResolveFireMontage：近战/射击变体随机取一个）
+     ├─ AWeapon::WeaponTrace          （球形 Sweep → FHitResult；近战改用 WeaponMeleeHit）
+     ├─ AWeapon::Local_Fire           （→ 蓝图 FireEffect；本地预测扣弹匣，!UsesAmmo 时跳过）
      ├─ OnCurrentReserveAmmoChanged 广播（刷新 UI）
+     ├─ OnWeaponFired 广播            （准星扩散）
      ├─ 启动 FireTimer（射速 / 全自动循环）
      └─ Server_FireWeapon(Hit)  ⇄
           ├─ 射速节流校验
@@ -163,11 +174,14 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | `Tag_WeaponType_None` | `Weapon.type.none` | 未指定类型 |
 | `Tag_WeaponType_Rifle` | `Weapon.type.rifle` | 步枪（长枪） |
 | `Tag_WeaponType_Pistol` | `Weapon.type.pistol` | 手枪 |
-| `Tag_WeaponType_Sniper` | `Weapon.type.sniper` | 狙击枪（**狙击镜只在这把枪上激活**） |
-| `Tag_WeaponType_Melee` | `Weapon.type.melee` | 近战 |
+| `Tag_WeaponType_Sniper` | `Weapon.type.sniper` | 狙击枪（不再特殊处理 —— §24.6） |
+| `Tag_WeaponType_Melee` | `Weapon.type.melee` | 近战（小刀） |
+| `Tag_WeaponType_AK` | `Weapon.type.ak` | AK 步枪。**刻意单独一个 Tag**：AK 需要自己的一整套动画/Montage，而且它是唯一带专用第三人称挂点路径的 Tag（`RifleSocketak`，§26.6） |
 
 - 用原生 Tag（`UE_DECLARE/DEFINE_GAMEPLAY_TAG_EXTERN`），因此无需在 ini 里再注册。
-- **效果**：`AWeapon::WeaponType` 与 `UWeaponData` 的各个 `TMap<FGameplayTag, …>` 以这些 Tag 为键；`USniperScopeComponent::UpdateView` 用 `MatchesTagExact(Tag_WeaponType_Sniper)` 判断是否开镜。
+- `Weapon.type.ak` **同时**也列在 [DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>) 中（`ImportTagsFromConfig=True`）—— 这是唯一写进配置的 Tag，所以即使只从配置读取 Tag 列表，它依然可选。
+
+- **效果**：`AWeapon::WeaponType` 与 `UWeaponData` 的各个 `TMap<FGameplayTag, …>` 以这些 Tag 为键。⚠ `USniperScopeComponent` **曾经**用 `MatchesTagExact(Tag_WeaponType_Sniper)` 判断是否开镜；从第 6 步起狙击枪与其他枪一样跟随已装的瞄具（§24.6），该组件已闲置。
 
 ### 3.5 目标文件
 
@@ -186,7 +200,7 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | --- | --- | --- |
 | `LongGun` | Long Gun | 只有长枪能进"主武器 / 副武器"槽 |
 | `Pistol` | Pistol | 手枪槽 |
-| `Melee` | Knife | 近战槽；近战不参与"瞄准隐藏准星"逻辑，也不要求 `AimSocket` |
+| `Melee` | Knife | 近战槽；近战永远不能开镜（`Initiate_Aim_Pressed` / `Local_Aim` 强制关闭），**永不消耗弹药**（`AWeapon::UsesAmmo()` 为 false），用近战扫掠代替相机射线，并把两个 FABRIK alpha 都置 0（§26.4/§26.5） |
 
 ### 4.2 `EFireType`（Weapon.h）
 
@@ -238,8 +252,12 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | `AimOffset_Aim` | `UBlendSpace*` | 瞄准 AimOffset |
 | `Strafe_Standing` | `UBlendSpace*` | 站立移动混合 |
 | `Strafe_Crouching` | `UBlendSpace*` | 蹲伏移动混合 |
+| `Strafe_Walking` | `UBlendSpace*` | 慢走速度下的移动混合（慢走步态激活时使用，§6.6） |
+| `IdleAnim_Grab` | `UAnimSequence*` | 握把配件报告 `EGripHoldStyle::Grab`（垂直握把）时使用的站立待机；留空则用 `IdleAnim`（§26.3） |
+| `AimIdleAnim_Grab` | `UAnimSequence*` | Grab 持姿的瞄准待机 |
+| `LeftHandHoldPose_Cradle` / `LeftHandHoldPose_Grab` | `UAnimSequence*` | 供 ABP 分层混合使用的**仅左手**握持姿势（可选，`bUseLeftHandHoldPose`，§26.3）。与普通待机相同的姿势会被忽略 |
 
-**效果**：`UCombatComponent::ApplyEquippedWeaponAnim` 会把整个结构体**逐字节复制**进 ABP 的同名结构体变量，从而让换枪时动画资产随之切换。
+**效果**：`UCombatComponent::ApplyEquippedWeaponAnim` 会把整个结构体**按值复制**进 ABP 的同名结构体变量，从而让换枪时动画资产随之切换。`RefreshLocomotionBlendSpaces` 在复制前还会为慢走步态把 `Strafe_Standing` 换成 `Strafe_Walking`，为 Grab 握把持姿把 `IdleAnim` 换成 `IdleAnim_Grab`。
 
 ### 4.9 `FMontageData`（WeaponData.h）
 
@@ -248,6 +266,17 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | `EquipMontage` | 切枪动画 |
 | `ReloadMontage` | 换弹动画 |
 | `FireMontage` | 开火动画 |
+
+换弹变体与近战/射击变体：
+
+| 字段 | 用途 |
+| --- | --- |
+| `FirstReloadMontage` / `EmptyReloadMontage` / `TacticalReloadMontage` | 换弹变体（§24.1） |
+| `EmptyReloadMontage_Grab` / `TacticalReloadMontage_Grab` | Grab 持姿下覆盖空仓 / 战术换弹；仅当握把配件为 `EGripHoldStyle::Grab` 且该字段已填时使用，否则用 Cradle 变体（§26.3） |
+| `BoltMontage` | 每发之后的拉栓 / 泵动循环 |
+| `InspectMontage1P` | 武器检视 |
+| `FireMontages` / `EquipMontages` | 近战挥砍与备用拔枪的 `TArray` 变体池。`ResolveFireMontage()` / `ResolveEquipMontage()` 会**随机**挑一个有效项，并把单数的 `FireMontage` / `EquipMontage` 追加为一个额外候选（去重）；两者都没配时返回 `nullptr`（调用方必须判空） |
+| `ResolveReloadMontage(EReloadType Type, EGripHoldStyle GripStyle = Cradle)` | 解析顺序：`First` → `FirstReloadMontage`；然后（仅 Grab）`EmptyReloadMontage_Grab` / `TacticalReloadMontage_Grab`；然后 `EmptyReloadMontage` / `TacticalReloadMontage`；最后 `ReloadMontage`。⚠ `First` 只要 `FirstReloadMontage` 有值就立刻返回，所以第一次换弹永远不会走 Grab 覆盖 |
 
 同一结构体被复用在三个表里：`WeaponMontages`（**武器自身骨骼网格体**上的动画，如换弹时弹匣运动）、`FirstPersonMontages`、`ThirdPersonMontages`。
 
@@ -278,8 +307,21 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | `FAimStateChanged` | CombatComponent.h | 普通 C++ 多播（`DECLARE_MULTICAST_DELEGATE_OneParam`，`bool`），**不是**蓝图委托 | `Local_Aim` 真正改变了 `bAiming` 时 | `AShooterCharacter::HandleAimStateChanged`（蓝图 `OnAim`、移动速度、步态） |
 | `FStaminaChanged` | StatsComponent.h | 动态多播（组件、旧值、新值） | 耐力或耐力上限变化 | 耐力条（`WB_Stamina`） |
 | `FStaminaDepleted` | StatsComponent.h | 动态多播，无参数 | 服务器在冲刺中把最后一点耐力耗尽 | `AShooterPlayerController::HandleStaminaDepleted` |
+| `FWeaponFired` | CombatComponent.h | 动态多播，无参数 | `Local_FireWeapon` 真正打出一发时（在 `Local_Fire` 之后） | `UShooterReticle::HandleWeaponFired` → `NotifyWeaponFired()`（准星扩散，§26.7） |
 
 > `EDeathState` 现在会被**读取**（`HealPlayer` 与 `Server_BeginHeal` 拒绝治疗死亡或满血的角色），但仍然从未被写入，因此永远停留在 `NotDead` —— 见 20.1。
+
+---
+
+### 4.12 `EGripHoldStyle`（AttachmentData.h）— 副手如何握枪
+
+| 值 | 显示名 | 含义 |
+| --- | --- | --- |
+| `Cradle` | Cradle / Angled | 斜角 / 三角握把（或**完全没有握把**）：握持姿势来自常规待机动画 |
+| `Grab` | Grab / Vertical | 垂直握把：待机 / 换弹动画换成 `_Grab` 变体，ABP 还可以分层混入 `LeftHandHoldPose_Grab` |
+
+- `AWeapon::GetGripHoldStyle()` 从**已装备的握把配件**读取它；没有装握把时返回 `Cradle`，所以拆掉握把一切都会还原。
+- **效果**：握持姿势由**动画**产生，**不是 FABRIK**。第一人称 FABRIK 路径被永久停用（`FABRIK_Alpha1P = 0`，§26.1）；第三人称左手使用 `FABRIK_Alpha`（近战为 0、趴行时为 0，其余为 1）。完整流程见 §26.3。
 
 ---
 
@@ -332,7 +374,7 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | --- | --- |
 | `BeginPlay()` | ① 非专用服务器且没有 `USniperScopeComponent` 时用 `NewObject` + `RegisterComponent` **动态创建狙击镜组件**（所以蓝图里不需要手动挂）；② `Super::BeginPlay()`；③ **再次**调用 `ConfigureWeaponHitCollision()`（注释说明蓝图会在构造之后覆盖碰撞设置）；④ 相机 FOV 设为 `DefaultFOV`；⑤ 记录 `StartingAimRotation`（初始 Yaw）；⑥ 缓存 `Mesh1P` 的初始相对位置/旋转到 `AuthoredHipMeshLocation/Rotation`；⑦ `ConfigureAimTickOrder()` |
 | `BeginDestroy()` | 调用 `Combat->DestroyInventory()`，角色销毁时一并销毁所有武器 Actor，避免残留 |
-| `Tick(DeltaTime)` | 每帧：`CalculateTurnInPlaceParameters` → `CalculateFABRIKSocket` → `UpdateAimSocketAlignment` → 若存在狙击镜组件则 `Scope->UpdateView()`。**顺序有含义**：先算转身参数，再算 IK 挂点，最后做 ADS 对齐 |
+| `Tick(DeltaTime)` | 每帧按此顺序：`UpdateLocomotionGait(true)` → `CalculateTurnInPlaceParameters` → `CalculateFABRIKSocket` → `UpdateAimAlpha`（先推进开镜进度，对齐与 FOV 都要用）→ `RemoveVisualRecoilFromMesh` → `UpdateAimSocketAlignment` → `ApplyVisualRecoilToMesh` → `UpdateAimFieldOfView` → `UpdateLean` → `UpdateSlide` → `UpdateProne` → 若存在狙击镜组件则 `Scope->UpdateView()` → 若存在瞄具组件则 `UOpticScopeComponent::UpdateView()`。**顺序有含义**：先算步态与原地转身，再算 IK 挂点，然后做 ADS 进度/对齐，最后跑镜类组件以读取最终的相机状态 |
 | `PossessedBy(NewController)` | `Super::` 之后调用 `Combat->SpawnInventory()` —— 只有被控制时（服务端）才生成武器库存 |
 | `OnRep_PlayerState()` | 客户端 `PlayerState` 复制完成时调 `Combat->InitializeWeaponWidget()`，把准星材质与弹药刷到 HUD 上 |
 
@@ -387,15 +429,18 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 - 当 `|AO_Yaw| < 5` 时结束转身，并把 `StartingAimRotation` 重置为当前 Yaw。
 - **效果**：转身动画播完后状态自动回到 `NotTurning`，不会卡死。
 
-#### `CalculateFABRIKSocket()`（private）◆
+#### `CalculateFABRIKSocket(float DeltaTime)`（private）◆
 
-1. 无武器直接返回。
-2. 取武器的 `Mesh3P`；若其没有名为 `FABRIK` 的 Socket，则把 `FABRIK_SocketTransform` 设为 `Identity` 并返回。
-3. **`WeaponMesh->RefreshBoneTransforms()`** —— 关键：**隐藏的第三人称枪不会 Tick 动画**，不强制刷新会读到旧姿态。
-4. 取 `FABRIK` Socket 的世界变换 → 用 `GetMesh()->TransformToBoneSpace("hand_r", ...)` 换算到 3P 身体 `hand_r` 骨骼空间。
-5. 写入 `FABRIK_SocketTransform`（位置 + 旋转，缩放固定为 1）。
+> **已重写：** 该函数的第一人称部分已不存在。1P 握持姿势来自每把枪的握持动画（握把持姿，§26.3），近战武器与徒手趴行两种情况都会把两个 alpha 关掉。`DeltaTime` 参数现在已不再使用。
 
-- **效果**：ABP_ThirdPerson 用这个变换做 **FABRIK IK**，让左手正确握住护木/枪身。
+1. 没有战斗组件或没有当前武器 → `FABRIK_Alpha1P = 0`、`FABRIK_Alpha = 0`，两个挂点变换都置 `Identity`，返回。
+2. **近战**（`WeaponKind == Melee`）→ 同上：两个 alpha 都是 0，两个变换都是 `Identity`，返回。两只手只跟随小刀动画。
+3. **第三人称**：`AWeapon::GetFabrikWorldTransform(false, SocketWorld)` —— 优先握把配件的 `FABRIK` Socket，否则用武器网格体自己的 `FABRIK` 骨骼。成功时把世界变换换算到 3P 身体的 `hand_r` 骨骼空间（`WriteHandSpace`）并设置 alpha：
+   - `FABRIK_Alpha = bProneCrawling ? 0 : 1` —— 趴行用的是徒手全身趴伏动画，所以左手**不能**被拉向枪；趴下静止、站立、下蹲和滑铲都保持握枪（alpha 1）。
+   - 没有可用 Socket → `FABRIK_SocketTransform = Identity`、`FABRIK_Alpha = 0`。
+4. **第一人称**：无条件 `FABRIK_SocketTransform1P = Identity`、`FABRIK_Alpha1P = 0`。
+
+- **效果**：`ABP_ThirdPerson` 的 FABRIK 节点 alpha 应绑定新的 `FABRIK_Alpha` 属性（而不是写死 1）；`UFirstPersonAnimInstance` 仍会每帧镜像 `FABRIK_Socket1P` / `FABRIK_Alpha1P`，但 alpha 恒为 0，所以 1P 的 FABRIK 节点实际不起作用。⚠ 旧属性 `bDisableLeftHandIKDuringReload`、`LeftHandIKBlendSpeed`、`DisableLeftHandIKCurveName` 仍然存在，但已不驱动任何逻辑。
 
 #### `ConfigureAimTickOrder()`（private）
 
@@ -428,10 +473,11 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 
 #### `SetupPlayerInputComponent(UInputComponent*)` ◆
 
-用 `CastChecked<UEnhancedInputComponent>`（不匹配会断言）绑定 9 个动作：
+用 `CastChecked<UEnhancedInputComponent>`（不匹配会断言）绑定以下动作：
 
 | 输入动作 | 触发事件 | 回调 | 效果 |
 | --- | --- | --- | --- |
+| `ProneAction` | `Started` | `Input_Prone` | 切换趴下 / 趴行。留空 → `EnsureProneInput()` 创建 `IA_Prone_Runtime` + `IMC_Prone_Runtime`（**Z**，优先级 1）（§26.1） |
 | `LeanLeftAction` / `LeanRightAction` | `Started` / `Completed` | `Input_LeanLeft_*` / `Input_LeanRight_*` | 探头（运行时默认 Q / E，§25.7）。`CycleWeaponAction` 已删除（§25.9） |
 | `FireWeaponAction` | `Started` | `Input_FireWeapon_Pressed` | 按下开火 |
 | `FireWeaponAction` | `Completed` | `Input_FireWeapon_Released` | 松开停火（全自动） |
@@ -446,6 +492,7 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 
 | 函数 | 行为 |
 | --- | --- |
+| `Input_Prone` | 仅本地：`RequestSetProne(!bIsProne, /*bExitToCrouch=*/false)`（§26.1） |
 | `Input_LeanLeft_Started/Completed`、`Input_LeanRight_Started/Completed` | `HandleLeanInput(±1, bPressed)`（§25.7） |
 | `Input_ReloadWeapon` | `Combat->Initiate_ReloadWeapon()` |
 | `Input_FireWeapon_Pressed` | `Combat->Initiate_FireWeapon_Pressed()` |
@@ -487,9 +534,13 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 | 成员 | 说明 |
 | --- | --- |
 | ◆`OnWeaponFirstReplicated` | `BlueprintAssignable`，武器首次复制完成 |
-| ◆`HitReacts` | `TArray<UAnimMontage*>`，`EditDefaultsOnly`，受击动画池 |
-| ◆`FABRIK_SocketTransform` | `BlueprintReadOnly`，IK 目标 |
+| ◆`HitReacts`（+ `HitReactsFront/Back/Left/Right`） | `TArray<UAnimMontage*>`，`EditDefaultsOnly`，受击动画池（§25.3） |
+| ◆`FABRIK_SocketTransform` | `BlueprintReadOnly`，**3P** IK 目标 |
+| ◆`FABRIK_Alpha` | `BlueprintReadOnly`，3P FABRIK 强度 —— 把 ABP 的 FABRIK 节点 alpha 绑到它（1 = 握枪，0 = 近战 / 趴行，§26.1） |
+| ◆`FABRIK_SocketTransform1P` / `FABRIK_Alpha1P` | 为兼容性保留；1P 的 alpha 恒为 0（§26.1） |
 | ◆`AO_Yaw` / `MovementOffsetYaw` / `TurningStatus` | `BlueprintReadOnly`，动画参数 |
+| ◆`bIsProne` / `ProneAlpha` / `bProneCrawling` | `BlueprintReadOnly`，趴下状态、平滑 0…1 混合值，以及"趴着且在移动"（§26.1） |
+| ◆`bIsSliding` / `SlideAlpha` | `BlueprintReadOnly`，滑铲状态与平滑 0…1 混合值（§26.2） |
 | ◆`OnAim(bool)` | `BlueprintImplementableEvent`，ADS 状态回调 |
 | `GetFirstPersonCamera()` / `GetCombatComponent()` / `GetDefaultFieldOfView()` | C++ 访问器（`SniperScopeComponent` 使用） |
 
@@ -536,7 +587,7 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 2. `MaxSpeed` = 蹲下时取 `MaxWalkSpeedCrouched`，否则取 `MaxWalkSpeed`。注意这是**允许的最大速度**，不是 `Velocity / MaxWalkSpeed` 的归一化。
 3. `bWantWalkGait = MaxSpeed > 0 && MaxSpeed <= WalkGaitSpeedThreshold`（默认 `360`）。
 4. `bHasWalkBS = Combat->HasStrafeWalkingAnim()`；`bNewWalkGait = bWantWalkGait && bHasWalkBS` —— 只有 `DA_WeaponData` 真的填了 Walk BlendSpace 才会切换步态。
-5. 参考速度取决于**当前真正在播**的 BlendSpace：蹲下用 `CrouchAnimReferenceSpeed`（`150`），慢走步态用 `WalkAnimReferenceSpeed`（`150`），否则用 `JogAnimReferenceSpeed`（`375`）。
+5. 参考速度取决于**当前真正在播**的 BlendSpace：`bIsProne` 时用 `ProneAnimReferenceSpeed`（`100`，趴下优先于下蹲，因为趴下复用 CMC 的下蹲），下蹲时用 `CrouchAnimReferenceSpeed`（`150`），慢走步态用 `WalkAnimReferenceSpeed`（`150`），否则用 `JogAnimReferenceSpeed`（`375`）。
 6. `LocomotionPlayRate = Clamp(GroundSpeed / RefSpeed, MinLocomotionPlayRate(0.15), MaxLocomotionPlayRate(2.0))`；当 `GroundSpeed <= 1` 时直接给 `0`（待机时冻结脚步）。
 7. 把数值**按变量名**写进**两个** AnimInstance（`Mesh1P` 与 3P 身体），并且容忍多种拼写：`bUseWalkGait`（bool），以及 `LocomotionPlayRate` / `PlayRate` / `BS_PlayRate`，还有 `GroundSpeed` / `Speed`（float）。变量不存在时静默跳过。
 8. 步态发生变化且 `bNotifyCombat` 为真时，调用 `Combat->RefreshLocomotionBlendSpaces(bUseWalkGait)`，让 ABP 里的 `FPlayerAnim` 副本把 `Strafe_Standing` 换成 `Strafe_Walking`。
@@ -549,10 +600,11 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 
 | 重写 / 函数 | 行为 |
 | --- | --- |
-| `CanJumpInternal_Implementation() const` | `Super::` **且**（`Stats` 无效或 `Stats->HasStaminaForJump()`）。客户端用同步过来的耐力做预测，服务器做最终判定 |
+| `CanJumpInternal_Implementation() const` | `!bIsProne && !bIsSliding` **且** `Super::` **且**（`Stats` 无效或 `Stats->HasStaminaForJump()`）。客户端用同步过来的耐力做预测，服务器做最终判定。**效果**：任何机器上趴着或滑铲时都不能跳 |
 | `OnJumped_Implementation()` | `Super::` 之后扣 `Stats->JumpStaminaCost`（默认 `15`），**只在权威端扣** —— `OnJumped` 在预测客户端和服务器上都会调用，无条件扣会扣两次 |
-| `OnStartCrouch(...)` / `OnEndCrouch(...)` | `Super::`，然后 `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()`；服务器与本地客户端都会执行，保证下蹲后速度/步态立刻重算 |
+| `OnStartCrouch(...)` / `OnEndCrouch(...)` | `Super::`，然后 `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()`；服务器与本地客户端都会执行，保证下蹲后速度/步态立刻重算。趴下复用这条路径（§26.1） |
 | `HandleAimStateChanged(bool bIsAiming)`（private，`BeginPlay` 中绑定到 `Combat->OnAimStateChanged`） | **仅在本地控制时**调用蓝图事件 `OnAim(bIsAiming)`；并且总是调用 `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` —— 服务器也需要新速度，否则会把客户端拉回旧速度 |
+| `IsLeanBlocked() const` | 冲刺**且移动**时为真；现在 `bIsProne` **或** `bIsSliding` 时也为真 —— 趴着或滑铲时不能探头（§26.1/§26.2） |
 | `RefreshControllerMovementSpeed()`（private） | `Cast<AShooterPlayerController>(GetController())->RefreshMovementSpeed()`。模拟代理（别人电脑上的你）没有本地控制器，直接跳过 |
 | `Input_Aim_Pressed()` | 不再直接调 `OnAim` —— 开镜状态统一由 `UCombatComponent::Local_Aim` 通过 `OnAimStateChanged` 广播（见 7.8） |
 | `Input_VersionWeapon()` | 已绑定到 `VersionWeaponAction`（填了才绑）→ `Combat->Initiate_VersionWeapon()`（检视，§25.10） |
@@ -580,7 +632,7 @@ if (AimRotation.Pitch > 90 && !IsLocallyControlled())
 | `FireTimer` / `ServerNextFireTime` | 不复制 | 射速节流 |
 | `LocalWeaponIndex` | 不复制 | 本地循环切枪下标 |
 
-委托：`OnReticleChanged`、`OnCurrentReserveAmmoChanged`（均 `BlueprintAssignable`）。
+委托：`OnReticleChanged`、`OnCurrentReserveAmmoChanged`、`OnWeaponFired`（均 `BlueprintAssignable`）；`OnAimStateChanged`、`OnFireModeChanged`、`OnZoomLevelChanged` 以及配件/探头相关委托见 §4.11、§24.3、§24.5 与 §25。
 
 ### 7.2 辅助函数
 
@@ -701,37 +753,40 @@ DOREPLIFETIME_CONDITION(CurrentReserveAmmo, COND_OwnerOnly);
 #### `Initiate_FireWeapon_Pressed()` — 按下扳机
 
 ```
+若拥有者控制器正在冲刺 → StopSprinting() 并返回   // 第一次点击只取消冲刺，不开火
 无当前武器 → 返回
 bTriggerPressed = true
 正在换弹 → 返回（松开前不会开火）
 if (FireTimer 正在计时) return;   // 关键：允许 FireTimerFinished 里的连发继续，而不是吞掉下一发
-if (Ammo > 0) Local_FireWeapon();
+if (!UsesAmmo() || Ammo > 0) Local_FireWeapon();
 ```
-- **效果**：单发武器靠 `Completed` 清 `bTriggerPressed`；全自动武器靠 `FireTimer` 循环。
+- **效果**：单发武器靠 `Completed` 清 `bTriggerPressed`；全自动武器靠 `FireTimer` 循环。**冲刺打断**：会先检查 `AShooterPlayerController::IsSprinting()`，所以冲刺中扣扳机会先停下冲刺并**消耗掉这次按下** —— 真正开枪是下一次。近战的 `UsesAmmo()` 为 false，所以小刀永远"有弹药"（没有换弹提示，也不会自动换弹）。
 
 #### `Initiate_FireWeapon_Released()`
 - `bTriggerPressed = false`。
 
 #### `Local_FireWeapon()`（private）— 本地/预测开火
 
-1. 需要 `WeaponData` 与 `CurrentWeapon`；正在换弹则返回。
-2. 播 **1P 开火 Montage**（`FirstPersonMontages[WeaponType].FireMontage`）。
-3. `CurrentWeapon->WeaponTrace(Hit, TraceLength)` 做命中检测。
-4. 取物理材质表面类型（`Hit.PhysMaterial` 的 `SurfaceType`，无则默认 `SurfaceType1`）。
-5. `CurrentWeapon->Local_Fire(ImpactPoint, ImpactNormal, SurfaceType, /*bIsFirstPerson=*/true)` —— 本地特效 + **预测扣弹匣**。
-6. `NotifyAmmoChanged()` 刷 UI。
-7. `SetTimer(FireTimer, FireTimerFinished, CurrentWeapon->FireTime)` —— 射速。
-8. `Server_FireWeapon(Hit)` 上报（把**完整 FHitResult** 发给服务端）。
+1. 需要 `WeaponData` 与 `CurrentWeapon`；正在换弹或拉栓则返回。
+2. 通过 `FirstPersonMontages[WeaponType].ResolveFireMontage()` 播 **1P 开火 Montage**（随机变体，可能为 null）。
+3. **仅近战**：额外在身体网格上播 3P 开火 Montage（`ThirdPersonMontages[WeaponType].ResolveFireMontage()`）—— 近战挥砍是全身动画，所以该 Montage 必须进 `DefaultSlot`/`FullBody`，而不是上半身槽。
+4. 命中检测：近战用 `WeaponMeleeHit(Hit)`，其他用 `CurrentWeapon->WeaponTrace(Hit, TraceLength)`（§8.2）。
+5. 读取物理材质表面类型（`Hit.PhysMaterial` 的 `SurfaceType`，无则默认 `SurfaceType2`/Concrete，§25.2）。
+6. `CurrentWeapon->Local_Fire(ImpactPoint, ImpactNormal, SurfaceType, /*bIsFirstPerson=*/true)` —— 本地特效 + **预测扣弹匣**（近战跳过）。
+7. 广播 **`OnWeaponFired`**（准星扩散，§26.7）。
+8. `NotifyAmmoChanged()` 刷 UI。
+9. `SetTimer(FireTimer, FireTimerFinished, CurrentWeapon->FireTime)` —— 射速。
+10. `Server_FireWeapon(Hit)` 上报（把**完整 FHitResult** 发给服务端）。
 
 #### `FireTimerFinished()`（private）— 射速计时结束
 
 ```
 无武器 → 返回
-若 Ammo == 0 且备弹 > 0 且本地控制 → Initiate_ReloadWeapon()（空仓自动换弹），返回
+若 UsesAmmo() && Ammo == 0 && 备弹 > 0 && 本地控制 → Initiate_ReloadWeapon()（空仓自动换弹），返回
 若正在换弹 → 返回
-若 bTriggerPressed && FireType == Automatic && Ammo > 0 → Local_FireWeapon()（连发）
+若 bTriggerPressed && FireType == Automatic && (!UsesAmmo() || Ammo > 0) → Local_FireWeapon()（连发）
 ```
-- ⚠ 注释说明：这里**故意**不用 `ApplyReload()`（那会瞬间填弹、跳过 Montage）。
+- ⚠ 注释说明：这里**故意**不用 `ApplyReload()`（那会瞬间填弹、跳过 Montage）。`UsesAmmo()` 同时门控这两处检查，所以小刀永远不会进入自动换弹流程，可以一直挥。
 
 #### `Server_FireWeapon_Implementation(const FHitResult& Hit)` ⇄ — 权威开火
 
@@ -748,13 +803,13 @@ if (Ammo > 0) Local_FireWeapon();
 #### `Multicast_FireWeapon_Implementation(const FHitResult& Hit, int32 AuthAmmo)` ⇄
 
 - **本地分支**：`Rep_Fire(AuthAmmo)`（用权威值校正本地预测）+ `NotifyAmmoChanged()`，然后 `return`。注释：本机已经在 `Local_FireWeapon` 播过 1P 特效，不重复。
-- **远端分支**：需要 `WeaponData`（否则 `ensure` + 返回）；`Local_Fire(..., bIsFirstPerson=false)` 播**第三人称**枪口特效；再播 `ThirdPersonMontages[WeaponType].FireMontage`。
+- **远端分支**：需要 `WeaponData`（否则 `ensure` + 返回）；`Local_Fire(..., bIsFirstPerson=false)` 播**第三人称**枪口特效；再播 `ThirdPersonMontages[WeaponType].ResolveFireMontage()`（随机变体，可能为 null）。
 
 ### 7.5 换弹
 
 #### `Initiate_ReloadWeapon()` — 换弹入口
 
-守卫：有当前武器；非 `Reloading`/`Cycling`；`Ammo < MagCapacity`；`CurrentReserveAmmo > 0`；能取到 1P 换弹 Montage。
+守卫：有当前武器；**`UsesAmmo()` 为真**（小刀永远不能换弹）；状态不是 `Reloading`/`Cycling`/`BoltCycling`；`Ammo < MagCapacity`；`CurrentReserveAmmo > 0`；能取到 1P 换弹 Montage。
 流程：状态置 `Reloading` → `Server_ReloadWeapon()` → `PlayReloadMontage(true)`；若播放失败则回滚状态并 `Server_EndReload()`。
 
 #### `ApplyReload()` ◆ — 动画通知驱动的"入弹"
@@ -764,13 +819,14 @@ if (Ammo > 0) Local_FireWeapon();
 - 执行弹匣/备弹/`ReserveAmmo` 表更新 + `NotifyAmmoChanged()`，返回 true。
 - **调用时机**：蓝图换弹动画上的 **AnimNotify**（插入弹匣的那一帧）。这是"看起来对上动画"的关键。
 
-#### `GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const`（private）
-- 按视角选表 → 取 `ReloadMontage` → 取对应网格体的 `AnimInstance`；任一缺失返回 false。
+#### `GetReloadMontage(bool bFirstPerson, EReloadType, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const`（private）
+- 按视角选表 → 用 `ResolveReloadMontage(Type, CurrentWeapon->GetGripHoldStyle())` 解析变体 → 取对应网格体的 `AnimInstance`；任一缺失返回 false。
 
-#### `PlayReloadMontage(bool bFirstPerson)`（private）
-1. `GetReloadMontage` 失败 → false；`Montage_Play` 返回 ≤ 0 → false。
-2. **仅 1P**：额外在**武器自身的 `Mesh1P`** 上播 `WeaponMontages[WeaponType].ReloadMontage`（弹匣运动动画）。注释：3P 的枪不播，否则弹匣会飘。
-3. **仅 1P**：绑定 `OnReloadMontageEnded`（1P Montage 才持有 `Reloading` 锁；3P 只是给别人看的）。
+#### `PlayReloadMontage(bool bFirstPerson, EReloadType ReloadType)`（private）
+1. `GetReloadMontage` 或 `Montage_Play`（返回 ≤ 0）失败 → false。
+2. **仅 1P**：额外在**武器自身的 `Mesh1P`** 上播 `WeaponMontages[WeaponType]` 的**同一变体**（弹匣动画），并用同一握把持姿解析。注释：3P 的枪不播，否则弹匣会飘。没有 `FirstReloadMontage` 时 `First` 降级为 `Empty`/`Tactical`，保证枪和手臂永远播匹配的一对。
+3. **仅 1P**：`CurrentWeapon->PlayMagazineReload(MagReloadType)` —— 通过 `MagReloadAnim` / `MagEmptyReloadAnim` / `MagTacticalReloadAnim` 驱动**骨骼网格弹匣配件**（§26.4）。这里 `First` 同样降级为 `Empty`/`Tactical`。
+4. 绑定 `OnReloadMontageEnded`（1P）或 `OnObservedReloadMontageEnded`（3P）—— 只有 1P Montage 持有 `Reloading` 锁；3P 那个纯粹是表现，只在结束时重新挂枪。
 
 #### `OnReloadMontageEnded(UAnimMontage*, bool)`（private）
 - 状态 `Reloading` → `Idle`；若自己是本地控制者且非权威，调 `Server_EndReload()` 让服务端同步解锁。
@@ -801,8 +857,8 @@ if (Ammo > 0) Local_FireWeapon();
 
 | 函数 | 行为 |
 | --- | --- |
-| `Initiate_Aim_Pressed()` | `bNextAim = !bAiming` → `Local_Aim(bNextAim)`（本地立即生效）+ `Server_Aim(bNextAim)` |
-| `Local_Aim(bool bPressed)`（private） | 仅 `bAiming = bPressed`（复制属性，跳过 Owner） |
+| `Initiate_Aim_Pressed()` | **近战守卫**：当前武器是 `EWeaponKind::Melee` 时强制关镜（若正在开镜则 `Local_Aim(false)` + `Server_Aim(false)`）并返回 —— 小刀永远不开镜。否则 `bNextAim = !bAiming` → `Local_Aim(bNextAim)`（本地立即生效）+ `Server_Aim(bNextAim)` |
+| `Local_Aim(bool bPressed)`（private） | 近战时强制 `bPressed = false`，让所有调用方（本地、服务器与切枪同步）都遵循同一条规则；值没变化直接返回，否则赋值 `bAiming` 并广播 `OnAimStateChanged` |
 | `Server_Aim_Implementation(bool bPressed)` ⇄ | 服务端同样执行 `Local_Aim`，使服务端与远端看到一致的瞄准状态 |
 
 - **效果**：OTS/ADS 的**相机 FOV 变化由蓝图 `OnAim` 实现**；C++ 只维护布尔状态与 ADS 位置对齐；狙击枪的镜筒由 `USniperScopeComponent` 处理。
@@ -856,8 +912,9 @@ if (Ammo > 0) Local_FireWeapon();
 | 函数 | 行为与效果 |
 | --- | --- |
 | `HasStrafeWalkingAnim() const` | 当 `FirstPersonAnims` **或** `ThirdPersonAnims` 中当前武器类型填了 `Strafe_Walking` 时返回真（任意一个视角有就够 —— 滑步主要看 3P） |
-| `RefreshLocomotionBlendSpaces(bool bUseWalkGait)` | 把 `FPlayerAnim` 复制进 ABP 的结构体变量（1P 是 `CurrenrAnim`，3P 是 `CurrentAnim`）。当 `bUseWalkGait` 为真**且** `Strafe_Walking` 有效时，先把副本里的 `Strafe_Standing` 替换成 `Strafe_Walking`。两个网格都会写 |
+| `RefreshLocomotionBlendSpaces(bool bUseWalkGait)` | 把 `FPlayerAnim` 复制进 ABP 的结构体变量（1P 是 `CurrenrAnim`，3P 是 `CurrentAnim`）。当 `bUseWalkGait` 为真**且** `Strafe_Walking` 有效时，先把副本里的 `Strafe_Standing` 替换成 `Strafe_Walking`。**握把持姿**：当 `CurrentWeapon->GetGripHoldStyle()` 为 `Grab` 时，用 `IdleAnim_Grab` / `AimIdleAnim_Grab` 替换副本里的 `IdleAnim` / `AimIdleAnim`（仅当 Grab 待机与 `LeftHandHoldPose_Grab` 不同，避免把"仅左手"的姿势当成完整待机）。它还会在 `UFirstPersonAnimInstance` 上写 `GripHoldStyle`、`LeftHandHoldPose`、`ActiveIdleAnim` —— ⚠ 它**故意不**调用 `InitAnim()`，因为那会销毁 `DefaultSlot` 上的动态 Montage（§26.3）。两个网格都会写 |
 | `ApplyEquippedWeaponAnim(AWeapon*)` | 现在只是薄包装：读取 `AShooterCharacter::IsUsingWalkGait()` 后转调 `RefreshLocomotionBlendSpaces` —— 因此换枪时也会重新应用当前正确的步态 |
+| `AWeapon::OnRep_EquippedAttachments()` | 重建模型之后调用 `Combat->RefreshLocomotionBlendSpaces(false)`，因此装/拆握把会立刻重新应用 Cradle/Grab 待机（§26.3） |
 
 ---
 
@@ -884,6 +941,8 @@ if (Ammo > 0) Local_FireWeapon();
 | `MagCapacity` / `Ammo` / `StartingCarriedAmmo` | `10` / `5` / `10` | 弹匣容量 / 当前弹匣 / 初始备弹 |
 | `WeaponStatus` | `UnEquipped` | 初始未装备 |
 | `WeaponKind` | `LongGun` | 默认长枪 |
+| `MeleeHitRadius` / `MeleeHitReach` / `MeleeSocketName` | `40` / `120` / `"Melee"` | 近战扫掠的球半径（cm）、扫掠长度（cm）与起点 Socket；仅在 `WeaponKind == Melee` 时显示（`EditCondition`）（§8.7） |
+| `HipFireSpread` | `3`（`EditAnywhere`、`ClampMin 0`、`ClampMax 30`） | **腰射散布**的基准半锥角（度），在每把枪的蓝图里配置；会被所有已装备配件的 `HipFireSpreadMultiplier` 缩放，开镜时强制为 0（§8.2、§26.8） |
 
 ### 8.2 函数详解
 
@@ -895,12 +954,18 @@ if (Ammo > 0) Local_FireWeapon();
 | `GetAimSocketWorldLocation(FVector&) const` | 无 Socket 返回 false；否则输出 `Mesh1P->GetSocketLocation(AimSocketName)`（世界空间） |
 | `GetReticleDynamicMaterialInstance()` ◆ | 懒创建 `DynMatInst_Reticle = UMaterialInstanceDynamic::Create(ReticleMaterial, this)` 并返回。**效果**：每把枪有独立的准星材质实例（可做扩散/颜色），HUD 用它替换 Image 的 Brush |
 | `CaptureAuthoredMeshRelative()`（private） | 只在首次记录 `Mesh1P`/`Mesh3P` 的**相对变换**（`bCapturedAuthoredRelative` 一次性） |
-| `AttachToOwingPawn()` | ① `CaptureAuthoredMeshRelative()`；② `SetMeshVisibility()`；③ 通过接口取挂点与 1P/3P 网格体；④ 用 `SnapToTargetNotIncludingScale` 把 `Mesh1P`/`Mesh3P` 吸附到挂点，**再把作者手调的相对偏移 `SetRelativeTransform` 写回**；⑤ `Mesh3P` 的动画 Tick 选项临时设为 `AlwaysTickPoseAndRefreshBones` 并 `RefreshBoneTransforms()`。**效果**：解决"枪挂在旧 Socket 上导致位置的错位"以及"隐藏的 3P 枪不刷新骨骼导致 FABRIK 挂点算错" |
+| `AttachToOwingPawn()` | ① `CaptureAuthoredMeshRelative()`；② `SetMeshVisibility()`；③ 通过接口取挂点与 1P/3P 网格体；④ 对每个网格用 `ResolveAttachPoint` **解析出可用的挂点**（细节见下）—— AK 还会在 3P 网格上强制使用 `RifleSocketak`；⑤ 用 `SnapToTargetNotIncludingScale` 把 `Mesh1P`/`Mesh3P` 吸附到解析出的 Socket，再**把作者手调的相对偏移 `SetRelativeTransform` 写回**；⑥ 临时把 `Mesh3P` 的动画 Tick 选项设为 `AlwaysTickPoseAndRefreshBones` 并 `RefreshBoneTransforms()`；⑦ 更新手电与激光的挂接；⑧ 打日志 `[WeaponAttach] <weapon> type=… grip=… -> 1P sock=… \| 3P sock=…`。**效果**：修掉了"枪仍挂在旧 Socket 上"、"隐藏的 3P 枪姿态过期导致 FABRIK 挂点算错"，以及"孤立骨骼把枪静默挂在网格根"这三类问题 |
 | `DetachFromPawn()` | 把 `Mesh3P` 的动画 Tick 选项恢复为 `OnlyTickPoseWhenRendered`，然后 `KeepRelativeTransform` 解挂两个网格体 |
-| `SetMeshVisibility(APawn*) const`（private） | 本地控制者：`Mesh1P` 显示、`Mesh3P` 隐藏；其他人反之 |
+| `SetMeshVisibility(APawn*) const`（private） | 本地控制者：`Mesh1P` 显示、`Mesh3P` 隐藏；其他人反之。现在它还会把同样的 1P/3P 选择应用到**每一个配件模型**（`Mesh1P/Mesh3P` *以及* `SkelMesh1P/SkelMesh3P`）—— 否则骨骼弹匣可能残留在错误的网格上（例如挂在背后的备用弹匣） |
 | `WeaponTrace(FHitResult& OutHit, float TraceLength)` | 见下方"命中检测" |
-| `Local_Fire(ImpactPoint, ImpactNormal, SurfaceType, bIsFirstPerson)` | ① 调蓝图事件 **`FireEffect`**（枪口火光、弹孔、音效、曳光）；② **仅当 `bIsFirstPerson`** 且拥有者本地控制时，预测性 `Ammo--`（`Clamp`），非权威时 `++Sequence`。**效果**：远端多播只做表现，避免监听服务器重复扣弹 |
-| `Auth_Fire()` | 权威扣弹匣（`Clamp(Ammo - 1, 0, MagCapacity)`） |
+| `WeaponMeleeHit(FHitResult& OutHit)` | 见下方"近战扫掠"（§8.7） |
+| `UsesAmmo() const` ◆ | `WeaponKind != EWeaponKind::Melee`。门控 `Local_Fire` 的预测扣弹、`Auth_Fire`、开火/自动换弹的检查以及 `Initiate_ReloadWeapon` |
+| `GetHipFireSpread() const` ◆ | BlueprintPure。`UCombatComponent::bAiming` 为真时返回 `0`；否则返回 `HipFireSpread` × **所有**已装备配件的 `HipFireSpreadMultiplier`。由 `WeaponTrace`（真实锥角）与 `UShooterReticle`（换算成像素）消费 —— §26.8 |
+| `GetGripHoldStyle() const` ◆ | 返回已装备**握把**配件的 `GripHoldStyle`；没装握把时返回 `Cradle`（§4.12） |
+| `GetMagazineSkelMesh1P() const` | 返回为弹匣槽生成的 1P 骨骼网格组件，没有则为 null |
+| `PlayMagazineReload(EReloadType)` | 在弹匣的骨骼组件上播 `MagReloadAnim`（或 Empty/Tactical 变体）；没有该组件时什么都不做 |
+| `Local_Fire(ImpactPoint, ImpactNormal, SurfaceType, bIsFirstPerson)` | ① 调蓝图事件 **`FireEffect`**（枪口火光、弹孔、音效、曳光）；② **仅当 `bIsFirstPerson`**、拥有者本地控制**且 `UsesAmmo()`** 时，预测性 `Ammo--`（`Clamp`），非权威时 `++Sequence`。**效果**：远端多播只做表现，监听服务器不会重复扣弹；小刀没有弹匣 |
+| `Auth_Fire()` | 权威扣弹匣（`Clamp(Ammo - 1, 0, MagCapacity)`）；`!UsesAmmo()` 时直接返回 |
 | `Rep_Fire(int32 AuthAmmo)` | 客户端校正：`Sequence = max(Sequence - 1, 0)`；`Ammo = Clamp(AuthAmmo - Sequence, 0, MagCapacity)`。**效果**：用"本地已预测但服务端尚未确认"的发数（`Sequence`）抵消权威值，避免弹数跳变 |
 | `BeginPlay()` | 空实现（只调 `Super::`） |
 | ◆`FireEffect(...)` | `BlueprintImplementableEvent`，在武器蓝图里实现；参数：命中点、命中法线、表面类型、是否第一人称（可据此切换 1P/3P 特效） |
@@ -910,16 +975,31 @@ if (Ammo > 0) Local_FireWeapon();
 ```cpp
 起点 = 当前激活的 UCameraComponent 世界位置   // 兜底：PC->GetPlayerViewPoint（§25.8）
 方向 = 相机世界旋转的 Forward                 // 跟随探头和开镜
+方向 = FMath::VRandCone(方向, radians(GetHipFireSpread()))   // 仅当散布 > 0 时（§26.8）
 终点 = 起点 + 方向 * TraceLength
 ```
+- **散布**：方向会在半锥角为 `GetHipFireSpread()` 的锥体内随机化。开镜时该函数返回 0，所以 ADS 绝对精准；下面的未命中兜底用的是随机化之后的方向，因此命中特效会跟随子弹。
 - `FCollisionQueryParams`：`bReturnPhysicalMaterial = true`（拿表面类型给 `FireEffect`）；忽略**武器自身**与**持有者 Pawn**。
 - `FCollisionResponseParams`：先全部 `ECR_Ignore`，只对 `ECC_Pawn`、`ECC_WorldStatic`、`ECC_WorldDynamic`、`ECC_PhysicsBody` 设 `ECR_Block` —— **显式限定可命中的物体类型**。
 - 用 `SweepSingleByChannel(..., ECC_Weapon, FCollisionShape::MakeSphere(TraceRadius), ...)`：走自定义 `Weapon` 通道 + 球体扫掠（有体积的"子弹"）。
 - **未命中兜底**：`OutHit.Location/ImpactPoint = End`、`Normal/ImpactNormal = -方向`、`Distance = TraceLength`、`Time = 1`。注释说明：不这样做的话未命中时 `ImpactPoint` 会留在原点，特效会在世界原点炸开。
 
+#### 挂点解析（`IsUsableAttachPoint` / `ResolveAttachPoint`，文件内局部函数）
+
+`AttachToOwingPawn` 不再直接挂到 `GripPoints` 里的原始名字。由两个文件内局部辅助函数决定：
+
+| 辅助函数 | 行为 |
+| --- | --- |
+| `IsUsableAttachPoint(Mesh, SocketOrBone)` | 真正的 **Socket** 总是算数。**骨骼**只有在它是根骨骼或有父骨骼时才算数 —— *孤立骨骼*（例如 `SKM_Manny_Simple` 这类精简骨架里存在但没有父级的 `weapon_r`）会被拒绝，因为挂到它会把武器放到网格根而不是手里 |
+| `ResolveAttachPoint(Mesh, Requested)` | 可用时返回 `Requested`；否则按顺序尝试 `RifleSocketak`、`RifleSocket`、`hand_r`、`HandGrip_R`，并打一条带所选回退名的 **Warning**；都不可用时打 **Error** 并返回原名 |
+
+**AK 特例**：当 `WeaponType` 匹配 `Weapon.type.ak` 时，**3P** 网格始终使用 `RifleSocketak`（回退到 `ResolveAttachPoint(Mesh3P, "RifleSocket")`），而 **1P** 网格仍使用 `GripPoints` 里的条目（重定向后的 AK 手臂上的 `weapon_r`）。在这之前，一个 `GripPoints` 值要同时服务两个视角，导致第三人称的 AK 被拧到脱手。
+
 ### 8.3 参与者注意
 - `AWeapon` **没有** 自己的 Tick、也不主动开火：所有决策都在 `UCombatComponent`，武器只负责"表现 + 数据 + 命中检测"。
-- 蓝图派生武器（`BP_RIfle`、`BP_Pistol`、`BP_M700` 等）需要做的事：设 `WeaponType`(Tag)、`WeaponKind`、两个网格体 / 动画蓝图、`AimSocketName`，并实现 `FireEffect`。
+- 蓝图派生武器（`BP_Rifle`、`BP_Weapon_AK`、`BP_Pistol`、`BP_M700`、`BP_Knife` 等）需要做的事：设 `WeaponType`(Tag)、`WeaponKind`、两个网格体 / 动画蓝图、`AimSocketName`，并实现 `FireEffect`。
+- **近战武器**还需要在武器网格上配 `MeleeSocketName`（默认 `"Melee"`）、`MeleeHitRadius` / `MeleeHitReach`，并在 `FireMontages` / `ThirdPersonMontages` 里配全身开火 Montage（§8.7）。
+- **AK 必须保留自己的 Tag**（`Weapon.type.ak`），不要复用 `Weapon.type.rifle`：`UWeaponData` 以 Tag 为键，而 AK 需要自己的一整套动画与 Montage，复用 `rifle` 会把两把枪的动画混在一起。
 
 ---
 
@@ -964,6 +1044,24 @@ if (Ammo > 0) Local_FireWeapon();
 
 由 `AShooterCharacter::HideEquippedWeaponForHeal` / `RestoreWeaponAfterHeal` 调用（见 6.5）。
 
+### 8.7 近战扫掠 —— `WeaponMeleeHit(FHitResult& OutHit)`
+
+小刀**不使用**相机射线（`WeaponTrace`），而是沿刀身扫出一个球，所以挥砍命中取决于刀身经过什么，而不是准星指向哪里。
+
+```
+BladeMesh = Mesh1P（存在且未隐藏时），否则 Mesh3P
+起点     = 有 `MeleeSocketName` Socket（世界空间）时用它，否则用网格组件位置
+Forward  = 该 Socket 的 Forward，否则网格 Forward
+终点     = 起点 + Forward * MeleeHitReach
+SweepSingleByChannel(ECC_Weapon, sphere(MeleeHitRadius), 起点 → 终点)
+```
+
+- `FCollisionQueryParams` 忽略武器自身与持有者 Pawn（所以永远不会捅到自己）。
+- `FCollisionResponseParams` 从**全部忽略**开始，只对 `ECC_Pawn`、`ECC_WorldStatic`、`ECC_WorldDynamic`、`ECC_PhysicsBody` 设 Block —— 与 `WeaponTrace` 同一份白名单。
+- **未命中兜底**（与 `WeaponTrace` 思路一致）：命中结果填 `End` 作为位置/命中点、`-Forward` 作为法线、`Distance = MeleeHitReach`、`Time = 1`，这样挥空时特效仍出现在玩家身前。
+- 由 `UCombatComponent::Local_FireWeapon` 在 `WeaponKind == Melee` 时调用；得到的命中走同一条 `Local_Fire` → `Server_FireWeapon` → `DoDamage` 链路，所以**伤害与部位判定完全不变** —— 不同的只是"命中是怎么选出来的"。
+- ⚠ 扫掠在**客户端**执行，`FHitResult` 像子弹一样发给服务端；服务端不会重新扫掠。
+
 ---
 
 ## 9. UWeaponData — 武器数据资产
@@ -974,13 +1072,13 @@ if (Ammo > 0) Local_FireWeapon();
 | 属性 | 类型 | 键 → 值 | 使用者 |
 | --- | --- | --- | --- |
 | `GripPoints` | `TMap<FGameplayTag, FName>` | 武器类型 → 角色身上的 Socket 名（如 `Weapon.type.rifle` → `RifleSocket`） | `AShooterCharacter::GetWeaponAttachPoint_Implementation` |
-| `WeaponMontages` | `TMap<FGameplayTag, FMontageData>` | 武器类型 → **武器骨骼**动画（换弹时弹匣运动） | `PlayEquipMontage`（回退）、`PlayReloadMontage`（1P 武器网格体） |
-| `FirstPersonAnims` | `TMap<FGameplayTag, FPlayerAnim>` | 武器类型 → 手臂动画集 | `ApplyEquippedWeaponAnim` → ABP_FirstPerson |
+| `WeaponMontages` | `TMap<FGameplayTag, FMontageData>` | 武器类型 → **武器骨骼**上的动画（换弹时弹匣运动）。与手臂 Montage 使用同一个 `EReloadType` **和**同一握把持姿来解析 | `PlayEquipMontage`（回退）、`PlayReloadMontage`（1P 武器网格体） |
+| `FirstPersonAnims` | `TMap<FGameplayTag, FPlayerAnim>` | 武器类型 → 手臂动画集（含 `_Grab` 待机/瞄准待机与左手握持姿势） | `ApplyEquippedWeaponAnim` / `RefreshLocomotionBlendSpaces` → ABP_FirstPerson；`UFirstPersonAnimInstance::NativeUpdateAnimation` |
 | `ThirdPersonAnims` | `TMap<FGameplayTag, FPlayerAnim>` | 武器类型 → 全身动画集 | `ApplyEquippedWeaponAnim` → ABP_ThirdPerson |
-| `FirstPersonMontages` | `TMap<FGameplayTag, FMontageData>` | 武器类型 → 装备 / 换弹 / 开火（1P） | `PlayEquipMontage`、`GetReloadMontage`、`Local_FireWeapon` |
-| `ThirdPersonMontages` | `TMap<FGameplayTag, FMontageData>` | 同上（3P） | `PlayEquipMontage`、`GetReloadMontage`、`Multicast_FireWeapon` |
+| `FirstPersonMontages` | `TMap<FGameplayTag, FMontageData>` | 武器类型 → 装备 / 换弹 / 开火（1P），含 Grab 换弹变体与随机的 `FireMontages` / `EquipMontages` 池 | `PlayEquipMontage`、`GetReloadMontage`、`Local_FireWeapon` |
+| `ThirdPersonMontages` | `TMap<FGameplayTag, FMontageData>` | 同上（3P），也是近战全身挥砍的来源 | `PlayEquipMontage`、`GetReloadMontage`、`Local_FireWeapon`（近战）、`Multicast_FireWeapon` |
 
-**使用效果（数据驱动）**：新增一把武器时，通常**不需要改 C++**——在武器蓝图里选一个 `WeaponType` Tag，然后在 `DA_WeaponData` 的 5 张表里补齐同一个 Tag 的条目即可（`GripPoints` 必填，否则回退到 `RifleSocket`）。
+**使用效果（数据驱动）**：新增一把武器时，通常**不需要改 C++**——在武器蓝图里选一个 `WeaponType` Tag，然后在 `DA_WeaponData` 的 5 张表里补齐同一个 Tag 的条目即可（`GripPoints` 必填，否则回退到 `RifleSocket`）。`Weapon.type.ak` 的存在正是为了让 AK 在 5 张表里都有完全独立的条目，而不影响 `Weapon.type.rifle`。
 
 ---
 
@@ -1055,12 +1153,19 @@ if (Ammo > 0) Local_FireWeapon();
 | 函数 | 行为与效果 |
 | --- | --- |
 | 构造函数 | `bReplicates = true`（控制器也需要网络同步） |
-| `BeginPlay()` | 取 `UEnhancedInputLocalPlayerSubsystem`（经 `ULocalPlayer::GetSubsystem`），把 `ShooterIMC` 以优先级 `0` 加入映射上下文 —— **这是整个项目输入生效的前提**；两者任一无效则静默跳过 |
-| `SetupInputComponent()` | 取 `UEnhancedInputComponent`（转换失败直接返回，不像角色那样 `CastChecked`），按非空判断逐个绑定：`MoveAction → Triggered → Input_Move`、`LookAction → Triggered → Input_Look`、`JumpAction → Started → Input_Jump`、`CrouchAction → Started → Input_Crouch` |
-| `Input_Move(const FInputActionValue&)` | 读 `FVector2D`；以**控制旋转的 Yaw** 构造旋转矩阵取 X/Y 轴 → `AddMovementInput(Forward, Y)`、`AddMovementInput(Right, X)`。**效果**：WASD 相对镜头方向，且不会因为俯仰角导致移动变慢 |
+| `BeginPlay()` | 取 `UEnhancedInputLocalPlayerSubsystem`（经 `ULocalPlayer::GetSubsystem`），把 `ShooterIMC` 以优先级 `0` 加入映射上下文 —— **这是整个项目输入生效的前提**；两者任一无效则静默跳过。随后调用 `EnsureLoadoutInput()` 与 `EnsureCrouchInput()` |
+| `SetupInputComponent()` | 取 `UEnhancedInputComponent`（转换失败直接返回，不像角色那样 `CastChecked`），按非空判断逐个绑定：`MoveAction → Triggered → Input_Move`、`LookAction → Triggered → Input_Look`、`JumpAction → Started → Input_Jump`、蹲伏相关动作（见下）、`SprintAction`、`WalkAction`、`FlashlightAction`、`ToggleAttachmentMenuAction`、`LoadoutAction` |
+| 蹲伏绑定 | 先执行 `EnsureCrouchInput()`。**只有在 `CrouchToggleAction` 与 `CrouchHoldAction` 都不存在时**才会绑定**旧的 `CrouchAction`** —— 这正是避免 Left Ctrl 触发两次切换的关键。`CrouchToggleAction → Started → Input_Crouch`；`CrouchHoldAction → Started/Completed → Input_CrouchHold_Started/Completed`（§26.2） |
+| ◆`IsSprinting() const` | `BlueprintPure` 访问器；`UCombatComponent::Initiate_FireWeapon_Pressed`（开火打断冲刺）与 `AShooterCharacter::IsLeanBlocked` 也会读它 |
+| ◆`StopSprinting()` | 公开 `BlueprintCallable`：清 `bIsSprinting` 并重新应用移动速度。玩家在冲刺中开火时由战斗组件调用 |
+| `Input_Move(const FInputActionValue&)` | 读 `FVector2D`；以**控制旋转的 Yaw** 构造旋转矩阵取 X/Y 轴 → `AddMovementInput(Forward, Y)`、`AddMovementInput(Right, X)`。**效果**：WASD 相对镜头方向，且不会因为俯仰角导致移动变慢。**滑铲期间该函数直接返回**，让滑铲保持惯性，只由 `BrakingDecelerationWalking` 减速 |
 | `Input_Look(const FInputActionValue&)` | `AddYawInput(X)` + `AddPitchInput(Y)`；灵敏度由输入资产/`DefaultInput.ini` 的 `MouseX/Y` 决定 |
-| `Input_Jump()` | 若 `bWantsToCrouch` 为真 → 先取消蹲伏（起身）；否则 `GetCharacter()->Jump()`。**效果**：蹲下时按跳跃先站起，避免"卡在蹲姿" |
-| `Input_Crouch()` | 直接翻转 `CharacterMovement->bWantsToCrouch`（**切换式**蹲伏，不是按住式） |
+| `Input_Jump()` | 顺序：**滑铲** → `CancelSlideToStand()` 并返回（这一帧不跳）；**趴下** → `RequestSetProne(false, false)` 并返回（站起来，不跳）；`bWantsToCrouch` → 取消蹲伏（起身）；否则 `GetCharacter()->Jump()`。**效果**：蹲着按跳跃会先站起来，而不是卡住 |
+| `Input_Crouch()`（C / 旧动作） | **趴下** → `RequestSetProne(false, true)`（退到**蹲伏**）；**滑铲中** → 忽略；否则 `TryStartSlide()`（速度够快时开始滑铲、结束时蹲着），失败才翻转 `CharacterMovement->bWantsToCrouch` |
+| `Input_CrouchHold_Started()`（左 Ctrl） | 置 `bCrouchHeld = true`。趴下 → 退到蹲伏并返回；滑铲 → 强制结束状态为蹲伏并返回；否则 `TryStartSlide()`（结束蹲着）或 `CMC->bWantsToCrouch = true` |
+| `Input_CrouchHold_Completed()`（左 Ctrl） | 清 `bCrouchHeld`。趴下 → 忽略（Ctrl 不会让你从趴下站起来）；滑铲 → 把结束状态设为**站立**并返回；否则 `CMC->bWantsToCrouch = false`（CMC 会持续重试起身，所以低矮天花板下会一直保持蹲姿直到有空间） |
+| `EnsureCrouchInput()`（private） | 属性为空时创建 `IA_CrouchToggle_Runtime`（**C**）与 `IA_CrouchHold_Runtime`（**左 Ctrl**），以及 `IMC_Crouch_Runtime`，并以**优先级 2** 加入该上下文 —— 高于 `IMC_Shooter`，所以运行时映射会压过 Left Ctrl 上任何残留的 `IA_Crouch` 映射 |
+| `Input_Sprint()` / `Input_Walk()` | 见 12.1 |
 
 ---
 
@@ -1097,8 +1202,9 @@ if (Ammo > 0) Local_FireWeapon();
 | --- | --- | --- |
 | `WalkSpeed` | `250` | 静步模式的基础速度（保留用于调参/参考） |
 | `RunSpeed` | `500` | 既不冲刺也不静步时的基础速度 |
-| `SprintSpeed` | `800` | 冲刺时的基础速度 |
+| `SprintSpeed` | `800` | 冲刺时的基础速度。滑铲会把蹲伏速度上限抬到 `SprintSpeed * 1.5` |
 | `CrouchSpeedMultiplier` | `0.6` | 乘到 `MaxWalkSpeedCrouched` 上 |
+| `ProneSpeedMultiplier` | `0.25` | `bIsProne` 时**替代**下蹲倍率作用于 `MaxWalkSpeedCrouched`（`RunSpeed` 500 时约 125 cm/s） |
 | `WalkSpeedMultiplier` | `0.5` | 静步开关打开时乘到 `MaxWalkSpeed` 上 |
 | `AimSpeedMultiplier` | `0.7` | 开镜时乘到 `MaxWalkSpeed` 上 |
 
@@ -1107,13 +1213,13 @@ if (Ammo > 0) Local_FireWeapon();
 | `Input_Sprint()` | 翻转 `bIsSprinting`，并清掉 `bIsWalking`（冲刺打断静步），然后 `UpdateMovementSpeed()` |
 | `Input_Walk()` | 翻转 `bIsWalking`，并清掉 `bIsSprinting`（静步打断冲刺），然后 `UpdateMovementSpeed()` |
 | `UpdateMovementSpeed()`（private） | 先复查耐力（客户端耐力为 0 时不允许开始冲刺：`bIsSprinting && Stats->Stamina <= 0` 会清标记），本地应用速度；非权威时再发 `Server_SetMovementState(bIsSprinting, bIsWalking)`。**这个镜像上报是必须的**：服务器会纠正 `MaxWalkSpeed`，只改客户端会被拉回 |
-| `ApplyMovementSpeed()`（private） | 开镜或下蹲时拒绝冲刺；`Speed = bIsSprinting ? SprintSpeed : RunSpeed`；静步时乘 `WalkSpeedMultiplier`，开镜时乘 `AimSpeedMultiplier`；**同时**写 `CMC->MaxWalkSpeed = Speed` 与 `CMC->MaxWalkSpeedCrouched = Speed * CrouchSpeedMultiplier`；调用 `AShooterCharacter::RefreshLocomotionGait()`；在权威端把 `Stats->SetSprinting(bIsSprinting)` 推给组件，让消耗 Tick 跟随 |
+| `ApplyMovementSpeed()`（private） | 从角色读取 `bAiming`、`bIsCrouched`、**`IsProne()`** 与 **`IsSliding()`**。滑铲会清掉 `bIsSprinting`；开镜、下蹲**或趴下**时拒绝冲刺。`Speed = bIsSprinting ? SprintSpeed : RunSpeed`；静步时乘 `WalkSpeedMultiplier`，开镜时乘 `AimSpeedMultiplier`；**同时**写 `CMC->MaxWalkSpeed = Speed` 与 `CMC->MaxWalkSpeedCrouched` —— 后者在趴下时是 `Speed * ProneSpeedMultiplier`，否则是 `Speed * CrouchSpeedMultiplier`，并在**滑铲期间**抬到 `SprintSpeed * 1.5` 以免加速后的滑铲被夹住（减速由 `BrakingDecelerationWalking` 负责）；调用 `AShooterCharacter::RefreshLocomotionGait()`；在权威端把 `Stats->SetSprinting(bIsSprinting)` 推给组件，让消耗 Tick 跟随 |
 | `RefreshMovementSpeed()`（public，不发 RPC） | `ApplyMovementSpeed()` 的内联包装；角色在开镜或下蹲状态变化时调用（`HandleAimStateChanged`、`OnStartCrouch`、`OnEndCrouch`） |
 | `GetStats()`（private） | `UStatsComponent::FindStatsComponent(GetPawn())`，同时用 `AddUniqueDynamic` 注册 `HandleStaminaDepleted`，反复调用不会重复订阅 |
 
 倍率是**相乘叠加**的 —— 头文件注释给出了 `下蹲 + 静步 + 开镜 = 500 × 0.6 × 0.5 × 0.7`（其中下蹲倍率作用于 `MaxWalkSpeedCrouched`）。
 
-自动打断规则：开镜或下蹲时禁止冲刺；耐力耗尽由 `HandleStaminaDepleted` 中断冲刺；静步开关也会中断冲刺。
+自动打断规则：开镜、下蹲**或趴下**时禁止冲刺；耐力耗尽由 `HandleStaminaDepleted` 中断冲刺；静步开关也会中断冲刺；**开始滑铲**也会中断；**按下开火**同样会中断（`UCombatComponent::Initiate_FireWeapon_Pressed` → `StopSprinting()`，且这次按下不会开火，§7.4）。
 
 ### 12.2 移动状态的网络同步
 
@@ -1149,6 +1255,8 @@ if (Ammo > 0) Local_FireWeapon();
 | `OnReticleChanged(UMaterialInstanceDynamic*)` | 记录到 `CurrentReticle_DynMatInst` 并 `Image->SetBrushResourceObject(材质)`。**效果**：准星外观随武器切换（例如狙击枪换成细十字） |
 
 **使用方式**：做一个以 `UShooterReticle` 为父类的 WBP，内部放名为 `Image_Reticle` 的 Image；把它放进 HUD（或直接加到视口）。材质由武器蓝图的 `ReticleMaterial` 提供，动态参数可在材质里做扩散/命中反馈。
+
+**扩散准星（腰射，随移动/UI 修订加入）** —— 完整说明见 §26.7。简要来说：`UShooterReticle` 绑定 `UCombatComponent::OnWeaponFired`，用 `MakeLines` 画四条十字线，间距为 `CrosshairBaseGap + CrosshairSpread`；每开一枪按 `CrosshairSpreadKick` 加扩散（上限 `CrosshairSpreadMax`），并在 `NativeTick` 里按 `CrosshairSpreadRecovery` 每秒衰减。开镜且使用的是**非近战**武器时隐藏；全部是原生绘制，不需要动材质。
 
 ---
 
@@ -1259,6 +1367,31 @@ GameDefaultMap=/Game/FirstPerson/Lvl_FirstPerson.Lvl_FirstPerson
 GlobalDefaultGameMode=/Script/FPS.ShooterGameModeBase
 ```
 
+### 17.4 物理表面与 Gameplay Tag
+
+`DefaultEngine.ini`（`[/Script/Engine.PhysicsSettings]`）声明了用于命中特效与贴花的碰撞表面类型：
+
+```ini
++PhysicalSurfaces=(Type=SurfaceType1,Name="Character")
++PhysicalSurfaces=(Type=SurfaceType2,Name="Concrete")
++PhysicalSurfaces=(Type=SurfaceType3,Name="Glass")
++PhysicalSurfaces=(Type=SurfaceType4,Name="Wood")     # 新增
++PhysicalSurfaces=(Type=SurfaceType5,Name="Metal")    # 新增
+```
+
+- `SurfaceType2`（Concrete）是命中没有物理材质时传给 `FireEffect` 的**默认值**（§25.2）—— 所以它的下标不能改。
+- `Wood` / `Metal` 是后加的，方便给场景几何体配物理材质，而不必回退到默认值。
+
+[DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>)（新文件）：
+
+```ini
+[/Script/GameplayTags.GameplayTagsSettings]
+ImportTagsFromConfig=True
++GameplayTagList=(Tag="Weapon.type.ak",DevComment="AK — separate FirstPersonMontages from Weapon.type.rifle")
+```
+
+- 唯一通过配置注册的 Tag，其余都是原生 Tag（§3.4）。
+
 ---
 
 ## 18. 端到端时序
@@ -1282,23 +1415,25 @@ Client: Inventory / CurrentWeapon 复制到达
 ### 18.2 单发 / 全自动开火
 
 ```
-按下:  Initiate_FireWeapon_Pressed (bTriggerPressed = true, 首次立即 Local_FireWeapon)
-本地:  1P Montage → WeaponTrace → Local_Fire(预测扣弹) → UI 刷新 → FireTimer → Server_FireWeapon
+按下:  Initiate_FireWeapon_Pressed（正在冲刺? → StopSprinting 并返回；bTriggerPressed = true，首发立即 Local_FireWeapon）
+本地:  1P Montage（ResolveFireMontage 变体）→ WeaponTrace（近战为 WeaponMeleeHit）→ Local_Fire(预测扣弹，!UsesAmmo 时跳过)
+        → OnWeaponFired 广播（准星）→ UI 刷新 → FireTimer → Server_FireWeapon
 服务端: 射速节流 → 部位伤害 → Execute_DoDamage → Auth_Fire → Multicast_FireWeapon
 本地回调: Rep_Fire(权威弹数) 校正
-远端回调: 3P 枪口特效 + 3P 开火 Montage
-全自动: FireTimerFinished 检查 bTriggerPressed && Automatic && Ammo > 0 → 再来一发
-空仓:   FireTimerFinished 检测 Ammo==0 && 备弹>0 → 自动换弹
+远端回调: 3P 枪口特效 + 3P 开火 Montage（ResolveFireMontage 变体）
+全自动: FireTimerFinished 检查 bTriggerPressed && Automatic && (!UsesAmmo || Ammo > 0) → 再来一发
+空仓:   FireTimerFinished 检测 UsesAmmo && Ammo==0 && 备弹>0 → 自动换弹（近战永不触发）
 松开:  Initiate_FireWeapon_Released (bTriggerPressed = false)
 ```
 
 ### 18.3 换弹
 
 ```
-Initiate_ReloadWeapon（本地守卫：非换弹/非切枪/未满/有备弹/有 1P Montage）
-  → 状态 Reloading → Server_ReloadWeapon → PlayReloadMontage(1P)
-        ├─ 手臂 1P 换弹 Montage（持锁 + 结束委托）
-        └─ 武器 Mesh1P 换弹 Montage（弹匣运动）
+Initiate_ReloadWeapon（本地守卫：UsesAmmo / 非换弹 / 非切枪 / 非拉栓 / 弹匣未满 / 有备弹 / 有 1P Montage）
+  → 状态 Reloading → Server_ReloadWeapon → PlayReloadMontage(1P, ReloadType)
+        ├─ 手臂 1P 换弹 Montage，变体 + 握把持姿（Cradle/Grab）（持锁 + 结束委托）
+        ├─ 武器 Mesh1P 换弹 Montage，同一变体 + 同一握把持姿
+        └─ 弹匣骨骼组件：PlayMagazineReload(Empty/Tactical 变体)
 Server_ReloadWeapon → Multicast_ReloadWeapon → 远端 PlayReloadMontage(3P)
 动画通知: ApplyReload()（本机/服务端改数值）与/或 Notify_ReloadWeapon()（权威改数值 + Client_ReloadWeapon 回传）
 Montage 结束: OnReloadMontageEnded → 状态 Idle → （非权威时）Server_EndReload
@@ -1316,15 +1451,17 @@ Initiate_EquipSlot（循环切枪已删除；打断规则见 §25.9）
 EquipMontage 结束 → OnEquipMontageEnded → Idle
 ```
 
-### 18.5 瞄准（普通枪 / 狙击枪）
+### 18.5 瞄准（普通枪 / 狙击枪 / 近战）
 
 ```
 IA_AimWeapon(Started) → Initiate_Aim_Pressed
+  → 近战? 强制关镜（Local_Aim(false) + Server_Aim(false)）并返回
   → Local_Aim(!bAiming)（复制到远端，跳过 Owner） + Server_Aim
   → 蓝图事件 OnAim(bAiming)（FOV / 后坐力 / 音效）
 普通枪（有 AimSocket）: 角色 Tick → UpdateAimSocketAlignment → 写 AdsMesh1PLoc → 蓝图驱动 Mesh1P 到 ADS 位置
-狙击枪: 角色 Tick → USniperScopeComponent::UpdateView → 开/关 SceneCapture + 全屏镜筒遮罩
-近战: 不隐藏 UI 准星、不要求 AimSocket、不触发狙击镜
+倍镜: 角色 Tick → UOpticScopeComponent::UpdateView → 镜片内画中画拍摄（§24.5）
+狙击枪: 现在和其他枪一样；USniperScopeComponent 保持闲置（§16、§24.6）
+近战: 完全不能开镜；准星保持可见，镜类组件永不激活
 ```
 
 ### 18.6 命中与死亡（当前实现程度）
@@ -1360,7 +1497,7 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 | 数据资产 | `Combat → WeaponData` = `DA_WeaponData` | `UWeaponData*` | 挂点/动画查表 | `checkf` 断言崩溃 |
 | 数据资产 | 5 张 TMap 与武器 Tag 一一对应 | — | 装备/换弹/开火 | 对应动画缺失（部分有回退，部分是静默跳过） |
 | 材质 | `M_SniperScope` 及参数 `ScopeView`/`MaskRadius`/`RingWidth`/`ReticleThickness`/`Aspect` | 材质 | 狙击镜 | 镜筒不显示并打 Warning |
-| 输入 | 角色 8 个 + 控制器 4 个 `UInputAction` 引用 | — | `SetupPlayerInputComponent` | 动作无响应（部分会断言） |
+| 输入 | 角色 8 个 + 控制器 4 个 `UInputAction` 引用 | — | `SetupPlayerInputComponent` | 动作无响应（部分会断言）。蹲伏 / 趴下 / 整备相关的动作是例外：属性为空时它们会**在运行时创建**（§26.2） |
 
 ---
 
@@ -1381,7 +1518,7 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 
 | 类别 | 名称 | 类型 | 使用方 | 缺失后果 |
 | --- | --- | --- | --- | --- |
-| 枪的槽位表 | 武器蓝图上的 `FPS|Attachment → AttachmentSlots` | `TArray<FWeaponAttachmentSlot>` | `FindSlot`、`CanEquipAttachment`、`RebuildAttachmentVisuals` | 这把枪没有任何配件槽，菜单会显示"这把枪没有配件槽" |
+| 枪的槽位表 | 武器蓝图上的 `FPS\|Attachment → AttachmentSlots` | `TArray<FWeaponAttachmentSlot>` | `FindSlot`、`CanEquipAttachment`、`RebuildAttachmentVisuals` | 这把枪没有任何配件槽，菜单会显示"这把枪没有配件槽" |
 | 配件资产 | `SlotTag` 与该枪某个槽位一致，且填了 `Mesh` | `UAttachmentData` | `AWeapon::EquipAttachment` | 请求被拒绝（服务器会打 Warning） |
 | 模型 Socket | 握把模型的 `FABRIK`、枪口/枪管模型的 `Muzzle`、瞄具模型的 `SightSocket`、倍镜的 `LensSocket`、手电模型的 `LightSocket` | 配件 StaticMesh 上的 Socket | 1P/3P 扶枪 IK、枪口特效、开镜对准、画中画拍摄、手电挂点 | 对应功能被跳过并打印 Warning |
 | 菜单控件 | `WBP_AttachmentMenu` 内含 `SlotList`（**必需**）与 `Text_WeaponName`（可选），并设置 `RowClass = WBP_AttachmentSlotRow` | UMG 绑定 | `UAttachmentMenu` | `BindWidget` 断言 / 菜单无法构建 |
@@ -1391,6 +1528,29 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 | 输入资产 | `IMC_Shooter` 中存在 `IA_AttachmentMenu`、`IA_Flashlight` | 输入动作 | 控制器绑定 | 这两个键永远不会触发 |
 | ABP_FirstPerson 父类 | 继承 `UFirstPersonAnimInstance`，暴露 `FABRIK_Socket1P` / `FABRIK_Alpha1P` | C++ 动画实例 | `NativeUpdateAnimation` | 1P 左手不会跟随枪或握把 |
 | 硬编码控件路径 | `/Game/FPS/UI/WBP_AttachmentSlotRow` | 控件蓝图 | `ULoadoutAttachmentWindow::BuildLayout` | 整备界面的配件窗没有行（会打 Warning） |
+
+### 19.3 趴下 / 滑铲 / 蹲伏输入 / 握把持姿 / 弹匣配件的契约新增项
+
+| 类别 | 名称 | 类型 | 使用方 | 缺失后果 |
+| --- | --- | --- | --- | --- |
+| ABP_ThirdPerson 变量 | Pawn 上的 `bIsProne` / `IsProne()` | bool / BP 调用 | ABP 的 Prone 状态（手动连线，`Saved/Prone_REPORT.md`） | 胶囊体已经趴下，身体却还在播站立/蹲伏移动 |
+| ABP_ThirdPerson 变量 | `bProneCrawling` | bool | 选择 `BS_Prone`（true）还是趴下待机身体（false） | 趴着不动的玩家会原地"趴行"，而且手永远不回枪上 |
+| ABP_ThirdPerson 变量 | `FABRIK_Alpha` | float | FABRIK 节点的 alpha | 若 ABP 写死 1，趴行时左手会被硬拽到枪上；写死 0 则手永远不握枪 |
+| 动画槽 | 角色骨架上的 `BodySlot`（`DefaultGroup`） | Anim Slot | `AShooterCharacter::SlideSlotName`（默认 `BodySlot`）+ ABP 的分层混合 | **滑铲动画会静默地什么都不播**（§26.2） |
+| ABP_ThirdPerson 变量 | `bIsSliding` / `SlideAlpha` | bool / float | 可选（分层混合权重、跳过上半身层） | 仅影响表现 |
+| ABP_ThirdPerson BlendSpace | `BS_Prone`（已存在，`/Game/FPS/Animation/Prone/BS_Prone`） | `UBlendSpace` | ABP 的 Prone 状态 | 没有趴行动画 |
+| 骨骼 Socket | 小刀网格上的 `Melee`（`MeleeSocketName`） | Socket | `AWeapon::WeaponMeleeHit` | 扫掠从网格原点出发、沿网格 Forward —— 挥砍基本打不中 |
+| 数据资产条目 | 近战的 `FireMontages` / `ThirdPersonMontages` 开火 Montage，需进 `DefaultSlot`/`FullBody` | `UAnimMontage` | `Local_FireWeapon` | 小刀只有上半身动画（或者干脆没有动画） |
+| 武器属性 | `MeleeHitRadius` / `MeleeHitReach` | float | `WeaponMeleeHit` | 使用默认值（40 / 120 cm）；可能打不中或显得过于宽松 |
+| 配件资产 | 握把 `UAttachmentData` 上的 `GripHoldStyle`，以及 `DA_WeaponData` 里的 `IdleAnim_Grab` / `AimIdleAnim_Grab` / `EmptyReloadMontage_Grab` / `TacticalReloadMontage_Grab` | enum / 动画资产 / Montage | `GetGripHoldStyle`、`RefreshLocomotionBlendSpaces`、`ResolveReloadMontage` | 垂直握把仍然用 Cradle 握持姿势与 Cradle 换弹（静默） |
+| 配件资产 | 弹匣 `UAttachmentData` 上的 `SkeletalMesh` + `MagReloadAnim`（可选 `bHideSpareMagazineBone` / `BonesToHide`） | `USkeletalMesh` / `UAnimSequence` | `SpawnAttachmentSkelMesh`、`PlayMagazineReload` | 弹匣会按**静态**网格生成、永远不动；残留的 `mag_02` 骨骼会一直可见 |
+| 配件模型 | **弹匣**骨骼网格上要有 `LensSocket`/`SightSocket`，武器上要有挂载 Socket | Socket | `FindAttachmentMount` | 弹匣会挂在武器根并打 Warning |
+| 控制器属性 | `CrouchToggleAction`（C）/ `CrouchHoldAction`（左 Ctrl）、`ProneAction`（Z） | `UInputAction` | `EnsureCrouchInput` / `EnsureProneInput` | 这些键本来不会绑定，**但**两个辅助函数在字段为空时会创建运行时动作（IMC 优先级 2 / 1），所以默认一定能用 |
+| 准星控件属性 | `CrosshairBaseGap`、`CrosshairLineLength`、`CrosshairLineThickness`、`CrosshairLineColor`、`CrosshairSpreadKick`、`CrosshairSpreadMax`、`CrosshairSpreadRecovery`、`bDrawSpreadingCrosshair` | — | `UShooterReticle::NativePaint` | 默认值合理；想做纯材质准星就把 `bDrawSpreadingCrosshair` 设为 false |
+| 武器 / 配件属性 | `AWeapon::HipFireSpread`（3°）、`UAttachmentData::HipFireSpreadMultiplier`（1） | float | `GetHipFireSpread`、`WeaponTrace`、准星 | 两者默认值都能直接用；设为 0 时腰射完全精准（§26.8） |
+| 引擎组件 | HUD 拥有者上要有有效的 `APlayerController::PlayerCameraManager` | — | 准星的像素换算 | 没有它会退化为 `SpreadPx = 0`（只画抖动）；不影响射线 |
+| 硬编码滑铲动画 | `/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L` | `UAnimSequenceBase` | `AShooterCharacter::SlideAnim` 默认值 | 资产被移动后，滑铲就没有身体动画（软引用加载失败） |
+| 硬编码 Tag | `Weapon.type.ak` 必须存在（原生 + [DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>)） | gameplay tag | `WeaponType` 匹配、3P 的 AK 挂点路径 | 从配置里删掉仍然能用（它是原生 Tag），但编辑器的 Tag 选择器可能看不到它 |
 
 ## 20. 注意事项、已知问题与扩展建议
 
@@ -1447,12 +1607,43 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 | 30 | `UOpticScopeComponent::UpdateView` | 要求非狙击枪、`OpticType = Magnified`、有效 Lens Socket、Lens Material 与合法 `LensMaterialIndex` | 配置不全时打 Warning 且不放大（对准依然正常） |
 | 31 | 配件界面 | 界面基于同步状态重建，被服务器拒绝的装卸不会在客户端报错 | 只有服务器日志有记录，客户端没有错误提示 |
 
+#### 20.1.3 趴下 / 滑铲 / 握把持姿 / 近战修订新增
+
+| # | 位置 | 问题 | 影响 / 建议 |
+| --- | --- | --- | --- |
+| 32 | `AShooterCharacter::CalculateFABRIKSocket` | `bDisableLeftHandIKDuringReload`、`LeftHandIKBlendSpeed`、`DisableLeftHandIKCurveName` 与 `FABRIK_SocketTransform1P` 现在都不起作用（1P alpha 恒为 0） | 握持来自动画；不要再打开 1P FABRIK 并指望旧的换弹渐变行为 |
+| 33 | `AShooterCharacter::ApplyProneState` | 趴下**复用 CMC 的下蹲**，只换 `CrouchedHalfHeight`；`DefaultCrouchedHalfHeight` 在 `BeginPlay` 时记录 | 在那之后运行时改下蹲高度不会被感知；该属性也被 `CanExitProne` 用于头顶空间检测 |
+| 34 | `AShooterCharacter::CanExitProne` | 用自己写的胶囊体重叠检测（`ProneStandUp` 场景查询），而不是 CMC 自带的检查 | 低矮天花板下拒绝起身的是这个检测，而不是移动组件 —— 碰撞设置不一致时二者可能给出不同结论 |
+| 35 | `RequestSetProne` | `bIsSliding` 时直接返回 | 必须先把滑铲做完（或取消）才能趴下 |
+| 36 | `Server_SetSliding` | 用 75% 速度容差校验，以吸收客户端/服务器漂移 | 确实太慢的客户端会被 `Client_SlideRejected` 拒绝，并保持蹲伏 |
+| 37 | `UpdateSlide` | 服务器有 `SlideDuration + 0.5 s` 的安全超时 | 拥有者的结束 RPC 丢失时，服务器会自行结束滑铲；拥有者状态靠复制收敛 |
+| 38 | `AShooterPlayerController::EnsureCrouchInput` | 运行时 IMC 是**优先级 2**，会抢占左 Ctrl / C | `IMC_Shooter` 里这两个键上的其他映射（例如左 Ctrl → `IA_Walk`，或旧的 `IA_Crouch`）会被压过。如果静步原本在左 Ctrl 上，记得改键；把过期的 `IA_Crouch` 行删掉更清楚 |
+| 39 | 旧的 `CrouchAction` | **只在** `CrouchToggleAction` 与 `CrouchHoldAction` 都没配时才绑定 | 如果你填自己的资产，注意两个都要填（切换*和*按住）；只填一个，另一个仍然走运行时默认 |
+| 40 | `AShooterCharacter::SlideAnim` | `TSoftObjectPtr`，默认 `/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L`；`SlideMontage` 为空时在 `BodySlot` 里当作动态 Montage 播放 | 资产被移动会破坏滑铲身体动画；ABP 里没有 `BodySlot` 时动画会静默不播 |
+| 41 | 滑铲 + 手臂 | `SlideSlotName` 默认 `BodySlot`，正是为了让**手臂保持握枪**（从 `clavicle_l/r` 分层混合回来） | `SlideMontage1P` 留空是有意的；填了会用滑铲动画盖住手臂并与握枪姿势打架 |
+| 42 | `UFirstPersonAnimInstance::NativeUpdateAnimation` | 每帧读 `Combat->WeaponData->FirstPersonAnims[WeaponType]`，并用反射推 `CurrenrAnim.IdleAnim` | `FirstPersonAnims` 里缺某个武器类型时会静默沿用上一个待机；只有 `CurrenrAnim` 真的是 `FPlayerAnim` 属性时镜像写入才生效 |
+| 43 | `CombatComponent::RefreshLocomotionBlendSpaces` | **故意不**调用 `InitAnim()` | 加回去会销毁 `DefaultSlot` 上的 Grab 待机动态 Montage，复现旧的"Grab 待机不切换"问题 |
+| 44 | Grab 姿势的用法 | `IdleAnim_Grab` 与 `LeftHandHoldPose_Grab` 相同时会被当作完整待机而忽略 | 那种姿势（例如 `A_FPP_AK_Pose_G2`）是当**仅左手层**做的；当成完整待机会掰弯 `weapon_r`/`hand_r`，把枪拧歪 |
+| 45 | `AWeapon::WeaponMeleeHit` | 在客户端执行；得到的 `FHitResult` 像子弹一样发给服务端 | 与枪械同一套信任模型 —— 近战命中不会在服务端重新扫掠 |
+| 46 | `AWeapon::ResolveAttachPoint` | 配置的 Socket/骨骼不可用时回退 `RifleSocketak` → `RifleSocket` → `hand_r` → `HandGrip_R` | 每次回退都会打 Warning；设计上不允许**静默**回退，所以枪挂得奇怪时先看日志 |
+| 47 | `SpawnAttachmentSkelMesh` | 把弹匣停在 `MagReloadAnim` 的第 0 帧（骨架静止姿态相对根有偏移） | 没有 `MagReloadAnim` 时弹匣会停在原始静止姿态，看起来是偏的 |
+| 48 | `PlayMagazineReload` | 在弹匣组件上用**单节点** `PlayAnimation`，不是 Montage | 无法按骨骼混合或打断；时间以手臂 Montage 为准 |
+| 49 | `UShooterReticle` 准星 | `CrosshairSpread` 只是 `OnWeaponFired` 触发的本地视觉抖动 | 它**不**改 `TraceRadius`；准星是反馈，不是命中概率模型 |
+| 50 | `AShooterCharacter::bHideWeapon3PWhileProne` | 默认 `false` —— 趴下时枪还在手上 | 趴行动画是徒手的，所以只有 `bProneCrawling` 为 false 时左手才握枪（§26.1） |
+| 51 | `FirstPersonAnimInstance.cpp` 的 `GripHoldAnim_Private` 命名空间与 `UFirstPersonAnimInstance::GrabIdleSlotAsset` | `NAME_DefaultSlot`、`GrabIdleMaxSpeedXY` 与瞬态属性 `GrabIdleSlotAsset` 都声明了但**从未使用** | 是被放弃的"在 `DefaultSlot` 上循环播 Grab 待机"方案的遗留（那个方案导致枪偏航）；无害，方便时删掉 |
+| 52 | `AShooterCharacter::UpdateProne` | 每帧用记录的基准位置写 SpringArm 的相对 Z | 如果别的系统也动 SpringArm，两者会互相打架；基准在 `BeginPlay` 只记录一次（`bSpringArmBaseCaptured`） |
+| 53 | `FWeaponAttachmentSlot::HipFireSpread`（Weapon.h） | **没有默认初始化**，`BlueprintReadOnly`，且没有任何代码读写它 | 看起来是从 `AWeapon::HipFireSpread` 误粘贴过来的；请改从武器属性取值，或使用 `UAttachmentData::HipFireSpreadMultiplier`（§26.8） |
+| 54 | `AWeapon::GetHipFireSpread` / `WeaponTrace` | 锥角在负责射线的（拥有者）客户端上掷骰；`Server_FireWeapon` 信任客户端发来的 `FHitResult` | 与其余"客户端权威命中"模型一致，但因此散布属于**手感/平衡**功能，而不是反作弊的精度惩罚 |
+| 55 | `AWeapon::GetHipFireSpread` | 只建模了 `bAiming` —— 没有移动 / 跳跃 / 射速散布惩罚 | 头部注释标明该 getter 就是加这些惩罚的地方；加上之后准星与射线都会自动跟着变 |
+
 ### 20.2 评审要点（代码质量观察）
 
 - **注释即设计决策**：多处注释记录了"为什么不那样做"（例如 `Multicast_CycleWeapon` 的递归爆栈、`Initiate_FireWeapon_Pressed` 不能门控 `FireTimer`、1P 装备动画即使骨架不匹配也要播）。维护时**不要**当成冗余注释删掉。
 - **接口解耦良好**：`AWeapon` ↔ `AShooterCharacter` 完全通过 `IPlayerInterface`，把武器逻辑移植到别的角色类型成本很低。
 - **数据驱动的边界清楚**：武器数值（伤害/射速/弹匣）在 `AWeapon` 上，动画与挂点在 `UWeaponData` 上；想进一步数据化可把数值也搬进 `UWeaponData`。
 - **服务器权威**：伤害、库存生成、槽位解析、弹匣结算都在服务端；客户端只做预测与表现，抗作弊基础不错。
+- **最新系统的形态一致**：趴下与滑铲都是*本地预测、服务器校验、被拒时用 Client RPC 纠正*（`Client_ProneRejected` / `Client_SlideRejected`）—— 下一个移动能力照这个模式抄。
+- **表现与玩法保持分离**：准星扩散、视觉后坐与画中画曝光是本地/纯表现，而握把持姿、弹匣动画与配件都来自复制状态。不要随手把一边挪到另一边。
 
 ### 20.3 扩展指引
 
@@ -1464,6 +1655,9 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 | 死亡与重生 | `UStatsComponent` 里在血量归零时流转 `DeathState` 并广播；GameMode 里处理 `RestartPlayer`，角色 `BeginDestroy` 已有清库存逻辑 |
 | 更多武器槽 / 拾取 | `EWeaponSlot` 扩展 + `FindWeaponForSlot` 分支；拾取时 `Inventory.AddUnique` + `ReserveAmmo.Add` + `Equip` |
 | 可变倍率狙击镜 | 把 `SniperMagnification` 等常量改为 `UPROPERTY`，开镜时按输入切换并重设 `Capture->FOVAngle` 与材质参数 |
+| 新的移动能力（翻越、闪避……） | 照趴下/滑铲的模式抄：一个带 `OnRep_` 的复制 `bIsX`、在 `Apply…State()` 里做本地预测、一个会重新校验的可靠 `Server_Set…`，以及 `Client_…Rejected` 回滚（§26.8）。服务器需要容忍漂移时，复用 `CanStartSlide` 的"速度缩放"技巧 |
+| 新的握把持姿或握持姿势 | 扩展 `EGripHoldStyle`，在 `FPlayerAnim` / `FMontageData` 里加对应字段，然后在已经做切换的两个地方解析它们（`RefreshLocomotionBlendSpaces` 与 `UFirstPersonAnimInstance::NativeUpdateAnimation`），让 ABP 始终只有一个数据来源（§26.3） |
+| 新的近战武器 | 新建 `BP_Weapon` 子类，设 `WeaponKind = Melee`，给网格加 `Melee` Socket，并在全身槽位里填 `FireMontages` + 3P 的 `ThirdPersonMontages` 开火动画。不需要改 C++（§26.5） |
 
 ---
 
@@ -1490,10 +1684,15 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 | `SlotTag` | — | 这个配件属于哪种槽位（`Attachment.Slot.*`），必须与枪上某个槽位 Tag 一致 |
 | `DisplayName` / `Icon` | — | 菜单按钮用的名字与图标 |
 | `Mesh` / `MeshOffset` | — / 单位变换 | 生成的 StaticMesh，以及相对挂点的偏移 |
-| `FabrikSocketName` | `FABRIK` | **握把模型上**手应该抓住的 Socket；1P 与 3P 的 IK 都指向它 |
+| `SkeletalMesh` | — | **可选。** 填了就用 `USkeletalMeshComponent` 代替静态网格生成（AK 弹匣 `SKM_AK_Mag` 用的就是它）。此时 `Mesh` 被忽略 —— 见 §26.4 |
+| `MagReloadAnim` / `MagEmptyReloadAnim` / `MagTacticalReloadAnim` | — | 在手臂换弹的同时**在弹匣自己的骨骼组件上**播放的动画，与手臂的换弹变体对应。`MagReloadAnim` 还兼作静止姿态（生成时会停在它的第 0 帧） |
+| `bHideSpareMagazineBone` / `BonesToHide` | `false` / 空 | 生成后隐藏指定骨骼 —— `bHideSpareMagazineBone` 针对 AK 的备用弹匣骨骼 `mag_02`，`BonesToHide` 是任意列表 |
+| `FabrikSocketName` | `FABRIK` | **握把模型上**手应该抓住的 Socket；**3P** 的 IK 指向它（`bFirstPerson` 已不再使用，§26.1） |
+| `GripHoldStyle` | `Cradle` | 仅握把槽位：`Cradle`（斜角/三角）或 `Grab`（垂直）。决定待机与换弹动画集（§4.12、§26.3） |
 | `MuzzleSocketName` | `Muzzle` | 枪口/枪管模型上的 Socket，作为开火特效原点（枪口配件优先于枪管） |
 | `RecoilMultiplier` | `1.0` | 乘进后坐力（0.8 = 减少 20%）；多个配件相乘 |
 | `RecoilRecoveryMultiplier` | `1.0` | 缩放回正速度 |
+| `HipFireSpreadMultiplier` | `1.0` | 乘进武器的 `HipFireSpread`（垂直握把可以用 0.8 收紧腰射锥角）；多个配件相乘，开镜时结果为 0（§26.8） |
 | `bOverridesAimFOV` / `AimFOV` | `false` / `55` | 勾选后开镜 FOV 用它，而不是枪自己的 `AimFeildOfView` |
 | `SightSocketName` | `SightSocket` | 瞄具模型上的瞄准点 Socket（红点中心），开镜时相机对准它 |
 | `OpticType` | `None` | 见 21.1 |
@@ -1598,9 +1797,9 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 
 | 函数 | 行为 |
 | --- | --- |
-| `AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld)` | 先刷新（可能被隐藏的）枪骨骼。优先**握把配件**：它必须挂在真实 Socket 上（父组件确实有该挂点 Socket），且模型上有 `FabrikSocketName`；否则回退到枪骨骼的 `FABRIK` Socket，连它也没有则返回 false |
-| `AShooterCharacter::CalculateFABRIKSocket()` | 先把 `FABRIK_Alpha1P` 归零，然后写 3P 目标（`FABRIK_SocketTransform`，转换到 3P 身体 `hand_r` 骨骼空间）与 1P 目标（`FABRIK_SocketTransform1P`，转换到 `Mesh1P` 的 `hand_r` 空间）并把 `FABRIK_Alpha1P` 置 1。**狙击枪刻意跳过 1P 目标**（保持 0），让第一人称的左手继续跟动画 |
-| `UFirstPersonAnimInstance::NativeUpdateAnimation(float)` | 每帧把 `AShooterCharacter::FABRIK_SocketTransform1P` / `FABRIK_Alpha1P` 拷进自己的 `FABRIK_Socket1P` / `FABRIK_Alpha1P`；拥有者不是射击角色时把 alpha 归零。`ABP_FirstPerson` 继承这个类，所以 ABP 里的 FABRIK 节点可以直接用 |
+| `AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld)` | 先刷新（可能被隐藏的）枪骨骼。优先**握把配件**：它必须挂在真实 Socket 上（父组件确实有该挂点 Socket），且模型上有 `FabrikSocketName`；否则回退到枪骨骼自己的 `FABRIK` Socket，连它也没有则返回 false。`bFirstPerson` 参数仍然保留，但 `CalculateFABRIKSocket` 现在只会用 **false** 调用它 |
+| `AShooterCharacter::CalculateFABRIKSocket()` | 现在**只做第三人称**：写 `FABRIK_SocketTransform`（转换到 3P 身体 `hand_r` 骨骼空间），并把 `FABRIK_Alpha` 设为 0（近战 / 趴行 / 无 Socket）或 1。其他情况下两个变换都是 `Identity`、两个 alpha 都是 0（§6.3） |
+| `UFirstPersonAnimInstance::NativeUpdateAnimation(float)` | 每帧把 `AShooterCharacter::FABRIK_SocketTransform1P` / `FABRIK_Alpha1P` 拷进自己的 `FABRIK_Socket1P` / `FABRIK_Alpha1P`（两者恒为 `Identity` / 0，所以 1P 的 FABRIK 节点不起作用），然后解析**握把持姿**：读 `WeaponData->FirstPersonAnims[CurrentWeapon->WeaponType]`，调 `CurrentWeapon->GetGripHoldStyle()`，对外暴露 `GripHoldStyle`、`ActiveIdleAnim`（待机 vs `IdleAnim_Grab`）、`LeftHandHoldPose` 与 `bUseLeftHandHoldPose`，并用反射把解析出的待机镜像进 ABP 的 `CurrenrAnim.IdleAnim` / `AimIdleAnim`。`ABP_FirstPerson` 继承这个类，因此 ABP 可以用 `ActiveIdleAnim` 驱动 Sequence Player，并分层混入 `LeftHandHoldPose`（§26.3） |
 
 ### 23.4 Socket 解析优先级
 
@@ -1610,6 +1809,8 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 | `AWeapon::GetMuzzleAttachPoint`（开火特效原点） | 1) **枪口**配件的 `MuzzleSocketName`（消音器在枪管前面，所以优先）；2) **枪管**配件的 Socket；3) 枪模型 + 反射读取的 `MuzzleSocketName`（默认 `"Muzzle"`） |
 | `AWeapon::GetFabrikWorldTransform` | 1) 正确挂载的握把配件 `FabrikSocketName`；2) 枪骨骼的 `FABRIK`；3) 失败 |
 | `FindAttachmentMount`（新配件模型挂哪） | 1) 枪模型有该槽位 `SocketName`（或槽位没写 Socket）时挂枪；2) 否则找第一个带该 Socket 的已生成配件模型；3) 都没有则挂枪根并打 Warning |
+| `FindAttachmentMount` —— **骨骼**配件 | 同一套查找，但也会接受已生成的**骨骼**配件组件（`SkelMesh1P` / `SkelMesh3P`）上的 Socket，而不只是静态网格 |
+| `ResolveAttachPoint`（武器挂到**角色**哪个骨骼/Socket） | 1) `GripPoints` 里的名字，且它是可用 Socket 或非孤立骨骼；2) `RifleSocketak`；3) `RifleSocket`；4) `hand_r`；5) `HandGrip_R`；6) 原名 + Error 日志。**AK 覆盖**：3P 网格跳过第 1 步，永远先试 `RifleSocketak`（§8.2） |
 
 ### 23.5 输入与输入模式细节
 
@@ -1623,7 +1824,7 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 
 ---
 
-*本文档基于当前 `master` 分支源码（提交 `ab816ba Repair Weapon review rotation error` 时的本地状态）通读整理。*
+*本文档基于当前 `master` 分支源码通读整理（第 24–26 节描述的是提交 `d2598b5 Fire interrep sprinting` 之后的状态，也是撰写时的最新修订）。*
 
 ---
 
@@ -1638,6 +1839,8 @@ C++ 与蓝图之间存在若干"按名字/按接口"的隐式约定，改动蓝�
 - `EWeaponStatus::BoltCycling`：配了 `BoltMontage` 的枪开火后，`BeginBoltCycleAfterShot()` 进入该状态，`PlayBoltMontage1P()` / `PlayBoltMontage3P()` 播放，`OnBoltMontageEnded` 回到 `Idle`。期间不能开火、换弹、切枪、治疗；服务器用 `ServerBoltEndTime` 拒绝提前的开火/换弹。
 
 ### 24.2 换弹和拉栓时的左手 IK
+
+> **已被 §26.1/§26.3 取代：** 第一人称 FABRIK 被永久停用（`FABRIK_Alpha1P` 恒为 0），握持姿势来自握把持姿动画。`bDisableLeftHandIKDuringReload`、`LeftHandIKBlendSpeed`、`DisableLeftHandIKCurveName` 仍然存在，但已无任何代码读取。以下文字仅作历史保留。
 
 `CalculateFABRIKSocket(float DeltaTime)` 不再把 `FABRIK_Alpha1P` 写死为 1，而是插值。换弹或拉栓时（`bDisableLeftHandIKDuringReload`），或动画曲线 `DisableLeftHandIKCurveName` 大于 0 时，目标为 0，按 `LeftHandIKBlendSpeed` 渐变。狙击的握把特例保持不变。
 
@@ -1749,7 +1952,7 @@ WBP 分步说明见 `Saved/背包UI自定义说明.md`。
 | `LeanWallProbeRadius` | 12 | 从相机原位到探头位置的球形扫描（`ECC_Camera`），横移按命中比例缩短 |
 | `LeanLeftAction` / `LeanRightAction` | 空 | 留空 → `EnsureLeanInput()` 创建 `IA_LeanLeft_Runtime` / `IA_LeanRight_Runtime` 和 `IMC_Lean_Runtime`（Q / E，优先级 1） |
 
-流程：输入 → `HandleLeanInput(Dir, bPressed)`（按住：后按的优先；切换：再按同键取消）→ Tick 里 `UpdateLean()`。本地玩家算目标值（`IsLeanBlocked()` 时为 0 —— 通过 `AShooterPlayerController::IsSprinting()` 判断冲刺且速度 > 10 cm/s），更新 `LeanTarget` 并调用服务器 RPC；各端插值 `LeanAlpha`；只有本地玩家移动 `FirstPersonCamera`（BeginPlay 记录的相对变换 + 横移 + 侧倾；Mesh1P 挂在相机下，手臂跟着动）。角色新增了 `GetLifetimeReplicatedProps`。
+流程：输入 → `HandleLeanInput(Dir, bPressed)`（按住：后按的优先；切换：再按同键取消）→ Tick 里 `UpdateLean()`。本地玩家算目标值（`IsLeanBlocked()` 时为 0 —— 通过 `AShooterPlayerController::IsSprinting()` 判断冲刺且速度 > 10 cm/s，**或处于 `bIsProne` / `bIsSliding` 时**，§26.1–§26.2），更新 `LeanTarget` 并调用服务器 RPC；各端插值 `LeanAlpha`；只有本地玩家移动 `FirstPersonCamera`（BeginPlay 记录的相对变换 + 横移 + 侧倾；Mesh1P 挂在相机下，手臂跟着动）。角色新增了 `GetLifetimeReplicatedProps`。
 
 3P：`ABP_ThirdPerson` 新增 float `LeanAlpha`，在 Event Blueprint Update Animation 的 `UpdateGaitFlags` 之后设置（用 `IsValid(ShooterCharacter)` 保护）；AnimGraph 在 `OrientationWarping` 与接 Output Pose 的最后一个 Component To Local 之间插入 **Transform (Modify) Bone**（`spine_03`，旋转 *Add to Existing*，*Component Space*，Rotation = `MakeRotator(Pitch = LeanAlpha × 20)`），所以 Montage 也会跟着侧倾。用 Pitch 是因为 SK_Mannequin 在组件空间朝 +Y。
 
@@ -1773,3 +1976,179 @@ WBP 分步说明见 `Saved/背包UI自定义说明.md`。
 - **检视**：`VersionWeaponAction` → `Initiate_VersionWeapon()` 播放 `FMontageData::InspectMontage1P`（手臂；`WeaponMontages` 里有就连枪身一起），只在本地。开火、开镜、换弹、切枪、开始冲刺时 `CancelInspect()`（0.15 秒淡出）。
 - **侧瞄**：带 `bProvidesCantedSight`（或 `bProvidesLaser`）的配件提供 `CantedSightSocketName`、`CantedAimFOV`、`CantedEyeDistance`。开镜时 `SwitchZoomAction` 循环：主镜各档 → 侧瞄 → 主镜第一档；切换瞬间完成；`AWeapon::bRememberCanted` 让下次开镜回到侧瞄；触发 `OnCantedSightChanged`；侧瞄时主镜画中画关闭。
 - **激光**：`bProvidesLaser` 添加光束网格和贴花光点（`LaserSocketName`、`LaserBeamMesh/Material`、`LaserDotDecalMaterial`、`LaserRange`、`LaserBrightness`、`LaserColor`、`LaserDotSize`、`LaserDotSizePerMeter`、`bHideBeamWhenAiming`）。`bLaserOn` 同步；手电键同时开关手电和激光（`Initiate_ToggleLaser` / `Server_ToggleLaser`）；进入侧瞄调用 `Initiate_SetLaserOn(true)`。只有侧瞄开镜时光束指向准星，其他时候沿插槽方向。
+
+---
+
+## 26. 趴下/滑行、蹲伏模式、握把持姿与弹匣配件
+
+> 中文改动记录（含编辑器步骤、备份与调参值）：`Saved/武器逻辑改动记录.md`。详细报告：`Saved/Prone_REPORT.md`、`Saved/CrouchSlide_REPORT.md`、`Saved/GripStyle_HoldPose_REPORT.md`、`Saved/GripGrab_Prone_REPORT.md`、`Saved/AK_*_REPORT.md`、`Saved/AK_Mag02_Hide_REPORT.md`。
+> 本章取代 §4.8/§4.9（新增字段）、§6.3（FABRIK）、§6.7（移动钩子）、§7.4/§7.5/§7.6（开火/换弹/瞄准）、§8.2（挂接 + 近战）、§12（蹲伏输入、速度模型）、§14（准星）与 §23.3（第一人称 FABRIK）中的旧说法。
+
+### 26.1 趴下与趴行
+
+| 成员 | 默认值 | 复制 / 说明 |
+| --- | --- | --- |
+| `bIsProne` | `false` | `ReplicatedUsing = OnRep_IsProne`，`BlueprintReadOnly`。驱动 ABP 的 Prone 状态 |
+| `ProneAlpha` | `0` | `BlueprintReadOnly`；在**每台机器**上按 `ProneCameraInterpSpeed` 用 `FInterpTo` 逼近 0/1（相机 + 可选的 ABP 混合） |
+| `bProneCrawling` | `false` | `BlueprintReadOnly`；每台机器每帧重算为 `bIsProne && GroundSpeed > ProneCrawlSpeedThreshold` |
+| `ProneCrawlSpeedThreshold` | `10` | 超过这个地面速度（cm/s）就算"趴行" |
+| `ProneCapsuleHalfHeight` | `34`（`ClampMin 10`） | 趴下时使用的 `CrouchedHalfHeight` |
+| `ProneCameraZOffset` | `-50` | 在胶囊体变矮之外额外的**1P** 相机下沉（SpringArm 相对 Z）；按 `ProneCameraZOffset * ProneAlpha + SlideCameraZOffset * SlideAlpha` 施加 |
+| `ProneCameraInterpSpeed` | `6` | `ProneAlpha` 的插值速度 |
+| `ProneAnimReferenceSpeed` | `100` | 趴下 BlendSpace 的标定爬行速度；`LocomotionPlayRate = GroundSpeed / 该值`（§6.6） |
+| `bHideWeapon3PWhileProne` | `false` | 为真时趴下会隐藏当前武器的 `Mesh3P`（趴行动画是徒手的） |
+| `ProneAction` | 空 | `EditAnywhere`。留空 → `EnsureProneInput()` 创建 `IA_Prone_Runtime`（Boolean）+ `IMC_Prone_Runtime`，映射到 **Z**，优先级 1 |
+| `ProneSpeedMultiplier`（控制器） | `0.25` | 趴下时 `MaxWalkSpeedCrouched = Speed * 0.25`（`RunSpeed` 下约 125 cm/s） |
+
+实现要点：
+
+- **趴下复用 CMC 的下蹲。** `ApplyProneState()` 设置 `CMC->SetCrouchedHalfHeight(ProneCapsuleHalfHeight)` 与 `bWantsToCrouch = true`，所以胶囊体缩放、网络移动预测与胶囊体复制都走原生的下蹲路径。`DefaultCrouchedHalfHeight` 在 `BeginPlay` 记录，退出时还原。在**模拟代理**上会用显式的 `Crouch(true)` / `UnCrouch(true)` 重新应用，因为代理自己的 `bIsCrouched` 可能已被复制置真。
+- **进入 / 退出校验。** `CanEnterProne()` 要求 `CMC->IsMovingOnGround()` 且 `!bIsHealing`。`CanExitProne(bToCrouch)` 比较目标胶囊体半高（站立或蹲伏）与当前值；需要在胶囊体变大时，对"中心上抬了高度差（脚不动）"的胶囊体做一次 `OverlapBlockingTestByChannel`。被挡住 → 保持趴下。
+- **权威模型。** `RequestSetProne(bNewProne, bExitToCrouch)` 先本地应用（预测），非权威时调用 `Server_SetProne`。服务器重新校验，要么应用，要么用 `Client_ProneRejected(bServerProne)` 回应，把拥有者掰回服务器的值。`OnRep_IsProne` 只在数值确实与本地不同时才重新应用。
+- **趴下时的限制**：跳跃（`CanJumpInternal_Implementation`）、探头（`IsLeanBlocked`）、冲刺（`ApplyMovementSpeed` 会清掉 `bIsSprinting`），而且滑铲中不能进入趴下（`bIsSliding` 时 `RequestSetProne` 直接返回）。
+- **退出快捷方式**：空格 → `RequestSetProne(false, /*bExitToCrouch=*/false)`（站立）；C → `RequestSetProne(false, true)`（蹲伏）。离开趴下还会清掉探头输入（`LeanInputDir = 0`）。
+- **第三人称手臂**（`FABRIK_Alpha`，§6.3/§23.3）：**趴行时为 0**（全身趴行动画接管两只手），**趴下静止时为 1**，让左手回到枪上。小刀永远是 0。
+- **编辑器连线**（手工操作，没有 MCP 动画图工具）：在 `ABP_ThirdPerson` 的移动状态机里加一个 `Prone` 状态，按 `bProneCrawling` 选择 `BS_Prone`（X = `MovementOffsetYaw`，Y = `GroundSpeed`，PlayRate = `LocomotionPlayRate`），并在状态机之后加一个按骨骼的分层混合，在 `bIsProne && !bProneCrawling` 时保留站立的持枪上半身（分支过滤 `clavicle_l` / `clavicle_r`，开启网格空间旋转混合）。`BS_Prone` 本身已存在于 `/Game/FPS/Animation/Prone/BS_Prone`（14 个采样，3P 骨架）。完整步骤见 `Saved/Prone_REPORT.md`。
+
+### 26.2 滑铲与蹲伏输入改造
+
+**蹲伏输入**（运行时 Enhanced Input，与探头、趴下同一套模式）：
+
+| 按键 | 运行时资产 | 处理函数 | 含义 |
+| --- | --- | --- | --- |
+| **左 Ctrl** | `IA_CrouchHold_Runtime`（`CrouchHoldAction`） | `Input_CrouchHold_Started` / `_Completed` | 按住蹲伏，松开起身 |
+| **C** | `IA_CrouchToggle_Runtime`（`CrouchToggleAction`） | `Input_Crouch` | 切换蹲伏 / 起身 |
+| 旧的 `CrouchAction`（`IA_Crouch`） | — | `Input_Crouch` | **仅当**上面两个都不存在时才绑定 |
+
+两个运行时动作都在 `IMC_Crouch_Runtime` 里，以**优先级 2** 加入 —— 高于 `IMC_Shooter`，所以 `IMC_Shooter` 里残留的 `LeftControl → IA_Crouch`（或 `IA_Walk`）行会被压过。起身始终交给 CMC（`bWantsToCrouch = false`），它会每帧重试，因此低矮天花板下会一直保持蹲姿直到有空间。
+
+**滑铲** —— 在**高于 `SlideMinSpeed`** 时按任一蹲伏键都会开始滑铲而不是蹲下：
+
+| 成员 | 默认值 | 含义 |
+| --- | --- | --- |
+| `bIsSliding` | `false` | `ReplicatedUsing = OnRep_IsSliding`，`BlueprintReadOnly` |
+| `SlideAlpha` | `0` | 每台机器上平滑到 0…1（速度 10）；也用于相机 Z 偏移 |
+| `SlideMinSpeed` | `600` | 开始滑铲所需的地面速度（冲刺是 800）；服务器按它的 **75%** 重新检查，以吸收客户端/服务器漂移 |
+| `SlideDuration` | `0.9` | 最长滑铲时间；拥有者的结束 RPC 丢失时，服务器在 `SlideDuration + 0.5 秒` 处有安全结束 |
+| `SlideSpeedBoost` | `150` | 开始时沿当前速度方向额外增加的 cm/s |
+| `SlideDeceleration` | `800` | 滑铲期间写入 `CMC->BrakingDecelerationWalking`，并把 `GroundFriction` 设为 0（结束后都用 `SavedGroundFriction` / `SavedBrakingDecelWalking` 还原） |
+| `SlideEndSpeed` | `200` | 地面速度低于它时滑铲也结束 |
+| `SlideCameraZOffset` | `-15` | 在蹲伏下沉之外额外的 1P 相机下沉 |
+| `SlideMontage` | 空 | 可选的 3P 全身 Montage（优先于 `SlideAnim`） |
+| `SlideAnim` | `/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L`（软引用路径） | 在 `SlideSlotName` 里当作**动态 Montage** 播放，播放速率 = `时长 / SlideDuration` |
+| `SlideSlotName` | `"BodySlot"` | 仅身体槽位：ABP 必须把手臂/脊椎从移动持枪姿势分层混回来 |
+| `SlideMontage1P` | 空 | **故意留空** —— 滑铲期间 1P 手臂保持握枪 |
+
+行为：
+
+- **移动**：滑铲期间控制器忽略 `Input_Move`，所以角色保持惯性，只通过 CMC 的制动减速；`ApplyMovementSpeed` 把蹲伏速度上限抬到 `SprintSpeed * 1.5`，使加速后的滑铲不被夹住。冲刺被取消（耐力停止消耗），探头与趴下被阻止（`IsLeanBlocked`、`RequestSetProne`）。
+- **结束状态**：用 **C** 开始、或结束时 **Ctrl 仍按着**，则结束为蹲伏；**滑铲中途松开 Ctrl** 则结束为站立（`SetSlideEndCrouch`）。
+- **滑铲中跳跃**会取消滑铲并起身（`CancelSlideToStand`）—— 这一帧不发生跳跃。
+- **权威**：拥有者做预测（`ApplySlideState(true)` + `Server_SetSliding(true)`）；服务器用 `CanStartSlide(0.75f)` 校验，不一致时用 `Client_SlideRejected()` 回应（客户端就保持蹲伏）。`OnRep_IsSliding` 在其他机器上应用状态，远端客户端也是靠它看到滑铲动画的。
+- **动画**：`PlaySlideAnim` 在除专用服务器外的每台机器上执行。配了 `SlideMontage` 就正常播；否则用 `PlaySlotAnimationAsDynamicMontage(Seq, SlideSlotName, 0.15, 0.25, Rate, 1)` 播 `SlideAnim` 序列。⚠ ABP 里没有 `BodySlot` 时滑铲不会有任何动画，而且**不会打任何日志**。
+- **编辑器连线**：ABP 需要 `BodySlot` 动画槽（Anim Slot Manager → `DefaultGroup`），并在移动 + 瞄准偏移姿势之后接 `Slot(BodySlot)` → Layered blend per bone（base = 槽位输出，blend pose = 缓存的移动姿势，分支过滤 `clavicle_l`/`clavicle_r` 深度 0，开启网格空间旋转混合）→ 现有的 FABRIK → `DefaultSlot` → Output。完整步骤见 `Saved/CrouchSlide_REPORT.md`。
+
+### 26.3 握把持姿 —— Cradle 与 Grab
+
+副手握持姿势由**动画**产生，**不是 FABRIK**。1P 的 FABRIK 路径被永久停用（§6.3）；第三人称左手使用 `FABRIK_Alpha`。
+
+| 部件 | 行为 |
+| --- | --- |
+| `EGripHoldStyle` | `Cradle`（斜角 / 三角 / 无握把）或 `Grab`（垂直）。在**握把** `UAttachmentData` 上配置 |
+| `AWeapon::GetGripHoldStyle()` | 读取已装备的握把配件；没有则返回 `Cradle` —— 所以拆掉握把就会还原姿势 |
+| `FPlayerAnim::IdleAnim_Grab` / `AimIdleAnim_Grab` | Grab 持姿下替换 `IdleAnim` / `AimIdleAnim` |
+| `FPlayerAnim::LeftHandHoldPose_Cradle` / `_Grab` | 可选的**仅左手**分层姿势；对外暴露为 `LeftHandHoldPose` + `bUseLeftHandHoldPose` |
+| `FMontageData::EmptyReloadMontage_Grab` / `TacticalReloadMontage_Grab` | Grab 换弹变体，在 `FirstReloadMontage` **之后**、Cradle 变体**之前**解析 |
+| `UFirstPersonAnimInstance` | 每帧：解析持姿，发布 `GripHoldStyle`、`ActiveIdleAnim`、`LeftHandHoldPose`、`bUseLeftHandHoldPose`，并用反射把解析出的待机镜像进真实的 `CurrenrAnim` `FPlayerAnim` 属性，让任何读取 `CurrenrAnim.IdleAnim` 的 Sequence Player 都能跟随 |
+| `CombatComponent::RefreshLocomotionBlendSpaces` | 也会把 `IdleAnim_Grab` / `AimIdleAnim_Grab` 换进复制出来的结构体，并在 `UFirstPersonAnimInstance` 上写同样的字段。⚠ 它**绝不能**调用 `InitAnim()`，那会销毁 `DefaultSlot` 上的动态 Montage |
+| `AWeapon::OnRep_EquippedAttachments` | 重建模型之后调用 `RefreshLocomotionBlendSpaces(false)`，因此装/拆握把会立刻重新应用待机 |
+
+有两条设计规则已经写进代码（两处都有就地注释）：
+
+1. **`IdleAnim_Grab` 与 `LeftHandHoldPose_Grab` 相同时，绝不当作完整待机使用。** 这种姿势（例如 `A_FPP_AK_Pose_G2`）是作为**仅左手层**制作的 —— 它的 `weapon_r` / `hand_r` 轨道与 Cradle 待机不匹配，当成完整待机会把枪转过去（这就是"Grab 待机让枪偏航约 90°"的 bug）。让这两个字段保持相等，由 ABP 把这个姿势分层混入。
+2. **左手分层由 ABP 负责。** `UFirstPersonAnimInstance` 只**发布** `LeftHandHoldPose` / `bUseLeftHandHoldPose`；`ABP_FirstPerson` 应在 Cradle 待机之上，用从 `upperarm_l`（深度 0）分支的 Layered blend per bone 应用它。连线步骤见 `Saved/GripGrab_Prone_REPORT.md` 与 `Saved/GripStyle_HoldPose_REPORT.md`。
+
+### 26.4 骨骼网格弹匣配件
+
+AK 弹匣是一个**骨骼**网格，它的骨骼（弹匣本体，以及备用的 `mag_02`）必须随换弹动画运动。
+
+| 部件 | 行为 |
+| --- | --- |
+| `UAttachmentData::SkeletalMesh` | 填了之后 `RebuildAttachmentVisuals` 调用 `SpawnAttachmentSkelMesh` 而不是 `SpawnAttachmentMesh`。`Mesh` 被忽略 |
+| `SpawnAttachmentSkelMesh` | 创建 `USkeletalMeshComponent`（可移动、无碰撞、不接收贴花、仅在 3P 投影、`AlwaysTickPoseAndRefreshBones`），用 `FindAttachmentMount` 挂接（它现在也接受已生成的**骨骼**配件上的 Socket），应用 `MeshOffset`，并把它停在 **`MagReloadAnim` 的第 0 帧**（`SetPlaying(false)`，因为弹匣骨架的静止姿态相对根有偏移） |
+| `bHideSpareMagazineBone` | 生成后隐藏 `mag_02` 骨骼（AK 的备用弹匣）。默认 `false`；工程里的 `DA_MPC_AK_Mag` 保持它可见 |
+| `BonesToHide` | 用同样方式隐藏的额外 `FName` 列表 |
+| `FAttachmentVisual::SkelMesh1P` / `SkelMesh3P` | 新的视觉槽位；两者都由 `RebuildAttachmentVisuals` 销毁并重建，可见性由 `SetMeshVisibility` 同步 |
+| `AWeapon::PlayMagazineReload(EReloadType)` | 由 `PlayReloadMontage` 调用（仅 1P）：选 `MagReloadAnim`，`Empty` 用 `MagEmptyReloadAnim`、`Tactical` 用 `MagTacticalReloadAnim`，并用单节点 `PlayAnimation(Seq, false)` 驱动弹匣组件。`First` 通常不会传到这里（调用方已把它降级为 `Empty`/`Tactical`）；真的传进来时用 `MagReloadAnim` |
+| `AWeapon::GetMagazineSkelMesh1P()` | 返回 1P 弹匣组件（没有则 null） |
+
+**效果**：弹匣插入/拔出的动画**在弹匣自己身上**播放，靠同一个 `EReloadType` 与手臂 Montage 对齐，而不是依赖无法形变的静态网格或武器骨架上的 Montage。
+
+### 26.5 近战作为一等武器类型
+
+| 方面 | 变化 |
+| --- | --- |
+| 弹药 | `EWeaponKind::Melee` 的 `AWeapon::UsesAmmo()` 为 false；它门控 `Local_Fire` 的预测扣弹、`Auth_Fire`、`FireTimerFinished` 里的两处自动换弹检查，以及整个 `Initiate_ReloadWeapon` |
+| 瞄准 | `Initiate_Aim_Pressed` 对近战提前返回（强制关镜），`Local_Aim` 把 `bPressed` 钳为 false，因此服务器与切枪路径都无法给小刀打开 ADS |
+| 挥砍 | `Local_FireWeapon` 用 `WeaponMeleeHit`（刀身球形扫掠，§8.7）代替相机射线，并额外从 `ThirdPersonMontages` 播 **3P 全身**开火 Montage |
+| Montage 变体 | `FMontageData::FireMontages` / `EquipMontages` 允许配多个挥砍 / 拔枪动画，由 `ResolveFireMontage()` / `ResolveEquipMontage()` 随机挑选 |
+| FABRIK | `FABRIK_Alpha1P` 与 `FABRIK_Alpha` 对近战都强制为 0：两只手只跟随小刀动画 |
+| 准星 | 用近战武器开镜时**不**隐藏准星（`UShooterReticle::NativePaint` 在近战武器时跳过 ADS 隐藏） |
+
+### 26.6 AK 武器 Tag 与第三人称挂点路径
+
+- AK 用自己的 Tag `Weapon.type.ak`（§3.4），因此 `DA_WeaponData` 可以拥有一整套独立条目（握点、1P/3P 动画、1P/3P/武器 Montage），完全不影响 `Weapon.type.rifle`。
+- **挂点**（见 §8.2）：1P 网格使用 `GripPoints` 条目（重定向后的 AK 手臂上的 `weapon_r`）；3P 网格在该 Socket 存在时始终使用 `RifleSocketak`，否则用 `RifleSocket`。`ResolveAttachPoint` 会拒绝*孤立骨骼*（没有父级、且不是根骨骼的骨骼），这正是 AK 在 `SKM_Manny_Simple` 这类精简骨架上被静默挂在网格根的原因；任何回退都会打一条带所选 Socket 的 `[WeaponAttach] …` 日志。
+- **配件 Socket**：手电/激光/枪口/瞄具的查找既接受**骨骼**配件组件上的 Socket，也接受静态配件上的。
+- **诊断**：每次 `AttachToOwingPawn` 都会打 `[WeaponAttach] <weapon> type=… grip=… -> 1P sock=… \| 3P sock=…`。枪的位置奇怪时先看这一行 —— 它写明了实际用的是哪个 Socket。
+- 含每一个中间修复（根挂接、朝向、位置、`RifleSocketak` + FABRIK、`mag_02`）的改动记录：`Saved/AK_*_REPORT.md` 与 `Saved/武器逻辑改动记录.md`。
+
+### 26.7 扩散准星（腰射）
+
+| 成员 | 默认值 | 含义 |
+| --- | --- | --- |
+| `bDrawSpreadingCrosshair` | `true` | 原生准星的总开关 |
+| `CrosshairBaseGap` | `6` | 每条线距离屏幕中心的静止距离 |
+| `CrosshairLineLength` | `8` | 线长 |
+| `CrosshairLineThickness` | `2` | 线宽 |
+| `CrosshairLineColor` | 白 | 会被控件的颜色与不透明度染色 |
+| `CrosshairSpreadKick` | `4` | **每开一枪**增加的扩散 |
+| `CrosshairSpreadMax` | `28` | 扩散上限 |
+| `CrosshairSpreadRecovery` | `40` | 每秒恢复的扩散量 |
+
+- `UCombatComponent` 在 `Local_FireWeapon` 末尾广播新的 **`OnWeaponFired`** 委托；`UShooterReticle` 在 `OnPossessedPawnChanged` 里绑定/解绑它（`HandleWeaponFired` → `NotifyWeaponFired()`，后者也是 `BlueprintCallable`，WBP 可以手动踢一下准星）。
+- `NativePaint` 用 `FSlateDrawElement::MakeLines` 在 `CrosshairBaseGap + SpreadPx + CrosshairSpread` 处画四条十字线 —— 不涉及任何材质参数，所以材质驱动的准星与原生准星可以共存。**`SpreadPx` 是把武器真实的腰射锥角投影成像素**（`HalfWidth / tan(FOV/2) × tan(radians(GetHipFireSpread()))`，相机 FOV 钳制在 5…170°），所以准星几何形状与子弹实际能去的地方是对得上的；`CrosshairSpread` 只是叠加在上面的枪口抖动反馈（§26.8）。
+- 开镜时隐藏，**除非**当前武器是近战；`CrosshairSpread` 在 `NativeTick` 里衰减。
+- ⚠ `CrosshairSpread` 本身**只是表现**（这个抖动不改变 `TraceRadius`，也不改变子弹方向）。真正的*锥角*来自 `AWeapon::HipFireSpread`，见 §26.8。
+
+### 26.8 腰射散布（玩法锥角）
+
+§26.7 的准星抖动是纯表现；这里才是子弹真正可能飞出去的锥角。
+
+| 部件 | 行为 |
+| --- | --- |
+| `AWeapon::HipFireSpread` | **度**为单位的基准半锥角，在武器蓝图上 `EditAnywhere`（默认 `3`、`ClampMin 0`、`ClampMax 30`）。按枪配置：手枪更紧，步枪更散 |
+| `UAttachmentData::HipFireSpreadMultiplier` | 每配件的倍率（默认 `1`、`ClampMin 0`）；所有已装备配件相乘，所以 0.8 的垂直握把会把锥角收紧 20% |
+| `AWeapon::GetHipFireSpread() const` ◆ | `UCombatComponent::bAiming` 时返回 `0`；否则返回 `HipFireSpread × Π(HipFireSpreadMultiplier)`。是 BlueprintPure，所以 WBP 可以用同一个数值做显示或动画 |
+| `AWeapon::WeaponTrace` | 数值 > 0 时，在扫掠**之前**把射击方向替换为 `FMath::VRandCone(EyesWorldDirection, radians(SpreadDeg))`；未命中兜底（`ImpactPoint = End`、`Normal = -Direction`）用的是随机化之后的方向，所以特效跟着子弹走 |
+| `UShooterReticle::NativePaint` | 把同一个角度投影成像素 —— `SpreadPx = (HalfWidth / tan(钳制后FOV/2)) × tan(radians(GetHipFireSpread()))` —— 并在线条位置加上它：`CrosshairBaseGap + SpreadPx + CrosshairSpread`，于是准星与锥角一致、开火抖动叠在上面（为了 `GetFOVAngle` 引入了 `Camera/PlayerCameraManager.h`） |
+
+设计说明与已知问题：
+
+- **开镜是绝对精准的**：开镜会把散布强制为 0，所以瞄具画面永远不会骗人（开镜时准星也会隐藏，近战除外 —— 近战没有散布）。
+- **移动 / 跳跃惩罚**尚未实现：该 getter 是唯一该加它们的地方（今天只有一个 `Combat->bAiming` 项），这也是头文件注释写着"以后移动/跳跃惩罚也加在这里"的原因。
+- ⚠ **锥角是在负责射线的机器上掷骰的** —— 也就是拥有者客户端 —— 而 `Server_FireWeapon` 仍然信任客户端发来的 `FHitResult`。这与既有的命中模型一致，但因此散布是一个*手感/平衡*功能，而不是反作弊手段：改过的客户端可以把自己的散布去掉。
+- ⚠ `FWeaponAttachmentSlot`（Weapon.h）声明了一个 `HipFireSpread` 成员，既没有初始化，也没有任何代码读写它 —— 看起来是从 `AWeapon::HipFireSpread` 误粘贴过来的。权威数值是**武器**上的属性和 `UAttachmentData::HipFireSpreadMultiplier`。
+- 弹道仍然是沿随机化方向的**球体扫掠**（`TraceRadius`，默认 5 cm），不是霰弹式的逐颗弹丸分布。
+
+### 26.9 本次修订的网络模型汇总
+
+| 功能 | 预测 | 权威 | 收敛方式 |
+| --- | --- | --- | --- |
+| 趴下 | 拥有者立即应用 | `Server_SetProne` 重新校验进入（在地面、不在治疗）与退出（头顶空间） | `bIsProne` 复制 + `Client_ProneRejected` 回滚；`OnRep_IsProne` 在远端重新应用 |
+| 滑铲 | 拥有者立即应用（`bIsSliding` + 胶囊体 + 摩擦） | `Server_SetSliding` 重新检查地面与 `SlideMinSpeed` 的 75% | `bIsSliding` 复制、`Client_SlideRejected`（回退到蹲伏）、服务器在 `SlideDuration + 0.5 秒` 安全超时 |
+| 握把持姿 | 客户端读取复制过来的配件列表 | 配件由服务器校验，所以持姿是权威的 | `OnRep_EquippedAttachments` → 所有机器上 `RefreshLocomotionBlendSpaces` |
+| 弹匣动画 | 仅 1P，由同一个换弹 Montage 驱动 | 纯表现（无玩法数据） | 不复制；只有拥有者客户端播放 |
+| 近战命中 | 客户端扫掠刀身并发 `FHitResult` | `Server_FireWeapon` 与子弹完全一样地结算伤害/部位 | 与枪械相同的多播特效路径 |
+| 准星扩散 | 本地视觉抖动 | — | 纯本地手感功能 |
+| 腰射锥角 | 在负责射线的客户端上掷骰（`FMath::VRandCone`），即由该客户端决定方向 | 服务器复用客户端发来的 `FHitResult`；服务端没有锥角逻辑 | 不是复制状态 —— 锥角和准星都来自 `GetHipFireSpread()` |

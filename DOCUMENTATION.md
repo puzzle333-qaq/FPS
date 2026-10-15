@@ -37,8 +37,11 @@
 23. [Optics, flashlight and first-person FABRIK](#23-optics-flashlight-and-first-person-fabrik)
 24. [Weapon feel and ADS revision (Steps 1–8)](#24-weapon-feel-and-ads-revision-steps-18)
 25. [Combat feedback, lean, loadout WBP and switch/reload rules (since Step 8)](#25-combat-feedback-lean-loadout-wbp-and-switchreload-rules-since-step-8)
+26. [Prone, slide, crouch modes, grip hold style and magazine attachments](#26-prone-slide-crouch-modes-grip-hold-style-and-magazine-attachments)
 
-> **Latest revision (since Step 8):** new top-level section `25` covers PiP scope exposure, the Concrete impact default, directional hit reacts, the damage direction ring and hit confirm marks, per-weapon preview offsets, the WBP-designable loadout UI, Q/E lean (C++ + 3P ABP spine), the lean-aware weapon trace, the removal of CycleWeapon, the switch/reload interrupt rules, and a summary of Steps 9–14 (inspect, canted sight, laser). Where it disagrees with §6.3, §7.3, §7.5, §8.2 or §18.4, §25 wins.
+> **Latest revision (since Step 14):** new top-level section `26` covers **prone / crawl**, the **slide**, the **Ctrl-hold + C-toggle crouch** input rework, the **GripHoldStyle (Cradle / Grab)** system, **skeletal-mesh magazine attachments** (`SkeletalMesh`, `MagReloadAnim`, `bHideSpareMagazineBone`), the **melee sweep** (`WeaponMeleeHit`), the **AK weapon tag and 3P attach-point fallbacks**, the **spreading crosshair** and the **hip-fire spread cone** (`HipFireSpread` × `HipFireSpreadMultiplier`, rolled in `WeaponTrace`). Where it disagrees with §4.8, §4.9, §6.3, §6.7, §7.4, §7.5, §7.6, §8.2, §12, §14 or §23.3, §26 wins.
+>
+> **Previous revision (since Step 8):** new top-level section `25` covers PiP scope exposure, the Concrete impact default, directional hit reacts, the damage direction ring and hit confirm marks, per-weapon preview offsets, the WBP-designable loadout UI, Q/E lean (C++ + 3P ABP spine), the lean-aware weapon trace, the removal of CycleWeapon, the switch/reload interrupt rules, and a summary of Steps 9–14 (inspect, canted sight, laser). Where it disagrees with §6.3, §7.3, §7.5, §8.2 or §18.4, §25 wins.
 >
 > **Previous revision (weapon feel and ADS, Steps 1–8):** new top-level section `24` covers reload variants, bolt action, left-hand IK blending, the fire-mode toggle, C++ ADS FOV and ADS time, variable-zoom optics, PiP rules by optic type (the sniper is no longer special-cased), visual recoil, per-weapon hip offset and ADS eye distance. Where it disagrees with §16, §18.5 or §23.1, §24 wins.
 >
@@ -59,6 +62,7 @@
 | 10–16 | Damage, health, input, UI, sniper scope | Look up by feature |
 | 17–19 | Config, sequences, blueprint contract | Anyone debugging integration |
 | 20 | Pitfalls and TODOs | Whoever inherits the project |
+| 21–26 | Attachment data/UI, optics + flashlight, weapon-feel revisions, combat feedback + lean, prone/slide/grip hold/magazine attachments | Look up by feature (these sections win over the older ones they reference) |
 
 Legend:
 
@@ -81,12 +85,18 @@ graph LR
     UActorComponent --> UCombatComponent
     UActorComponent --> UStatsComponent
     UActorComponent --> USniperScopeComponent
+    UActorComponent --> UOpticScopeComponent
+    UAnimInstance --> UFirstPersonAnimInstance
+    UAnimNotify --> UAnimNotify_WeaponGrip
     UUserWidget --> UShooterReticle
     UUserWidget --> UReserveAmmo
     UUserWidget --> USniperScopeWidget
     UDataAsset --> UWeaponData
+    UPrimaryDataAsset --> UAttachmentData
     UInterface --> UPlayerInterface
+    UInterface --> IRecoilModifier
     IPlayerInterface -.implemented by.-> AShooterCharacter
+    IRecoilModifier -.implemented by.-> AWeapon
 ```
 
 ### 2.2 Ownership
@@ -114,12 +124,13 @@ BP_ShooterGameMode
 ```
 Input IA_FireWeapon (Started)
  → AShooterCharacter::Input_FireWeapon_Pressed
- → UCombatComponent::Initiate_FireWeapon_Pressed   (store bTriggerPressed, fire-rate gate)
+ → UCombatComponent::Initiate_FireWeapon_Pressed   (sprint cancel, store bTriggerPressed, fire-rate gate)
  → UCombatComponent::Local_FireWeapon
-     ├─ play the 1P fire montage
-     ├─ AWeapon::WeaponTrace          (sphere sweep → FHitResult)
-     ├─ AWeapon::Local_Fire           (→ blueprint FireEffect; predictive magazine decrement)
+     ├─ play the 1P fire montage (ResolveFireMontage: random melee/shot variant)
+     ├─ AWeapon::WeaponTrace          (sphere sweep → FHitResult; melee uses WeaponMeleeHit instead)
+     ├─ AWeapon::Local_Fire           (→ blueprint FireEffect; predictive magazine decrement, skipped when !UsesAmmo)
      ├─ broadcast OnCurrentReserveAmmoChanged (UI refresh)
+     ├─ broadcast OnWeaponFired       (crosshair spread kick)
      ├─ start FireTimer (fire rate / automatic loop)
      └─ Server_FireWeapon(Hit)  ⇄
           ├─ fire-rate validation
@@ -163,11 +174,14 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | `Tag_WeaponType_None` | `Weapon.type.none` | Unspecified type |
 | `Tag_WeaponType_Rifle` | `Weapon.type.rifle` | Rifle (long gun) |
 | `Tag_WeaponType_Pistol` | `Weapon.type.pistol` | Pistol |
-| `Tag_WeaponType_Sniper` | `Weapon.type.sniper` | Sniper rifle (**only this one activates the scope**) |
-| `Tag_WeaponType_Melee` | `Weapon.type.melee` | Melee |
+| `Tag_WeaponType_Sniper` | `Weapon.type.sniper` | Sniper rifle (no longer special-cased — §24.6) |
+| `Tag_WeaponType_Melee` | `Weapon.type.melee` | Melee (knife) |
+| `Tag_WeaponType_AK` | `Weapon.type.ak` | AK rifle. A **separate tag on purpose**: the AK needs its own animation/montage set, and it is the only tag with a dedicated third-person attach path (`RifleSocketak`, §26.6) |
 
 - Declared as native tags (`UE_DECLARE/DEFINE_GAMEPLAY_TAG_EXTERN`), so no ini registration is required.
-- **Effect**: `AWeapon::WeaponType` and every `TMap<FGameplayTag, …>` in `UWeaponData` are keyed by these tags; `USniperScopeComponent::UpdateView` uses `MatchesTagExact(Tag_WeaponType_Sniper)` to decide whether to raise the scope.
+- `Weapon.type.ak` is **also** listed in [DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>) (`ImportTagsFromConfig=True`) — the only tag carried in config, so it stays pickable even when the tag list is read from config alone.
+
+- **Effect**: `AWeapon::WeaponType` and every `TMap<FGameplayTag, …>` in `UWeaponData` are keyed by these tags. ⚠ `USniperScopeComponent` **used to** test `MatchesTagExact(Tag_WeaponType_Sniper)` to raise the scope; since Step 6 the sniper follows its equipped optic like every other weapon (§24.6) and the component is idle.
 
 ### 3.5 Target files
 
@@ -186,7 +200,7 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | --- | --- | --- |
 | `LongGun` | Long Gun | Only long guns can occupy the main / secondary slots |
 | `Pistol` | Pistol | Pistol slot |
-| `Melee` | Knife | Melee slot; melee is exempt from the "hide the reticle while aiming" rule and does not require an `AimSocket` |
+| `Melee` | Knife | Melee slot; melee can never aim (`Initiate_Aim_Pressed` / `Local_Aim` force it off), **never consumes ammo** (`AWeapon::UsesAmmo()` is false), uses the melee sweep instead of the camera trace, and turns both FABRIK alphas off (§26.4/§26.5) |
 
 ### 4.2 `EFireType` (Weapon.h)
 
@@ -238,8 +252,12 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | `AimOffset_Aim` | `UBlendSpace*` | ADS aim offset |
 | `Strafe_Standing` | `UBlendSpace*` | Standing locomotion blend space |
 | `Strafe_Crouching` | `UBlendSpace*` | Crouched locomotion blend space |
+| `Strafe_Walking` | `UBlendSpace*` | Walk-speed locomotion blend space (used while the walk gait is active, §6.6) |
+| `IdleAnim_Grab` | `UAnimSequence*` | Standing idle used when the grip attachment reports `EGripHoldStyle::Grab` (vertical foregrip); empty → `IdleAnim` (§26.3) |
+| `AimIdleAnim_Grab` | `UAnimSequence*` | Aiming idle for the Grab style |
+| `LeftHandHoldPose_Cradle` / `LeftHandHoldPose_Grab` | `UAnimSequence*` | Optional **left-hand-only** hold pose for the ABP's layered blend (`bUseLeftHandHoldPose`, §26.3). A pose equal to the regular idle is ignored |
 
-**Effect**: `UCombatComponent::ApplyEquippedWeaponAnim` copies the whole struct **by value** into the identically-named struct variable on the ABP, which is how animation sets swap when the player changes weapons.
+**Effect**: `UCombatComponent::ApplyEquippedWeaponAnim` copies the whole struct **by value** into the identically-named struct variable on the ABP, which is how animation sets swap when the player changes weapons. `RefreshLocomotionBlendSpaces` additionally swaps `Strafe_Standing` → `Strafe_Walking` for the walk gait and `IdleAnim` → `IdleAnim_Grab` for the Grab grip style before the copy.
 
 ### 4.9 `FMontageData` (WeaponData.h)
 
@@ -248,6 +266,17 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | `EquipMontage` | Weapon draw / holster animation |
 | `ReloadMontage` | Reload animation |
 | `FireMontage` | Fire animation |
+
+Reload variants and melee/shot variants:
+
+| Field | Purpose |
+| --- | --- |
+| `FirstReloadMontage` / `EmptyReloadMontage` / `TacticalReloadMontage` | Reload variants (§24.1) |
+| `EmptyReloadMontage_Grab` / `TacticalReloadMontage_Grab` | Grab-style override for the empty / tactical reload; only used when the grip attachment is `EGripHoldStyle::Grab` and the field is set, otherwise the Cradle variant is used (§26.3) |
+| `BoltMontage` | Bolt / pump cycling after each shot |
+| `InspectMontage1P` | Weapon inspect |
+| `FireMontages` / `EquipMontages` | `TArray` variant pools for melee swings and alternative draws. `ResolveFireMontage()` / `ResolveEquipMontage()` pick a **random** valid entry, appending the singular `FireMontage` / `EquipMontage` as an extra candidate (deduplicated); both return `nullptr` when nothing is set (callers must null-check) |
+| `ResolveReloadMontage(EReloadType Type, EGripHoldStyle GripStyle = Cradle)` | Resolution order: `First` → `FirstReloadMontage`; then (Grab only) `EmptyReloadMontage_Grab` / `TacticalReloadMontage_Grab`; then `EmptyReloadMontage` / `TacticalReloadMontage`; finally `ReloadMontage`. ⚠ `First` returns as soon as `FirstReloadMontage` is set, so a first reload never picks a Grab override |
 
 The same struct is reused in three maps: `WeaponMontages` (animations on the **weapon's own** skeletal mesh, e.g. the magazine moving during a reload), `FirstPersonMontages`, and `ThirdPersonMontages`.
 
@@ -278,8 +307,22 @@ New delegates:
 | `FAimStateChanged` | CombatComponent.h | Plain C++ multicast (`DECLARE_MULTICAST_DELEGATE_OneParam`, `bool`) — **not** a blueprint delegate | `Local_Aim` actually changes `bAiming` | `AShooterCharacter::HandleAimStateChanged` (blueprint `OnAim`, movement speed, gait) |
 | `FStaminaChanged` | StatsComponent.h | Dynamic multicast (component, old, new) | Stamina or max stamina changes | Stamina bar (`WB_Stamina`) |
 | `FStaminaDepleted` | StatsComponent.h | Dynamic multicast, no parameters | The server drains the last of the stamina while sprinting | `AShooterPlayerController::HandleStaminaDepleted` |
+| `FWeaponFired` | CombatComponent.h | Dynamic multicast, no parameters | `Local_FireWeapon` actually fired (after `Local_Fire`) | `UShooterReticle::HandleWeaponFired` → `NotifyWeaponFired()` (crosshair spread kick, §26.7) |
 
 > `EDeathState` is now *read* (`HealPlayer` and `Server_BeginHeal` refuse to heal a dead or full-health character) but is still never written, so it stays `NotDead` forever — see 20.1.
+
+---
+
+### 4.12 `EGripHoldStyle` (AttachmentData.h) — how the support hand holds the gun
+
+| Value | Display name | Meaning |
+| --- | --- | --- |
+| `Cradle` | Cradle / Angled | Angled / triangular foregrip (or **no grip at all**): the hold pose comes from the regular idle animations |
+| `Grab` | Grab / Vertical | Vertical foregrip: the idle/reload animations are swapped for the `_Grab` variants and the ABP may layer in `LeftHandHoldPose_Grab` |
+
+- `AWeapon::GetGripHoldStyle()` reads it from the **equipped grip attachment** and returns `Cradle` when no grip is mounted, so removing the grip reverts everything.
+- **Effect**: the hold pose is produced by **animations, not by FABRIK**. The first-person FABRIK path is permanently disabled (`FABRIK_Alpha1P = 0`, §26.1); the third-person left hand uses `FABRIK_Alpha` (0 for melee, 0 while crawling, 1 otherwise). See §26.3 for the full flow.
+
 
 ---
 
@@ -332,7 +375,7 @@ Every function is `BlueprintNativeEvent + BlueprintCallable`, so C++ callers mus
 | --- | --- |
 | `BeginPlay()` | ① On a non-dedicated server, if no `USniperScopeComponent` exists yet, **create one dynamically** with `NewObject` + `RegisterComponent` (so the blueprint does not need to add it); ② `Super::BeginPlay()`; ③ call `ConfigureWeaponHitCollision()` **again** (the comment notes that the Blueprint overrides collision settings after the constructor); ④ set the camera FOV to `DefaultFOV`; ⑤ record `StartingAimRotation` (initial yaw); ⑥ cache `Mesh1P`'s authored relative location/rotation into `AuthoredHipMeshLocation/Rotation`; ⑦ `ConfigureAimTickOrder()` |
 | `BeginDestroy()` | Calls `Combat->DestroyInventory()` so every spawned weapon actor is destroyed with the character |
-| `Tick(DeltaTime)` | Each frame: `CalculateTurnInPlaceParameters` → `CalculateFABRIKSocket` → `UpdateAimSocketAlignment` → `Scope->UpdateView()` when the scope component exists. **The order matters**: turn-in-place parameters first, then the IK socket, then ADS alignment |
+| `Tick(DeltaTime)` | Each frame, in this order: `UpdateLocomotionGait(true)` → `CalculateTurnInPlaceParameters` → `CalculateFABRIKSocket` → `UpdateAimAlpha` (advance ADS progress first, alignment and FOV use it) → `RemoveVisualRecoilFromMesh` → `UpdateAimSocketAlignment` → `ApplyVisualRecoilToMesh` → `UpdateAimFieldOfView` → `UpdateLean` → `UpdateSlide` → `UpdateProne` → `USniperScopeComponent::UpdateView()` (if present) → `UOpticScopeComponent::UpdateView()` (if present). **The order matters**: gait and turn-in-place first, then the IK socket, then ADS alpha/alignment, and the scope components last so they read the final camera state |
 | `PossessedBy(NewController)` | After `Super::`, calls `Combat->SpawnInventory()` — weapons are only spawned (on the server) once the character is possessed |
 | `OnRep_PlayerState()` | On clients, once `PlayerState` has replicated, calls `Combat->InitializeWeaponWidget()` to push the reticle material and ammo into the HUD |
 
@@ -387,15 +430,19 @@ finally AO_Yaw *= -1
 - Once `|AO_Yaw| < 5` the turn ends and `StartingAimRotation` is reset to the current yaw.
 - **Effect**: the state automatically returns to `NotTurning` after the animation finishes, so it can never get stuck.
 
-#### `CalculateFABRIKSocket()` (private) ◆
+#### `CalculateFABRIKSocket(float DeltaTime)` (private) ◆
 
-1. Returns immediately with no weapon.
-2. Takes the weapon's `Mesh3P`; if it has no socket named `FABRIK`, sets `FABRIK_SocketTransform` to `Identity` and returns.
-3. **`WeaponMesh->RefreshBoneTransforms()`** — critical: **a hidden third-person gun does not tick its animation**, so without a forced refresh the code reads a stale pose.
-4. Reads the `FABRIK` socket's world transform and converts it into the `hand_r` bone space of the 3P body via `GetMesh()->TransformToBoneSpace("hand_r", ...)`.
-5. Writes `FABRIK_SocketTransform` (location + rotation, scale forced to 1).
+> **Rewritten:** the first-person half of this function no longer exists. The 1P hold pose comes from per-weapon hold animations (grip style, §26.3), and the melee weapon and unarmed-crawl cases turn both alphas off. The `DeltaTime` parameter is now unused.
 
-- **Effect**: ABP_ThirdPerson uses this transform for **FABRIK IK**, so the left hand grips the handguard/body correctly.
+1. No combat component or no current weapon → `FABRIK_Alpha1P = 0`, `FABRIK_Alpha = 0`, both socket transforms `Identity`, return.
+2. **Melee** (`WeaponKind == Melee`) → same: both alphas 0, both transforms `Identity`, return. Both hands follow the knife animation only.
+3. **Third person**: `AWeapon::GetFabrikWorldTransform(false, SocketWorld)` — the grip attachment's `FABRIK` socket is preferred, otherwise the weapon mesh's own `FABRIK` bone. On success the world transform is converted into the `hand_r` bone space of the 3P body (`WriteHandSpace`) and the alpha is set:
+   - `FABRIK_Alpha = bProneCrawling ? 0 : 1` — crawling uses the full-body unarmed prone animations, so the left hand must **not** be pulled to the gun; prone-and-stopped, standing, crouching and sliding all keep the gun hold (alpha 1).
+   - No usable socket → `FABRIK_SocketTransform = Identity`, `FABRIK_Alpha = 0`.
+4. **First person**: unconditionally `FABRIK_SocketTransform1P = Identity` and `FABRIK_Alpha1P = 0`.
+
+- **Effect**: `ABP_ThirdPerson` should bind its FABRIK node's alpha to the new `FABRIK_Alpha` property (not a literal 1); `UFirstPersonAnimInstance` still mirrors `FABRIK_Socket1P` / `FABRIK_Alpha1P` every frame but the alpha is always 0, so a 1P FABRIK node is effectively inert. ⚠ The old properties `bDisableLeftHandIKDuringReload`, `LeftHandIKBlendSpeed` and `DisableLeftHandIKCurveName` still exist but no longer drive anything.
+
 
 #### `ConfigureAimTickOrder()` (private)
 
@@ -428,10 +475,11 @@ Guard clause (any failure returns early): locally controlled, and `Mesh1P` / `Fi
 
 #### `SetupPlayerInputComponent(UInputComponent*)` ◆
 
-Uses `CastChecked<UEnhancedInputComponent>` (a mismatch asserts) to bind nine actions:
+Uses `CastChecked<UEnhancedInputComponent>` (a mismatch asserts) to bind these actions:
 
 | Input action | Trigger event | Callback | Effect |
 | --- | --- | --- | --- |
+| `ProneAction` | `Started` | `Input_Prone` | Toggle prone / crawl. Empty → `EnsureProneInput()` creates `IA_Prone_Runtime` + `IMC_Prone_Runtime` (**Z**, priority 1) (§26.1) |
 | `LeanLeftAction` / `LeanRightAction` | `Started` / `Completed` | `Input_LeanLeft_*` / `Input_LeanRight_*` | Lean (Q / E runtime default, §25.7). `CycleWeaponAction` was removed (§25.9) |
 | `FireWeaponAction` | `Started` | `Input_FireWeapon_Pressed` | Fire (press) |
 | `FireWeaponAction` | `Completed` | `Input_FireWeapon_Released` | Stop firing (release; drives automatic fire) |
@@ -446,6 +494,7 @@ Uses `CastChecked<UEnhancedInputComponent>` (a mismatch asserts) to bind nine ac
 
 | Function | Behaviour |
 | --- | --- |
+| `Input_Prone` | Local only: `RequestSetProne(!bIsProne, /*bExitToCrouch=*/false)` (§26.1) |
 | `Input_LeanLeft_Started/Completed`, `Input_LeanRight_Started/Completed` | `HandleLeanInput(±1, bPressed)` (§25.7) |
 | `Input_ReloadWeapon` | `Combat->Initiate_ReloadWeapon()` |
 | `Input_FireWeapon_Pressed` | `Combat->Initiate_FireWeapon_Pressed()` |
@@ -487,9 +536,13 @@ Every callback is guarded by `IsValid(Combat)`.
 | Member | Notes |
 | --- | --- |
 | ◆`OnWeaponFirstReplicated` | `BlueprintAssignable`; the first weapon has replicated |
-| ◆`HitReacts` | `TArray<UAnimMontage*>`, `EditDefaultsOnly`; the hit-reaction pool |
-| ◆`FABRIK_SocketTransform` | `BlueprintReadOnly`; the IK target |
+| ◆`HitReacts` (+ `HitReactsFront/Back/Left/Right`) | `TArray<UAnimMontage*>`, `EditDefaultsOnly`; the hit-reaction pools (§25.3) |
+| ◆`FABRIK_SocketTransform` | `BlueprintReadOnly`; the **3P** IK target |
+| ◆`FABRIK_Alpha` | `BlueprintReadOnly`; 3P FABRIK strength — bind the ABP FABRIK node's alpha to this (1 = hold the gun, 0 = melee / crawling, §26.1) |
+| ◆`FABRIK_SocketTransform1P` / `FABRIK_Alpha1P` | Kept for compatibility; the 1P alpha is permanently 0 (§26.1) |
 | ◆`AO_Yaw` / `MovementOffsetYaw` / `TurningStatus` | `BlueprintReadOnly`; animation parameters |
+| ◆`bIsProne` / `ProneAlpha` / `bProneCrawling` | `BlueprintReadOnly`; prone state, smoothed 0…1 blend and "prone and moving" (§26.1) |
+| ◆`bIsSliding` / `SlideAlpha` | `BlueprintReadOnly`; slide state and smoothed 0…1 blend (§26.2) |
 | ◆`OnAim(bool)` | `BlueprintImplementableEvent`; ADS state callback |
 | `GetFirstPersonCamera()` / `GetCombatComponent()` / `GetDefaultFieldOfView()` | C++ accessors (used by `SniperScopeComponent`) |
 
@@ -536,7 +589,7 @@ New `BlueprintPure` getters: `GetGroundSpeed()`, `IsUsingWalkGait()`, `GetLocomo
 2. `MaxSpeed` = `MaxWalkSpeedCrouched` when crouched, otherwise `MaxWalkSpeed`. Note this is the **allowed** speed, not `Velocity / MaxWalkSpeed`.
 3. `bWantWalkGait = MaxSpeed > 0 && MaxSpeed <= WalkGaitSpeedThreshold` (default `360`).
 4. `bHasWalkBS = Combat->HasStrafeWalkingAnim()`; `bNewWalkGait = bWantWalkGait && bHasWalkBS`, so the walk BlendSpace is only used when `DA_WeaponData` actually provides one.
-5. Reference speed depends on the BlendSpace that is **actually playing**: `CrouchAnimReferenceSpeed` (`150`) when crouched, `WalkAnimReferenceSpeed` (`150`) in walk gait, otherwise `JogAnimReferenceSpeed` (`375`).
+5. Reference speed depends on the BlendSpace that is **actually playing**: `ProneAnimReferenceSpeed` (`100`) while `bIsProne` (the prone state wins over crouch, since prone reuses CMC crouch), `CrouchAnimReferenceSpeed` (`150`) when crouched, `WalkAnimReferenceSpeed` (`150`) in walk gait, otherwise `JogAnimReferenceSpeed` (`375`).
 6. `LocomotionPlayRate = Clamp(GroundSpeed / RefSpeed, MinLocomotionPlayRate (0.15), MaxLocomotionPlayRate (2.0))`, or `0` when `GroundSpeed <= 1` (idle freezes the locomotion feet).
 7. Pushes the values into **both** anim instances (`Mesh1P` and the 3P body) *by property name*, tolerating several spellings: `bUseWalkGait` (bool), and `LocomotionPlayRate` / `PlayRate` / `BS_PlayRate`, plus `GroundSpeed` / `Speed` (floats). Missing properties are silently ignored.
 8. When the gait changed and `bNotifyCombat` is set, calls `Combat->RefreshLocomotionBlendSpaces(bUseWalkGait)` so the ABP's `FPlayerAnim` copy swaps `Strafe_Standing` for `Strafe_Walking`.
@@ -549,10 +602,11 @@ Effects: slow movement (walk / ADS) no longer plays the jog cycle at 1× speed, 
 
 | Override / function | Behaviour |
 | --- | --- |
-| `CanJumpInternal_Implementation() const` | `Super::` **and** (`Stats` invalid or `Stats->HasStaminaForJump()`). Clients predict with the replicated stamina, the server is the final judge |
+| `CanJumpInternal_Implementation() const` | `!bIsProne && !bIsSliding` **and** `Super::` **and** (`Stats` invalid or `Stats->HasStaminaForJump()`). Clients predict with the replicated stamina, the server is the final judge. **Effect**: you cannot jump while lying down or sliding, on any machine |
 | `OnJumped_Implementation()` | `Super::`, then subtracts `Stats->JumpStaminaCost` (default `15`) **on the authority only** — `OnJumped` runs on both the predicting client and the server, so charging unconditionally would deduct twice |
-| `OnStartCrouch(...)` / `OnEndCrouch(...)` | `Super::`, then `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` on both server and local client, so crouching immediately re-resolves speed and gait |
+| `OnStartCrouch(...)` / `OnEndCrouch(...)` | `Super::`, then `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` on both server and local client, so crouching immediately re-resolves speed and gait. Prone reuses this path (§26.1) |
 | `HandleAimStateChanged(bool bIsAiming)` (private, bound in `BeginPlay` to `Combat->OnAimStateChanged`) | Calls the blueprint event `OnAim(bIsAiming)` **only when locally controlled**, and always calls `RefreshControllerMovementSpeed()` + `RefreshLocomotionGait()` — the server needs the new speed as well, otherwise it would pull the client back |
+| `IsLeanBlocked() const` | True while sprinting **and moving**, and now also while `bIsProne` **or** `bIsSliding` — no leaning while lying down or sliding (§26.1/§26.2) |
 | `RefreshControllerMovementSpeed()` (private) | `Cast<AShooterPlayerController>(GetController())->RefreshMovementSpeed()`. Simulated proxies (your character on someone else's machine) have no local controller and are skipped |
 | `Input_Aim_Pressed()` | No longer calls `OnAim` directly — the aim state is broadcast from `UCombatComponent::Local_Aim` through `OnAimStateChanged` (see 7.8) |
 | `Input_VersionWeapon()` | Bound to `VersionWeaponAction` (when set) → `Combat->Initiate_VersionWeapon()` (inspect, §25.10) |
@@ -580,7 +634,7 @@ Effects: slow movement (walk / ADS) no longer plays the jog cycle at 1× speed, 
 | `FireTimer` / `ServerNextFireTime` | Not replicated | Fire-rate throttling |
 | `LocalWeaponIndex` | Not replicated | Local cycling index |
 
-Delegates: `OnReticleChanged`, `OnCurrentReserveAmmoChanged` (both `BlueprintAssignable`).
+Delegates: `OnReticleChanged`, `OnCurrentReserveAmmoChanged`, `OnWeaponFired` (all `BlueprintAssignable`); `OnAimStateChanged`, `OnFireModeChanged`, `OnZoomLevelChanged` and the attachment/lean delegates are described in §4.11, §24.3, §24.5 and §25.
 
 ### 7.2 Helpers
 
@@ -701,37 +755,40 @@ Only write when the type matches FPlayerAnim::StaticStruct() (CopyCompleteValue)
 #### `Initiate_FireWeapon_Pressed()` — trigger down
 
 ```
+if the owning controller is sprinting → StopSprinting() and return   // first click cancels the sprint, it does not fire
 no current weapon → return
 bTriggerPressed = true
 reloading → return (nothing fires until the trigger is released)
 if (FireTimer is active) return;   // crucial: let the burst inside FireTimerFinished continue
-if (Ammo > 0) Local_FireWeapon();
+if (!UsesAmmo() || Ammo > 0) Local_FireWeapon();
 ```
-- **Effect**: single-fire weapons rely on `Completed` to clear `bTriggerPressed`; automatic weapons rely on the `FireTimer` loop.
+- **Effect**: single-fire weapons rely on `Completed` to clear `bTriggerPressed`; automatic weapons rely on the `FireTimer` loop. **Sprint interrupt**: `AShooterPlayerController::IsSprinting()` is checked first, so pulling the trigger while sprinting stops the sprint *and consumes that press* — the shot is the next one. `UsesAmmo()` is false for melee, so a knife always "has ammo" (no reload prompt, no auto-reload).
 
 #### `Initiate_FireWeapon_Released()`
 - `bTriggerPressed = false`.
 
 #### `Local_FireWeapon()` (private) — local / predictive shot
 
-1. Requires `WeaponData` and `CurrentWeapon`; returns while reloading.
-2. Plays the **1P fire montage** (`FirstPersonMontages[WeaponType].FireMontage`).
-3. `CurrentWeapon->WeaponTrace(Hit, TraceLength)` performs hit detection.
-4. Reads the physical surface type (`Hit.PhysMaterial`'s `SurfaceType`, defaulting to `SurfaceType1`).
-5. `CurrentWeapon->Local_Fire(ImpactPoint, ImpactNormal, SurfaceType, /*bIsFirstPerson=*/true)` — local FX plus a **predictive magazine decrement**.
-6. `NotifyAmmoChanged()` refreshes the UI.
-7. `SetTimer(FireTimer, FireTimerFinished, CurrentWeapon->FireTime)` — the fire rate.
-8. `Server_FireWeapon(Hit)` reports the shot (the **full FHitResult** is sent to the server).
+1. Requires `WeaponData` and `CurrentWeapon`; returns while reloading or bolt-cycling.
+2. Plays the **1P fire montage** via `FirstPersonMontages[WeaponType].ResolveFireMontage()` (random variant; may be null).
+3. **Melee only**: additionally plays the 3P fire montage (`ThirdPersonMontages[WeaponType].ResolveFireMontage()`) on the body mesh — a melee swing is a full-body animation, so the montage must be slotted into `DefaultSlot`/`FullBody`, not an upper-body slot.
+4. Hit detection: `WeaponMeleeHit(Hit)` for melee, `CurrentWeapon->WeaponTrace(Hit, TraceLength)` otherwise (§8.2).
+5. Reads the physical surface type (`Hit.PhysMaterial`'s `SurfaceType`, defaulting to `SurfaceType2`/Concrete, §25.2).
+6. `CurrentWeapon->Local_Fire(ImpactPoint, ImpactNormal, SurfaceType, /*bIsFirstPerson=*/true)` — local FX plus a **predictive magazine decrement** (skipped for melee).
+7. Broadcasts **`OnWeaponFired`** (the crosshair spread kick, §26.7).
+8. `NotifyAmmoChanged()` refreshes the UI.
+9. `SetTimer(FireTimer, FireTimerFinished, CurrentWeapon->FireTime)` — the fire rate.
+10. `Server_FireWeapon(Hit)` reports the shot (the **full FHitResult** is sent to the server).
 
 #### `FireTimerFinished()` (private) — the fire-rate timer expired
 
 ```
 no weapon → return
-if Ammo == 0 && reserve > 0 && locally controlled → Initiate_ReloadWeapon() (auto-reload on empty), return
+if UsesAmmo() && Ammo == 0 && reserve > 0 && locally controlled → Initiate_ReloadWeapon() (auto-reload on empty), return
 if reloading → return
-if bTriggerPressed && FireType == Automatic && Ammo > 0 → Local_FireWeapon() (burst)
+if bTriggerPressed && FireType == Automatic && (!UsesAmmo() || Ammo > 0) → Local_FireWeapon() (burst)
 ```
-- ⚠ The comment states this deliberately does **not** use `ApplyReload()` (which would refill instantly and skip the montage).
+- ⚠ The comment states this deliberately does **not** use `ApplyReload()` (which would refill instantly and skip the montage). `UsesAmmo()` gates both checks so a knife can never enter the auto-reload path and keeps swinging.
 
 #### `Server_FireWeapon_Implementation(const FHitResult& Hit)` ⇄ — authoritative shot
 
@@ -748,13 +805,13 @@ if bTriggerPressed && FireType == Automatic && Ammo > 0 → Local_FireWeapon() (
 #### `Multicast_FireWeapon_Implementation(const FHitResult& Hit, int32 AuthAmmo)` ⇄
 
 - **Local branch**: `Rep_Fire(AuthAmmo)` (reconcile the local prediction) + `NotifyAmmoChanged()`, then `return`. The comment notes the owning machine already played the 1P FX in `Local_FireWeapon`, so it must not repeat it.
-- **Remote branch**: requires `WeaponData` (otherwise `ensure` + return); `Local_Fire(..., bIsFirstPerson=false)` plays the **third-person** muzzle FX; then plays `ThirdPersonMontages[WeaponType].FireMontage`.
+- **Remote branch**: requires `WeaponData` (otherwise `ensure` + return); `Local_Fire(..., bIsFirstPerson=false)` plays the **third-person** muzzle FX; then plays `ThirdPersonMontages[WeaponType].ResolveFireMontage()` (random variant, may be null).
 
 ### 7.5 Reloading
 
 #### `Initiate_ReloadWeapon()` — reload entry point
 
-Guards: a current weapon exists; status is not `Reloading`/`Cycling`; `Ammo < MagCapacity`; `CurrentReserveAmmo > 0`; a 1P reload montage is available.
+Guards: a current weapon exists; **`UsesAmmo()` is true** (a knife can never reload); status is not `Reloading`/`Cycling`/`BoltCycling`; `Ammo < MagCapacity`; `CurrentReserveAmmo > 0`; a 1P reload montage is available.
 Flow: status → `Reloading` → `Server_ReloadWeapon()` → `PlayReloadMontage(true)`; if playback fails the status is rolled back and `Server_EndReload()` is called.
 
 #### `ApplyReload()` ◆ — the animation-notify-driven "insert magazine"
@@ -764,13 +821,14 @@ Flow: status → `Reloading` → `Server_ReloadWeapon()` → `PlayReloadMontage(
 - Updates the magazine, reserve and `ReserveAmmo` map, calls `NotifyAmmoChanged()`, returns true.
 - **Called from**: an **AnimNotify** on the blueprint reload animation (the frame where the magazine is inserted). This is what makes the numbers line up with the animation.
 
-#### `GetReloadMontage(bool bFirstPerson, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const` (private)
-- Selects the map by view → reads `ReloadMontage` → gets the matching mesh's `AnimInstance`; returns false if anything is missing.
+#### `GetReloadMontage(bool bFirstPerson, EReloadType, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const` (private)
+- Selects the map by view → resolves the variant with `ResolveReloadMontage(Type, CurrentWeapon->GetGripHoldStyle())` → gets the matching mesh's `AnimInstance`; returns false if anything is missing.
 
-#### `PlayReloadMontage(bool bFirstPerson)` (private)
+#### `PlayReloadMontage(bool bFirstPerson, EReloadType ReloadType)` (private)
 1. Returns false when `GetReloadMontage` or `Montage_Play` fails (result ≤ 0).
-2. **1P only**: additionally plays `WeaponMontages[WeaponType].ReloadMontage` on the **weapon's own `Mesh1P`** (the magazine animation). The comment notes the 3P gun skips it, otherwise the magazine floats.
-3. **1P only**: binds `OnReloadMontageEnded` (only the 1P montage holds the `Reloading` lock; the 3P one is purely cosmetic).
+2. **1P only**: additionally plays `WeaponMontages[WeaponType]` for the **same variant** on the **weapon's own `Mesh1P`** (the magazine animation), resolved with the same grip style. The comment notes the 3P gun skips it, otherwise the magazine floats. `First` is degraded to `Empty`/`Tactical` when no `FirstReloadMontage` exists, so the gun and the arms always play the matching pair.
+3. **1P only**: `CurrentWeapon->PlayMagazineReload(MagReloadType)` — drives a **skeletal-mesh magazine attachment** through `MagReloadAnim` / `MagEmptyReloadAnim` / `MagTacticalReloadAnim` (§26.4). `First` is degraded to `Empty`/`Tactical` here as well.
+4. Binds `OnReloadMontageEnded` (1P) or `OnObservedReloadMontageEnded` (3P) — only the 1P montage holds the `Reloading` lock; the 3P one is purely cosmetic and only re-attaches the weapon at the end.
 
 #### `OnReloadMontageEnded(UAnimMontage*, bool)` (private)
 - `Reloading` → `Idle`; if this machine is the locally controlling client (not the authority), calls `Server_EndReload()` so the server unlocks too.
@@ -801,8 +859,8 @@ Flow: status → `Reloading` → `Server_ReloadWeapon()` → `PlayReloadMontage(
 
 | Function | Behaviour |
 | --- | --- |
-| `Initiate_Aim_Pressed()` | `bNextAim = !bAiming` → `Local_Aim(bNextAim)` (instant local) + `Server_Aim(bNextAim)` |
-| `Local_Aim(bool bPressed)` (private) | Only sets `bAiming = bPressed` (a replicated property that skips the owner) |
+| `Initiate_Aim_Pressed()` | **Melee guard**: when the current weapon is `EWeaponKind::Melee` it force-un-aims (`Local_Aim(false)` + `Server_Aim(false)` if currently aiming) and returns — a knife never aims. Otherwise `bNextAim = !bAiming` → `Local_Aim(bNextAim)` (instant local) + `Server_Aim(bNextAim)` |
+| `Local_Aim(bool bPressed)` (private) | Forces `bPressed = false` for melee, so every caller (local, server and weapon-switch sync) applies the same rule; returns immediately when the value is unchanged, otherwise assigns `bAiming` and broadcasts `OnAimStateChanged` |
 | `Server_Aim_Implementation(bool bPressed)` ⇄ | The server also calls `Local_Aim`, keeping the server and remote clients in agreement |
 
 - **Effect**: the ADS **camera FOV change is implemented by the blueprint `OnAim` event**; C++ only maintains the boolean state and the ADS position alignment. The sniper scope disc is handled by `USniperScopeComponent`.
@@ -856,8 +914,9 @@ Behaviour change: `Initiate_EquipSlot` used to `return` while aiming (pressing a
 | Function | Behaviour and effect |
 | --- | --- |
 | `HasStrafeWalkingAnim() const` | True when `FirstPersonAnims` **or** `ThirdPersonAnims` has a `Strafe_Walking` BlendSpace for the current weapon type (either view is enough — the 3P view is what you see for foot sliding) |
-| `RefreshLocomotionBlendSpaces(bool bUseWalkGait)` | Copies `FPlayerAnim` into the ABP struct property (`CurrenrAnim` for 1P, `CurrentAnim` for 3P). When `bUseWalkGait` is true **and** `Strafe_Walking` is valid, the copy's `Strafe_Standing` is replaced by `Strafe_Walking` first. Applied to both meshes |
+| `RefreshLocomotionBlendSpaces(bool bUseWalkGait)` | Copies `FPlayerAnim` into the ABP struct property (`CurrenrAnim` for 1P, `CurrentAnim` for 3P). When `bUseWalkGait` is true **and** `Strafe_Walking` is valid, the copy's `Strafe_Standing` is replaced by `Strafe_Walking` first. **Grip style**: when `CurrentWeapon->GetGripHoldStyle()` is `Grab`, `IdleAnim_Grab` / `AimIdleAnim_Grab` replace `IdleAnim` / `AimIdleAnim` in the copy (only when the Grab idle differs from `LeftHandHoldPose_Grab`, so a left-hand-only pose is never used as a full idle). It also writes `GripHoldStyle`, `LeftHandHoldPose` and `ActiveIdleAnim` on a `UFirstPersonAnimInstance` — ⚠ it deliberately does **not** call `InitAnim()`, because that would destroy `DefaultSlot` dynamic montages (§26.3). Applied to both meshes |
 | `ApplyEquippedWeaponAnim(AWeapon*)` | Now a thin wrapper: it reads `AShooterCharacter::IsUsingWalkGait()` and forwards to `RefreshLocomotionBlendSpaces` — so equipping a weapon also re-applies the currently correct gait |
+| `AWeapon::OnRep_EquippedAttachments()` | Calls `Combat->RefreshLocomotionBlendSpaces(false)` after rebuilding the visuals, so mounting/removing a grip immediately re-applies the Cradle/Grab idle (§26.3) |
 
 ---
 
@@ -884,6 +943,8 @@ Behaviour change: `Initiate_EquipSlot` used to `return` while aiming (pressing a
 | `MagCapacity` / `Ammo` / `StartingCarriedAmmo` | `10` / `5` / `10` | Magazine capacity / current magazine / starting reserve |
 | `WeaponStatus` | `UnEquipped` | Starts unequipped |
 | `WeaponKind` | `LongGun` | Defaults to long gun |
+| `MeleeHitRadius` / `MeleeHitReach` / `MeleeSocketName` | `40` / `120` / `"Melee"` | Melee sweep sphere radius (cm), sweep length (cm) and the start socket; shown only when `WeaponKind == Melee` (`EditCondition`) (§8.7) |
+| `HipFireSpread` | `3` (`EditAnywhere`, `ClampMin 0`, `ClampMax 30`) | Base **hip-fire spread** as a half-cone angle in degrees, authored per weapon blueprint; scaled by every equipped attachment's `HipFireSpreadMultiplier` and forced to 0 while aiming (§8.2, §26.8) |
 
 ### 8.2 Function reference
 
@@ -895,12 +956,18 @@ Behaviour change: `Initiate_EquipSlot` used to `return` while aiming (pressing a
 | `GetAimSocketWorldLocation(FVector&) const` | Returns false without a socket; otherwise outputs `Mesh1P->GetSocketLocation(AimSocketName)` in world space |
 | `GetReticleDynamicMaterialInstance()` ◆ | Lazily creates and returns `DynMatInst_Reticle = UMaterialInstanceDynamic::Create(ReticleMaterial, this)`. **Effect**: each weapon owns an independent reticle material instance (for spread/colour), and the HUD swaps it into the Image brush |
 | `CaptureAuthoredMeshRelative()` (private) | One-time capture of `Mesh1P`/`Mesh3P` **relative transforms** (guarded by `bCapturedAuthoredRelative`) |
-| `AttachToOwingPawn()` | ① `CaptureAuthoredMeshRelative()`; ② `SetMeshVisibility()`; ③ fetches the attach point and the 1P/3P meshes through the interface; ④ snaps `Mesh1P`/`Mesh3P` to the attach point with `SnapToTargetNotIncludingScale`, then **writes the hand-authored relative offset back** via `SetRelativeTransform`; ⑤ temporarily sets `Mesh3P`'s anim tick option to `AlwaysTickPoseAndRefreshBones` and calls `RefreshBoneTransforms()`. **Effect**: fixes "the gun stays parented to the previous socket" and "the hidden 3P gun keeps a stale pose so the FABRIK socket is wrong" |
+| `AttachToOwingPawn()` | ① `CaptureAuthoredMeshRelative()`; ② `SetMeshVisibility()`; ③ fetches the attach point and the 1P/3P meshes through the interface; ④ **resolves a usable attach point per mesh** through `ResolveAttachPoint` (details below) — the AK additionally forces `RifleSocketak` on the 3P mesh; ⑤ snaps `Mesh1P`/`Mesh3P` to the resolved socket with `SnapToTargetNotIncludingScale`, then **writes the hand-authored relative offset back** via `SetRelativeTransform`; ⑥ temporarily sets `Mesh3P`'s anim tick option to `AlwaysTickPoseAndRefreshBones` and calls `RefreshBoneTransforms()`; ⑦ updates the flashlight and laser attachments; ⑧ logs `[WeaponAttach] <weapon> type=… grip=… -> 1P sock=… \| 3P sock=…`. **Effect**: fixes "the gun stays parented to the previous socket", "the hidden 3P gun keeps a stale pose so the FABRIK socket is wrong", and "an orphan bone silently attaches the gun at the mesh root" |
 | `DetachFromPawn()` | Restores `Mesh3P`'s anim tick option to `OnlyTickPoseWhenRendered`, then detaches both meshes with `KeepRelativeTransform` |
-| `SetMeshVisibility(APawn*) const` (private) | Locally controlled: `Mesh1P` visible, `Mesh3P` hidden; everyone else: the opposite |
+| `SetMeshVisibility(APawn*) const` (private) | Locally controlled: `Mesh1P` visible, `Mesh3P` hidden; everyone else: the opposite. It now also applies the same 1P/3P choice to **every attachment visual** (`Mesh1P/Mesh3P` *and* `SkelMesh1P/SkelMesh3P`) — without this a skeletal magazine could linger visible on the wrong mesh (e.g. the spare mag on the back) |
 | `WeaponTrace(FHitResult& OutHit, float TraceLength)` | See "Hit detection" below |
-| `Local_Fire(ImpactPoint, ImpactNormal, SurfaceType, bIsFirstPerson)` | ① Calls the blueprint event **`FireEffect`** (muzzle flash, bullet hole, sound, tracer); ② **only when `bIsFirstPerson`** and the owner is locally controlled, predictively does `Ammo--` (`Clamp`), incrementing `Sequence` when not authoritative. **Effect**: remote multicasts are purely cosmetic, so a listen server never double-decrements |
-| `Auth_Fire()` | Authoritative magazine decrement (`Clamp(Ammo - 1, 0, MagCapacity)`) |
+| `WeaponMeleeHit(FHitResult& OutHit)` | See "Melee sweep" below (§8.7) |
+| `UsesAmmo() const` ◆ | `WeaponKind != EWeaponKind::Melee`. Gates the predictive decrement in `Local_Fire`, `Auth_Fire`, the fire/auto-reload checks and `Initiate_ReloadWeapon` |
+| `GetHipFireSpread() const` ◆ | BlueprintPure. `0` while `UCombatComponent::bAiming`; otherwise `HipFireSpread` × the `HipFireSpreadMultiplier` of **every** equipped attachment. Consumed by `WeaponTrace` (real cone) and by `UShooterReticle` (converted to pixels) — §26.8 |
+| `GetGripHoldStyle() const` ◆ | Returns the equipped **grip** attachment's `GripHoldStyle`, or `Cradle` when no grip is mounted (§4.12) |
+| `GetMagazineSkelMesh1P() const` | The 1P skeletal-mesh component spawned for the magazine slot, or null |
+| `PlayMagazineReload(EReloadType)` | Plays `MagReloadAnim` (or the Empty/Tactical variant) on the magazine's skeletal component; no-op when there is none |
+| `Local_Fire(ImpactPoint, ImpactNormal, SurfaceType, bIsFirstPerson)` | ① Calls the blueprint event **`FireEffect`** (muzzle flash, bullet hole, sound, tracer); ② **only when `bIsFirstPerson`**, the owner is locally controlled **and `UsesAmmo()`**, predictively does `Ammo--` (`Clamp`), incrementing `Sequence` when not authoritative. **Effect**: remote multicasts are purely cosmetic, so a listen server never double-decrements, and a knife has no magazine |
+| `Auth_Fire()` | Authoritative magazine decrement (`Clamp(Ammo - 1, 0, MagCapacity)`); returns immediately when `!UsesAmmo()` |
 | `Rep_Fire(int32 AuthAmmo)` | Client reconciliation: `Sequence = max(Sequence - 1, 0)`; `Ammo = Clamp(AuthAmmo - Sequence, 0, MagCapacity)`. **Effect**: the locally predicted but unacknowledged shot count (`Sequence`) offsets the authoritative value, so the displayed ammo does not jump |
 | `BeginPlay()` | Empty implementation (only `Super::`) |
 | ◆`FireEffect(...)` | `BlueprintImplementableEvent` implemented in the weapon blueprint; parameters: impact point, impact normal, surface type, whether this is first person (so the blueprint can switch 1P/3P FX) |
@@ -910,16 +977,31 @@ Behaviour change: `Initiate_EquipSlot` used to `return` while aiming (pressing a
 ```cpp
 Start     = active UCameraComponent world location  // fallback: PC->GetPlayerViewPoint (§25.8)
 Direction = camera world rotation forward vector    // follows lean and ADS
+Direction = FMath::VRandCone(Direction, radians(GetHipFireSpread()))   // only when spread > 0 (§26.8)
 End       = Start + Direction * TraceLength
 ```
+- **Spread**: the direction is randomised inside a cone whose half angle is `GetHipFireSpread()`. While aiming the function returns 0, so ADS is perfectly accurate; the miss fallback below uses the randomised direction, so the impact FX follow the bullet.
 - `FCollisionQueryParams`: `bReturnPhysicalMaterial = true` (the surface type feeds `FireEffect`); ignores **the weapon itself** and **the owning pawn**.
 - `FCollisionResponseParams`: everything starts as `ECR_Ignore`, then only `ECC_Pawn`, `ECC_WorldStatic`, `ECC_WorldDynamic` and `ECC_PhysicsBody` are set to `ECR_Block` — an **explicit whitelist of hittable object types**.
 - `SweepSingleByChannel(..., ECC_Weapon, FCollisionShape::MakeSphere(TraceRadius), ...)`: uses the custom `Weapon` channel with a sphere sweep (a bullet with volume).
 - **Miss fallback**: `OutHit.Location/ImpactPoint = End`, `Normal/ImpactNormal = -Direction`, `Distance = TraceLength`, `Time = 1`. The comment explains that otherwise `ImpactPoint` stays at the origin and the impact FX explodes at world zero.
 
+#### Attach-point resolution (`IsUsableAttachPoint` / `ResolveAttachPoint`, file-local)
+
+`AttachToOwingPawn` no longer attaches to the raw `GripPoints` name. Two file-local helpers decide:
+
+| Helper | Behaviour |
+| --- | --- |
+| `IsUsableAttachPoint(Mesh, SocketOrBone)` | A real **socket** always counts. A **bone** only counts when it is the root bone or has a parent — an *orphan bone* (e.g. a `weapon_r` that exists in a trimmed skeleton like `SKM_Manny_Simple` with no parent) is rejected, because attaching to it puts the weapon at the mesh root instead of in the hand |
+| `ResolveAttachPoint(Mesh, Requested)` | Returns `Requested` when usable; otherwise tries, in order, `RifleSocketak`, `RifleSocket`, `hand_r`, `HandGrip_R`, logging a **warning** with the chosen fallback; with none usable it logs an **error** and returns the original name |
+
+**AK special case**: when `WeaponType` matches `Weapon.type.ak`, the **3P** mesh always uses `RifleSocketak` (falling back to `ResolveAttachPoint(Mesh3P, "RifleSocket")`), while the **1P** mesh keeps the `GripPoints` entry (`weapon_r` on the retargeted AK arms). Before this, a single `GripPoints` value had to serve both views, which bent the third-person AK out of the hand.
+
 ### 8.3 Notes for contributors
 - `AWeapon` has **no** tick of its own and never fires on its own: all decisions live in `UCombatComponent`; the weapon only provides "presentation + data + hit detection".
-- Blueprint weapon subclasses (`BP_Rifle`, `BP_Pistol`, `BP_M700`, …) must set `WeaponType` (tag), `WeaponKind`, the two meshes / animation blueprints and `AimSocketName`, and implement `FireEffect`.
+- Blueprint weapon subclasses (`BP_Rifle`, `BP_Weapon_AK`, `BP_Pistol`, `BP_M700`, `BP_Knife`, …) must set `WeaponType` (tag), `WeaponKind`, the two meshes / animation blueprints and `AimSocketName`, and implement `FireEffect`.
+- **Melee weapons** additionally need `MeleeSocketName` (default `"Melee"`) on the weapon mesh, `MeleeHitRadius` / `MeleeHitReach`, and full-body fire montages in `FireMontages` / `ThirdPersonMontages` (§8.7).
+- **The AK must keep its own tag** (`Weapon.type.ak`) rather than reusing `Weapon.type.rifle`, because `UWeaponData` is keyed by tag and the AK needs its own animation and montage sets; reusing `rifle` mixes the two guns' animations.
 
 ---
 
@@ -964,6 +1046,24 @@ This is what `UAnimNotify_WeaponGrip` calls (see 19.1 for the contract). Togethe
 
 Called from `AShooterCharacter::HideEquippedWeaponForHeal` / `RestoreWeaponAfterHeal` (see 6.5).
 
+### 8.7 Melee sweep — `WeaponMeleeHit(FHitResult& OutHit)`
+
+The knife does **not** use the camera trace (`WeaponTrace`); it sweeps a sphere along the blade so a swing hits what the blade passes through rather than what the crosshair points at.
+
+```
+BladeMesh = Mesh1P when it exists and is not hidden, else Mesh3P
+Start     = MeleeSocketName socket (world) when present, else the mesh component location
+Forward   = the socket's forward vector, else the mesh forward vector
+End       = Start + Forward * MeleeHitReach
+SweepSingleByChannel(ECC_Weapon, sphere(MeleeHitRadius), Start → End)
+```
+
+- `FCollisionQueryParams` ignores the weapon actor and the instigating pawn (so you never stab yourself).
+- `FCollisionResponseParams` starts from **all ignore** and blocks only `ECC_Pawn`, `ECC_WorldStatic`, `ECC_WorldDynamic` and `ECC_PhysicsBody` — the same whitelist as `WeaponTrace`.
+- **Miss fallback** (identical in spirit to `WeaponTrace`): the hit is filled with `End` as location/impact point, `-Forward` as the normal, `Distance = MeleeHitReach`, `Time = 1`, so the swing FX still appears in front of the player.
+- Called from `UCombatComponent::Local_FireWeapon` when `WeaponKind == Melee`; the resulting hit travels through the same `Local_Fire` → `Server_FireWeapon` → `DoDamage` chain, so **damage and hit zones are unchanged** — only the selection of the hit is different.
+- ⚠ The sweep runs on the **client** and the `FHitResult` is sent to the server, exactly like a bullet; there is no server-side re-sweep.
+
 ---
 
 ## 9. UWeaponData — the weapon data asset
@@ -974,13 +1074,13 @@ Called from `AShooterCharacter::HideEquippedWeaponForHeal` / `RestoreWeaponAfter
 | Property | Type | Key → value | Consumers |
 | --- | --- | --- | --- |
 | `GripPoints` | `TMap<FGameplayTag, FName>` | Weapon type → socket name on the character (e.g. `Weapon.type.rifle` → `RifleSocket`) | `AShooterCharacter::GetWeaponAttachPoint_Implementation` |
-| `WeaponMontages` | `TMap<FGameplayTag, FMontageData>` | Weapon type → animations on the **weapon skeleton** (magazine movement while reloading) | `PlayEquipMontage` (fallback), `PlayReloadMontage` (1P weapon mesh) |
-| `FirstPersonAnims` | `TMap<FGameplayTag, FPlayerAnim>` | Weapon type → arm animation set | `ApplyEquippedWeaponAnim` → ABP_FirstPerson |
+| `WeaponMontages` | `TMap<FGameplayTag, FMontageData>` | Weapon type → animations on the **weapon skeleton** (magazine movement while reloading). Resolved with the same `EReloadType` **and** grip style as the arms montage | `PlayEquipMontage` (fallback), `PlayReloadMontage` (1P weapon mesh) |
+| `FirstPersonAnims` | `TMap<FGameplayTag, FPlayerAnim>` | Weapon type → arm animation set (including the `_Grab` idle/aim-idle and left-hand hold poses) | `ApplyEquippedWeaponAnim` / `RefreshLocomotionBlendSpaces` → ABP_FirstPerson; `UFirstPersonAnimInstance::NativeUpdateAnimation` |
 | `ThirdPersonAnims` | `TMap<FGameplayTag, FPlayerAnim>` | Weapon type → full-body animation set | `ApplyEquippedWeaponAnim` → ABP_ThirdPerson |
-| `FirstPersonMontages` | `TMap<FGameplayTag, FMontageData>` | Weapon type → equip / reload / fire (1P) | `PlayEquipMontage`, `GetReloadMontage`, `Local_FireWeapon` |
-| `ThirdPersonMontages` | `TMap<FGameplayTag, FMontageData>` | The same, for 3P | `PlayEquipMontage`, `GetReloadMontage`, `Multicast_FireWeapon` |
+| `FirstPersonMontages` | `TMap<FGameplayTag, FMontageData>` | Weapon type → equip / reload / fire (1P), including the Grab reload variants and the random `FireMontages` / `EquipMontages` pools | `PlayEquipMontage`, `GetReloadMontage`, `Local_FireWeapon` |
+| `ThirdPersonMontages` | `TMap<FGameplayTag, FMontageData>` | The same, for 3P (also the source of the melee full-body swing) | `PlayEquipMontage`, `GetReloadMontage`, `Local_FireWeapon` (melee), `Multicast_FireWeapon` |
 
-**Effect (data-driven design)**: adding a weapon usually requires **no C++ changes** — pick a `WeaponType` tag in the weapon blueprint, then add entries for that tag in the five maps of `DA_WeaponData` (`GripPoints` is mandatory, otherwise the code falls back to `RifleSocket`).
+**Effect (data-driven design)**: adding a weapon usually requires **no C++ changes** — pick a `WeaponType` tag in the weapon blueprint, then add entries for that tag in the five maps of `DA_WeaponData` (`GripPoints` is mandatory, otherwise the code falls back to `RifleSocket`). `Weapon.type.ak` exists precisely so the AK can have a fully independent entry in all five maps without disturbing `Weapon.type.rifle`.
 
 ---
 
@@ -1055,12 +1155,19 @@ All three are **free functions** (not members), so any module can reuse them.
 | Function | Behaviour and effect |
 | --- | --- |
 | Constructor | `bReplicates = true` (the controller replicates too) |
-| `BeginPlay()` | Gets `UEnhancedInputLocalPlayerSubsystem` (via `ULocalPlayer::GetSubsystem`) and adds `ShooterIMC` at priority `0` — **this is what makes all input work**; it silently skips if either is invalid |
-| `SetupInputComponent()` | Gets `UEnhancedInputComponent` (returns on failure, unlike the character's `CastChecked`) and binds each action if non-null: `MoveAction → Triggered → Input_Move`, `LookAction → Triggered → Input_Look`, `JumpAction → Started → Input_Jump`, `CrouchAction → Started → Input_Crouch` |
-| `Input_Move(const FInputActionValue&)` | Reads an `FVector2D`; builds a rotation matrix from the **yaw of the control rotation** and takes its X/Y axes → `AddMovementInput(Forward, Y)` and `AddMovementInput(Right, X)`. **Effect**: WASD is camera-relative and does not slow down when looking up or down |
+| `BeginPlay()` | Gets `UEnhancedInputLocalPlayerSubsystem` (via `ULocalPlayer::GetSubsystem`) and adds `ShooterIMC` at priority `0` — **this is what makes all input work**; it silently skips if either is invalid. Then `EnsureLoadoutInput()` and `EnsureCrouchInput()` |
+| `SetupInputComponent()` | Gets `UEnhancedInputComponent` (returns on failure, unlike the character's `CastChecked`) and binds each action if non-null: `MoveAction → Triggered → Input_Move`, `LookAction → Triggered → Input_Look`, `JumpAction → Started → Input_Jump`, the crouch actions (see below), `SprintAction`, `WalkAction`, `FlashlightAction`, `ToggleAttachmentMenuAction`, `LoadoutAction` |
+| Crouch bindings | `EnsureCrouchInput()` runs first. The **legacy `CrouchAction` is only bound when neither `CrouchToggleAction` nor `CrouchHoldAction` exists** — this is what stops Left Ctrl from double-triggering a toggle. `CrouchToggleAction → Started → Input_Crouch`; `CrouchHoldAction → Started/Completed → Input_CrouchHold_Started/Completed` (§26.2) |
+| ◆`IsSprinting() const` | `BlueprintPure` accessor; also read by `UCombatComponent::Initiate_FireWeapon_Pressed` (fire cancels sprint) and `AShooterCharacter::IsLeanBlocked` |
+| ◆`StopSprinting()` | Public `BlueprintCallable`: clears `bIsSprinting` and re-applies the movement speed. Called by the combat component when the player fires while sprinting |
+| `Input_Move(const FInputActionValue&)` | Reads an `FVector2D`; builds a rotation matrix from the **yaw of the control rotation** and takes its X/Y axes → `AddMovementInput(Forward, Y)` and `AddMovementInput(Right, X)`. **Effect**: WASD is camera-relative and does not slow down when looking up or down. **While sliding the function returns immediately** so the slide keeps its momentum and is decelerated only by `BrakingDecelerationWalking` |
 | `Input_Look(const FInputActionValue&)` | `AddYawInput(X)` + `AddPitchInput(Y)`; sensitivity comes from the input assets / `MouseX`/`MouseY` in `DefaultInput.ini` |
-| `Input_Jump()` | If `bWantsToCrouch` is true → cancel crouching (stand up); otherwise `GetCharacter()->Jump()`. **Effect**: pressing jump while crouched stands up first instead of getting stuck |
-| `Input_Crouch()` | Toggles `CharacterMovement->bWantsToCrouch` directly (**toggle**, not hold) |
+| `Input_Jump()` | Order: **sliding** → `CancelSlideToStand()` and return (no jump this frame); **prone** → `RequestSetProne(false, false)` and return (stand up, do not jump); `bWantsToCrouch` → cancel crouching (stand up); otherwise `GetCharacter()->Jump()`. **Effect**: pressing jump while crouched stands up first instead of getting stuck |
+| `Input_Crouch()` (C / legacy) | **Prone** → `RequestSetProne(false, true)` (exit to **crouch**); **sliding** → ignored; otherwise `TryStartSlide()` (starts a slide, to end crouched, when fast enough) and only if that fails it toggles `CharacterMovement->bWantsToCrouch` |
+| `Input_CrouchHold_Started()` (Left Ctrl) | Sets `bCrouchHeld = true`. Prone → exit to crouch and return; sliding → force the end state to crouch and return; otherwise `TryStartSlide()` (end crouched) or `CMC->bWantsToCrouch = true` |
+| `Input_CrouchHold_Completed()` (Left Ctrl) | Clears `bCrouchHeld`. Prone → ignored (Ctrl does not stand you up from prone); sliding → set the end state to **stand** and return; otherwise `CMC->bWantsToCrouch = false` (CMC keeps retrying to uncrouch, so a low ceiling keeps you crouched until there is headroom) |
+| `EnsureCrouchInput()` (private) | Creates `IA_CrouchToggle_Runtime` (**C**) and `IA_CrouchHold_Runtime` (**Left Ctrl**) plus `IMC_Crouch_Runtime` when the properties are empty, and adds that context at **priority 2** — higher than `IMC_Shooter`, so the runtime mappings win over any stale `IA_Crouch` mapping on Left Ctrl |
+| `Input_Sprint()` / `Input_Walk()` | See 12.1 |
 
 ---
 
@@ -1097,8 +1204,9 @@ Design notes:
 | --- | --- | --- |
 | `WalkSpeed` | `250` | Base speed for the slow-walk mode (kept for reference/tuning) |
 | `RunSpeed` | `500` | Base speed when neither sprinting nor walking |
-| `SprintSpeed` | `800` | Base speed while sprinting |
+| `SprintSpeed` | `800` | Base speed while sprinting. A slide raises the crouched cap to `SprintSpeed * 1.5` |
 | `CrouchSpeedMultiplier` | `0.6` | Applied to `MaxWalkSpeedCrouched` |
+| `ProneSpeedMultiplier` | `0.25` | Applied to `MaxWalkSpeedCrouched` **instead of** the crouch multiplier while `bIsProne` (≈ 125 cm/s at `RunSpeed` 500) |
 | `WalkSpeedMultiplier` | `0.5` | Applied to `MaxWalkSpeed` while the walk toggle is on |
 | `AimSpeedMultiplier` | `0.7` | Applied to `MaxWalkSpeed` while aiming |
 
@@ -1107,13 +1215,13 @@ Design notes:
 | `Input_Sprint()` | Toggles `bIsSprinting`, clears `bIsWalking` (sprint cancels walk), then `UpdateMovementSpeed()` |
 | `Input_Walk()` | Toggles `bIsWalking`, clears `bIsSprinting` (walk cancels sprint), then `UpdateMovementSpeed()` |
 | `UpdateMovementSpeed()` (private) | Re-checks stamina first (a client at 0 stamina cannot start sprinting: `bIsSprinting && Stats->Stamina <= 0` clears the flag), applies the speed locally, and — when not authoritative — sends `Server_SetMovementState(bIsSprinting, bIsWalking)`. **The mirror is required**: the server corrects `MaxWalkSpeed`, so a client-only change would be reverted |
-| `ApplyMovementSpeed()` (private) | Refuses sprint while aiming or crouched; `Speed = bIsSprinting ? SprintSpeed : RunSpeed`; multiplies by `WalkSpeedMultiplier` when walking and by `AimSpeedMultiplier` when aiming; writes **both** `CMC->MaxWalkSpeed = Speed` and `CMC->MaxWalkSpeedCrouched = Speed * CrouchSpeedMultiplier`; calls `AShooterCharacter::RefreshLocomotionGait()`; on the authority pushes `Stats->SetSprinting(bIsSprinting)` so the drain tick follows |
+| `ApplyMovementSpeed()` (private) | Reads `bAiming`, `bIsCrouched`, **`IsProne()`** and **`IsSliding()`** from the character. A slide clears `bIsSprinting`; sprint is refused while aiming, crouched **or prone**. `Speed = bIsSprinting ? SprintSpeed : RunSpeed`, multiplied by `WalkSpeedMultiplier` when walking and by `AimSpeedMultiplier` when aiming; writes **both** `CMC->MaxWalkSpeed = Speed` and `CMC->MaxWalkSpeedCrouched` — the latter is `Speed * ProneSpeedMultiplier` while prone, otherwise `Speed * CrouchSpeedMultiplier`, and is raised to `SprintSpeed * 1.5` **while sliding** so the boosted slide is not clamped (deceleration is handled by `BrakingDecelerationWalking`); calls `AShooterCharacter::RefreshLocomotionGait()`; on the authority pushes `Stats->SetSprinting(bIsSprinting)` so the drain tick follows |
 | `RefreshMovementSpeed()` (public, no RPC) | Inline wrapper for `ApplyMovementSpeed()`, called by the character when aiming or crouching changes (`HandleAimStateChanged`, `OnStartCrouch`, `OnEndCrouch`) |
 | `GetStats()` (private) | `UStatsComponent::FindStatsComponent(GetPawn())`; while it is there it registers `HandleStaminaDepleted` with `AddUniqueDynamic`, so repeated calls do not stack subscriptions |
 
 Multipliers compose multiplicatively — the header comment documents `crouch + walk + ADS = 500 × 0.6 × 0.5 × 0.7` (the crouch factor is what is applied to `MaxWalkSpeedCrouched`).
 
-Automatic cancellations: sprint is refused while aiming or crouched, cancelled when stamina runs out (`HandleStaminaDepleted`) and cancelled by the walk toggle.
+Automatic cancellations: sprint is refused while aiming, crouched **or prone**, cancelled when stamina runs out (`HandleStaminaDepleted`), cancelled by the walk toggle, cancelled by **starting a slide**, and cancelled by **pressing fire** (`UCombatComponent::Initiate_FireWeapon_Pressed` → `StopSprinting()`, and that press does not fire — §7.4).
 
 ### 12.2 Movement-state replication
 
@@ -1149,6 +1257,8 @@ Automatic cancellations: sprint is refused while aiming or crouched, cancelled w
 | `OnReticleChanged(UMaterialInstanceDynamic*)` | Stores it in `CurrentReticle_DynMatInst` and calls `Image->SetBrushResourceObject(material)`. **Effect**: the reticle look follows the weapon (e.g. a fine cross for the sniper) |
 
 **How to use it**: create a WBP whose parent class is `UShooterReticle` containing an Image named `Image_Reticle`, then place it in the HUD (or add it straight to the viewport). The material comes from the weapon blueprint's `ReticleMaterial`; its dynamic parameters can drive spread and hit feedback.
+
+**Spreading crosshair (hip-fire, added with the movement/UI revision)** — see §26.7 for the full description. In short: `UShooterReticle` binds `UCombatComponent::OnWeaponFired` and draws four cardinal `MakeLines` strokes whose gap is `CrosshairBaseGap + CrosshairSpread`; the spread is kicked by `CrosshairSpreadKick` per shot (capped at `CrosshairSpreadMax`) and decays at `CrosshairSpreadRecovery` per second in `NativeTick`. It is hidden while aiming with a **non-melee** weapon, and drawn natively — no material work is needed.
 
 ---
 
@@ -1259,6 +1369,31 @@ GameDefaultMap=/Game/FirstPerson/Lvl_FirstPerson.Lvl_FirstPerson
 GlobalDefaultGameMode=/Script/FPS.ShooterGameModeBase
 ```
 
+### 17.4 Physical surfaces and gameplay tags
+
+`DefaultEngine.ini` (`[/Script/Engine.PhysicsSettings]`) declares the collision surface types used for impact FX and decals:
+
+```ini
++PhysicalSurfaces=(Type=SurfaceType1,Name="Character")
++PhysicalSurfaces=(Type=SurfaceType2,Name="Concrete")
++PhysicalSurfaces=(Type=SurfaceType3,Name="Glass")
++PhysicalSurfaces=(Type=SurfaceType4,Name="Wood")     # added
++PhysicalSurfaces=(Type=SurfaceType5,Name="Metal")    # added
+```
+
+- `SurfaceType2` (Concrete) is the **default** passed to `FireEffect` when a hit has no physical material (§25.2) — that is why it must keep its index.
+- `Wood` / `Metal` were added so physical materials can be authored for level geometry without falling back to the default.
+
+[DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>) (new file):
+
+```ini
+[/Script/GameplayTags.GameplayTagsSettings]
+ImportTagsFromConfig=True
++GameplayTagList=(Tag="Weapon.type.ak",DevComment="AK — separate FirstPersonMontages from Weapon.type.rifle")
+```
+
+- The only tag registered through config; the rest are native tags (§3.4).
+
 ---
 
 ## 18. End-to-end sequences
@@ -1282,23 +1417,25 @@ Client: Inventory / CurrentWeapon replication arrives
 ### 18.2 Single / automatic fire
 
 ```
-press:  Initiate_FireWeapon_Pressed (bTriggerPressed = true, first shot fires Local_FireWeapon immediately)
-local:  1P montage → WeaponTrace → Local_Fire (predictive decrement) → UI refresh → FireTimer → Server_FireWeapon
+press:  Initiate_FireWeapon_Pressed (sprinting? → StopSprinting and return; bTriggerPressed = true, first shot fires Local_FireWeapon immediately)
+local:  1P montage (ResolveFireMontage variant) → WeaponTrace (or WeaponMeleeHit) → Local_Fire (predictive decrement, skipped when !UsesAmmo)
+        → OnWeaponFired broadcast (crosshair) → UI refresh → FireTimer → Server_FireWeapon
 server: rate throttle → hit-zone damage → Execute_DoDamage → Auth_Fire → Multicast_FireWeapon
 local callback:  Rep_Fire(authoritative rounds) reconciliation
-remote callback: 3P muzzle FX + 3P fire montage
-automatic: FireTimerFinished checks bTriggerPressed && Automatic && Ammo > 0 → next shot
-empty mag: FireTimerFinished sees Ammo == 0 && reserve > 0 → auto reload
+remote callback: 3P muzzle FX + 3P fire montage (ResolveFireMontage variant)
+automatic: FireTimerFinished checks bTriggerPressed && Automatic && (!UsesAmmo || Ammo > 0) → next shot
+empty mag: FireTimerFinished sees UsesAmmo && Ammo == 0 && reserve > 0 → auto reload (never for melee)
 release: Initiate_FireWeapon_Released (bTriggerPressed = false)
 ```
 
 ### 18.3 Reloading
 
 ```
-Initiate_ReloadWeapon (local guards: not reloading / not cycling / magazine not full / reserve available / 1P montage exists)
-  → status Reloading → Server_ReloadWeapon → PlayReloadMontage(1P)
-        ├─ arms 1P reload montage (holds the lock + end delegate)
-        └─ weapon Mesh1P reload montage (magazine movement)
+Initiate_ReloadWeapon (local guards: UsesAmmo / not reloading / not cycling / not bolting / magazine not full / reserve available / 1P montage exists)
+  → status Reloading → Server_ReloadWeapon → PlayReloadMontage(1P, ReloadType)
+        ├─ arms 1P reload montage, variant + grip style (Cradle/Grab) (holds the lock + end delegate)
+        ├─ weapon Mesh1P reload montage, same variant + grip style
+        └─ magazine skeletal component: PlayMagazineReload(Empty/Tactical variant)
 Server_ReloadWeapon → Multicast_ReloadWeapon → remotes PlayReloadMontage(3P)
 animation notify: ApplyReload() (local/authoritative data change) and/or Notify_ReloadWeapon() (authoritative change + Client_ReloadWeapon push)
 montage end: OnReloadMontageEnded → status Idle → (non-authority) Server_EndReload
@@ -1316,15 +1453,17 @@ Initiate_EquipSlot (CycleWeapon removed; interrupt rules §25.9)
 EquipMontage end → OnEquipMontageEnded → Idle
 ```
 
-### 18.5 Aiming (regular weapon vs sniper)
+### 18.5 Aiming (regular weapon vs sniper vs melee)
 
 ```
 IA_AimWeapon (Started) → Initiate_Aim_Pressed
+  → melee? force un-aim (Local_Aim(false) + Server_Aim(false)) and return
   → Local_Aim(!bAiming) (replicated to remotes, owner skipped) + Server_Aim
   → blueprint event OnAim(bAiming) (FOV / recoil / audio)
 regular weapon with an AimSocket: character Tick → UpdateAimSocketAlignment → writes AdsMesh1PLoc → blueprint drives Mesh1P to the ADS pose
-sniper: character Tick → USniperScopeComponent::UpdateView → toggles SceneCapture + the full-screen scope mask
-melee: UI reticle is not hidden, no AimSocket required, scope never activates
+magnified optic: character Tick → UOpticScopeComponent::UpdateView → PiP capture inside the lens (§24.5)
+sniper: same as any other weapon now; USniperScopeComponent stays inactive (§16, §24.6)
+melee: cannot aim at all; the reticle stays visible and the scope never activates
 ```
 
 ### 18.6 Hits and death (current implementation state)
@@ -1360,7 +1499,7 @@ Several C++/Blueprint contracts are implicit (by name or by interface). Changing
 | Data asset | `Combat → WeaponData` = `DA_WeaponData` | `UWeaponData*` | attach points / animation lookups | `checkf` assertion crash |
 | Data asset | All five maps keyed by the weapon tag | — | equip / reload / fire | Missing animations (some have fallbacks, some are silently skipped) |
 | Material | `M_SniperScope` with `ScopeView`/`MaskRadius`/`RingWidth`/`ReticleThickness`/`Aspect` | Material | sniper scope | No scope disc, plus a warning log |
-| Input | 8 character + 4 controller `UInputAction` references | — | `SetupPlayerInputComponent` | The action does nothing (some paths assert) |
+| Input | 8 character + 4 controller `UInputAction` references | — | `SetupPlayerInputComponent` | The action does nothing (some paths assert). The crouch / prone / loadout actions are the exception: they are **created at runtime** when their property is empty (§26.2) |
 
 ---
 
@@ -1381,7 +1520,7 @@ Several C++/Blueprint contracts are implicit (by name or by interface). Changing
 
 | Category | Name | Type | Consumer | Consequence if missing |
 | --- | --- | --- | --- | --- |
-| Weapon slot table | `FPS|Attachment → AttachmentSlots` on the weapon blueprint | `TArray<FWeaponAttachmentSlot>` | `FindSlot`, `CanEquipAttachment`, `RebuildAttachmentVisuals` | The weapon has no attachment slots; the menu reports "this weapon has no attachment slots" |
+| Weapon slot table | `FPS\|Attachment → AttachmentSlots` on the weapon blueprint | `TArray<FWeaponAttachmentSlot>` | `FindSlot`, `CanEquipAttachment`, `RebuildAttachmentVisuals` | The weapon has no attachment slots; the menu reports "this weapon has no attachment slots" |
 | Attachment asset | `SlotTag` matching a slot tag of that weapon, plus `Mesh` | `UAttachmentData` | `AWeapon::EquipAttachment` | The request is rejected (server-side warning) |
 | Mesh sockets | `FABRIK` on a grip mesh, `Muzzle` on muzzle/barrel meshes, `SightSocket` on an optic, `LensSocket` on a magnified optic, `LightSocket` on a flashlight mesh | sockets on the attachment static mesh | 1P/3P hand IK, muzzle FX, ADS alignment, PiP capture, flashlight mount | That feature is skipped and logs a warning |
 | Menu widget | `WBP_AttachmentMenu` with `SlotList` (**required**) and `Text_WeaponName` (optional), `RowClass = WBP_AttachmentSlotRow` | UMG binds | `UAttachmentMenu` | `BindWidget` asserts / the menu does not build |
@@ -1391,6 +1530,29 @@ Several C++/Blueprint contracts are implicit (by name or by interface). Changing
 | Input assets | `IA_AttachmentMenu`, `IA_Flashlight` present in `IMC_Shooter` | input actions | controller bindings | Those keys are never triggered |
 | ABP_FirstPerson parent class | `UFirstPersonAnimInstance` exposing `FABRIK_Socket1P` / `FABRIK_Alpha1P` | C++ anim instance | `NativeUpdateAnimation` | The 1P left hand does not follow the weapon or grip |
 | Hard-coded widget path | `/Game/FPS/UI/WBP_AttachmentSlotRow` | widget blueprint | `ULoadoutAttachmentWindow::BuildLayout` | The loadout window has no rows (warning logged) |
+
+### 19.3 Contract additions for prone, slide, crouch input, grip style and magazine attachments
+
+| Category | Name | Type | Consumer | Consequence if missing |
+| --- | --- | --- | --- | --- |
+| ABP_ThirdPerson variable | `bIsProne` / `IsProne()` on the pawn | bool / BP call | the ABP's Prone state (manual wiring, `Saved/Prone_REPORT.md`) | The body keeps playing the standing/crouch locomotion while the capsule is prone |
+| ABP_ThirdPerson variable | `bProneCrawling` | bool | chooses `BS_Prone` (true) vs a prone idle body (false) | A stopped prone player keeps crawling in place, and the arms never return to the gun |
+| ABP_ThirdPerson variable | `FABRIK_Alpha` | float | the FABRIK node's alpha | If the ABP hard-codes alpha 1, the left hand is dragged to the gun while crawling; if hard-coded 0, the hand never holds the gun |
+| Anim Slot | `BodySlot` on the character skeleton (`DefaultGroup`) | Anim slot | `AShooterCharacter::SlideSlotName` (default `BodySlot`) + the ABP's layered blend | **The slide animation silently does nothing** (§26.2) |
+| ABP_ThirdPerson variable | `bIsSliding` / `SlideAlpha` | bool / float | optional (layered-blend weight, skipping upper-body layers) | Cosmetic only |
+| ABP_ThirdPerson BlendSpace | `BS_Prone` (authored, `/Game/FPS/Animation/Prone/BS_Prone` exists) | `UBlendSpace` | the ABP's Prone state | No crawl locomotion |
+| Skeletal socket | `Melee` on the knife mesh (`MeleeSocketName`) | Socket | `AWeapon::WeaponMeleeHit` | The sweep starts at the mesh origin and points along the mesh forward — the swing usually misses |
+| Data asset entry | `FireMontages` / `ThirdPersonMontages` fire montages slotted into `DefaultSlot`/`FullBody` for melee | `UAnimMontage` | `Local_FireWeapon` | The knife swings with only an upper-body animation (or nothing at all) |
+| Weapon property | `MeleeHitRadius` / `MeleeHitReach` | float | `WeaponMeleeHit` | Defaults (40 / 120 cm) are used; may miss or feel too generous |
+| Attachment asset | `GripHoldStyle` on the grip `UAttachmentData`, plus `IdleAnim_Grab` / `AimIdleAnim_Grab` / `EmptyReloadMontage_Grab` / `TacticalReloadMontage_Grab` in `DA_WeaponData` | enum / anim assets / montages | `GetGripHoldStyle`, `RefreshLocomotionBlendSpaces`, `ResolveReloadMontage` | A vertical grip keeps the Cradle hold pose and Cradle reloads (silent) |
+| Attachment asset | `SkeletalMesh` + `MagReloadAnim` (and optionally `bHideSpareMagazineBone` / `BonesToHide`) on the magazine `UAttachmentData` | `USkeletalMesh` / `UAnimSequence` | `SpawnAttachmentSkelMesh`, `PlayMagazineReload` | The magazine is spawned as a **static** mesh and never animates; a leftover `mag_02` bone stays visible |
+| Attachment mesh | A `LensSocket`/`SightSocket` on the **magazine** skeletal mesh, plus a mount socket on the weapon | socket | `FindAttachmentMount` | The magazine mounts at the weapon root with a warning |
+| Controller properties | `CrouchToggleAction` (C) / `CrouchHoldAction` (Left Ctrl), `ProneAction` (Z) | `UInputAction` | `EnsureCrouchInput` / `EnsureProneInput` | The keys would be unbound, **but** both helpers create runtime actions (IMC priority 2 / 1) when the fields are empty, so the defaults always work |
+| Reticle widget properties | `CrosshairBaseGap`, `CrosshairLineLength`, `CrosshairLineThickness`, `CrosshairLineColor`, `CrosshairSpreadKick`, `CrosshairSpreadMax`, `CrosshairSpreadRecovery`, `bDrawSpreadingCrosshair` | — | `UShooterReticle::NativePaint` | Defaults are sane; set `bDrawSpreadingCrosshair = false` for a material-only crosshair |
+| Weapon / attachment properties | `AWeapon::HipFireSpread` (3°), `UAttachmentData::HipFireSpreadMultiplier` (1) | float | `GetHipFireSpread`, `WeaponTrace`, the crosshair | Both default to a usable value; at 0 hip-fire is perfectly accurate (§26.8) |
+| Engine component | a valid `APlayerController::PlayerCameraManager` on the HUD owner | — | the crosshair's pixel projection | Without it the reticle falls back to `SpreadPx = 0` (only the kick is drawn); the trace is unaffected |
+| Hard-coded slide animation | `/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L` | `UAnimSequenceBase` | `AShooterCharacter::SlideAnim` default | If the asset is moved, the slide plays with no body animation (a soft-object load failure) |
+| Hard-coded tag | `Weapon.type.ak` must exist (native + [DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>)) | gameplay tag | `WeaponType` matching, the 3P AK attach path | Removing it from config still works (it is native) but the editor tag picker may hide it |
 
 ## 20. Caveats, known issues and extension notes
 
@@ -1447,12 +1609,43 @@ Fixed in this revision (no longer issues in 20.1):
 | 30 | `UOpticScopeComponent::UpdateView` | Requires a non-sniper weapon, `OpticType = Magnified`, a valid lens socket, a lens material and a valid `LensMaterialIndex` | A misconfigured optic logs a warning and does not magnify (the sight still aligns normally) |
 | 31 | Attachment UI | Built from replicated state, so a rejected equip/remove leaves the menu unchanged | The server logs the rejection; there is no client-side error surfacing |
 
+#### 20.1.3 Added with the prone / slide / grip-style / melee revision
+
+| # | Location | Issue | Impact / suggestion |
+| --- | --- | --- | --- |
+| 32 | `AShooterCharacter::CalculateFABRIKSocket` | `bDisableLeftHandIKDuringReload`, `LeftHandIKBlendSpeed`, `DisableLeftHandIKCurveName` and `FABRIK_SocketTransform1P` are now inert (1P alpha is always 0) | The grip comes from animations; do not re-enable the 1P FABRIK expecting the old reload-blend behaviour |
+| 33 | `AShooterCharacter::ApplyProneState` | Prone **reuses CMC crouch** by swapping `CrouchedHalfHeight`; `DefaultCrouchedHalfHeight` is captured at `BeginPlay` | Changing crouch height at runtime after that capture is not picked up; the property is also used by `CanExitProne` for the headroom test |
+| 34 | `AShooterCharacter::CanExitProne` | Uses a manual capsule overlap test (`ProneStandUp` scene query) instead of CMC's own check | Standing up from prone under a low ceiling is refused by this test, not by the movement component — mismatched collision settings can make it disagree with CMC |
+| 35 | `RequestSetProne` | Returns immediately when `bIsSliding` | You must finish (or cancel) a slide before going prone |
+| 36 | `Server_SetSliding` | Validates with a 75 % speed tolerance to absorb client/server drift | A client that is genuinely too slow is rejected via `Client_SlideRejected` and just stays crouched |
+| 37 | `UpdateSlide` | The server has a safety timeout at `SlideDuration + 0.5 s` | If the owner's end RPC is lost, the server ends the slide on its own; the owner's state converges through replication |
+| 38 | `AShooterPlayerController::EnsureCrouchInput` | The runtime IMC has **priority 2** and consumes Left Ctrl / C | Any other mapping on those keys in `IMC_Shooter` (e.g. Left Ctrl → `IA_Walk`, or the legacy `IA_Crouch`) is shadowed. Remap `Walk` if it was on Left Ctrl; delete the stale `IA_Crouch` row to keep things obvious |
+| 39 | Legacy `CrouchAction` | Bound **only** when neither `CrouchToggleAction` nor `CrouchHoldAction` is set | If you assign your own assets, remember both are needed (toggle *and* hold); assigning only one leaves the other on the runtime default |
+| 40 | `AShooterCharacter::SlideAnim` | A `TSoftObjectPtr` defaulting to `/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L`, played as a dynamic montage in `BodySlot` when `SlideMontage` is empty | Moving the asset breaks the slide body animation; if the ABP has no `BodySlot` the animation silently does nothing |
+| 41 | Slide + arms | `SlideSlotName` defaults to `BodySlot` precisely so the **arms keep the weapon hold** (layered blend from `clavicle_l/r`) | Leaving `SlideMontage1P` empty is intentional; filling it will overlay the arms with a slide animation and fight the weapon hold |
+| 42 | `UFirstPersonAnimInstance::NativeUpdateAnimation` | Reads `Combat->WeaponData->FirstPersonAnims[WeaponType]` every tick and pushes `CurrenrAnim.IdleAnim` by reflection | A weapon type missing from `FirstPersonAnims` silently keeps the previous idle; the mirror write only happens when `CurrenrAnim` is a real `FPlayerAnim` property |
+| 43 | `CombatComponent::RefreshLocomotionBlendSpaces` | Deliberately does **not** call `InitAnim()` | Re-adding it destroys `DefaultSlot` Grab-idle dynamic montages and reproduces the old "Grab idle does not switch" bug |
+| 44 | Grab pose usage | `IdleAnim_Grab` is ignored as a full idle when it equals `LeftHandHoldPose_Grab` | That pose (e.g. `A_FPP_AK_Pose_G2`) is authored as a **left-hand-only layer**; using it as a full idle bends `weapon_r`/`hand_r` and twists the gun |
+| 45 | `AWeapon::WeaponMeleeHit` | Runs on the client; the resulting `FHitResult` is sent to the server like a bullet | Same trust model as gunfire — a melee hit is not re-swept server-side |
+| 46 | `AWeapon::ResolveAttachPoint` | Falls back to `RifleSocketak` → `RifleSocket` → `hand_r` → `HandGrip_R` when the configured socket/bone is unusable | The fallback logs a warning every time it is used; a *silent* fallback is impossible by design, so check the log when a gun hangs oddly |
+| 47 | `SpawnAttachmentSkelMesh` | Parks the magazine on frame 0 of `MagReloadAnim` (the armature rest pose is offset from the root) | Without `MagReloadAnim` the magazine sits at the raw rest pose and can look offset |
+| 48 | `PlayMagazineReload` | Uses a **single-node** `PlayAnimation` on the magazine component, not a montage | It cannot be blended or interrupted per-bone; the arms montage is the authority on timing |
+| 49 | `UShooterReticle` crosshair | `CrosshairSpread` is a purely local visual kick from `OnWeaponFired` | It does **not** change `TraceRadius`; the crosshair is feedback, not a hit-probability model |
+| 50 | `AShooterCharacter::bHideWeapon3PWhileProne` | Default `false` — the gun stays in hand while prone | The prone crawl animations are unarmed, so the left hand holds the gun only when `bProneCrawling` is false (§26.1) |
+| 51 | `FirstPersonAnimInstance.cpp` namespace `GripHoldAnim_Private` and `UFirstPersonAnimInstance::GrabIdleSlotAsset` | `NAME_DefaultSlot`, `GrabIdleMaxSpeedXY` and the transient `GrabIdleSlotAsset` property are declared but **unused** | Leftovers from the abandoned "loop the Grab idle on `DefaultSlot`" approach that caused the gun to yaw; harmless, delete when convenient |
+| 52 | `AShooterCharacter::UpdateProne` | Writes the spring arm's relative Z every frame from the captured base location | If another system also moves the spring arm, the two fight; the base is captured once at `BeginPlay` (`bSpringArmBaseCaptured`) |
+| 53 | `FWeaponAttachmentSlot::HipFireSpread` (Weapon.h) | Declared with **no default initialiser**, `BlueprintReadOnly`, and no code reads or writes it | Looks like a stray paste from `AWeapon::HipFireSpread`; read the value from the weapon or use `UAttachmentData::HipFireSpreadMultiplier` instead (§26.8) |
+| 54 | `AWeapon::GetHipFireSpread` / `WeaponTrace` | The cone is rolled on the tracing (owning) client; `Server_FireWeapon` trusts the resulting `FHitResult` | Consistent with the rest of the client-authoritative hit model, but spread is therefore a feel/balance feature, not an anti-cheat accuracy penalty |
+| 55 | `AWeapon::GetHipFireSpread` | Only `bAiming` is modelled — no movement / jump / fire-rate spread penalty | The header comment marks the getter as the place to add them; the crosshair and the trace both pick the change up automatically |
+
 ### 20.2 Review notes (code-quality observations)
 
 - **Comments record design decisions**: many comments explain *why not* to do something (the recursion overflow in `Multicast_CycleWeapon`, why `Initiate_FireWeapon_Pressed` must not gate on `FireTimer`, why the 1P equip montage plays even with a mismatched skeleton). Do **not** treat them as redundant when refactoring.
 - **Good decoupling through the interface**: `AWeapon` ↔ `AShooterCharacter` communicate exclusively through `IPlayerInterface`, so porting weapons to another character type is cheap.
 - **Clear data-driven boundary**: weapon numbers (damage / fire rate / magazine) live on `AWeapon`; animations and attach points live on `UWeaponData`. Moving the numbers into `UWeaponData` is the natural next step.
 - **Server authority**: damage, inventory spawning, slot resolution and magazine settlement all happen on the server; clients only predict and present, which is a solid anti-cheat foundation.
+- **The newest systems follow the same shape**: prone and slide are *predicted locally, validated on the server, corrected by a Client RPC when rejected* (`Client_ProneRejected` / `Client_SlideRejected`) — the pattern to copy for the next movement ability.
+- **Presentation vs gameplay is kept apart**: crosshair spread, visual recoil and the PiP exposure are local/cosmetic, while grip style, magazine animation and attachments flow from replicated state. Do not move one into the other casually.
 
 ### 20.3 Extension guide
 
@@ -1464,6 +1657,9 @@ Fixed in this revision (no longer issues in 20.1):
 | Death and respawn | Transition `DeathState` and broadcast when health reaches zero inside `UStatsComponent`; handle `RestartPlayer` in the GameMode (the character's `BeginDestroy` already clears the inventory) |
 | More weapon slots / pickups | Extend `EWeaponSlot` and add branches to `FindWeaponForSlot`; a pickup does `Inventory.AddUnique` + `ReserveAmmo.Add` + `Equip` |
 | Variable-magnification scope | Convert `SniperMagnification` and friends into `UPROPERTY`s, switch them on input, and reapply `Capture->FOVAngle` and the material parameters |
+| A new movement ability (vault, dodge…) | Copy the prone/slide pattern: a replicated `bIsX` with `OnRep_`, local prediction in an `Apply…State()`, a reliable `Server_Set…` that re-validates, and a `Client_…Rejected` rollback (§26.8). Reuse `CanStartSlide`'s "speed scale" trick when the server must tolerate drift |
+| A new grip style or hold pose | Extend `EGripHoldStyle`, add the matching fields to `FPlayerAnim` / `FMontageData`, then resolve them in the two places that already switch (`RefreshLocomotionBlendSpaces` and `UFirstPersonAnimInstance::NativeUpdateAnimation`) so the ABP keeps a single source of truth (§26.3) |
+| A new melee weapon | Subclass `BP_Weapon`, set `WeaponKind = Melee`, give the mesh a `Melee` socket, and fill `FireMontages` + the 3P `ThirdPersonMontages` fires in a full-body slot. No C++ change is needed (§26.5) |
 
 ---
 
@@ -1490,10 +1686,15 @@ Fixed in this revision (no longer issues in 20.1):
 | `SlotTag` | — | Which slot type this attachment belongs to (`Attachment.Slot.*`); must match a slot tag on the weapon |
 | `DisplayName` / `Icon` | — | Name and icon used by the menu entries |
 | `Mesh` / `MeshOffset` | — / identity | Static mesh spawned on the weapon, and its offset relative to the mount socket |
-| `FabrikSocketName` | `FABRIK` | Socket **on the grip mesh** that the hands should hold; 1P and 3P IK both target it |
+| `SkeletalMesh` | — | **Optional.** When set, the weapon spawns a `USkeletalMeshComponent` instead of the static mesh (used by the AK magazine, `SKM_AK_Mag`). `Mesh` is then ignored — see §26.4 |
+| `MagReloadAnim` / `MagEmptyReloadAnim` / `MagTacticalReloadAnim` | — | Animations played **on the magazine's own skeletal component** while the arms reload, matching the arms' reload variant. `MagReloadAnim` doubles as the rest pose (frame 0 is parked on spawn) |
+| `bHideSpareMagazineBone` / `BonesToHide` | `false` / empty | Hides the named bones after spawn — `bHideSpareMagazineBone` targets the AK's spare-magazine bone `mag_02`, `BonesToHide` is a free list |
+| `FabrikSocketName` | `FABRIK` | Socket **on the grip mesh** that the hands should hold; the **3P** IK targets it (`bFirstPerson` is no longer used, §26.1) |
+| `GripHoldStyle` | `Cradle` | Grip slot only: `Cradle` (angled/triangular) or `Grab` (vertical). Drives the idle and reload animation sets (§4.12, §26.3) |
 | `MuzzleSocketName` | `Muzzle` | Socket on a muzzle/barrel mesh used as the firing FX origin (muzzle attachments win over barrels) |
 | `RecoilMultiplier` | `1.0` | Multiplied into the recoil kick (0.8 = 20 % less); all attachments multiply together |
 | `RecoilRecoveryMultiplier` | `1.0` | Scales how fast the view is given back |
+| `HipFireSpreadMultiplier` | `1.0` | Multiplied into the weapon's `HipFireSpread` (a vertical grip can use 0.8 to tighten the hip-fire cone); all attachments multiply together, and the result is 0 while aiming (§26.8) |
 | `bOverridesAimFOV` / `AimFOV` | `false` / `55` | When set, ADS uses this FOV instead of the weapon's `AimFeildOfView` |
 | `SightSocketName` | `SightSocket` | Socket on the optic mesh (dot centre) that the camera aligns to while aiming |
 | `OpticType` | `None` | See 21.1 |
@@ -1598,9 +1799,9 @@ Difference from `USniperScopeComponent` (section 16): the sniper scope renders a
 
 | Function | Behaviour |
 | --- | --- |
-| `AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld)` | Refreshes the (possibly hidden) weapon mesh bones first. Prefers the **grip attachment**: it must be mounted on a real socket (the parent component must have the mount socket) and its mesh must have `FabrikSocketName`; otherwise it falls back to the weapon mesh's own `FABRIK` socket and returns false when that is missing too |
-| `AShooterCharacter::CalculateFABRIKSocket()` | Resets `FABRIK_Alpha1P` to 0, then writes the 3P target (`FABRIK_SocketTransform`, converted into the `hand_r` bone space of the 3P body) and the 1P target (`FABRIK_SocketTransform1P`, converted into the `hand_r` space of `Mesh1P`) with `FABRIK_Alpha1P = 1`. **Sniper weapons deliberately skip the 1P target** (`FABRIK_Alpha1P` stays 0) so the first-person hand keeps following the animation |
-| `UFirstPersonAnimInstance::NativeUpdateAnimation(float)` | Copies `AShooterCharacter::FABRIK_SocketTransform1P` / `FABRIK_Alpha1P` into its own `FABRIK_Socket1P` / `FABRIK_Alpha1P` every frame, and zeroes the alpha when the owning pawn is not a shooter character. `ABP_FirstPerson` derives from this class, so a FABRIK node in the ABP can consume them directly |
+| `AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld)` | Refreshes the (possibly hidden) weapon mesh bones first. Prefers the **grip attachment**: it must be mounted on a real socket (the parent component must have the mount socket) and its mesh must have `FabrikSocketName`; otherwise it falls back to the weapon mesh's own `FABRIK` socket and returns false when that is missing too. The `bFirstPerson` parameter is still accepted, but `CalculateFABRIKSocket` now only calls it with **false** |
+| `AShooterCharacter::CalculateFABRIKSocket()` | **Third person only** now: writes `FABRIK_SocketTransform` (converted into the `hand_r` bone space of the 3P body) and sets `FABRIK_Alpha` = 0 for melee / crawling / no socket, else 1. Both transforms are `Identity` and both alphas 0 otherwise (§6.3) |
+| `UFirstPersonAnimInstance::NativeUpdateAnimation(float)` | Copies `AShooterCharacter::FABRIK_SocketTransform1P` / `FABRIK_Alpha1P` into `FABRIK_Socket1P` / `FABRIK_Alpha1P` every frame (both are permanently `Identity` / 0, so a 1P FABRIK node is inert), then resolves the **grip hold style**: it reads `WeaponData->FirstPersonAnims[CurrentWeapon->WeaponType]`, calls `CurrentWeapon->GetGripHoldStyle()`, and exposes `GripHoldStyle`, `ActiveIdleAnim` (idle vs `IdleAnim_Grab`), `LeftHandHoldPose` and `bUseLeftHandHoldPose`, mirroring the resolved idle into the ABP's `CurrenrAnim.IdleAnim` / `AimIdleAnim` by reflection. `ABP_FirstPerson` derives from this class, so the ABP can drive a Sequence Player from `ActiveIdleAnim` and layer `LeftHandHoldPose` (§26.3) |
 
 ### 23.4 Socket resolution order
 
@@ -1610,6 +1811,8 @@ Difference from `USniperScopeComponent` (section 16): the sniper scope renders a
 | `AWeapon::GetMuzzleAttachPoint` (firing FX origin) | 1) the **muzzle** attachment's `MuzzleSocketName` (a suppressor sits in front of the barrel, so it wins); 2) the **barrel** attachment's socket; 3) the weapon mesh with `MuzzleSocketName` read by reflection (default `"Muzzle"`) |
 | `AWeapon::GetFabrikWorldTransform` | 1) the grip attachment's `FabrikSocketName` when properly mounted; 2) `FABRIK` on the weapon mesh; 3) fail |
 | `FindAttachmentMount` (where a new attachment mesh goes) | 1) the weapon mesh when it has the slot's `SocketName` (or the slot has none); 2) the first already-spawned attachment mesh that has that socket; 3) otherwise the weapon mesh plus a warning |
+| `FindAttachmentMount` — **skeletal** attachments | The same search, but it also accepts a socket on an already-spawned **skeletal** attachment component (`SkelMesh1P` / `SkelMesh3P`), not only on static meshes |
+| `ResolveAttachPoint` (which bone/socket on the **character** the weapon is attached to) | 1) the `GripPoints` name when it is a usable socket or a non-orphan bone; 2) `RifleSocketak`; 3) `RifleSocket`; 4) `hand_r`; 5) `HandGrip_R`; 6) the original name + an error log. **AK override**: the 3P mesh skips step 1 and always tries `RifleSocketak` first (§8.2) |
 
 ### 23.5 Input and UI-mode details
 
@@ -1623,7 +1826,7 @@ Difference from `USniperScopeComponent` (section 16): the sniper scope renders a
 
 ---
 
-*This document was compiled by reading the source on the current `master` branch (local state at commit `ab816ba Repair Weapon review rotation error`).*
+*This document was compiled by reading the source on the current `master` branch (sections 24–26 describe the state after commit `d2598b5 Fire interrep sprinting`, which is the newest revision at the time of writing).*
 
 ---
 
@@ -1638,6 +1841,8 @@ Difference from `USniperScopeComponent` (section 16): the sniper scope renders a
 - `EWeaponStatus::BoltCycling`: after a shot on a weapon with a `BoltMontage`, `BeginBoltCycleAfterShot()` enters the state and `PlayBoltMontage1P()` / `PlayBoltMontage3P()` play the montage; `OnBoltMontageEnded` returns to `Idle`. Fire, reload, weapon switch and heal are blocked meanwhile; the server rejects early shots/reloads with `ServerBoltEndTime`.
 
 ### 24.2 Left-hand IK during reload and bolt
+
+> **Superseded by §26.1/§26.3:** the first-person FABRIK is disabled permanently (`FABRIK_Alpha1P` is always 0) and the hold pose comes from the grip-style animations. `bDisableLeftHandIKDuringReload`, `LeftHandIKBlendSpeed` and `DisableLeftHandIKCurveName` still exist but are no longer read by any code. The text below is kept for history.
 
 `CalculateFABRIKSocket(float DeltaTime)` now interpolates `FABRIK_Alpha1P` instead of forcing 1. Target alpha is 0 while reloading or bolt-cycling (`bDisableLeftHandIKDuringReload`) or when the anim curve named `DisableLeftHandIKCurveName` is above 0, and blends at `LeftHandIKBlendSpeed`. The sniper grip exception is unchanged.
 
@@ -1749,7 +1954,7 @@ A step-by-step WBP guide (Chinese) is in `Saved/背包UI自定义说明.md`.
 | `LeanWallProbeRadius` | 12 | Sphere sweep (`ECC_Camera`) from the base camera position to the leaned one; the slide is scaled by the hit time |
 | `LeanLeftAction` / `LeanRightAction` | empty | Empty → `EnsureLeanInput()` creates `IA_LeanLeft_Runtime` / `IA_LeanRight_Runtime` and `IMC_Lean_Runtime` (Q / E, priority 1) |
 
-Flow: input → `HandleLeanInput(Dir, bPressed)` (hold: last pressed wins; toggle: same key cancels) → `UpdateLean()` in Tick. The local player computes the desired target (0 when `IsLeanBlocked()` — sprinting via `AShooterPlayerController::IsSprinting()` and moving faster than 10 cm/s), updates `LeanTarget` and calls the server RPC; every machine interpolates `LeanAlpha`; only the local player moves `FirstPersonCamera` (base relative transform captured at BeginPlay + slide + roll; Mesh1P is attached to the camera so the arms follow). `GetLifetimeReplicatedProps` was added to the character.
+Flow: input → `HandleLeanInput(Dir, bPressed)` (hold: last pressed wins; toggle: same key cancels) → `UpdateLean()` in Tick. The local player computes the desired target (0 when `IsLeanBlocked()` — sprinting via `AShooterPlayerController::IsSprinting()` and moving faster than 10 cm/s, **or while `bIsProne` / `bIsSliding`**, §26.1–§26.2), updates `LeanTarget` and calls the server RPC; every machine interpolates `LeanAlpha`; only the local player moves `FirstPersonCamera` (base relative transform captured at BeginPlay + slide + roll; Mesh1P is attached to the camera so the arms follow). `GetLifetimeReplicatedProps` was added to the character.
 
 3P: `ABP_ThirdPerson` has a float `LeanAlpha`, set in Event Blueprint Update Animation after `UpdateGaitFlags` (guarded by `IsValid(ShooterCharacter)`); the AnimGraph inserts **Transform (Modify) Bone** (`spine_03`, rotation *Add to Existing*, *Component Space*, Rotation = `MakeRotator(Pitch = LeanAlpha × 20)`) between `OrientationWarping` and the final Component To Local before Output Pose, so montages lean as well. Pitch is used because SK_Mannequin faces +Y in component space.
 
@@ -1773,3 +1978,179 @@ Flow: input → `HandleLeanInput(Dir, bPressed)` (hold: last pressed wins; toggl
 - **Inspect**: `VersionWeaponAction` → `Initiate_VersionWeapon()` plays `FMontageData::InspectMontage1P` (arms, and the weapon mesh if `WeaponMontages` has one), local only. `CancelInspect()` (0.15 s blend) runs on fire, aim, reload, slot switch and sprint start.
 - **Canted sight**: attachments with `bProvidesCantedSight` (or `bProvidesLaser`) provide `CantedSightSocketName`, `CantedAimFOV`, `CantedEyeDistance`. While aiming, `SwitchZoomAction` cycles main zoom levels → canted → first main level; switching is instant; `AWeapon::bRememberCanted` restores it on the next ADS; `OnCantedSightChanged` fires; the main-optic PiP is off while canted.
 - **Laser**: `bProvidesLaser` adds a beam mesh and a decal dot (`LaserSocketName`, `LaserBeamMesh/Material`, `LaserDotDecalMaterial`, `LaserRange`, `LaserBrightness`, `LaserColor`, `LaserDotSize`, `LaserDotSizePerMeter`, `bHideBeamWhenAiming`). Replicated `bLaserOn`; the flashlight key toggles flashlight and laser together (`Initiate_ToggleLaser` / `Server_ToggleLaser`); entering the canted sight calls `Initiate_SetLaserOn(true)`. Only canted ADS aims the beam at the crosshair; otherwise it points along the socket.
+
+---
+
+## 26. Prone, slide, crouch modes, grip hold style and magazine attachments
+
+> Change history (Chinese, with editor steps, backups and tuning values): `Saved/武器逻辑改动记录.md`. Detailed reports: `Saved/Prone_REPORT.md`, `Saved/CrouchSlide_REPORT.md`, `Saved/GripStyle_HoldPose_REPORT.md`, `Saved/GripGrab_Prone_REPORT.md`, `Saved/AK_*_REPORT.md`, `Saved/AK_Mag02_Hide_REPORT.md`.
+> This section supersedes the older descriptions in §4.8/§4.9 (new fields), §6.3 (FABRIK), §6.7 (movement hooks), §7.4/§7.5/§7.6 (fire/reload/aim), §8.2 (attach + melee), §12 (crouch input, speed model), §14 (crosshair) and §23.3 (first-person FABRIK).
+
+### 26.1 Prone and crawl
+
+| Member | Default | Replication / notes |
+| --- | --- | --- |
+| `bIsProne` | `false` | `ReplicatedUsing = OnRep_IsProne`, `BlueprintReadOnly`. Drives the ABP's Prone state |
+| `ProneAlpha` | `0` | `BlueprintReadOnly`; `FInterpTo` toward 0/1 at `ProneCameraInterpSpeed` on **every** machine (camera + optional ABP blends) |
+| `bProneCrawling` | `false` | `BlueprintReadOnly`; recomputed every tick on every machine as `bIsProne && GroundSpeed > ProneCrawlSpeedThreshold` |
+| `ProneCrawlSpeedThreshold` | `10` | cm/s above which prone counts as "crawling" |
+| `ProneCapsuleHalfHeight` | `34` (`ClampMin 10`) | `CrouchedHalfHeight` used while prone |
+| `ProneCameraZOffset` | `-50` | Extra **1P** camera drop (spring-arm relative Z) on top of the capsule shrinking; applied as `ProneCameraZOffset * ProneAlpha + SlideCameraZOffset * SlideAlpha` |
+| `ProneCameraInterpSpeed` | `6` | `ProneAlpha` interpolation speed |
+| `ProneAnimReferenceSpeed` | `100` | Authored crawl speed of the prone BlendSpace; `LocomotionPlayRate = GroundSpeed / this` (§6.6) |
+| `bHideWeapon3PWhileProne` | `false` | When true the current weapon's `Mesh3P` is hidden while prone (the crawl animations are unarmed) |
+| `ProneAction` | empty | `EditAnywhere`. Empty → `EnsureProneInput()` creates `IA_Prone_Runtime` (Boolean) + `IMC_Prone_Runtime` mapped to **Z** at priority 1 |
+| `ProneSpeedMultiplier` (controller) | `0.25` | `MaxWalkSpeedCrouched = Speed * 0.25` while prone (≈ 125 cm/s at `RunSpeed`) |
+
+Implementation notes:
+
+- **Prone reuses CMC crouch.** `ApplyProneState()` sets `CMC->SetCrouchedHalfHeight(ProneCapsuleHalfHeight)` and `bWantsToCrouch = true`, so capsule resizing, network move prediction and capsule replication are the stock crouch path; an existing normal-height crouch is released first (`UnCrouch`) so the next crouch actually uses the prone height. `DefaultCrouchedHalfHeight` is captured at `BeginPlay` and restored on exit. On a **simulated proxy** the state is forced with an explicit `Crouch(true)` when the replicated `bIsCrouched` is still true (the proxy does not simulate the transition itself).
+- **Entry / exit validation.** `CanEnterProne()` requires `CMC->IsMovingOnGround()` and `!bIsHealing`. `CanExitProne(bToCrouch)` compares the target capsule half height (stand or crouch) with the current one and, when the capsule must grow, runs an `OverlapBlockingTestByChannel` for a capsule whose centre is raised by the height difference (feet stay put). Blocked → you stay prone.
+- **Authority model.** `RequestSetProne(bNewProne, bExitToCrouch)` applies locally (prediction) and, when not authoritative, calls `Server_SetProne`. The server re-validates and either applies it or answers with `Client_ProneRejected(bServerProne)`, which snaps the owner back to the server value. `OnRep_IsProne` only re-applies when the value really differs from the local one.
+- **Blocked while prone**: jump (`CanJumpInternal_Implementation`), lean (`IsLeanBlocked`), sprint (`ApplyMovementSpeed` clears `bIsSprinting`), and prone cannot be entered while sliding (`RequestSetProne` returns when `bIsSliding`).
+- **Exit shortcuts**: Space → `RequestSetProne(false, /*bExitToCrouch=*/false)` (stand); C → `RequestSetProne(false, true)` (crouch). Leaving prone also clears the lean input (`LeanInputDir = 0`).
+- **Third-person arms** (`FABRIK_Alpha`, §6.3/§23.3): **0 while crawling** (the full-body crawl animation owns both arms), **1 while prone and stopped** so the left hand returns to the gun. The knife is always 0.
+- **Editor wiring** (manual, no MCP anim-graph tools): a `Prone` state in the `ABP_ThirdPerson` locomotion state machine selecting `BS_Prone` on `bProneCrawling` (X = `MovementOffsetYaw`, Y = `GroundSpeed`, PlayRate = `LocomotionPlayRate`), plus a layered blend per bone after the state machine that keeps the standing gun-hold upper body when `bIsProne && !bProneCrawling` (branch filters `clavicle_l` / `clavicle_r`, mesh-space rotation blend on). `BS_Prone` itself already exists at `/Game/FPS/Animation/Prone/BS_Prone` (14 samples, 3P skeleton). Full steps in `Saved/Prone_REPORT.md`.
+
+### 26.2 Slide and the crouch input rework
+
+**Crouch input** (runtime Enhanced Input, the same pattern as lean and prone):
+
+| Key | Runtime asset | Handler | Meaning |
+| --- | --- | --- | --- |
+| **Left Ctrl** | `IA_CrouchHold_Runtime` (`CrouchHoldAction`) | `Input_CrouchHold_Started` / `_Completed` | Crouch while held, stand on release |
+| **C** | `IA_CrouchToggle_Runtime` (`CrouchToggleAction`) | `Input_Crouch` | Toggle crouch / stand |
+| Legacy `CrouchAction` (`IA_Crouch`) | — | `Input_Crouch` | Bound **only** when neither of the two above exists |
+
+Both runtime actions live in `IMC_Crouch_Runtime`, added at **priority 2** — higher than `IMC_Shooter`, so a stale `LeftControl → IA_Crouch` (or `IA_Walk`) row in `IMC_Shooter` is shadowed. Standing up is always delegated to the CMC (`bWantsToCrouch = false`), which keeps retrying every tick and therefore stays crouched under a low ceiling until there is headroom.
+
+**Slide** — either crouch key **above `SlideMinSpeed`** starts a slide instead of a crouch:
+
+| Member | Default | Meaning |
+| --- | --- | --- |
+| `bIsSliding` | `false` | `ReplicatedUsing = OnRep_IsSliding`, `BlueprintReadOnly` |
+| `SlideAlpha` | `0` | Smoothed 0…1 (speed 10) on every machine; also feeds the camera Z offset |
+| `SlideMinSpeed` | `600` | Ground speed required to start a slide (sprint is 800); the server re-checks at **75 %** of this value to absorb client/server drift |
+| `SlideDuration` | `0.9` | Maximum slide time; the server has a safety end at `SlideDuration + 0.5 s` if the owner's end RPC is lost |
+| `SlideSpeedBoost` | `150` | cm/s added along the current velocity at slide start |
+| `SlideDeceleration` | `800` | Written to `CMC->BrakingDecelerationWalking` with `GroundFriction = 0` while sliding (both restored afterwards from `SavedGroundFriction` / `SavedBrakingDecelWalking`) |
+| `SlideEndSpeed` | `200` | The slide also ends when the ground speed drops below this |
+| `SlideCameraZOffset` | `-15` | Extra 1P camera drop on top of the crouch drop |
+| `SlideMontage` | empty | Optional full-body 3P montage (wins over `SlideAnim`) |
+| `SlideAnim` | `/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L` (soft path) | Played as a **dynamic montage** in `SlideSlotName`, play rate = `length / SlideDuration` |
+| `SlideSlotName` | `"BodySlot"` | Body-only slot: the ABP must layer the arms/spine back from the locomotion gun-hold pose |
+| `SlideMontage1P` | empty | Leave empty **on purpose** — the 1P arms keep the weapon hold during a slide |
+
+Behaviour:
+
+- **Movement**: while sliding the controller ignores `Input_Move`, so the character keeps its momentum and decelerates only through the CMC's braking; `ApplyMovementSpeed` raises the crouched speed cap to `SprintSpeed * 1.5` so the boosted slide is not clamped. Sprint is cancelled (stamina stops draining), and lean and prone are blocked (`IsLeanBlocked`, `RequestSetProne`).
+- **End state**: crouch when the slide was started with **C** or with **Ctrl still held**, stand when **Ctrl was released mid-slide** (`SetSlideEndCrouch`).
+- **Jump during a slide** cancels it and stands up (`CancelSlideToStand`) — no jump happens that frame.
+- **Authority**: the owner predicts (`ApplySlideState(true)` + `Server_SetSliding(true)`); the server validates `CanStartSlide(0.75f)` and answers with `Client_SlideRejected()` when it disagrees (the client then just stays crouched). `OnRep_IsSliding` applies the state on other machines, which is also how remote clients see the slide animation.
+- **Animation**: `PlaySlideAnim` runs on every machine except a dedicated server. A `SlideMontage` plays normally; otherwise the `SlideAnim` sequence is played with `PlaySlotAnimationAsDynamicMontage(Seq, SlideSlotName, 0.15, 0.25, Rate, 1)`. ⚠ If the ABP has no `BodySlot` the slide animates nothing and **logs nothing**.
+- **Editor wiring**: the ABP needs the `BodySlot` anim slot (Anim Slot Manager → `DefaultGroup`) and, after the locomotion + aim-offset pose, `Slot(BodySlot)` → Layered blend per bone (base = slot output, blend pose = the cached locomotion pose, branch filters `clavicle_l`/`clavicle_r` depth 0, mesh-space rotation blend on) → the existing FABRIK → `DefaultSlot` → Output. Full steps in `Saved/CrouchSlide_REPORT.md`.
+
+### 26.3 Grip hold style — Cradle vs Grab
+
+The support-hand hold pose is produced by **animations**, not by FABRIK. The 1P FABRIK path is disabled permanently (§6.3); the third-person left hand uses `FABRIK_Alpha`.
+
+| Piece | Behaviour |
+| --- | --- |
+| `EGripHoldStyle` | `Cradle` (angled / triangular / no grip) or `Grab` (vertical). Authored on the **grip** `UAttachmentData` |
+| `AWeapon::GetGripHoldStyle()` | Reads the equipped grip attachment; returns `Cradle` when there is none — so removing the grip reverts the pose |
+| `FPlayerAnim::IdleAnim_Grab` / `AimIdleAnim_Grab` | Replace `IdleAnim` / `AimIdleAnim` for the Grab style |
+| `FPlayerAnim::LeftHandHoldPose_Cradle` / `_Grab` | Optional **left-hand-only** layered pose; exposed as `LeftHandHoldPose` + `bUseLeftHandHoldPose` |
+| `FMontageData::EmptyReloadMontage_Grab` / `TacticalReloadMontage_Grab` | Grab reload variants, resolved **after** `FirstReloadMontage` and **before** the Cradle variants |
+| `UFirstPersonAnimInstance` | Every tick: resolves the style, publishes `GripHoldStyle`, `ActiveIdleAnim`, `LeftHandHoldPose`, `bUseLeftHandHoldPose`, and mirrors the resolved idle into a real `CurrenrAnim` `FPlayerAnim` property (by reflection) so any Sequence Player reading `CurrenrAnim.IdleAnim` follows |
+| `CombatComponent::RefreshLocomotionBlendSpaces` | Also swaps `IdleAnim_Grab` / `AimIdleAnim_Grab` into the copied struct and writes the same fields on a `UFirstPersonAnimInstance`. ⚠ It **must not** call `InitAnim()`, which would destroy `DefaultSlot` dynamic montages |
+| `AWeapon::OnRep_EquippedAttachments` | Calls `RefreshLocomotionBlendSpaces(false)` after rebuilding the visuals, so mounting/removing a grip re-applies the idle immediately |
+
+Two design rules are baked into the code (both are commented in place):
+
+1. **`IdleAnim_Grab` equal to `LeftHandHoldPose_Grab` is never used as a full idle.** Such a pose (e.g. `A_FPP_AK_Pose_G2`) is authored as a **left-hand-only layer** — its `weapon_r` / `hand_r` tracks do not match the Cradle idle and using it as the full idle rotates the gun (this was the "Grab idle makes the gun yaw ~90°" bug). Keep the two fields equal and let the ABP layer the pose in.
+2. **The ABP does the left-hand layering.** `UFirstPersonAnimInstance` only *publishes* `LeftHandHoldPose` / `bUseLeftHandHoldPose`; `ABP_FirstPerson` should apply it through a Layered blend per bone branching from `upperarm_l` (depth 0) on top of the Cradle idle. Wiring steps are in `Saved/GripGrab_Prone_REPORT.md` and `Saved/GripStyle_HoldPose_REPORT.md`.
+
+### 26.4 Skeletal-mesh magazine attachments
+
+The AK magazine is a **skeletal** mesh whose bones (the magazine, and the spare `mag_02`) must animate with the reload.
+
+| Piece | Behaviour |
+| --- | --- |
+| `UAttachmentData::SkeletalMesh` | When set, `RebuildAttachmentVisuals` calls `SpawnAttachmentSkelMesh` instead of `SpawnAttachmentMesh`. `Mesh` is ignored |
+| `SpawnAttachmentSkelMesh` | Creates a `USkeletalMeshComponent` (movable, no collision, no decals, shadow only in 3P, `AlwaysTickPoseAndRefreshBones`), mounts it with `FindAttachmentMount` (which now also accepts sockets on already-spawned **skeletal** attachments), applies `MeshOffset`, and parks it on **frame 0 of `MagReloadAnim`** with `SetPlaying(false)` (the mag armature rest pose is offset from the root) |
+| `bHideSpareMagazineBone` | Hides the `mag_02` bone after spawn (the AK's spare magazine). Default `false`; the shipped `DA_MPC_AK_Mag` leaves it visible |
+| `BonesToHide` | Additional `FName` list hidden the same way |
+| `FAttachmentVisual::SkelMesh1P` / `SkelMesh3P` | New visual slots; both are destroyed and respawned by `RebuildAttachmentVisuals` and their visibility is synchronised by `SetMeshVisibility` |
+| `AWeapon::PlayMagazineReload(EReloadType)` | Called from `PlayReloadMontage` (1P only): picks `MagReloadAnim`, or `MagEmptyReloadAnim` for `Empty` / `MagTacticalReloadAnim` for `Tactical`, and drives the magazine component with a single-node `PlayAnimation(Seq, false)`. `First` normally never arrives here (the caller degrades it to `Empty`/`Tactical`); if it does, `MagReloadAnim` is used |
+| `AWeapon::GetMagazineSkelMesh1P()` | Returns the 1P magazine component (or null) |
+
+**Effect**: the magazine insert/remove animation is played **on the magazine itself**, synchronised with the arms montage by the same `EReloadType`, instead of relying on a static mesh that cannot deform or a weapon-skeleton montage.
+
+### 26.5 Melee as a first-class weapon kind
+
+| Area | Change |
+| --- | --- |
+| Ammo | `AWeapon::UsesAmmo()` is false for `EWeaponKind::Melee`; it gates the predictive decrement (`Local_Fire`), `Auth_Fire`, both auto-reload checks in `FireTimerFinished` and the whole of `Initiate_ReloadWeapon` |
+| Aiming | `Initiate_Aim_Pressed` early-returns for melee (forcing aim off), and `Local_Aim` clamps `bPressed` to false so the server and the weapon-switch path cannot turn ADS on for a knife |
+| Swing | `Local_FireWeapon` uses `WeaponMeleeHit` (blade sphere sweep, §8.7) instead of the camera trace, and additionally plays the **3P full-body** fire montage from `ThirdPersonMontages` |
+| Montage variants | `FMontageData::FireMontages` / `EquipMontages` allow several swings / draws, picked at random by `ResolveFireMontage()` / `ResolveEquipMontage()` |
+| FABRIK | Both `FABRIK_Alpha1P` and `FABRIK_Alpha` are forced to 0 for melee: both hands follow the knife animation only |
+| Reticle | The crosshair is **not** hidden while aiming a melee weapon (`UShooterReticle::NativePaint` skips the ADS hide when the current weapon is melee) |
+
+### 26.6 AK weapon tag and the third-person attach path
+
+- The AK uses its own tag `Weapon.type.ak` (§3.4) so `DA_WeaponData` can hold a complete, independent entry set (grip point, 1P/3P animations, 1P/3P/weapon montages) without disturbing `Weapon.type.rifle`.
+- **Attach points** (see §8.2): the 1P mesh uses the `GripPoints` entry (`weapon_r` on the retargeted AK arms); the 3P mesh always uses `RifleSocketak` when that socket exists, otherwise `RifleSocket`. `ResolveAttachPoint` rejects *orphan bones* (a bone with no parent that is not the root), which is what silently attached the AK at the mesh root on trimmed skeletons such as `SKM_Manny_Simple`; a fallback always logs `[WeaponAttach] …` with the chosen socket.
+- **Attachment sockets**: the flashlight/laser/muzzle/sight lookups accept a socket found on a **skeletal** attachment component as well as on a static one.
+- **Diagnostics**: every `AttachToOwingPawn` logs `[WeaponAttach] <weapon> type=… grip=… -> 1P sock=… | 3P sock=…`. When a gun sits oddly, check that line first — it names the socket that was actually used.
+- Change history with every intermediate fix (root attach, orientation, position, `RifleSocketak` + FABRIK, `mag_02`): `Saved/AK_*_REPORT.md` and `Saved/武器逻辑改动记录.md`.
+
+### 26.7 Spreading crosshair (hip-fire)
+
+| Member | Default | Meaning |
+| --- | --- | --- |
+| `bDrawSpreadingCrosshair` | `true` | Master switch for the native crosshair |
+| `CrosshairBaseGap` | `6` | Resting distance of each line from the screen centre |
+| `CrosshairLineLength` | `8` | Line length |
+| `CrosshairLineThickness` | `2` | Line thickness |
+| `CrosshairLineColor` | white | Tinted by the widget's colour and opacity |
+| `CrosshairSpreadKick` | `4` | Spread added **per shot** |
+| `CrosshairSpreadMax` | `28` | Spread ceiling |
+| `CrosshairSpreadRecovery` | `40` | Spread recovered per second |
+
+- `UCombatComponent` broadcasts the new **`OnWeaponFired`** delegate at the end of `Local_FireWeapon`; `UShooterReticle` binds/unbinds it in `OnPossessedPawnChanged` (`HandleWeaponFired` → `NotifyWeaponFired()`, which is also `BlueprintCallable` so a WBP can kick the crosshair manually).
+- `NativePaint` draws four cardinal lines at `CrosshairBaseGap + SpreadPx + CrosshairSpread`, using `FSlateDrawElement::MakeLines` — no material parameter is involved, so the material-driven reticle and the native crosshair can coexist. **`SpreadPx` is the weapon's real hip-fire cone projected to pixels** (`HalfWidth / tan(FOV/2) × tan(radians(GetHipFireSpread()))`, clamped to a 5…170° camera FOV), so the crosshair geometry actually matches where bullets can go; `CrosshairSpread` is only the extra muzzle-kick feedback on top (§26.8).
+- Hidden while aiming **unless** the current weapon is melee; `CrosshairSpread` decays in `NativeTick`.
+- ⚠ `CrosshairSpread` itself is **presentation only** (the kick does not change `TraceRadius` or the bullet direction). The *cone* comes from `AWeapon::HipFireSpread`, covered in §26.8.
+
+### 26.8 Hip-fire spread (gameplay cone)
+
+The crosshair kick in §26.7 is cosmetic; this is the **real** cone the bullet can leave in.
+
+| Piece | Behaviour |
+| --- | --- |
+| `AWeapon::HipFireSpread` | Base half-cone angle in **degrees**, `EditAnywhere` on the weapon blueprint (default `3`, `ClampMin 0`, `ClampMax 30`). Author it per weapon: a pistol tighter, a rifle wider |
+| `UAttachmentData::HipFireSpreadMultiplier` | Per-attachment multiplier (default `1`, `ClampMin 0`); every equipped attachment multiplies together, so a vertical grip at `0.8` tightens the cone by 20 % |
+| `AWeapon::GetHipFireSpread() const` ◆ | `0` while `UCombatComponent::bAiming`; otherwise `HipFireSpread × Π(HipFireSpreadMultiplier)`. BlueprintPure, so a WBP can display or animate from the same number |
+| `AWeapon::WeaponTrace` | When the value is > 0, the shot direction is replaced by `FMath::VRandCone(EyesWorldDirection, radians(SpreadDeg))` **before** the sweep; the miss fallback (`ImpactPoint = End`, `Normal = -Direction`) uses the randomised direction, so FX follow the bullet |
+| `UShooterReticle::NativePaint` | Projects the same angle into pixels — `SpreadPx = (HalfWidth / tan(clampedFOV/2)) × tan(radians(GetHipFireSpread()))` — and draws the lines at `CrosshairBaseGap + SpreadPx + CrosshairSpread`, so the crosshair matches the cone and the fire kick rides on top (`Camera/PlayerCameraManager.h` is included for `GetFOVAngle`) |
+
+Design notes and caveats:
+
+- **ADS is exact**: aiming forces the spread to 0, so the sight picture is never a lie (the crosshair is also hidden while aiming, except for melee, which has no spread).
+- **Movement / jump penalties** are not implemented: the getter is the single place to add them (`Combat->bAiming` is the only term today), which is why the header comment says "以后移动/跳跃惩罚也加在这里".
+- ⚠ **The cone is rolled on the machine that traces** — the owning client — and `Server_FireWeapon` still trusts the client's `FHitResult`. That is consistent with the existing hit model, but spread is therefore a *feel/balance* feature, not an anti-cheat measure: a modified client can remove its own spread.
+- ⚠ `FWeaponAttachmentSlot` (Weapon.h) declares an `HipFireSpread` member with no initialiser and no code reading or writing it — it looks like a stray paste from `AWeapon::HipFireSpread`. The authoritative values are the **weapon** property and `UAttachmentData::HipFireSpreadMultiplier`.
+- The projectile is still a **sphere sweep** (`TraceRadius`, default 5 cm) along the randomised direction, not a per-pellet shotgun pattern.
+
+### 26.9 Networking summary for this revision
+
+| Feature | Prediction | Authority | Convergence |
+| --- | --- | --- | --- |
+| Prone | Owner applies immediately | `Server_SetProne` re-validates entry (on the ground, not healing) and exit (ceiling headroom) | `bIsProne` replication + `Client_ProneRejected` rollback; `OnRep_IsProne` re-applies for remotes |
+| Slide | Owner applies immediately (`bIsSliding` + capsule + friction) | `Server_SetSliding` re-checks the ground and 75 % of `SlideMinSpeed` | `bIsSliding` replication, `Client_SlideRejected` (falls back to crouch), server safety timeout at `SlideDuration + 0.5 s` |
+| Grip style | Client reads the replicated attachment list | Attachments are server-validated, so the style is authoritative | `OnRep_EquippedAttachments` → `RefreshLocomotionBlendSpaces` on all machines |
+| Magazine animation | 1P only, driven by the same reload montage | Presentation only (no gameplay data) | Not replicated; only the owning client plays it |
+| Melee hit | Client sweeps the blade and sends the `FHitResult` | `Server_FireWeapon` resolves damage/hit zones exactly like a bullet | Same multicast FX path as gunfire |
+| Crosshair spread | Local visual kick | — | Local-only feel feature |
+| Hip-fire cone | Rolled on the tracing client (`FMath::VRandCone`), so that client picks the direction | The server re-uses the client's `FHitResult`; there is no server-side cone | Not a replicated state — both the cone and the crosshair derive from `GetHipFireSpread()` |
