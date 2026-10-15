@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -37,6 +37,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFireModeChanged, AWeapon*, Weapon,
 
 // 可变倍率瞄具切档后广播（本地），UI 可以显示当前倍率档
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FZoomLevelChanged, int32, ZoomIndex, float, AimFOV);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWeaponFired);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCurrentReserveAmmoChanged, int32, RoundsInServe, int32, RoundsInWeapon, UTexture2D*, WeaponIcon);
 
@@ -72,6 +73,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon")
 	FFireModeChanged OnFireModeChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon")
+	FWeaponFired OnWeaponFired;
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_EquipMainWeapon();
 

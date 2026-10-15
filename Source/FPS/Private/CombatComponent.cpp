@@ -1,4 +1,5 @@
-﻿#include "CombatComponent.h"
+#include "CombatComponent.h"
+#include "Animation/FirstPersonAnimInstance.h"
 #include "ShooterCharacter.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/Weapon.h"
@@ -6,6 +7,7 @@
 #include "Interface/PlayerInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "UObject/UnrealType.h"
 #include "Engine/Engine.h"
@@ -457,12 +459,52 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 			AnimCopy.Strafe_Standing = AnimCopy.Strafe_Walking;
 		}
 
-		// ABP_FirstPerson spells this CurrenrAnim. ABP_ThirdPerson uses CurrentAnim.
+		// Grip hold style: Cradle vs Grab — same source as ResolveReloadMontage(GetGripHoldStyle()).
+		// Push IdleAnim_Grab into CurrenrAnim.IdleAnim. Do NOT InitAnim here: it destroys
+		// DefaultSlot Grab-idle dynamic montages started by FirstPersonAnimInstance.
+		const EGripHoldStyle GripStyle = CurrentWeapon->GetGripHoldStyle();
+		if (GripStyle == EGripHoldStyle::Grab)
+		{
+			if (IsValid(AnimCopy.IdleAnim_Grab) && AnimCopy.IdleAnim_Grab != AnimCopy.LeftHandHoldPose_Grab)
+			{
+				AnimCopy.IdleAnim = AnimCopy.IdleAnim_Grab;
+			}
+			if (IsValid(AnimCopy.AimIdleAnim_Grab))
+			{
+				AnimCopy.AimIdleAnim = AnimCopy.AimIdleAnim_Grab;
+			}
+		}
+
 		const FName PropertyName = bFirstPerson ? TEXT("CurrenrAnim") : TEXT("CurrentAnim");
 		FStructProperty* AnimProperty = FindFProperty<FStructProperty>(AnimInstance->GetClass(), PropertyName);
 		if (!AnimProperty || AnimProperty->Struct != FPlayerAnim::StaticStruct()) return;
 
 		AnimProperty->CopyCompleteValue(AnimProperty->ContainerPtrToValuePtr<void>(AnimInstance), &AnimCopy);
+
+		if (UFirstPersonAnimInstance* FPAnim = Cast<UFirstPersonAnimInstance>(AnimInstance))
+		{
+			FPAnim->GripHoldStyle = GripStyle;
+			if (GripStyle == EGripHoldStyle::Grab)
+			{
+				FPAnim->LeftHandHoldPose = AnimCopy.LeftHandHoldPose_Grab.Get();
+				FPAnim->ActiveIdleAnim = AnimCopy.IdleAnim.Get();
+			}
+			else
+			{
+				UAnimSequence* CradlePose = AnimCopy.LeftHandHoldPose_Cradle.Get();
+				FPAnim->LeftHandHoldPose = (CradlePose && CradlePose != AnimCopy.IdleAnim.Get()) ? CradlePose : nullptr;
+				FPAnim->ActiveIdleAnim = AnimCopy.IdleAnim.Get();
+			}
+			FPAnim->bUseLeftHandHoldPose = IsValid(FPAnim->LeftHandHoldPose);
+
+			if (bFirstPerson)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[GripHold] Refresh CurrenrAnim Idle=%s style=%d hasGrabIdle=%d"),
+					*GetNameSafe(AnimCopy.IdleAnim.Get()),
+					(int32)GripStyle,
+					IsValid(AnimCopy.IdleAnim_Grab) ? 1 : 0);
+			}
+		}
 	};
 
 	ApplyToMesh(IPlayerInterface::Execute_GetMesh1P(Owner), true);
@@ -481,12 +523,12 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 		: WeaponData->ThirdPersonMontages;
 
 	const FMontageData* MontageData = ViewMontages.Find(Weapon->WeaponType);
-	UAnimMontage* EquipMontage = (MontageData && IsValid(MontageData->EquipMontage)) ? MontageData->EquipMontage.Get() : nullptr;
+	UAnimMontage* EquipMontage = MontageData ? MontageData->ResolveEquipMontage() : nullptr;
 	if (!IsValid(EquipMontage))
 	{
 		if (const FMontageData* SharedData = WeaponData->WeaponMontages.Find(Weapon->WeaponType))
 		{
-			EquipMontage = SharedData->EquipMontage;
+			EquipMontage = SharedData->ResolveEquipMontage();
 		}
 	}
 
@@ -559,7 +601,10 @@ void UCombatComponent::StopReloadMontages(AWeapon* Weapon)
 		{
 			for (EReloadType Type : { EReloadType::First, EReloadType::Empty, EReloadType::Tactical })
 			{
-				if (UAnimMontage* M = Data->ResolveReloadMontage(Type)) Montages.AddUnique(M);
+				for (EGripHoldStyle Style : { EGripHoldStyle::Cradle, EGripHoldStyle::Grab })
+				{
+					if (UAnimMontage* M = Data->ResolveReloadMontage(Type, Style)) Montages.AddUnique(M);
+				}
 			}
 		}
 	};
@@ -644,7 +689,7 @@ void UCombatComponent::Initiate_FireWeapon_Pressed()
 	// Gating Local_FireWeapon on IsTimerActive stops that next shot.
 	if (GetWorld()->GetTimerManager().IsTimerActive(FireTimer)) return;
 
-	if (CurrentWeapon->Ammo > 0)
+	if (!CurrentWeapon->UsesAmmo() || CurrentWeapon->Ammo > 0)
 	{
 		Local_FireWeapon();
 	}
@@ -666,7 +711,7 @@ void UCombatComponent::Local_FireWeapon()
 
 	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
 	{
-		UAnimMontage* Montage1P = MontageData->FireMontage;
+		UAnimMontage* Montage1P = MontageData->ResolveFireMontage();
 		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
 		UAnimInstance* AnimInstance1P = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
 		if (IsValid(Montage1P) && IsValid(AnimInstance1P))
@@ -675,11 +720,35 @@ void UCombatComponent::Local_FireWeapon()
 		}
 	}
 
+
+	// 近战：第三人称全身攻击（蒙太奇需挂 FullBody/DefaultSlot，勿只用 UpperBody）
+	if (CurrentWeapon->WeaponKind == EWeaponKind::Melee)
+	{
+		if (const FMontageData* Montage3PData = WeaponData->ThirdPersonMontages.Find(CurrentWeapon->WeaponType))
+		{
+			UAnimMontage* Montage3P = Montage3PData->ResolveFireMontage();
+			USkeletalMeshComponent* Mesh3P = IPlayerInterface::Execute_GetMesh3P(GetOwner());
+			UAnimInstance* AnimInstance3P = IsValid(Mesh3P) ? Mesh3P->GetAnimInstance() : nullptr;
+			if (IsValid(Montage3P) && IsValid(AnimInstance3P))
+			{
+				AnimInstance3P->Montage_Play(Montage3P);
+			}
+		}
+	}
+
 	FHitResult Hit;
-	CurrentWeapon->WeaponTrace(Hit,TraceLength);
+	if (CurrentWeapon->WeaponKind == EWeaponKind::Melee)
+	{
+		CurrentWeapon->WeaponMeleeHit(Hit);
+	}
+	else
+	{
+		CurrentWeapon->WeaponTrace(Hit, TraceLength);
+	}
 
 	EPhysicalSurface ImpactSurfaceType = Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType2;
 	CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, true);
+	OnWeaponFired.Broadcast();
 	ApplyFireRecoil();
 	NotifyAmmoChanged();
 	BeginBoltCycleAfterShot();
@@ -725,7 +794,7 @@ void UCombatComponent::FireTimerFinished()
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	// Empty mag starts the same reload as the reload key. ApplyReload here fills the
 	// magazine immediately and never plays the montage.
-	if (CurrentWeapon->Ammo == 0 && CurrentReserveAmmo > 0 && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled())
+	if (CurrentWeapon->UsesAmmo() && CurrentWeapon->Ammo == 0 && CurrentReserveAmmo > 0 && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled())
 	{
 		Initiate_ReloadWeapon();
 		return;
@@ -734,7 +803,7 @@ void UCombatComponent::FireTimerFinished()
 
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 
-	if (bTriggerPressed && CurrentWeapon->FireType == EFireType::Automatic&&CurrentWeapon->Ammo > 0)
+	if (bTriggerPressed && CurrentWeapon->FireType == EFireType::Automatic && (!CurrentWeapon->UsesAmmo() || CurrentWeapon->Ammo > 0))
 	{
 		Local_FireWeapon();
 	}
@@ -809,7 +878,7 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 
 	if (const FMontageData* MontageData = WeaponData->ThirdPersonMontages.Find(CurrentWeapon->WeaponType))
 	{
-		UAnimMontage* Montage3P = MontageData->FireMontage;
+		UAnimMontage* Montage3P = MontageData->ResolveFireMontage();
 		USkeletalMeshComponent* Mesh3P = IPlayerInterface::Execute_GetMesh3P(OwningPawn);
 		UAnimInstance* AnimInstance3P = IsValid(Mesh3P) ? Mesh3P->GetAnimInstance() : nullptr;
 		if (IsValid(Montage3P) && IsValid(AnimInstance3P))
@@ -831,6 +900,7 @@ void UCombatComponent::Initiate_ReloadWeapon()
 {
 	CancelInspect();
 	if (!IsValid(CurrentWeapon)) return;
+	if (!CurrentWeapon->UsesAmmo()) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;   // 拉栓中不能换弹
@@ -904,7 +974,8 @@ bool UCombatComponent::GetReloadMontage(bool bFirstPerson, EReloadType ReloadTyp
 	{
 		Resolved = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
 	}
-	UAnimMontage* Chosen = MontageData->ResolveReloadMontage(Resolved);
+	const EGripHoldStyle GripStyle = IsValid(CurrentWeapon) ? CurrentWeapon->GetGripHoldStyle() : EGripHoldStyle::Cradle;
+		UAnimMontage* Chosen = MontageData->ResolveReloadMontage(Resolved, GripStyle);
 	if (!IsValid(Chosen)) return false;
 
 	USkeletalMeshComponent* Mesh = bFirstPerson
@@ -939,7 +1010,8 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson, EReloadType ReloadTy
 			{
 				WeaponReloadType = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
 			}
-			UAnimMontage* WeaponReloadMontage = WeaponMontageData->ResolveReloadMontage(WeaponReloadType);
+			const EGripHoldStyle WeaponGripStyle = IsValid(CurrentWeapon) ? CurrentWeapon->GetGripHoldStyle() : EGripHoldStyle::Cradle;
+			UAnimMontage* WeaponReloadMontage = WeaponMontageData->ResolveReloadMontage(WeaponReloadType, WeaponGripStyle);
 			USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
 			UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
 			if (IsValid(WeaponReloadMontage) && IsValid(WeaponAnim))
@@ -947,6 +1019,12 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson, EReloadType ReloadTy
 				WeaponAnim->Montage_Play(WeaponReloadMontage);
 			}
 		}
+		EReloadType MagReloadType = ReloadType;
+		if (MagReloadType == EReloadType::First)
+		{
+			MagReloadType = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
+		}
+		CurrentWeapon->PlayMagazineReload(MagReloadType);
 	}
 
 	// The owner's 1P montage owns the Reloading lock. The 3P montage is only what other people see.
@@ -1176,6 +1254,16 @@ void UCombatComponent::Server_SetFireMode_Implementation(EFireType NewFireType)
 void UCombatComponent::Initiate_Aim_Pressed()
 {
 	CancelInspect();
+	// 近战不能开镜
+	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponKind == EWeaponKind::Melee)
+	{
+		if (bAiming)
+		{
+			Local_Aim(false);
+			Server_Aim(false);
+		}
+		return;
+	}
 	const bool bNextAim = !bAiming;
 	Local_Aim(bNextAim);
 	Server_Aim(bNextAim);
@@ -1374,6 +1462,11 @@ void UCombatComponent::Server_Aim_Implementation(bool bPressed)
 
 void UCombatComponent::Local_Aim(bool bPressed)
 {
+	// 近战强制关镜：本地 / 服务器 / 切枪同步都走这里
+	if (bPressed && IsValid(CurrentWeapon) && CurrentWeapon->WeaponKind == EWeaponKind::Melee)
+	{
+		bPressed = false;
+	}
 	if (bAiming == bPressed) return;   // 状态没变就不广播，避免 listen server 上重复触发
 	bAiming = bPressed;
 	OnAimStateChanged.Broadcast(bAiming);

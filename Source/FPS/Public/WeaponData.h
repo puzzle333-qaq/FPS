@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -6,6 +6,7 @@
 #include "GameplayTagContainer.h"
 #include "Engine/DataAsset.h"
 #include "Animation/AnimMontage.h"
+#include "Weapon/AttachmentData.h"
 
 #include "WeaponData.generated.h"
 
@@ -54,6 +55,19 @@ struct FPlayerAnim
 	// 站立慢走/开镜：放 Walk 采样的 BlendSpace；AnimBP 在 bUseWalkGait 时用它替换 Strafe_Standing
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TObjectPtr<UBlendSpace> Strafe_Walking;
+	// Vertical grip (Grab) overrides; empty = use IdleAnim (Cradle/default)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GripHold")
+	TObjectPtr<UAnimSequence> IdleAnim_Grab = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GripHold")
+	TObjectPtr<UAnimSequence> AimIdleAnim_Grab = nullptr;
+
+	// Optional left-hand pose layer (template G2). AnimBP Layered blend; empty = IdleAnim_Grab only
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GripHold")
+	TObjectPtr<UAnimSequence> LeftHandHoldPose_Cradle = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GripHold")
+	TObjectPtr<UAnimSequence> LeftHandHoldPose_Grab = nullptr;
 };
 
 USTRUCT(BlueprintType)
@@ -83,6 +97,11 @@ struct FMontageData
 	// 这把枪第一次上弹（可选）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reload")
 	TObjectPtr<UAnimMontage>FirstReloadMontage = nullptr;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reload|GripHold")
+	TObjectPtr<UAnimMontage> EmptyReloadMontage_Grab = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reload|GripHold")
+	TObjectPtr<UAnimMontage> TacticalReloadMontage_Grab = nullptr;
 
 	// 拉栓/泵动。填了它，这把枪每打一发都要播完它才能开下一枪（狙击、泵动霰弹用）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bolt")
@@ -94,11 +113,53 @@ struct FMontageData
 	TObjectPtr<UAnimMontage>InspectMontage1P = nullptr;
 
 	// 按换弹种类挑蒙太奇：First -> (Empty 或 Tactical) -> ReloadMontage，哪个没填就往后退
-	UAnimMontage* ResolveReloadMontage(EReloadType Type) const
+	
+	// 近战等：多条攻击/掏枪蒙太奇，随机挑一条；空则退回上面的单条 Fire/Equip
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Melee|Variants")
+	TArray<TObjectPtr<UAnimMontage>> FireMontages;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Melee|Variants")
+	TArray<TObjectPtr<UAnimMontage>> EquipMontages;
+
+	UAnimMontage* ResolveFireMontage() const
+	{
+		TArray<UAnimMontage*> Candidates;
+		for (const TObjectPtr<UAnimMontage>& M : FireMontages)
+		{
+			if (M) { Candidates.Add(M.Get()); }
+		}
+		if (FireMontage) { Candidates.AddUnique(FireMontage.Get()); }
+		if (Candidates.Num() == 0) { return nullptr; }
+		return Candidates[FMath::RandRange(0, Candidates.Num() - 1)];
+	}
+
+	UAnimMontage* ResolveEquipMontage() const
+	{
+		TArray<UAnimMontage*> Candidates;
+		for (const TObjectPtr<UAnimMontage>& M : EquipMontages)
+		{
+			if (M) { Candidates.Add(M.Get()); }
+		}
+		if (EquipMontage) { Candidates.AddUnique(EquipMontage.Get()); }
+		if (Candidates.Num() == 0) { return nullptr; }
+		return Candidates[FMath::RandRange(0, Candidates.Num() - 1)];
+	}
+	UAnimMontage* ResolveReloadMontage(EReloadType Type, EGripHoldStyle GripStyle = EGripHoldStyle::Cradle) const
 	{
 		if (Type == EReloadType::First && FirstReloadMontage)
 		{
 			return FirstReloadMontage;
+		}
+		if (GripStyle == EGripHoldStyle::Grab)
+		{
+			if (Type == EReloadType::Empty && EmptyReloadMontage_Grab)
+			{
+				return EmptyReloadMontage_Grab;
+			}
+			if (Type == EReloadType::Tactical && TacticalReloadMontage_Grab)
+			{
+				return TacticalReloadMontage_Grab;
+			}
 		}
 		if (Type == EReloadType::Empty && EmptyReloadMontage)
 		{
@@ -139,3 +200,4 @@ public:
 
 
 };
+
