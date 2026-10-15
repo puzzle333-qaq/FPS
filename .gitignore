@@ -384,3 +384,6 @@ Content/*
 Content/__ExternalActors__/
 Content/__ExternalObjects__/
 *_BuiltData.uasset
+
+# Third-party animation assets (not redistributable)
+Content/FPS/Animation/
