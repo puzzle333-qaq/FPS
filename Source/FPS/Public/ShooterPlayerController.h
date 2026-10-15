@@ -23,8 +23,10 @@ public:
 
 	// 只按当前状态重新算速度（不发 RPC），角色在开镜/下蹲变化时调用
 	void RefreshMovementSpeed() { ApplyMovementSpeed(); }
-	bool IsSprinting() const { return bIsSprinting; }
+	UFUNCTION(BlueprintPure, Category = "FPS|Movement") bool IsSprinting() const { return bIsSprinting; }
 	
+	UFUNCTION(BlueprintCallable)
+	void StopSprinting();
 
 protected:
 	virtual void BeginPlay() override;

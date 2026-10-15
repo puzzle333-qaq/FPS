@@ -19,6 +19,12 @@ AShooterPlayerController::AShooterPlayerController()
 	bReplicates = true;
 }
 
+void AShooterPlayerController::StopSprinting()
+{
+	bIsSprinting = false;
+	UpdateMovementSpeed();
+}
+
 void AShooterPlayerController::BeginPlay()
 {
 	Super::BeginPlay();

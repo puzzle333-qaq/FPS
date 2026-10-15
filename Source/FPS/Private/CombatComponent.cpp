@@ -12,6 +12,7 @@
 #include "UObject/UnrealType.h"
 #include "Engine/Engine.h"
 #include "TimerManager.h"
+#include "ShooterPlayerController.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ShooterType/ShooterType.h"
 #include "Interface/RecoilModifierInterface.h"
@@ -681,6 +682,18 @@ void UCombatComponent::Multicast_CycleWeapon_Implementation(int32 WeaponIndex)
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
 	CancelInspect();
+	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwnerPawn->GetController()))
+		{
+			if (PC->IsSprinting())
+			{
+				PC->StopSprinting();
+				return;
+			}
+		}
+	}
+
 	if (!IsValid(CurrentWeapon))return;
 	bTriggerPressed = true;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
@@ -706,6 +719,7 @@ void UCombatComponent::Local_FireWeapon()
 	{
 		return;
 	}
+	
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::BoltCycling) return;
 
