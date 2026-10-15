@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
@@ -6,10 +6,20 @@
 #include "AttachmentData.generated.h"
 
 class UStaticMesh;
+class USkeletalMesh;
+class UAnimSequence;
 class UTexture2D;
 class UMaterialInterface;
 
 // 瞄具类型：决定开镜时怎么显示
+// Grip hold style: Cradle = angled/triangular/default; Grab = vertical. Pose from anims, not FABRIK.
+UENUM(BlueprintType)
+enum class EGripHoldStyle : uint8
+{
+	Cradle UMETA(DisplayName = "Cradle / Angled"),
+	Grab   UMETA(DisplayName = "Grab / Vertical")
+};
+
 UENUM(BlueprintType)
 enum class EOpticType : uint8
 {
@@ -45,6 +55,28 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
 	TObjectPtr<UStaticMesh> Mesh;
 
+	// Optional skeletal mesh (e.g. AK magazine). When set, weapon spawns this instead of Mesh.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
+	TObjectPtr<USkeletalMesh> SkeletalMesh;
+
+	// Played on the magazine skeletal component when the arms reload (sync with Mag30 body notifies).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")
+	TObjectPtr<UAnimSequence> MagReloadAnim;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")
+	TObjectPtr<UAnimSequence> MagEmptyReloadAnim;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")
+	TObjectPtr<UAnimSequence> MagTacticalReloadAnim;
+
+	// Hide bone mag_02 (spare mag on SKM_AK_Mag). Uncheck to show the second mag mesh.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")
+	bool bHideSpareMagazineBone = false;
+
+	// Extra bones to hide after spawn (optional).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")
+	TArray<FName> BonesToHide;
+
 	// 注意：挂在枪的哪个 Socket 不在这里配，而是由“枪的槽位表”决定（FWeaponAttachmentSlot::SocketName）
 	// 这样同一个红点装在不同枪上，可以挂到各自不同的位置
 
@@ -57,6 +89,10 @@ public:
 	// 在握把 StaticMesh 的 Socket Manager 里加同名 Socket，放在手应该握住的位置。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
 	FName FabrikSocketName = TEXT("FABRIK");
+
+	// Grip slot only. Cradle=angled/default; Grab=vertical. Hold pose from anims (no 1P FABRIK).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
+	EGripHoldStyle GripHoldStyle = EGripHoldStyle::Cradle;
 
 	// 枪管或枪口配件模型上的枪口。开火闪光和弹道视觉起点用它。
 	// 枪口配件（消音器）优先于枪管。都没有可用 Socket 时，用枪蓝图上的 MuzzleSocketName。
