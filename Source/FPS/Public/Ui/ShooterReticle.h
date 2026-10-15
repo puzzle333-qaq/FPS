@@ -75,6 +75,34 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|HitFeedback")
 	void ShowHitMarker();
 
+	// ---------- Spreading crosshair (hip-fire) ----------
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread", meta = (ClampMin = "0"))
+	float CrosshairBaseGap = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread", meta = (ClampMin = "1"))
+	float CrosshairLineLength = 8.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread", meta = (ClampMin = "0.5"))
+	float CrosshairLineThickness = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread")
+	FLinearColor CrosshairLineColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread", meta = (ClampMin = "0"))
+	float CrosshairSpreadKick = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread", meta = (ClampMin = "0"))
+	float CrosshairSpreadMax = 28.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread", meta = (ClampMin = "0"))
+	float CrosshairSpreadRecovery = 40.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread")
+	bool bDrawSpreadingCrosshair = true;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Crosshair|Spread")
+	void NotifyWeaponFired();
+
 private:
 	TWeakObjectPtr<UMaterialInstanceDynamic> CurrentReticle_DynMatInst;
 	TWeakObjectPtr<APawn> BoundPawn;
@@ -82,6 +110,7 @@ private:
 	// 0 = top (front), 1 = right, 2 = bottom (back), 3 = left
 	float ArcIntensity[4] = { 0.f, 0.f, 0.f, 0.f };
 	float HitMarkerRemaining = 0.f;
+	float CrosshairSpread = 0.f;
 
 	UImage* ResolveReticleImage();
 
@@ -99,4 +128,7 @@ private:
 
 	UFUNCTION()
 	void HandleHitConfirmed();
+
+	UFUNCTION()
+	void HandleWeaponFired();
 };

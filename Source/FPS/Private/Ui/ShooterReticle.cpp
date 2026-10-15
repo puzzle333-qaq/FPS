@@ -70,6 +70,7 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		Intensity = FMath::Max(0.f, Intensity - ArcDecay);
 	}
 	HitMarkerRemaining = FMath::Max(0.f, HitMarkerRemaining - InDeltaTime);
+	CrosshairSpread = FMath::Max(0.f, CrosshairSpread - CrosshairSpreadRecovery * InDeltaTime);
 
 	UImage* ReticleImage = ResolveReticleImage();
 	if (!IsValid(ReticleImage))
@@ -143,6 +144,29 @@ int32 UShooterReticle::NativePaint(const FPaintArgs& Args, const FGeometry& Allo
 		bDrew = true;
 	}
 
+	// Spreading crosshair: four cardinal lines. Hidden while ADS.
+	if (bDrawSpreadingCrosshair)
+	{
+		const UCombatComponent* CombatForSpread = UCombatComponent::FindCombatComponent(GetOwningPlayerPawn());
+		const AWeapon* Wpn = IsValid(CombatForSpread) ? CombatForSpread->CurrentWeapon.Get() : nullptr;
+		const bool bAdsHide = IsValid(CombatForSpread) && CombatForSpread->bAiming
+			&& IsValid(Wpn) && Wpn->WeaponKind != EWeaponKind::Melee;
+		if (!bAdsHide)
+		{
+			const float Gap = CrosshairBaseGap + CrosshairSpread;
+			static const FVector2D Cardinals[4] = {
+				FVector2D(0.f, -1.f), FVector2D(1.f, 0.f), FVector2D(0.f, 1.f), FVector2D(-1.f, 0.f) };
+			for (const FVector2D& Dir : Cardinals)
+			{
+				TArray<FVector2D> Points;
+				Points.Add(Center + Dir * Gap);
+				Points.Add(Center + Dir * (Gap + CrosshairLineLength));
+				FSlateDrawElement::MakeLines(OutDrawElements, DrawLayer, AllottedGeometry.ToPaintGeometry(), Points,
+					ESlateDrawEffect::None, CrosshairLineColor * InWidgetStyle.GetColorAndOpacityTint(), true, CrosshairLineThickness);
+			}
+			bDrew = true;
+		}
+	}
 	return bDrew ? DrawLayer : MaxLayer;
 }
 
@@ -162,6 +186,16 @@ void UShooterReticle::ShowDamageFrom(FVector InstigatorLocation)
 	const float Angle = FMath::RadiansToDegrees(FMath::Atan2(Local.Y, Local.X));
 	const int32 Arc = FMath::RoundToInt(FRotator::ClampAxis(Angle) / 90.f) % 4;
 	ArcIntensity[Arc] = 1.f;
+}
+
+void UShooterReticle::NotifyWeaponFired()
+{
+	CrosshairSpread = FMath::Min(CrosshairSpreadMax, CrosshairSpread + CrosshairSpreadKick);
+}
+
+void UShooterReticle::HandleWeaponFired()
+{
+	NotifyWeaponFired();
 }
 
 void UShooterReticle::ShowHitMarker()
@@ -189,6 +223,7 @@ void UShooterReticle::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 	if (IsValid(OldPawnCombat))
 	{
 		OldPawnCombat->OnReticleChanged.RemoveDynamic(this, &ThisClass::OnReticleChanged);
+		OldPawnCombat->OnWeaponFired.RemoveDynamic(this, &ThisClass::HandleWeaponFired);
 	}
 
 	if (AShooterCharacter* OldShooter = Cast<AShooterCharacter>(BoundPawn.Get()))
@@ -208,6 +243,7 @@ void UShooterReticle::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 	if (IsValid(NewPawnCombat))
 	{
 		NewPawnCombat->OnReticleChanged.AddUniqueDynamic(this, &ThisClass::OnReticleChanged);
+		NewPawnCombat->OnWeaponFired.AddUniqueDynamic(this, &ThisClass::HandleWeaponFired);
 		if (IsValid(NewPawnCombat->CurrentWeapon))
 		{
 			OnReticleChanged(NewPawnCombat->CurrentWeapon->GetReticleDynamicMaterialInstance());
