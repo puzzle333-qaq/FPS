@@ -108,8 +108,6 @@ enum class EWeaponStatus : uint8
 	Reloading,
 	Cycling,
 	UnEquipped,
-	// 开枪后正在拉栓/泵动。和 Reloading 一样：不能开火、换弹、切枪
-	BoltCycling,
 
 };
 

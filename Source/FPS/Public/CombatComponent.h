@@ -229,25 +229,11 @@ private:
 	// 按当前弹匣和“是否第一次换弹”决定这次换弹的种类
 	EReloadType ChooseReloadType() const;
 
-	// ---------- 拉栓 / 泵动 ----------
-	// 当前武器在某个视角下的拉栓蒙太奇（没填返回 nullptr）
-	UAnimMontage* GetBoltMontage(bool bFirstPerson) const;
-	// 本地开枪后调用：要拉栓就把武器状态改成 BoltCycling
-	void BeginBoltCycleAfterShot();
-	// 射速计时器结束后真正播拉栓（等开火动画播完，避免互相打断）
-	void PlayBoltMontage1P();
-	void OnBoltMontageEnded(UAnimMontage* Montage, bool bInterrupted);
-	// 其他玩家看到的第三人称拉栓，纯表现
-	void PlayBoltMontage3P();
-
 	// ---------- 检视（第 9 步） ----------
 	// 正在播的检视蒙太奇（手臂 / 枪身），打断时停掉
 	TWeakObjectPtr<UAnimMontage> ActiveInspectMontage;
 	TWeakObjectPtr<UAnimMontage> ActiveInspectWeaponMontage;
 	TWeakObjectPtr<AWeapon> InspectWeapon;
-	FTimerHandle BoltTimer3P;
-	// 服务器：拉栓结束前拒绝下一发和换弹
-	float ServerBoltEndTime = 0.f;
 	void OnReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void OnObservedReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 

@@ -1614,7 +1614,7 @@ void AShooterCharacter::HealPlayer(float InHealAmout)
 	if (IsValid(Combat) && IsValid(Combat->CurrentWeapon))
 	{
 		const EWeaponStatus Status = Combat->CurrentWeapon->WeaponStatus;
-		if (Status == EWeaponStatus::Reloading || Status == EWeaponStatus::Cycling || Status == EWeaponStatus::BoltCycling)
+		if (Status == EWeaponStatus::Reloading || Status == EWeaponStatus::Cycling)
 		{
 			return;
 		}

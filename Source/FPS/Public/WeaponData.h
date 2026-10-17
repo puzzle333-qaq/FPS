@@ -103,10 +103,6 @@ struct FMontageData
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reload|GripHold")
 	TObjectPtr<UAnimMontage> TacticalReloadMontage_Grab = nullptr;
 
-	// 拉栓/泵动。填了它，这把枪每打一发都要播完它才能开下一枪（狙击、泵动霰弹用）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bolt")
-	TObjectPtr<UAnimMontage>BoltMontage = nullptr;
-
 	// 第 9 步：检视武器（只在自己的第一人称播放，不同步）。
 	// 填在 FirstPersonMontages（手臂）里；想让枪身也动，在 WeaponMontages 里同样填一个
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspect")
