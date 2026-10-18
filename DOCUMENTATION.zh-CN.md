@@ -38,6 +38,7 @@
 24. [武器手感与开镜修订（第 1–8 步）](#24-武器手感与开镜修订第-18-步)
 25. [战斗反馈、探头、整备界面 WBP 与切枪/换弹规则（第 8 步之后）](#25-战斗反馈探头整备界面-wbp-与切枪换弹规则第-8-步之后)
 26. [趴下/滑行、蹲伏模式、握把持姿与弹匣配件](#26-趴下滑行蹲伏模式握把持姿与弹匣配件)
+27. [菜单、局外改枪、房间、暂停、团队竞技与死亡视角（2026-10 修订）](#27-菜单局外改枪房间暂停团队竞技与死亡视角2026-10-修订)
 
 > **最新修订（第 14 步之后）：** 新增顶层章节 `26`，说明**趴下 / 趴行**、**滑铲**、**Ctrl 按住 + C 切换的蹲伏**输入改造、**GripHoldStyle（Cradle / Grab）握把持姿**系统、**骨骼网格弹匣配件**（`SkeletalMesh`、`MagReloadAnim`、`bHideSpareMagazineBone`）、**近战扫掠**（`WeaponMeleeHit`）、**AK 武器 Tag 与 3P 挂点回退**、**扩散准星**以及**腰射散布锥角**（`HipFireSpread` × `HipFireSpreadMultiplier`，在 `WeaponTrace` 里掷骰）。与 §4.8、§4.9、§6.3、§6.7、§7.4、§7.5、§7.6、§8.2、§12、§14 或 §23.3 冲突时以 §26 为准。
 >
@@ -2152,3 +2153,56 @@ AK 弹匣是一个**骨骼**网格，它的骨骼（弹匣本体，以及备用�
 | 近战命中 | 客户端扫掠刀身并发 `FHitResult` | `Server_FireWeapon` 与子弹完全一样地结算伤害/部位 | 与枪械相同的多播特效路径 |
 | 准星扩散 | 本地视觉抖动 | — | 纯本地手感功能 |
 | 腰射锥角 | 在负责射线的客户端上掷骰（`FMath::VRandCone`），即由该客户端决定方向 | 服务器复用客户端发来的 `FHitResult`；服务端没有锥角逻辑 | 不是复制状态 —— 锥角和准星都来自 `GetHipFireSpread()` |
+
+---
+
+## 27. 菜单、局外改枪、房间、暂停、团队竞技与死亡视角（2026-10 修订）
+
+**武器变动**
+- 移除了 AWP / M700 狙击枪（`BP_M700`、`ABP_M700` 等不再使用；本文旧章节里提到它们的地方仅作历史参考）。
+- 新增 RAR 步枪（`BP_FPS_RAR`、`DA_RAR_*`）：换弹弹药由动画通知控制时机；枪口 Socket 依次回退 `SOCKET_Muzzle` → `SOCKET_Emitter` → `Muzzle` → `MuzzleFlash`；整备预览角度 `PreviewRotationOffset` 按枪单独配置。
+- 修复单机（Standalone / 靶场）下每枪扣 2 发子弹：开火/换弹的服务器扣弹改为对**任何本地控制的 Pawn** 跳过（`bLocallyPredicted = IsLocallyControlled()`），不再只判断 Listen Server 房主。
+
+**局外改枪（Loadout 预设）**
+- 改枪从局内移到主菜单：`UGunsmithComponent` + `UGunsmithScreen`（WBP_Gunsmith）编辑 `FLoadoutPreset`（`Name` + `TArray<FWeaponPreset>`，每把枪 = `WeaponClass` + `Attachments`）。
+- 预设由 `UShooterGameInstance` 保存/读取（`SaveLoadout` / `LoadLoadout`，SaveGame 类 `UShooterLoadoutSave`，槽位 `SaveSlotName = "Loadout"`）。
+- 进局后控制器在 `BeginPlay` 调 `Server_SubmitLoadout` 把预设发给服务器，`UCombatComponent::SpawnInventory` 生成背包时套用预设（`RebuildInventory()` 可重建）。
+- **局内 Tab 改枪已注释掉**（`IA_Loadout_Runtime` 不再注册）；B 键配件菜单仍保留。下文 §4.2 / §10 / §22 中关于 Tab 整备界面的描述为旧行为。
+
+**主菜单、模式表、自建房间与靶场**
+- `UShooterGameInstance`（蓝图 `BP_ShooterGameInstance`，已在 DefaultEngine.ini 设为 GameInstanceClass）：
+  - `Modes`：`TMap<EShooterGameMode, FShooterModeInfo>`，每行 `DisplayName`、`GameModeClass`、`Map`、`bImplemented`、`MaxPlayers`。
+  - `HostRoom(Mode)`：以 `?listen?game=<GameModeClass>` 打开模式地图（自建房间，房主即服务器）。
+  - `JoinByIP(Address)`：加入房间（本机测试填 `127.0.0.1`）。
+  - `OpenRange()`：单机打开靶场（`RangeMap` + `RangeGameMode`，不带 listen）。
+  - `GoToMainMenu()`：回 `MainMenuMap`。
+- 主菜单关卡用 `AMainMenuGameMode` + `AMainMenuPlayerController`（UI 输入模式、显示鼠标），界面 `WBP_MainMenu`，房间界面 `WBP_Lobby`（模式按钮必须在蓝图里调用 `HostRoom`）。
+- 进入局内后控制器 `BeginPlay` 恢复 **GameOnly 输入模式并隐藏鼠标**（修复从菜单进图后鼠标/输入不对的问题）。
+
+**暂停菜单**
+- `Esc` / `P` 开关（`EnsurePauseInput` 运行时创建输入），控制器 `PauseMenuWidgetClass` 指定 `WBP_PauseMenu`（父类 `UPauseMenuScreen`）。
+- 打开时切 UIOnly 并显示鼠标；联机下不暂停世界。可"继续"或"返回大厅"（`GoToMainMenu`）。
+
+**团队竞技（TDM）**
+- `AShooterGameModeBase` 现为所有局内模式的父类：`CanDamage`、`OnPlayerKilled`（记分 + 击杀播报）、`RespawnPlayer`（`RespawnDelay` 默认 5 秒后 `RestartPlayer`）；默认 PlayerState / GameState 为 `AShooterPlayerState` / `AShooterGameState`。
+- `ATDMGameMode`（蓝图 `BP_TDMGameMode`，地图 `Lvl_TeamDeathMatch`）：按人数自动分两队；按 `Player Start Tag` = `TeamA` / `TeamB` 出生（无标签时回退任意出生点）；默认关友伤；击杀 +1 分；`ScoreToWin` 50 / `MatchDuration` 600 秒 / `WarmupTime` 3 秒；结束后 `PostMatchDelay` 8 秒全员回主菜单（房主最后）。
+- `AShooterPlayerState`：`TeamId`（0/1，255 = 无队）、`Kills`、`Deaths`、复活倒计时；`AShooterGameState`：比赛状态、`TeamScores`、剩余时间、`WinningTeam`、`Multicast_KillFeed`，均有委托供 HUD 绑定。
+- HUD 注意：`WB_Health` 等控件要在控制器的 `OnPossessedPawnChanged` 里重新绑定新 Pawn，否则客户端/复活后血条不刷新。
+
+**死亡视角**
+- 本地玩家死亡时：隐藏 Mesh1P 与所有武器 1P 网格，3P 身体对自己可见；相机脱离角色，在 `DeathCamMoveTime`（0.65 秒）内平滑落到地面上方 `DeathCamGroundHeight`（18 cm），转为仰望天空（俯仰 ≈ 90°、`DeathCamRoll` 8°）后固定，不跟布娃娃、不跟控制器旋转。
+- 随后眨眼 `DeathBlinkCount` 次（每次 `DeathBlinkTime` 0.35 秒），`DeathFadeDelay` 后用 `PlayerCameraManager->StartCameraFade` 在 `DeathFadeDuration` 内淡到全黑；蓝图事件 `OnDeathView()` 可接眼皮 UMG / 音效。
+- 复活时控制器在 `OnPossess` / `AcknowledgePossession` 清除淡出。死亡期间探头逻辑不再改写相机位置（否则相机会被拉到世界原点）。
+
+**测试方法**
+- 单人：PIE 的 Net Mode 选 **Standalone**，从 MainMenu 关卡开始。
+- 联机（完整流程）：Play → Standalone Game 开两个窗口；窗口 1 选模式 → 房间 → 开始（`HostRoom`）；窗口 2 → 房间 → IP 填 `127.0.0.1` → 加入（`JoinByIP`）。
+- 快速测 TDM：打开 TDM 地图，World Settings 的 GameMode Override 临时设 `BP_TDMGameMode`，Number of Players = 2，Net Mode = Play As Listen Server；可把 `ScoreToWin` 临时改成 3 测结算。
+
+**蓝图 / UMG 配置要点**
+- `BP_ShooterGameInstance` → `Modes`：TDM 行填 `GameModeClass = BP_TDMGameMode`、`Map = Lvl_TeamDeathMatch`、勾 `bImplemented`；同时设置 `RangeMap`、`RangeGameMode`、`MainMenuMap`。
+- 主菜单 GameMode 的 `MainMenuWidgetClass` = `WBP_MainMenu`；`WBP_Lobby` 的模式按钮调用 `HostRoom`，加入按钮调用 `JoinByIP`。
+- `BP_ShooterPlayerController`：`PauseMenuWidgetClass` = `WBP_PauseMenu`。
+- `BP_ShooterGameMode` / `BP_TDMGameMode` 的 Player State / Game State Class 保持默认。
+- TDM HUD：GameState 绑 `OnTeamScoreChanged`、`OnKillFeed`、`OnMatchStateChanged`、`OnMatchEnded`，读 `GetRemainingTime`；PlayerState 绑 `OnTeamChanged`、`OnStatsChanged`，读 `GetRespawnRemaining`。
+- 每把 `DA_RAR_*` 填写 `DisplayName`，否则改枪界面不显示名字。

@@ -397,6 +397,59 @@ Change history in Chinese: `Saved/武器逻辑改动记录.md`; reports: `Saved/
 | Hip-fire spread | `AWeapon::GetHipFireSpread()` = `HipFireSpread` × every equipped attachment's `HipFireSpreadMultiplier`, and **0 while aiming**. `WeaponTrace` randomises the direction inside that cone with `FMath::VRandCone`, and `UShooterReticle` projects the same angle to pixels (`HalfWidth / tan(FOV/2) × tan(spread)`), so the crosshair matches the cone. Rolled on the tracing client; movement / jump penalties are not implemented | Weapon → `HipFireSpread` (3, 0–30°); attachment → `HipFireSpreadMultiplier` (1) |
 | AK weapon | Its own tag `Weapon.type.ak` (the only tag also registered in `DefaultGameplayTags.ini`), a dedicated `DA_WeaponData` entry set, and a hard-coded 3P attach path: `RifleSocketak` (fallback `RifleSocket`), while the 1P mesh uses `GripPoints` (`weapon_r`). `ResolveAttachPoint` rejects orphan bones and logs every fallback with a `[WeaponAttach]` line | Weapon blueprint `WeaponType`; `DA_WeaponData` → `GripPoints` |
 
+### 10.4 Menus, out-of-match loadouts, rooms, pause, Team Deathmatch and death camera (2026-10 revision)
+
+**Weapon changes**
+- The AWP / M700 sniper was removed (`BP_M700`, `ABP_M700` etc. are no longer used; older sections that mention them are historical).
+- New RAR rifle (`BP_FPS_RAR`, `DA_RAR_*`): reload ammo transfer is timed by the anim notify; the muzzle socket falls back `SOCKET_Muzzle` → `SOCKET_Emitter` → `Muzzle` → `MuzzleFlash`; the loadout preview angle `PreviewRotationOffset` is per weapon.
+- Fixed double ammo consumption in Standalone / range: server-side ammo deduction for fire/reload is skipped for **any locally controlled pawn** (`bLocallyPredicted = IsLocallyControlled()`), not just the listen-server host.
+
+**Out-of-match loadout presets**
+- Weapon customisation moved to the main menu: `UGunsmithComponent` + `UGunsmithScreen` (WBP_Gunsmith) edit an `FLoadoutPreset` (`Name` + `TArray<FWeaponPreset>`; each = `WeaponClass` + `Attachments`).
+- Presets are saved/loaded by `UShooterGameInstance` (`SaveLoadout` / `LoadLoadout`, SaveGame class `UShooterLoadoutSave`, slot `SaveSlotName = "Loadout"`).
+- In a match the controller calls `Server_SubmitLoadout` in `BeginPlay`; `UCombatComponent::SpawnInventory` applies the preset (`RebuildInventory()` rebuilds it).
+- **In-match Tab loadout is commented out** (`IA_Loadout_Runtime` is no longer registered); the B attachment menu remains. Tab-screen descriptions in §4.2 / §10 / §22 describe the old behaviour.
+
+**Main menu, mode table, self-hosted rooms and range**
+- `UShooterGameInstance` (`BP_ShooterGameInstance`, set as GameInstanceClass in DefaultEngine.ini):
+  - `Modes`: `TMap<EShooterGameMode, FShooterModeInfo>` with `DisplayName`, `GameModeClass`, `Map`, `bImplemented`, `MaxPlayers`.
+  - `HostRoom(Mode)`: opens the mode map with `?listen?game=<GameModeClass>` (host = server).
+  - `JoinByIP(Address)`: joins a room (`127.0.0.1` for local testing).
+  - `OpenRange()`: opens the shooting range offline (`RangeMap` + `RangeGameMode`, no listen).
+  - `GoToMainMenu()`: travels to `MainMenuMap`.
+- The menu level uses `AMainMenuGameMode` + `AMainMenuPlayerController` (UI input, cursor shown); widgets `WBP_MainMenu` and `WBP_Lobby` (mode buttons must call `HostRoom` in Blueprint).
+- Entering a match, the controller's `BeginPlay` restores **GameOnly input and hides the cursor** (fixes input/cursor state carried over from the menu).
+
+**Pause menu**
+- `Esc` / `P` toggle it (input created at runtime by `EnsurePauseInput`); the controller's `PauseMenuWidgetClass` points at `WBP_PauseMenu` (parent `UPauseMenuScreen`).
+- While open: UIOnly input with cursor; the world is not paused online. Resume, or Return to lobby (`GoToMainMenu`).
+
+**Team Deathmatch (TDM)**
+- `AShooterGameModeBase` is now the base of all match modes: `CanDamage`, `OnPlayerKilled` (scoring + kill feed), `RespawnPlayer` (`RestartPlayer` after `RespawnDelay`, default 5 s); default PlayerState / GameState are `AShooterPlayerState` / `AShooterGameState`.
+- `ATDMGameMode` (`BP_TDMGameMode`, map `Lvl_TeamDeathMatch`): auto-balanced two teams; spawns at `Player Start Tag` = `TeamA` / `TeamB` (falls back to any start); friendly fire off by default; +1 team score per kill; `ScoreToWin` 50 / `MatchDuration` 600 s / `WarmupTime` 3 s; after `PostMatchDelay` 8 s everyone returns to the main menu (host last).
+- `AShooterPlayerState`: `TeamId` (0/1, 255 = none), `Kills`, `Deaths`, respawn countdown. `AShooterGameState`: match state, `TeamScores`, remaining time, `WinningTeam`, `Multicast_KillFeed`; all expose delegates for the HUD.
+- HUD note: widgets such as `WB_Health` must rebind to the new pawn in the controller's `OnPossessedPawnChanged`, otherwise the bar does not update on clients or after respawn.
+
+**Death camera**
+- When the local player dies: Mesh1P and all weapon 1P meshes are hidden and the 3P body becomes visible to the owner; the camera detaches and eases over `DeathCamMoveTime` (0.65 s) to `DeathCamGroundHeight` (18 cm) above the floor, turning to look up at the sky (pitch ≈ 90°, `DeathCamRoll` 8°), then stays fixed — no ragdoll follow, no controller rotation.
+- It then blinks `DeathBlinkCount` times (`DeathBlinkTime` 0.35 s each) and after `DeathFadeDelay` fades to black over `DeathFadeDuration` via `PlayerCameraManager->StartCameraFade`. Blueprint event `OnDeathView()` can drive an eyelid widget / sound.
+- On respawn the controller clears the fade in `OnPossess` / `AcknowledgePossession`. The lean update no longer writes the camera while it is detached (that used to snap it to the world origin).
+
+**How to test**
+- Solo: PIE Net Mode **Standalone**, starting from the MainMenu level.
+- Online (full flow): Play → Standalone Game twice; window 1 picks a mode → Room → Start (`HostRoom`); window 2 → Room → IP `127.0.0.1` → Join (`JoinByIP`).
+- Quick TDM: open the TDM map, temporarily set World Settings → GameMode Override to `BP_TDMGameMode`, Number of Players = 2, Net Mode = Play As Listen Server; set `ScoreToWin` to 3 to test match end.
+
+**Blueprint / UMG setup pointers**
+- `BP_ShooterGameInstance` → `Modes`: TDM row `GameModeClass = BP_TDMGameMode`, `Map = Lvl_TeamDeathMatch`, tick `bImplemented`; also set `RangeMap`, `RangeGameMode`, `MainMenuMap`.
+- Main-menu GameMode `MainMenuWidgetClass` = `WBP_MainMenu`; `WBP_Lobby` mode buttons call `HostRoom`, the join button calls `JoinByIP`.
+- `BP_ShooterPlayerController`: `PauseMenuWidgetClass` = `WBP_PauseMenu`.
+- Keep the default Player State / Game State classes on `BP_ShooterGameMode` / `BP_TDMGameMode`.
+- TDM HUD: bind GameState `OnTeamScoreChanged`, `OnKillFeed`, `OnMatchStateChanged`, `OnMatchEnded`, read `GetRemainingTime`; bind PlayerState `OnTeamChanged`, `OnStatsChanged`, read `GetRespawnRemaining`.
+- Fill `DisplayName` on every `DA_RAR_*`, otherwise the gunsmith shows no name.
+
+---
+
 ## 11. Further Reading
 
 - Function-by-function / component-by-component reference: [DOCUMENTATION.md](<DOCUMENTATION.md>)
