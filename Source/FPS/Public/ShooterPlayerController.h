@@ -28,6 +28,7 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void StopSprinting();
 
+	bool bPawnAlive;
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;

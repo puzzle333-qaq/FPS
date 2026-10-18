@@ -17,6 +17,7 @@
 AShooterPlayerController::AShooterPlayerController()
 {
 	bReplicates = true;
+	bPawnAlive = true;
 }
 
 void AShooterPlayerController::StopSprinting()
@@ -120,6 +121,7 @@ void AShooterPlayerController::EnsureLoadoutInput()
 
 void AShooterPlayerController::Input_ToggleLoadout()
 {
+	if (!bPawnAlive)return;
 	if (!IsLocalController()) return;
 
 	if (!IsValid(LoadoutScreen))
@@ -163,6 +165,7 @@ void AShooterPlayerController::Input_ToggleLoadout()
 
 void AShooterPlayerController::Input_ToggleFlashlight()
 {
+	if (!bPawnAlive)return;
 	// 控制器只管“按了键”，真正开关灯交给 CombatComponent -> 服务器 -> 当前武器
 	if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
 	{
@@ -172,6 +175,7 @@ void AShooterPlayerController::Input_ToggleFlashlight()
 
 void AShooterPlayerController::Input_ToggleAttachmentMenu()
 {
+	if (!bPawnAlive)return;
 	// UI 只存在于本地玩家。整备界面开着时 B 不再叠一层菜单。
 	if (!IsLocalController() || !AttachmentMenuClass) return;
 	if (IsValid(LoadoutScreen) && LoadoutScreen->IsInViewport()) return;
@@ -212,6 +216,7 @@ void AShooterPlayerController::Input_ToggleAttachmentMenu()
 
 void AShooterPlayerController::EnsureCrouchInput()
 {
+	if (!bPawnAlive)return;
 	const bool bNeedToggle = !CrouchToggleAction;
 	const bool bNeedHold = !CrouchHoldAction;
 	if (bNeedToggle || bNeedHold)
@@ -243,6 +248,7 @@ void AShooterPlayerController::EnsureCrouchInput()
 
 void AShooterPlayerController::Input_CrouchHold_Started()
 {
+	if (!bPawnAlive)return;
 	bCrouchHeld = true;
 	ACharacter* MyChar = GetCharacter();
 	if (!IsValid(MyChar)) return;
@@ -293,6 +299,7 @@ void AShooterPlayerController::Input_CrouchHold_Completed()
 
 void AShooterPlayerController::Input_Crouch()
 {
+	if (!bPawnAlive)return;
 	if (!IsValid(GetCharacter())) return;
 	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(Shooter))
 	{
@@ -322,6 +329,7 @@ void AShooterPlayerController::Input_Crouch()
 
 void AShooterPlayerController::Input_Jump()
 {
+	if (!bPawnAlive)return;
 	if (!IsValid(GetCharacter())) return;
 	UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();
 	if (!IsValid(CMC)) return;
@@ -352,6 +360,7 @@ void AShooterPlayerController::Input_Jump()
 
 void AShooterPlayerController::Input_Sprint()
 {
+	if (!bPawnAlive)return;
 	bIsSprinting = !bIsSprinting;
 	if (bIsSprinting) bIsWalking = false;   // 冲刺会打断静步
 	// 第 9 步：开始冲刺时打断检视
@@ -367,6 +376,7 @@ void AShooterPlayerController::Input_Sprint()
 
 void AShooterPlayerController::Input_Walk()
 {
+	if (!bPawnAlive)return;
 	bIsWalking = !bIsWalking;
 	if (bIsWalking) bIsSprinting = false;   // 静步会打断冲刺
 	UpdateMovementSpeed();
@@ -377,6 +387,7 @@ void AShooterPlayerController::Input_Walk()
 
 void AShooterPlayerController::Input_Move(const FInputActionValue& InputActionValue)
 {
+	if (!bPawnAlive)return;
 	const FVector2D InputAxisVector = InputActionValue.Get<FVector2D>();
 
 	const FRotator Rotation = GetControlRotation();
@@ -400,6 +411,7 @@ void AShooterPlayerController::Input_Move(const FInputActionValue& InputActionVa
 
 void AShooterPlayerController::Input_Look(const FInputActionValue& InputActionValue)
 {
+	if (!bPawnAlive)return;
 	const FVector2D InputAxisVector = InputActionValue.Get<FVector2D>();
 
 	AddYawInput(InputAxisVector.X);
@@ -408,6 +420,7 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& InputActionVa
 
 void AShooterPlayerController::UpdateMovementSpeed()
 {
+	if (!bPawnAlive)return;
 	UStatsComponent* Stats = GetStats();
 	if (bIsSprinting && Stats && Stats->Stamina <= 0.f)
 	{
@@ -425,6 +438,7 @@ void AShooterPlayerController::UpdateMovementSpeed()
 
 void AShooterPlayerController::ApplyMovementSpeed()
 {
+	if (!bPawnAlive)return;
 	ACharacter* MyCharacter = GetCharacter();
 	if (!IsValid(MyCharacter)) return;
 	UCharacterMovementComponent* CMC = MyCharacter->GetCharacterMovement();

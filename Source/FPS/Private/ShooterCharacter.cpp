@@ -115,7 +115,7 @@ void AShooterCharacter::BeginPlay()
 
 	Super::BeginPlay();
 
-	Health->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
+	Stats->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
 
 	// A Blueprint collision override is applied after the constructor. Set the weapon channel again here.
 	ConfigureWeaponHitCollision();
@@ -149,6 +149,12 @@ void AShooterCharacter::BeginPlay()
 	{
 		// 不管是按右键还是切枪自动关镜，都走这一个入口
 		Combat->OnAimStateChanged.AddUObject(this, &ThisClass::HandleAimStateChanged);
+	}
+
+	AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController());
+	if (IsValid(PC))
+	{
+		PC->bPawnAlive = true;
 	}
 }
 
@@ -1789,19 +1795,18 @@ void AShooterCharacter::OnDeathStarted()
 	{
 		DeathEffect();
 		
-		if (APlayerController* PC = Cast<APlayerController>(GetController()); IsValid(PC))
+		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()); IsValid(PC))
 		{
 			DisableInput(PC);
+			if (PC->IsLocalController())
+			{
+				PC->bPawnAlive = false;
+			}
 		}
 	}
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	GetCapsuleComponent()->SetCollisionResponseToChannel(FPSTraceChannels::ECC_Weapon, ECR_Ignore);
 	GetMesh()->SetCollisionResponseToChannel(FPSTraceChannels::ECC_Weapon, ECR_Ignore);
-}
-
-void AShooterCharacter::DeathEffect()
-{
-
 }
 
 void AShooterCharacter::HandleAimStateChanged(bool bIsAiming)
