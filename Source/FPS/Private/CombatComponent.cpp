@@ -543,6 +543,24 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 	const float PlayedLength = AnimInstance->Montage_Play(EquipMontage);
 	if (PlayedLength <= 0.f) return;
 
+	// 第一人称拔枪时，枪身蒙太奇跟手臂一起播。手臂已经有 Equip 时，WeaponMontages 不会当替补，所以这里单独播。
+	if (bFirstPerson)
+	{
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(Weapon->WeaponType))
+		{
+			if (UAnimMontage* WeaponEquip = WeaponMontageData->ResolveEquipMontage())
+			{
+				if (USkeletalMeshComponent* WeaponMesh = Weapon->GetMesh1P())
+				{
+					if (UAnimInstance* WeaponAnim = WeaponMesh->GetAnimInstance())
+					{
+						WeaponAnim->Montage_Play(WeaponEquip);
+					}
+				}
+			}
+		}
+	}
+
 	if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(EquipMontage))
 	{
 		MontageInstance->bEnableAutoBlendOut = true;
@@ -729,6 +747,23 @@ void UCombatComponent::Local_FireWeapon()
 		}
 	}
 
+	// 枪身开火（拉栓/抛壳）只播在自己的 Mesh1P。蒙太奇槽必须和枪的 AnimBP 一致。
+	if (CurrentWeapon->WeaponKind != EWeaponKind::Melee)
+	{
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+		{
+			if (UAnimMontage* WeaponFire = WeaponMontageData->ResolveFireMontage())
+			{
+				if (USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P())
+				{
+					if (UAnimInstance* WeaponAnim = WeaponMesh->GetAnimInstance())
+					{
+						WeaponAnim->Montage_Play(WeaponFire);
+					}
+				}
+			}
+		}
+	}
 
 	// 近战：第三人称全身攻击（蒙太奇需挂 FullBody/DefaultSlot，勿只用 UpperBody）
 	if (CurrentWeapon->WeaponKind == EWeaponKind::Melee)
@@ -1041,6 +1076,15 @@ void UCombatComponent::OnReloadMontageEnded(UAnimMontage* Montage, bool bInterru
 	}
 	if (!IsValid(Montage) || !IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return;
+
+	// 手臂上的 Reload 通知经常打不中（时间在片段外面，或枪上的通知类不在工程里）。
+	// 正常播完仍结算一次。通知已经加过子弹时状态已是 Idle，进不了这里，不会加两次。
+	// 被打断不给子弹。
+	if (!bInterrupted && GetOwnerRole() == ROLE_Authority)
+	{
+		Notify_ReloadWeapon();
+		return;
+	}
 
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 

@@ -27,6 +27,39 @@
 
 namespace
 {
+	const FName ReserveMagazineSocket(TEXT("SOCKET_Magazine_Reserve"));
+
+	// 换弹会同时动两根弹夹骨：枪里的 SOCKET_Magazine，和送进去的 SOCKET_Magazine_Reserve。
+	// 备用那只平时藏着。SetMeshVisibility 会把隐藏标记传播到子组件，这里再盖回去。
+	void HideReserveMagazines(const AActor* Weapon)
+	{
+		if (!IsValid(Weapon)) return;
+
+		TArray<UStaticMeshComponent*> Meshes;
+		Weapon->GetComponents<UStaticMeshComponent>(Meshes);
+		for (UStaticMeshComponent* Mesh : Meshes)
+		{
+			if (!IsValid(Mesh) || Mesh->GetAttachSocketName() != ReserveMagazineSocket) continue;
+			Mesh->SetHiddenInGame(true);
+			Mesh->SetVisibility(false);
+		}
+	}
+
+	void DestroyReserveMagazines(AActor* Weapon)
+	{
+		if (!IsValid(Weapon)) return;
+
+		TArray<UStaticMeshComponent*> Meshes;
+		Weapon->GetComponents<UStaticMeshComponent>(Meshes);
+		for (UStaticMeshComponent* Mesh : Meshes)
+		{
+			if (IsValid(Mesh) && Mesh->GetAttachSocketName() == ReserveMagazineSocket)
+			{
+				Mesh->DestroyComponent();
+			}
+		}
+	}
+
 	bool ComponentHasSocket(const USceneComponent* Component, FName SocketName)
 	{
 		return IsValid(Component) && !SocketName.IsNone() && Component->DoesSocketExist(SocketName);
@@ -1351,6 +1384,24 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 	Comp->SetupAttachment(Mount, SocketName);
 	Comp->SetRelativeTransform(Data->MeshOffset);
 	Comp->RegisterComponent();
+
+	// 第一人称换弹要两只弹夹。装回去的那只挂在备用骨上，动画把它送进弹仓。
+	if (bFirstPerson
+		&& Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine
+		&& Parent->DoesSocketExist(ReserveMagazineSocket))
+	{
+		UStaticMeshComponent* Reserve = NewObject<UStaticMeshComponent>(this);
+		Reserve->SetMobility(EComponentMobility::Movable);
+		Reserve->SetStaticMesh(Data->Mesh);
+		Reserve->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Reserve->bReceivesDecals = false;
+		Reserve->CastShadow = false;
+		Reserve->SetupAttachment(Parent, ReserveMagazineSocket);
+		Reserve->SetRelativeTransform(Data->MeshOffset);
+		Reserve->SetHiddenInGame(true);
+		Reserve->SetVisibility(false);
+		Reserve->RegisterComponent();
+	}
 	return Comp;
 }
 
@@ -1417,6 +1468,40 @@ USkeletalMeshComponent* AWeapon::GetMagazineSkelMesh1P() const
 
 void AWeapon::PlayMagazineReload(EReloadType ReloadType)
 {
+	// 备用弹夹跟枪身换弹一起出现。结束时 SetMeshVisibility 会再把它藏起来。
+	bool bHasReserve = false;
+	TArray<UStaticMeshComponent*> Meshes;
+	GetComponents<UStaticMeshComponent>(Meshes);
+	for (UStaticMeshComponent* Mesh : Meshes)
+	{
+		if (!IsValid(Mesh) || Mesh->GetAttachSocketName() != ReserveMagazineSocket) continue;
+		Mesh->SetHiddenInGame(false);
+		Mesh->SetVisibility(true);
+		bHasReserve = true;
+	}
+
+	// 枪已经生成过时，补一只挂到备用骨上，这次换弹就能看见装回去的弹夹。
+	if (!bHasReserve && IsValid(Mesh1P) && Mesh1P->DoesSocketExist(ReserveMagazineSocket))
+	{
+		if (const FAttachmentVisual* MagVisual = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine))
+		{
+			if (IsValid(MagVisual->Data) && IsValid(MagVisual->Data->Mesh))
+			{
+				UStaticMeshComponent* Reserve = NewObject<UStaticMeshComponent>(this);
+				Reserve->SetMobility(EComponentMobility::Movable);
+				Reserve->SetStaticMesh(MagVisual->Data->Mesh);
+				Reserve->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Reserve->bReceivesDecals = false;
+				Reserve->CastShadow = false;
+				Reserve->SetupAttachment(Mesh1P, ReserveMagazineSocket);
+				Reserve->SetRelativeTransform(MagVisual->Data->MeshOffset);
+				Reserve->SetHiddenInGame(false);
+				Reserve->SetVisibility(true);
+				Reserve->RegisterComponent();
+			}
+		}
+	}
+
 	USkeletalMeshComponent* MagMesh = GetMagazineSkelMesh1P();
 	if (!IsValid(MagMesh)) return;
 
@@ -1458,6 +1543,9 @@ void AWeapon::RebuildAttachmentVisuals()
 	{
 		LaserBeam->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
 	}
+	// 备用弹夹不在 AttachmentVisuals 里，先拆掉，避免每次重装多一只。
+	DestroyReserveMagazines(this);
+
 	// 1. 清掉旧模型
 	for (FAttachmentVisual& Visual : AttachmentVisuals)
 	{
@@ -1636,5 +1724,8 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
 		if (IsValid(Visual.Mesh1P)) { Visual.Mesh1P->SetHiddenInGame(!bLocal, true); }
 		if (IsValid(Visual.Mesh3P)) { Visual.Mesh3P->SetHiddenInGame(bLocal, true); }
 	}
+
+	// 父网格传播会把备用弹夹重新打开。平时只留枪里那一只。
+	HideReserveMagazines(this);
 }
 
