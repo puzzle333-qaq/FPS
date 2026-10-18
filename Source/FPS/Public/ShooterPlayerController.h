@@ -60,9 +60,23 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void Server_SubmitLoadout(const FLoadoutPreset& Loadout);
+
+	// ---------- 比赛 ----------
+	// 比赛结束：本地停掉输入（结算界面由 HUD 监听 GameState.OnMatchEnded 显示）
+	UFUNCTION(Client, Reliable)
+	void Client_OnMatchEnded(uint8 WinningTeam);
+
+	// 服务器让这个客户端回主菜单
+	UFUNCTION(Client, Reliable)
+	void Client_GoToMainMenu();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Match")
+	bool IsMatchOver() const { return bMatchOver; }
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
+	virtual void OnPossess(APawn* InPawn) override;
+	virtual void AcknowledgePossession(APawn* P) override;
 
 private:
 
@@ -135,6 +149,8 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPauseMenuScreen> PauseMenu;
+
+	bool bMatchOver = false;
 
 	FLoadoutPreset SubmittedLoadout;
 	bool bHasSubmittedLoadout = false;

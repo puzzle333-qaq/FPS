@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
@@ -28,6 +28,7 @@
 #include "InputMappingContext.h"
 #include "InputCoreTypes.h"
 #include "Engine/LocalPlayer.h"
+#include "ShooterGameModeBase.h"
 
 namespace
 {
@@ -775,8 +776,25 @@ void AShooterCharacter::Notify_ReloadWeapon_Implementation()
 bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* DamageInstigator)
 {
 	if (!IsValid(Stats))return false;
+	if (Stats->DeathState != EDeathState::NotDead) return false;
+
+	// 服务器：问 GameMode 这次伤害算不算（队友伤害 / 比赛已结束）
+	AController* InstigatorController = nullptr;
+	if (const APawn* InstigatorPawn = Cast<APawn>(DamageInstigator))
+	{
+		InstigatorController = InstigatorPawn->GetController();
+	}
+	AShooterGameModeBase* ShooterGM = GetWorld() ? GetWorld()->GetAuthGameMode<AShooterGameModeBase>() : nullptr;
+	if (ShooterGM && !ShooterGM->CanDamage(InstigatorController, GetController()))
+	{
+		return false;
+	}
 
 	Stats->ChangeHealthByAmout(-DamageAmout, DamageInstigator);
+	if (ShooterGM && Stats->DeathState != EDeathState::NotDead)
+	{
+		ShooterGM->OnPlayerKilled(InstigatorController, GetController());
+	}
 	//calculate whether or not damage lethal
 
 	const bool bSelfDamage = DamageInstigator == this;

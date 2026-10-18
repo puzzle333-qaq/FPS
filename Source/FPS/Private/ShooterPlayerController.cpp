@@ -668,3 +668,42 @@ void AShooterPlayerController::ClosePauseMenu()
 	bShowMouseCursor = false;
 	SetInputMode(FInputModeGameOnly());
 }
+void AShooterPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+	// 复活后的新角色：房主本地也恢复可操作
+	if (IsLocalController() && !bMatchOver)
+	{
+		bPawnAlive = true;
+	}
+}
+
+void AShooterPlayerController::AcknowledgePossession(APawn* P)
+{
+	Super::AcknowledgePossession(P);
+	// 客户端收到新角色（复活）时恢复可操作
+	if (!bMatchOver)
+	{
+		bPawnAlive = true;
+	}
+}
+
+void AShooterPlayerController::Client_OnMatchEnded_Implementation(uint8 WinningTeam)
+{
+	bMatchOver = true;
+	bPawnAlive = false;
+	ClosePauseMenu();
+	if (APawn* P = GetPawn())
+	{
+		P->DisableInput(this);
+	}
+	StopSprinting();
+}
+
+void AShooterPlayerController::Client_GoToMainMenu_Implementation()
+{
+	if (UShooterGameInstance* GI = Cast<UShooterGameInstance>(GetGameInstance()))
+	{
+		GI->GoToMainMenu();
+	}
+}
