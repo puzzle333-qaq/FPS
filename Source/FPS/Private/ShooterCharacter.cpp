@@ -1396,6 +1396,8 @@ void AShooterCharacter::UpdateLean(float DeltaTime)
 	if (FMath::Abs(LeanAlpha) < KINDA_SMALL_NUMBER && LeanTarget == 0.f) LeanAlpha = 0.f;
 
 	if (!IsLocallyControlled() || !IsValid(FirstPersonCamera) || !bCameraBaseCaptured) return;
+	// 死亡视角时相机已脱离并改为绝对坐标，这里再写相对位置会把相机拉到世界原点
+	if (FirstPersonCamera->GetAttachParent() == nullptr || FirstPersonCamera->IsUsingAbsoluteLocation()) return;
 
 	// 防穿墙：从相机原位往探头位置扫一个球，撞墙就缩短横移
 	float OffsetScale = 1.f;
