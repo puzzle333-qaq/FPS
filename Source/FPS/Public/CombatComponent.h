@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -244,7 +244,11 @@ private:
 	void Client_ReloadWeapon(AWeapon* ReloadedWeapon, int32 NewWeaponAmmo, int32 NewCarryAmmo);
 
 	UFUNCTION(Server, Reliable)
-	void Server_EndReload();
+	void Server_EndReload(bool bCompleted);
+
+	// 本地客户端的 1P 换弹通知帧：让服务器在这一刻加子弹
+	UFUNCTION(Server, Reliable)
+	void Server_ReloadNotify();
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_ReloadWeapon(EReloadType ReloadType);

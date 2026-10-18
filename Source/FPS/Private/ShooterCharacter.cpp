@@ -115,6 +115,8 @@ void AShooterCharacter::BeginPlay()
 
 	Super::BeginPlay();
 
+	Health->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
+
 	// A Blueprint collision override is applied after the constructor. Set the weapon channel again here.
 	ConfigureWeaponHitCollision();
 
@@ -1779,6 +1781,27 @@ void AShooterCharacter::Input_Heal()
 void AShooterCharacter::Input_VersionWeapon()
 {
 	VersionWeapon();   // 第 9 步：检视武器
+}
+
+void AShooterCharacter::OnDeathStarted()
+{
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		DeathEffect();
+		
+		if (APlayerController* PC = Cast<APlayerController>(GetController()); IsValid(PC))
+		{
+			DisableInput(PC);
+		}
+	}
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(FPSTraceChannels::ECC_Weapon, ECR_Ignore);
+	GetMesh()->SetCollisionResponseToChannel(FPSTraceChannels::ECC_Weapon, ECR_Ignore);
+}
+
+void AShooterCharacter::DeathEffect()
+{
+
 }
 
 void AShooterCharacter::HandleAimStateChanged(bool bIsAiming)

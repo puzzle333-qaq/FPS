@@ -379,6 +379,7 @@ protected:
 	UFUNCTION(BlueprintPure, Category = "FPS|Aiming")
 	float GetAimAlpha() const { return AimAlpha; }
 
+
 public:
 	// ---------- 侧瞄（第 10 步） ----------
 	// 当前是否在用侧瞄（只在本地有意义）。HUD 想单独处理时读它；准星本来就在 bAiming 时隐藏
@@ -435,7 +436,11 @@ protected:
 	UFUNCTION(NetMulticast,Reliable)
 	void Multicast_HitReact(EHitReactDirection Direction, int32 MontageIndex);
 
+	UFUNCTION()
+	void OnDeathStarted();
 
+	UFUNCTION(BlueprintImplementableEvent)
+	void DeathEffect();
 private:
 
 	// CombatComponent 开镜状态变化时调用

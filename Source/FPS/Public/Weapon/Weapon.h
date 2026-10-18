@@ -51,8 +51,9 @@ struct FWeaponAttachmentSlot
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment", meta = (Categories = "Attachment.Slot"))
 	FGameplayTag SlotTag;
 
-	// 配件挂在哪个 Socket。先在枪骨骼上找；枪上没有时，再在已经装上的配件上找。
-	// 护木/枪管上的握把插槽就这样用：护木挂枪的 Barrel_sckt，握把再挂护木的 AFGrip_sckt。
+	// 这个槽的默认挂点。配件数据上的 MountSocketName 不为空时，以配件自己的为准。
+	// 先在枪骨骼上找；枪上没有时，再在已经装上的配件上找。
+	// 护木挂枪的 Barrel_sckt，三角握把再挂护木的 AFGrip_sckt，垂直握把挂 FVHGrip_sckt。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
 	FName SocketName;
 
@@ -335,6 +336,10 @@ public:
 	// 枪口挂点。枪口配件优先，其次枪管，最后是枪自己的 Muzzle Socket。
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool GetMuzzleAttachPoint(bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const;
+
+	// 配件实际挂点。MountSocketName 优先，否则用这个槽的 SocketName。
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	FName ResolveAttachmentSocket(const UAttachmentData* Data) const;
 
 	// 当前射击模式。同步给其他玩家（拥有者自己本地先改，跳过拥有者避免被旧值盖回）
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "FPS|FireType")

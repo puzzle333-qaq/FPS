@@ -138,14 +138,7 @@ void ALoadoutPreviewRig::SpawnPreview(AWeapon* Weapon, int32 Index)
 
 		FPreviewPiece Piece;
 		Piece.Data = Data;
-		for (const FWeaponAttachmentSlot& Slot : Weapon->GetAttachmentSlots())
-		{
-			if (Slot.SlotTag == Data->SlotTag)
-			{
-				Piece.SocketName = Slot.SocketName;
-				break;
-			}
-		}
+		Piece.SocketName = Weapon->ResolveAttachmentSocket(Data);
 		Pending.Add(Piece);
 	}
 

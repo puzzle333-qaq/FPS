@@ -21,6 +21,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FStaminaChanged, UStatsComponent*
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FStaminaDepleted);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDeathStarted);
+
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class FPS_API UStatsComponent : public UActorComponent
 {
@@ -90,6 +92,9 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FStaminaChanged OnMaxStaminaChanged;
 
+	UPROPERTY(BlueprintAssignable)
+	FDeathStarted OnDeathStarted;
+
 
 protected:
 	virtual void BeginPlay() override;
@@ -109,7 +114,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_MaxStamina(float OldValue);
-public:	
-
+private:	
+	void StartDeath();
 	
 };

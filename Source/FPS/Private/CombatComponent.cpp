@@ -1,4 +1,4 @@
-#include "CombatComponent.h"
+﻿#include "CombatComponent.h"
 #include "Animation/FirstPersonAnimInstance.h"
 #include "ShooterCharacter.h"
 #include "Net/UnrealNetwork.h"
@@ -940,7 +940,7 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	if (!PlayReloadMontage(true, ReloadType))
 	{
 		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
-		Server_EndReload();
+		Server_EndReload(false);
 	}
 }
 
@@ -1086,14 +1086,22 @@ void UCombatComponent::OnReloadMontageEnded(UAnimMontage* Montage, bool bInterru
 		return;
 	}
 
-	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
-
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
-	if (!IsValid(OwningPawn) || !OwningPawn->IsLocallyControlled()) return;
-	if (GetOwnerRole() != ROLE_Authority)
+	if (IsValid(OwningPawn) && OwningPawn->IsLocallyControlled() && GetOwnerRole() != ROLE_Authority)
 	{
-		Server_EndReload();
+		// 客户端 1P 播完：通知在客户端没权限、3P 也不在服务器播，所以让服务器补子弹，
+		// 本地保持 Reloading，等 Client_ReloadWeapon 回传后切 Idle。被打断则只清状态。
+		if (!bInterrupted)
+		{
+			Server_EndReload(true);
+			return;
+		}
+		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+		Server_EndReload(false);
+		return;
 	}
+
+	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 }
 
 
@@ -1140,10 +1148,21 @@ void UCombatComponent::Server_ReloadWeapon_Implementation(EReloadType ReloadType
 	Multicast_ReloadWeapon(ReloadType);
 }
 
-void UCombatComponent::Server_EndReload_Implementation()
+void UCombatComponent::Server_ReloadNotify_Implementation()
+{
+	Notify_ReloadWeapon();
+}
+
+void UCombatComponent::Server_EndReload_Implementation(bool bCompleted)
 {
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return;
+	// 客户端换弹完整播完、通知没加过子弹：服务器补一次（会切 Idle 并回传客户端）
+	if (bCompleted)
+	{
+		Notify_ReloadWeapon();
+		return;
+	}
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 }
 
@@ -1387,7 +1406,17 @@ void UCombatComponent::Notify_ReloadWeapon()
 	if (!IsValid(CurrentWeapon)) return;
 	// Client RPCs only run when invoked with authority. A 1P notify on a remote client
 	// must not call Client_ReloadWeapon; the server's 3P notify sends the result.
-	if (GetOwnerRole() != ROLE_Authority) return;
+	if (GetOwnerRole() != ROLE_Authority)
+	{
+		// 自己客户端上的 1P 通知：按通知帧让服务器加子弹。其他客户端看到的 3P 通知不发。
+		// 服务器加完会切 Idle，之后的播完兜底 Server_EndReload(true) 进不去，不会加两次。
+		const APawn* OwningPawn = Cast<APawn>(GetOwner());
+		if (IsValid(OwningPawn) && OwningPawn->IsLocallyControlled() && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
+		{
+			Server_ReloadNotify();
+		}
+		return;
+	}
 	// 换弹已被切枪打断：不给子弹
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return;
 

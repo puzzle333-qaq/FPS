@@ -314,14 +314,18 @@ bool AWeapon::TryAttachmentMuzzle(const FGameplayTag& SlotTag, bool bFirstPerson
 	}
 
 	UStaticMeshComponent* Mesh = bFirstPerson ? Visual->Mesh1P.Get() : Visual->Mesh3P.Get();
-	if (!ComponentHasSocket(Mesh, Visual->Data->MuzzleSocketName))
+	// 先用数据里填的名字，再试常见命名（Infima 枪管是 SOCKET_Muzzle，消音器是 SOCKET_Emitter）
+	const FName Candidates[] = { Visual->Data->MuzzleSocketName, TEXT("SOCKET_Muzzle"), TEXT("SOCKET_Emitter"), TEXT("Muzzle"), TEXT("MuzzleFlash") };
+	for (const FName& Candidate : Candidates)
 	{
-		return false;
+		if (!Candidate.IsNone() && ComponentHasSocket(Mesh, Candidate))
+		{
+			OutComponent = Mesh;
+			OutSocketName = Candidate;
+			return true;
+		}
 	}
-
-	OutComponent = Mesh;
-	OutSocketName = Visual->Data->MuzzleSocketName;
-	return true;
+	return false;
 }
 
 bool AWeapon::GetMuzzleAttachPoint(bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const
@@ -344,6 +348,13 @@ bool AWeapon::GetMuzzleAttachPoint(bool bFirstPerson, USceneComponent*& OutCompo
 
 	OutComponent = WeaponMesh;
 	OutSocketName = GetFallbackMuzzleSocketName();
+	if (!ComponentHasSocket(WeaponMesh, OutSocketName))
+	{
+		for (const FName Candidate : { FName(TEXT("Muzzle")), FName(TEXT("SOCKET_Muzzle")), FName(TEXT("MuzzleFlash")) })
+		{
+			if (ComponentHasSocket(WeaponMesh, Candidate)) { OutSocketName = Candidate; break; }
+		}
+	}
 	return !OutSocketName.IsNone();
 }
 
@@ -859,6 +870,20 @@ const FWeaponAttachmentSlot* AWeapon::FindSlot(const FGameplayTag& SlotTag) cons
 	});
 }
 
+FName AWeapon::ResolveAttachmentSocket(const UAttachmentData* Data) const
+{
+	if (!IsValid(Data))
+	{
+		return NAME_None;
+	}
+	if (!Data->MountSocketName.IsNone())
+	{
+		return Data->MountSocketName;
+	}
+	const FWeaponAttachmentSlot* Slot = FindSlot(Data->SlotTag);
+	return Slot ? Slot->SocketName : NAME_None;
+}
+
 TArray<UAttachmentData*> AWeapon::GetAllowedAttachmentsForSlot(FGameplayTag SlotTag) const
 {
 	TArray<UAttachmentData*> Result;
@@ -1361,9 +1386,8 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 {
 	if (!IsValid(Parent) || !IsValid(Data) || !IsValid(Data->Mesh)) return nullptr;
 
-	// Socket 来自枪的槽位表。枪骨骼上没有时，挂到已经装上的配件（例如护木上的握把插槽）。
-	const FWeaponAttachmentSlot* Slot = FindSlot(Data->SlotTag);
-	const FName SocketName = Slot ? Slot->SocketName : NAME_None;
+	// 配件自己的 MountSocketName 优先。枪骨骼上没有时，挂到已经装上的配件（护木上的握把插槽）。
+	const FName SocketName = ResolveAttachmentSocket(Data);
 	USceneComponent* Mount = FindAttachmentMount(Parent, AttachmentVisuals, bFirstPerson, SocketName);
 	if (!IsValid(Mount))
 	{
@@ -1409,8 +1433,7 @@ USkeletalMeshComponent* AWeapon::SpawnAttachmentSkelMesh(USkeletalMeshComponent*
 {
 	if (!IsValid(Parent) || !IsValid(Data) || !IsValid(Data->SkeletalMesh)) return nullptr;
 
-	const FWeaponAttachmentSlot* Slot = FindSlot(Data->SlotTag);
-	const FName SocketName = Slot ? Slot->SocketName : NAME_None;
+	const FName SocketName = ResolveAttachmentSocket(Data);
 	USceneComponent* Mount = FindAttachmentMount(Parent, AttachmentVisuals, bFirstPerson, SocketName);
 	if (!IsValid(Mount))
 	{
@@ -1573,8 +1596,7 @@ void AWeapon::RebuildAttachmentVisuals()
 		for (int32 Index = 0; Index < Pending.Num();)
 		{
 			UAttachmentData* Attachment = Pending[Index];
-			const FWeaponAttachmentSlot* Slot = FindSlot(Attachment->SlotTag);
-			const FName SocketName = Slot ? Slot->SocketName : NAME_None;
+			const FName SocketName = ResolveAttachmentSocket(Attachment);
 			const bool bMount1P = !IsValid(Mesh1P) || FindAttachmentMount(Mesh1P, AttachmentVisuals, true, SocketName) != nullptr;
 			const bool bMount3P = !IsValid(Mesh3P) || FindAttachmentMount(Mesh3P, AttachmentVisuals, false, SocketName) != nullptr;
 			if (!bMount1P || !bMount3P)

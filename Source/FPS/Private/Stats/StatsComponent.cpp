@@ -57,7 +57,27 @@ bool UStatsComponent::ChangeHealthByAmout(float Amout, AActor* Instigator)
 	float OldValue = Health;
 	Health = FMath::Clamp(Health + Amout, 0.f, MaxHealth);
 	OnHealthChanged.Broadcast(this, OldValue, Health, Instigator);
+
+	if (Health <= 0.f)
+	{
+		StartDeath();
+	}
+
 	return false;
+}
+
+void UStatsComponent::StartDeath()
+{
+	if (DeathState != EDeathState::NotDead)
+	{
+		return;
+	}
+
+	DeathState = EDeathState::DeadStart;
+
+	OnDeathStarted.Broadcast();
+
+	GetOwner()->ForceNetUpdate();
 }
 
 void UStatsComponent::ChangeMaxHealthByAmout(float Amout, AActor* Instigator)
@@ -99,7 +119,10 @@ void UStatsComponent::BeginPlay()
 
 void UStatsComponent::OnRep_DeathState(EDeathState OldDeathState)
 {
-
+	if (DeathState == EDeathState::DeadStart)
+	{
+		OnDeathStarted.Broadcast();
+	}
 }
 
 void UStatsComponent::OnRep_Health(float OldValue)
@@ -121,6 +144,7 @@ void UStatsComponent::OnRep_MaxStamina(float OldValue)
 {
 	OnMaxStaminaChanged.Broadcast(this, OldValue, MaxStamina);
 }
+
 
 
 

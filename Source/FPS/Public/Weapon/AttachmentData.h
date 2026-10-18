@@ -77,8 +77,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")
 	TArray<FName> BonesToHide;
 
-	// 注意：挂在枪的哪个 Socket 不在这里配，而是由“枪的槽位表”决定（FWeaponAttachmentSlot::SocketName）
-	// 这样同一个红点装在不同枪上，可以挂到各自不同的位置
+	// 留空时用枪槽位表的 SocketName。同一个红点装在不同枪上，可以继续挂到各枪自己的槽位。
+	// 填了之后，这个配件改挂自己的插槽。垂直握把和三角握把就能分开：
+	// 护木上的 FVHGrip_sckt / AFGrip_sckt，或 RAR 护木上的 SOCKET_Grip。
+	// 先在枪骨骼上找；没有时再在已经装上的配件上找（和 FPS Controller 的 Socket、RAR 的握把父级一样）。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
+	FName MountSocketName;
 
 	// 相对 Socket 的微调（位置/旋转/缩放）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
@@ -90,7 +94,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
 	FName FabrikSocketName = TEXT("FABRIK");
 
-	// Grip slot only. Cradle=angled/default; Grab=vertical. Hold pose from anims (no 1P FABRIK).
+	// Grip slot only. Cradle=angled/default; Grab=vertical.
+	// 姿势只定手指和手腕。手的位置靠握把上的 FABRIK / grab 插槽。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
 	EGripHoldStyle GripHoldStyle = EGripHoldStyle::Cradle;
 
