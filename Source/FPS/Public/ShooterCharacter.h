@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -441,6 +441,37 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void DeathEffect();
+
+	// ---------- 死亡视角（只在自己操控的角色上） ----------
+	// 死后镜头落到地面上方的高度（厘米）、下落用时（秒）、仰望天空时的歪头角度
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|DeathCam")
+	float DeathCamGroundHeight = 18.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|DeathCam", meta = (ClampMin = "0.05"))
+	float DeathCamMoveTime = 0.65f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|DeathCam")
+	float DeathCamRoll = 8.f;
+
+	// 眨眼次数、每次眨眼时长（秒）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|DeathCam", meta = (ClampMin = "0"))
+	int32 DeathBlinkCount = 2;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|DeathCam", meta = (ClampMin = "0.05"))
+	float DeathBlinkTime = 0.35f;
+
+	// 眨完眼后多久开始彻底变黑、变黑用时
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|DeathCam", meta = (ClampMin = "0"))
+	float DeathFadeDelay = 0.4f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|DeathCam", meta = (ClampMin = "0.05"))
+	float DeathFadeDuration = 1.5f;
+
+	// 进入死亡视角时调用（可在蓝图里加眼皮 UMG、音效等）
+	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|DeathCam")
+	void OnDeathView();
+
+	void StartDeathView();
 private:
 
 	// CombatComponent 开镜状态变化时调用

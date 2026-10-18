@@ -671,6 +671,12 @@ void AShooterPlayerController::ClosePauseMenu()
 void AShooterPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	if (IsLocalController() && PlayerCameraManager)
+	{
+		// 复活：清掉死亡时的黑屏
+		PlayerCameraManager->StopCameraFade();
+		PlayerCameraManager->SetManualCameraFade(0.f, FLinearColor::Black, false);
+	}
 	// 复活后的新角色：房主本地也恢复可操作
 	if (IsLocalController() && !bMatchOver)
 	{
@@ -681,6 +687,11 @@ void AShooterPlayerController::OnPossess(APawn* InPawn)
 void AShooterPlayerController::AcknowledgePossession(APawn* P)
 {
 	Super::AcknowledgePossession(P);
+	if (PlayerCameraManager)
+	{
+		PlayerCameraManager->StopCameraFade();
+		PlayerCameraManager->SetManualCameraFade(0.f, FLinearColor::Black, false);
+	}
 	// 客户端收到新角色（复活）时恢复可操作
 	if (!bMatchOver)
 	{

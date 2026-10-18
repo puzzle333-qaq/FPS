@@ -29,6 +29,8 @@
 #include "InputCoreTypes.h"
 #include "Engine/LocalPlayer.h"
 #include "ShooterGameModeBase.h"
+#include "CombatComponent.h"
+#include "Camera/PlayerCameraManager.h"
 
 namespace
 {
@@ -1812,6 +1814,10 @@ void AShooterCharacter::OnDeathStarted()
 	if (GetNetMode() != NM_DedicatedServer)
 	{
 		DeathEffect();
+		if (IsLocallyControlled())
+		{
+			StartDeathView();
+		}
 		
 		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()); IsValid(PC))
 		{
@@ -1968,4 +1974,97 @@ void AShooterCharacter::UpdateLocomotionGait(bool bNotifyCombat)
 	{
 		Combat->RefreshLocomotionBlendSpaces(bUseWalkGait);
 	}
+}
+
+void AShooterCharacter::StartDeathView()
+{
+	// 第一人称手臂和枪藏起来，自己能看到自己的身体
+	if (IsValid(Mesh1P))
+	{
+		Mesh1P->SetVisibility(false, true);
+	}
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->SetOwnerNoSee(false);
+	}
+	if (IsValid(Combat))
+	{
+		for (AWeapon* Weapon : Combat->GetInventory())
+		{
+			if (!IsValid(Weapon)) continue;
+			if (USkeletalMeshComponent* W1P = Weapon->GetMesh1P()) W1P->SetVisibility(false, true);
+			if (USkeletalMeshComponent* W3P = Weapon->GetMesh3P()) W3P->SetOwnerNoSee(false);
+		}
+	}
+
+	// 镜头脱离角色（不跟布娃娃，避免抖动），平滑落到地面附近并仰望天空，然后固定
+	if (IsValid(FirstPersonCamera))
+	{
+		FirstPersonCamera->bUsePawnControlRotation = false;
+		FirstPersonCamera->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+		FirstPersonCamera->SetUsingAbsoluteLocation(true);
+		FirstPersonCamera->SetUsingAbsoluteRotation(true);
+
+		const FVector StartLoc = FirstPersonCamera->GetComponentLocation();
+		const FRotator StartRot = FirstPersonCamera->GetComponentRotation();
+		FVector EndLoc = GetActorLocation() - FVector(0.f, 0.f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		FHitResult Hit;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(DeathCam), false, this);
+		if (GetWorld()->LineTraceSingleByChannel(Hit, StartLoc, StartLoc - FVector(0.f, 0.f, 1000.f), ECC_Visibility, Params))
+		{
+			EndLoc = Hit.ImpactPoint;
+		}
+		EndLoc.Z += DeathCamGroundHeight;
+		const FRotator EndRot(89.9f, StartRot.Yaw, DeathCamRoll);
+
+		const float MoveTime = DeathCamMoveTime;
+		const double StartTime = GetWorld()->GetTimeSeconds();
+		TSharedRef<FTimerHandle> MoveHandle = MakeShared<FTimerHandle>();
+		TWeakObjectPtr<UCameraComponent> WeakCam = FirstPersonCamera.Get();
+		TWeakObjectPtr<UWorld> WeakWorld = GetWorld();
+		GetWorldTimerManager().SetTimer(*MoveHandle, FTimerDelegate::CreateWeakLambda(this, [WeakCam, WeakWorld, MoveHandle, StartLoc, EndLoc, StartRot, EndRot, MoveTime, StartTime]()
+		{
+			if (!WeakCam.IsValid() || !WeakWorld.IsValid()) return;
+			const float Alpha = FMath::Clamp(float((WeakWorld->GetTimeSeconds() - StartTime) / MoveTime), 0.f, 1.f);
+			const float Eased = FMath::InterpEaseInOut(0.f, 1.f, Alpha, 2.f);
+			WeakCam->SetWorldLocationAndRotation(FMath::Lerp(StartLoc, EndLoc, Eased),
+				FQuat::Slerp(StartRot.Quaternion(), EndRot.Quaternion(), Eased));
+			if (Alpha >= 1.f)
+			{
+				WeakWorld->GetTimerManager().ClearTimer(*MoveHandle);
+			}
+		}), 0.01f, true);
+	}
+
+	OnDeathView();
+
+	// 眨眼几次再黑屏（相机淡入淡出）
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	APlayerCameraManager* PCM = IsValid(PC) ? PC->PlayerCameraManager.Get() : nullptr;
+	if (!IsValid(PCM)) return;
+
+	const float Half = DeathBlinkTime * 0.5f;
+	TWeakObjectPtr<APlayerCameraManager> WeakPCM = PCM;
+	for (int32 i = 0; i < DeathBlinkCount; ++i)
+	{
+		const float Start = i * DeathBlinkTime;
+		FTimerHandle CloseHandle, OpenHandle;
+		GetWorldTimerManager().SetTimer(CloseHandle, FTimerDelegate::CreateWeakLambda(this, [WeakPCM, Half]()
+		{
+			if (WeakPCM.IsValid()) WeakPCM->StartCameraFade(0.f, 1.f, Half, FLinearColor::Black, false, true);
+		}), FMath::Max(Start, 0.001f), false);
+		GetWorldTimerManager().SetTimer(OpenHandle, FTimerDelegate::CreateWeakLambda(this, [WeakPCM, Half]()
+		{
+			if (WeakPCM.IsValid()) WeakPCM->StartCameraFade(1.f, 0.f, Half, FLinearColor::Black, false, true);
+		}), Start + Half, false);
+	}
+
+	FTimerHandle FadeHandle;
+	const float FadeAt = DeathBlinkCount * DeathBlinkTime + DeathFadeDelay;
+	const float FadeTime = DeathFadeDuration;
+	GetWorldTimerManager().SetTimer(FadeHandle, FTimerDelegate::CreateWeakLambda(this, [WeakPCM, FadeTime]()
+	{
+		// 停在全黑，直到复活时控制器把淡出清掉
+		if (WeakPCM.IsValid()) WeakPCM->StartCameraFade(0.f, 1.f, FadeTime, FLinearColor::Black, false, true);
+	}), FMath::Max(FadeAt, 0.001f), false);
 }
