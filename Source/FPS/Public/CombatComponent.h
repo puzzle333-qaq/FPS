@@ -145,6 +145,8 @@ public:
 	void Equip(AWeapon* Weapon);
 	void SpawnInventory();
 	void DestroyInventory();
+	// 服务器：按控制器上的配装重新生成全部武器（进局收到配装后调用）
+	void RebuildInventory();
 
 	UPROPERTY(BlueprintReadOnly,Replicated)
 	bool bAiming;

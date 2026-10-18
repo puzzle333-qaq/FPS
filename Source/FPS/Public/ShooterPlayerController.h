@@ -1,13 +1,15 @@
-
+﻿
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Loadout/LoadoutTypes.h"
 #include "ShooterPlayerController.generated.h"
 
 class UInputMappingContext;
 class UInputAction;
 class UAttachmentMenu;
+class AWeapon;
 class ULoadoutScreen;
 struct FInputActionValue;
 /**
@@ -29,6 +31,17 @@ public:
 	void StopSprinting();
 
 	bool bPawnAlive;
+
+	// ---------- 局外配装 ----------
+	// 服务器上已校验的配装；SpawnInventory 读它。控制器跨重生存在，所以重生也会用
+	const FLoadoutPreset* GetSubmittedLoadout() const { return bHasSubmittedLoadout ? &SubmittedLoadout : nullptr; }
+
+	// 允许进局使用的枪（空 = 不限制）
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Loadout")
+	TArray<TSubclassOf<AWeapon>> AllowedLoadoutWeapons;
+
+	UFUNCTION(Server, Reliable)
+	void Server_SubmitLoadout(const FLoadoutPreset& Loadout);
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -91,6 +104,9 @@ private:
 	TObjectPtr<ULoadoutScreen> LoadoutScreen;
 
 	void EnsureLoadoutInput();
+
+	FLoadoutPreset SubmittedLoadout;
+	bool bHasSubmittedLoadout = false;
 	void Input_ToggleLoadout();
 
 	void Input_Crouch();          // C: toggle crouch / stand (prone -> crouch); slides when fast

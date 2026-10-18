@@ -13,6 +13,8 @@
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "ShooterPlayerController.h"
+#include "Loadout/LoadoutTypes.h"
+#include "Weapon/AttachmentData.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ShooterType/ShooterType.h"
 #include "Interface/RecoilModifierInterface.h"
@@ -139,10 +141,57 @@ void UCombatComponent::SpawnInventory()
 {
 	if (GetOwner()->GetLocalRole() < ROLE_Authority)return;
 
-	for (TSubclassOf<AWeapon> WeaponClass : DefaultWeaponClass)
+	// 局外配装：每把预设枪替换默认武器里同 WeaponKind 的第一把；没有同类就追加
+	TArray<TSubclassOf<AWeapon>> SpawnClasses = DefaultWeaponClass;
+	TArray<const FWeaponPreset*> SpawnPresets;
+	SpawnPresets.Init(nullptr, SpawnClasses.Num());
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	const AShooterPlayerController* LoadoutPC = IsValid(OwnerPawn) ? Cast<AShooterPlayerController>(OwnerPawn->GetController()) : nullptr;
+	if (const FLoadoutPreset* Loadout = IsValid(LoadoutPC) ? LoadoutPC->GetSubmittedLoadout() : nullptr)
 	{
-		AWeapon* Weapon = SpawnWeapon(WeaponClass);
+		for (const FWeaponPreset& Preset : Loadout->Weapons)
+		{
+			if (!Preset.WeaponClass) continue;
+			const EWeaponKind Kind = Preset.WeaponClass->GetDefaultObject<AWeapon>()->WeaponKind;
+			int32 Slot = INDEX_NONE;
+			for (int32 i = 0; i < SpawnClasses.Num(); ++i)
+			{
+				if (!SpawnPresets[i] && SpawnClasses[i] && SpawnClasses[i]->GetDefaultObject<AWeapon>()->WeaponKind == Kind)
+				{
+					Slot = i;
+					break;
+				}
+			}
+			if (Slot == INDEX_NONE)
+			{
+				Slot = SpawnClasses.Add(Preset.WeaponClass);
+				SpawnPresets.Add(nullptr);
+			}
+			SpawnClasses[Slot] = Preset.WeaponClass;
+			SpawnPresets[Slot] = &Preset;
+		}
+	}
+
+	for (int32 SpawnIndex = 0; SpawnIndex < SpawnClasses.Num(); ++SpawnIndex)
+	{
+		AWeapon* Weapon = SpawnWeapon(SpawnClasses[SpawnIndex]);
 		if (!IsValid(Weapon)) continue;
+		if (const FWeaponPreset* Preset = SpawnPresets[SpawnIndex])
+		{
+			// 预设里没有的槽先卸掉（必需槽 RemoveAttachment 会拒绝），再装预设里的；EquipAttachment 自己做白名单校验
+			for (const FWeaponAttachmentSlot& AttachSlot : Weapon->GetAttachmentSlots())
+			{
+				const bool bInPreset = Preset->Attachments.ContainsByPredicate([&AttachSlot](const UAttachmentData* A)
+				{
+					return IsValid(A) && A->SlotTag == AttachSlot.SlotTag;
+				});
+				if (!bInPreset) Weapon->RemoveAttachment(AttachSlot.SlotTag);
+			}
+			for (UAttachmentData* Data : Preset->Attachments)
+			{
+				if (IsValid(Data)) Weapon->EquipAttachment(Data);
+			}
+		}
 
 		Inventory.AddUnique(Weapon);
 		ReserveAmmo.Add(Weapon->WeaponType, Weapon->StartingCarriedAmmo);
@@ -181,6 +230,20 @@ void UCombatComponent::SpawnInventory()
 		InitializeWeaponWidget();
 		IPlayerInterface::Execute_WeaponReplicated(GetOwner());
 	}
+}
+
+void UCombatComponent::RebuildInventory()
+{
+	if (!IsValid(GetOwner()) || !GetOwner()->HasAuthority()) return;
+	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
+	{
+		StopReloadMontages(CurrentWeapon);
+	}
+	DestroyInventory();
+	Inventory.Reset();
+	CurrentWeapon = nullptr;
+	ReserveAmmo.Reset();
+	SpawnInventory();
 }
 
 void UCombatComponent::DestroyInventory()

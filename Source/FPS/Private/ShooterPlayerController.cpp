@@ -1,4 +1,4 @@
-#include "ShooterPlayerController.h"
+﻿#include "ShooterPlayerController.h"
 #include "ShooterCharacter.h"
 
 #include "EnhancedInputSubsystems.h"
@@ -13,6 +13,9 @@
 #include "Ui/LoadoutScreen.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "ShooterGameInstance.h"
+#include "Weapon/Weapon.h"
+#include "Weapon/AttachmentData.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -35,15 +38,29 @@ void AShooterPlayerController::BeginPlay()
 	{
 		Subsystem->AddMappingContext(ShooterIMC, 0);
 	}
-	EnsureLoadoutInput();
+	// 局内 Tab 整备已停用，改成局外改枪台
+	// EnsureLoadoutInput();
 	EnsureCrouchInput();
+
+	// 把局外配装发给服务器（服务器校验后重新生成武器）
+	if (IsLocalController())
+	{
+		if (const UShooterGameInstance* GI = Cast<UShooterGameInstance>(GetGameInstance()))
+		{
+			const FLoadoutPreset Loadout = GI->GetCurrentLoadout();
+			if (Loadout.Weapons.Num() > 0)
+			{
+				Server_SubmitLoadout(Loadout);
+			}
+		}
+	}
 }
 
 void AShooterPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
-	EnsureLoadoutInput();
+	// EnsureLoadoutInput(); // 局内 Tab 整备已停用
 
 	UEnhancedInputComponent* ShooterInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!IsValid(ShooterInputComponent)) return;
@@ -93,10 +110,11 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		ShooterInputComponent->BindAction(ToggleAttachmentMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleAttachmentMenu);
 	}
-	if (LoadoutAction)
-	{
-		ShooterInputComponent->BindAction(LoadoutAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleLoadout);
-	}
+	// 局内 Tab 整备已停用
+	// if (LoadoutAction)
+	// {
+	// 	ShooterInputComponent->BindAction(LoadoutAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleLoadout);
+	// }
 }
 
 void AShooterPlayerController::EnsureLoadoutInput()
@@ -522,4 +540,44 @@ void AShooterPlayerController::Client_StopSprint_Implementation()
 {
 	bIsSprinting = false;
 	ApplyMovementSpeed();
+}
+void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadoutPreset& Loadout)
+{
+	// 客户端发来的不可信：只保留合法的枪，每类最多一把，配件交给 EquipAttachment 再校验白名单
+	FLoadoutPreset Clean;
+	Clean.Name = Loadout.Name;
+	TSet<EWeaponKind> SeenKinds;
+	for (const FWeaponPreset& Preset : Loadout.Weapons)
+	{
+		if (Clean.Weapons.Num() >= 4) break;
+		if (!Preset.WeaponClass || !Preset.WeaponClass->IsChildOf(AWeapon::StaticClass())) continue;
+		if (AllowedLoadoutWeapons.Num() > 0 && !AllowedLoadoutWeapons.Contains(Preset.WeaponClass)) continue;
+		const AWeapon* CDO = Preset.WeaponClass->GetDefaultObject<AWeapon>();
+		if (SeenKinds.Contains(CDO->WeaponKind)) continue;
+		SeenKinds.Add(CDO->WeaponKind);
+
+		FWeaponPreset CleanPreset;
+		CleanPreset.WeaponClass = Preset.WeaponClass;
+		for (UAttachmentData* Data : Preset.Attachments)
+		{
+			if (IsValid(Data) && CDO->CanEquipAttachment(Data))
+			{
+				CleanPreset.Attachments.Add(Data);
+			}
+		}
+		Clean.Weapons.Add(CleanPreset);
+	}
+
+	SubmittedLoadout = Clean;
+	bHasSubmittedLoadout = Clean.Weapons.Num() > 0;
+	UE_LOG(LogTemp, Log, TEXT("[Loadout] %s submitted %d weapon(s)."), *GetName(), Clean.Weapons.Num());
+
+	// 角色已经生成过默认武器：按配装重建
+	if (bHasSubmittedLoadout && IsValid(GetPawn()))
+	{
+		if (UCombatComponent* CombatComp = GetPawn()->FindComponentByClass<UCombatComponent>())
+		{
+			CombatComp->RebuildInventory();
+		}
+	}
 }
