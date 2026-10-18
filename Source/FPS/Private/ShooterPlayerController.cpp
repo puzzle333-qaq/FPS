@@ -14,6 +14,7 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "ShooterGameInstance.h"
+#include "Ui/PauseMenuScreen.h"
 #include "Weapon/Weapon.h"
 #include "Weapon/AttachmentData.h"
 
@@ -48,6 +49,7 @@ void AShooterPlayerController::BeginPlay()
 	// 局内 Tab 整备已停用，改成局外改枪台
 	// EnsureLoadoutInput();
 	EnsureCrouchInput();
+	EnsurePauseInput();
 
 	// 把局外配装发给服务器（服务器校验后重新生成武器）
 	if (IsLocalController())
@@ -116,6 +118,11 @@ void AShooterPlayerController::SetupInputComponent()
 	if (ToggleAttachmentMenuAction)
 	{
 		ShooterInputComponent->BindAction(ToggleAttachmentMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleAttachmentMenu);
+	}
+	EnsurePauseInput();
+	if (PauseMenuAction)
+	{
+		ShooterInputComponent->BindAction(PauseMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_TogglePauseMenu);
 	}
 	// 局内 Tab 整备已停用
 	// if (LoadoutAction)
@@ -587,4 +594,77 @@ void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadou
 			CombatComp->RebuildInventory();
 		}
 	}
+}
+void AShooterPlayerController::EnsurePauseInput()
+{
+	if (!IsLocalController()) return;
+	if (!PauseMenuAction)
+	{
+		PauseMenuAction = NewObject<UInputAction>(this, TEXT("IA_PauseMenu_Runtime"));
+		PauseMenuAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!PauseMenuIMC)
+	{
+		PauseMenuIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_PauseMenu_Runtime"));
+		PauseMenuIMC->MapKey(PauseMenuAction, EKeys::Escape);
+		PauseMenuIMC->MapKey(PauseMenuAction, EKeys::P);
+	}
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(PauseMenuIMC))
+	{
+		Subsystem->AddMappingContext(PauseMenuIMC, 2);
+	}
+}
+
+void AShooterPlayerController::Input_TogglePauseMenu()
+{
+	TogglePauseMenu();
+}
+
+bool AShooterPlayerController::IsPauseMenuOpen() const
+{
+	return IsValid(PauseMenu) && PauseMenu->IsInViewport();
+}
+
+void AShooterPlayerController::TogglePauseMenu()
+{
+	if (IsPauseMenuOpen()) ClosePauseMenu();
+	else OpenPauseMenu();
+}
+
+void AShooterPlayerController::OpenPauseMenu()
+{
+	if (!IsLocalController() || IsPauseMenuOpen()) return;
+	if (!PauseMenuWidgetClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PauseMenu] PauseMenuWidgetClass is not set on %s."), *GetClass()->GetName());
+		return;
+	}
+	if (!IsValid(PauseMenu))
+	{
+		PauseMenu = CreateWidget<UPauseMenuScreen>(this, PauseMenuWidgetClass);
+		if (!IsValid(PauseMenu)) return;
+	}
+
+	// 停掉冲刺等持续状态，避免菜单打开时角色一直跑
+	StopSprinting();
+	PauseMenu->AddToViewport(50);
+	// 纯 UI 输入：开火/视角/移动都收不到，不会误开枪；Esc/P 由菜单自己处理关闭
+	FInputModeUIOnly Mode;
+	Mode.SetWidgetToFocus(PauseMenu->TakeWidget());
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(Mode);
+	bShowMouseCursor = true;
+	PauseMenu->OnMenuOpened();
+}
+
+void AShooterPlayerController::ClosePauseMenu()
+{
+	if (IsValid(PauseMenu))
+	{
+		PauseMenu->RemoveFromParent();
+	}
+	if (!IsLocalController()) return;
+	bShowMouseCursor = false;
+	SetInputMode(FInputModeGameOnly());
 }

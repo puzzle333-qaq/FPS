@@ -11,6 +11,7 @@ class UInputAction;
 class UAttachmentMenu;
 class AWeapon;
 class ULoadoutScreen;
+class UPauseMenuScreen;
 struct FInputActionValue;
 /**
  * 
@@ -31,6 +32,23 @@ public:
 	void StopSprinting();
 
 	bool bPawnAlive;
+
+	// ---------- 局内暂停菜单 ----------
+	// 菜单控件（WBP_PauseMenu，父类 PauseMenuScreen）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|PauseMenu")
+	TSubclassOf<UPauseMenuScreen> PauseMenuWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
+	void TogglePauseMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
+	void OpenPauseMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
+	void ClosePauseMenu();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|PauseMenu")
+	bool IsPauseMenuOpen() const;
 
 	// ---------- 局外配装 ----------
 	// 服务器上已校验的配装；SpawnInventory 读它。控制器跨重生存在，所以重生也会用
@@ -104,6 +122,19 @@ private:
 	TObjectPtr<ULoadoutScreen> LoadoutScreen;
 
 	void EnsureLoadoutInput();
+
+	// 暂停菜单按键（运行时创建：Esc + P，P 方便 PIE 里测，因为 PIE 默认 Esc 是停止）
+	void EnsurePauseInput();
+	void Input_TogglePauseMenu();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> PauseMenuAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> PauseMenuIMC;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPauseMenuScreen> PauseMenu;
 
 	FLoadoutPreset SubmittedLoadout;
 	bool bHasSubmittedLoadout = false;
