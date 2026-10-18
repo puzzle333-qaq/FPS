@@ -33,6 +33,13 @@ void AShooterPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// 从主菜单跳过来时 UI 输入和鼠标会跟着视口保留，进局恢复游戏输入
+	if (IsLocalController())
+	{
+		bShowMouseCursor = false;
+		SetInputMode(FInputModeGameOnly());
+	}
+
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
 	if (IsValid(Subsystem) && ShooterIMC)
 	{
