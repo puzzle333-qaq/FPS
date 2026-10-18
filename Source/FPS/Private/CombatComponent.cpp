@@ -932,8 +932,9 @@ void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 	}
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
-	const bool bListenServerOwner = GetNetMode() == NM_ListenServer && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
-	if (!bListenServerOwner)
+	// 本机操控的角色已在 Local_Fire 里扣过弹（房主 / 单机都一样），服务器不再扣
+	const bool bLocallyPredicted = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
+	if (!bLocallyPredicted)
 	{
 		CurrentWeapon->Auth_Fire();
 	}
@@ -1197,8 +1198,9 @@ void UCombatComponent::Server_ReloadWeapon_Implementation(EReloadType ReloadType
 	if (!IsValid(CurrentWeapon)) return;
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
-	const bool bListenServerOwner = GetNetMode() == NM_ListenServer && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
-	if (!bListenServerOwner)
+	// 本机操控的角色（房主 / 单机）在 Initiate_ReloadWeapon 里已经做过检查并设成 Reloading
+	const bool bLocallyPredicted = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
+	if (!bLocallyPredicted)
 	{
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
