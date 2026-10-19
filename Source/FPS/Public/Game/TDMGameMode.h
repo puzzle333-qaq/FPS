@@ -38,7 +38,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|TDM")
 	FName TeamBStartTag = TEXT("TeamB");
 
-	virtual void BeginPlay() override;
+	virtual void InitGameState() override;
+	virtual void StartPlay() override;
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	virtual bool CanDamage(AController* InstigatorController, AController* VictimController) const override;
@@ -48,12 +49,15 @@ protected:
 	virtual bool CanRespawn(AController* Controller) const override;
 
 private:
+	void ApplyMatchRules();
+	void StartWarmupOrMatch();
 	void StartMatch();
 	void TickMatchTimer();
 	void EndMatch(uint8 WinningTeam);
 	void ReturnAllToMainMenu();
 	uint8 PickTeamForNewPlayer() const;
 
+	bool bMatchClockStarted = false;
 	FTimerHandle WarmupTimer;
 	FTimerHandle MatchTimer;
 	FTimerHandle PostMatchTimer;

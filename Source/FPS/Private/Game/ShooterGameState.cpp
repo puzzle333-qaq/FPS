@@ -9,13 +9,35 @@ void AShooterGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AShooterGameState, TeamScores);
 	DOREPLIFETIME(AShooterGameState, ScoreToWin);
 	DOREPLIFETIME(AShooterGameState, MatchEndServerTime);
+	DOREPLIFETIME(AShooterGameState, MatchStartServerTime);
 	DOREPLIFETIME(AShooterGameState, WinningTeam);
+	DOREPLIFETIME(AShooterGameState, bHasMatchHeader);
+	DOREPLIFETIME(AShooterGameState, MatchMode);
 }
 
 float AShooterGameState::GetRemainingTime() const
 {
 	if (MatchEndServerTime <= 0.f || ShooterMatchState != EShooterMatchState::InProgress) return 0.f;
 	return FMath::Max(0.f, MatchEndServerTime - GetServerWorldTimeSeconds());
+}
+
+float AShooterGameState::GetWarmupRemaining() const
+{
+	if (MatchStartServerTime <= 0.f || ShooterMatchState != EShooterMatchState::WaitingToStart) return 0.f;
+	return FMath::Max(0.f, MatchStartServerTime - GetServerWorldTimeSeconds());
+}
+
+void AShooterGameState::SetMatchRules(EShooterGameMode Mode)
+{
+	MatchMode = Mode;
+	bHasMatchHeader = true;
+	OnRep_MatchRules();
+	ForceNetUpdate();
+}
+
+void AShooterGameState::OnRep_MatchRules()
+{
+	OnMatchModeChanged.Broadcast(MatchMode);
 }
 
 void AShooterGameState::InitTeams(int32 NumTeams, int32 InScoreToWin)

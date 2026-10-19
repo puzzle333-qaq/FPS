@@ -13,14 +13,39 @@ ATDMGameMode::ATDMGameMode()
 {
 }
 
-void ATDMGameMode::BeginPlay()
+void ATDMGameMode::InitGameState()
 {
-	Super::BeginPlay();
-	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
+	Super::InitGameState();
+	ApplyMatchRules();
+}
+
+void ATDMGameMode::StartPlay()
+{
+	Super::StartPlay();
+	ApplyMatchRules();
+	StartWarmupOrMatch();
+}
+
+void ATDMGameMode::ApplyMatchRules()
+{
+	AShooterGameState* GS = GetGameState<AShooterGameState>();
+	if (!GS) return;
+	GS->SetMatchRules(EShooterGameMode::TDM);
+	if (GS->GetNumTeams() < 2)
 	{
 		GS->InitTeams(2, ScoreToWin);
-		GS->SetMatchState(EShooterMatchState::WaitingToStart);
 	}
+	if (GS->GetMatchState() == EShooterMatchState::WaitingToStart)
+	{
+		const float Now = GS->GetServerWorldTimeSeconds();
+		GS->SetMatchStartServerTime(WarmupTime > 0.f ? Now + WarmupTime : Now);
+	}
+}
+
+void ATDMGameMode::StartWarmupOrMatch()
+{
+	if (bMatchClockStarted) return;
+	bMatchClockStarted = true;
 	if (WarmupTime > 0.f)
 	{
 		GetWorldTimerManager().SetTimer(WarmupTimer, this, &ThisClass::StartMatch, WarmupTime, false);
@@ -47,6 +72,7 @@ uint8 ATDMGameMode::PickTeamForNewPlayer() const
 
 void ATDMGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
+	AssignShortPlayerName(NewPlayer);
 	// 先分队再生成角色，出生点才能按队伍选
 	if (AShooterPlayerState* PS = IsValid(NewPlayer) ? NewPlayer->GetPlayerState<AShooterPlayerState>() : nullptr)
 	{
@@ -101,8 +127,8 @@ bool ATDMGameMode::CanDamage(AController* InstigatorController, AController* Vic
 void ATDMGameMode::StartMatch()
 {
 	AShooterGameState* GS = GetGameState<AShooterGameState>();
-	if (!GS) return;
-	GS->SetMatchEndServerTime(MatchDuration > 0.f ? GetWorld()->GetTimeSeconds() + MatchDuration : 0.f);
+	if (!GS || GS->GetMatchState() == EShooterMatchState::InProgress || GS->GetMatchState() == EShooterMatchState::PostMatch) return;
+	GS->SetMatchEndServerTime(MatchDuration > 0.f ? GS->GetServerWorldTimeSeconds() + MatchDuration : 0.f);
 	GS->SetMatchState(EShooterMatchState::InProgress);
 	if (MatchDuration > 0.f)
 	{
