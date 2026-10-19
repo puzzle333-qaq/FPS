@@ -978,6 +978,11 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 }
 
 
+bool UCombatComponent::IsReloading() const
+{
+	return IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading;
+}
+
 void UCombatComponent::Initiate_ReloadWeapon()
 {
 	CancelInspect();
@@ -985,10 +990,16 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	if (!CurrentWeapon->UsesAmmo()) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
-	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading && !bAiming) return;
 	if (CurrentWeapon->Ammo >= CurrentWeapon->MagCapacity) return;
 	if (CurrentReserveAmmo <= 0) return;
 
+	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwnerPawn->GetController()))
+		{
+			PC->StopSprinting();
+		}
+	}
 	// 先定好这次是哪种换弹，手臂、枪、第三人称都用同一个种类
 	const EReloadType ReloadType = ChooseReloadType();
 

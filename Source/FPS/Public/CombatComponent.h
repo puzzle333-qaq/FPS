@@ -60,6 +60,9 @@ public:
 	void Initiate_ReloadWeapon();
 	void Initiate_Aim_Pressed();
 
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	bool IsReloading() const;
+
 	// 单发/自动切换：本地先改，再发服务器。换弹、拉栓、切枪中或这把枪不允许切换时无效
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_SwitchFireMode();

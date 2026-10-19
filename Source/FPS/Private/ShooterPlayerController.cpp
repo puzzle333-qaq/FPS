@@ -393,6 +393,13 @@ void AShooterPlayerController::Input_Jump()
 void AShooterPlayerController::Input_Sprint()
 {
 	if (!bPawnAlive)return;
+
+	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
+	if (!bIsSprinting && IsValid(Combat) && Combat->IsReloading())
+	{
+		return;
+	}
+
 	bIsSprinting = !bIsSprinting;
 	if (bIsSprinting) bIsWalking = false;   // 冲刺会打断静步
 	// 第 9 步：开始冲刺时打断检视
@@ -478,14 +485,15 @@ void AShooterPlayerController::ApplyMovementSpeed()
 
 	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(MyCharacter);
 	const bool bAiming = IsValid(Combat) && Combat->bAiming;
+	const bool bReloading = IsValid(Combat) && Combat->IsReloading();
 	const bool bCrouched = MyCharacter->bIsCrouched;
 	const AShooterCharacter* ProneChar = Cast<AShooterCharacter>(MyCharacter);
 	const bool bProne = IsValid(ProneChar) && ProneChar->IsProne();
 	const bool bSliding = IsValid(ProneChar) && ProneChar->IsSliding();
 	if (bSliding) bIsSprinting = false;
 
-	// 下蹲、趴下或开镜时不能冲刺
-	if (bIsSprinting && (bAiming || bCrouched || bProne))
+	// 下蹲、趴下、开镜或换弹时不能冲刺
+	if (bIsSprinting && (bAiming || bCrouched || bProne || bReloading))
 	{
 		bIsSprinting = false;
 	}
@@ -545,6 +553,11 @@ void AShooterPlayerController::HandleStaminaDepleted()
 
 void AShooterPlayerController::Server_SetMovementState_Implementation(bool bNewSprinting, bool bNewWalking)
 {
+	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
+	if (bNewSprinting && IsValid(Combat) && Combat->IsReloading())
+	{
+		bNewSprinting = false;
+	}
 	bIsSprinting = bNewSprinting;
 	bIsWalking = bNewWalking;
 	UpdateMovementSpeed();   // 在服务器上 HasAuthority 为 true，不会再发 RPC
