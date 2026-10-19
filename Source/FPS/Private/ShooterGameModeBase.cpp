@@ -86,3 +86,31 @@ void AShooterGameModeBase::ClearRespawnTimers()
 	}
 	RespawnTimers.Reset();
 }
+
+void AShooterGameModeBase::PostLogin(APlayerController* NewPlayer)
+{
+	Super::PostLogin(NewPlayer);
+	AssignShortPlayerName(NewPlayer);
+}
+
+void AShooterGameModeBase::AssignShortPlayerName(APlayerController* NewPlayer)
+{
+	APlayerState* PS = IsValid(NewPlayer) ? NewPlayer->PlayerState : nullptr;
+	if (!IsValid(PS)) return;
+
+	const FString Current = PS->GetPlayerName();
+	if (Current.StartsWith(TEXT("Player")) && Current.Len() <= 10) return;
+
+	int32 Number = 1;
+	if (const AGameStateBase* GS = GameState)
+	{
+		for (const APlayerState* Other : GS->PlayerArray)
+		{
+			if (IsValid(Other) && Other != PS)
+			{
+				++Number;
+			}
+		}
+	}
+	PS->SetPlayerName(FString::Printf(TEXT("Player%d"), Number));
+}

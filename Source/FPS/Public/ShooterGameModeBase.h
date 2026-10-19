@@ -30,6 +30,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Match")
 	void RespawnPlayer(AController* Controller);
 
+	virtual void PostLogin(APlayerController* NewPlayer) override;
+
 protected:
 	// 子类加分用
 	virtual void ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerState* VictimPS) {}
@@ -37,4 +39,5 @@ protected:
 
 	TMap<TWeakObjectPtr<AController>, FTimerHandle> RespawnTimers;
 	void ClearRespawnTimers();
+	void AssignShortPlayerName(APlayerController* NewPlayer);
 };
