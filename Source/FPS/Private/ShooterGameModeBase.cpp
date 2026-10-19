@@ -5,10 +5,13 @@
 #include "Game/ShooterPlayerState.h"
 #include "Game/ShooterGameState.h"
 #include "CombatComponent.h"
+#include "Weapon/Weapon.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "Engine/Texture2D.h"
 
 AShooterGameModeBase::AShooterGameModeBase()
 {
@@ -33,9 +36,21 @@ void AShooterGameModeBase::OnPlayerKilled(AController* KillerController, AContro
 
 	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
 	{
+		UTexture2D* WeaponIcon = nullptr;
+		if (APawn* KillerPawn = IsValid(KillerController) ? KillerController->GetPawn() : nullptr)
+		{
+			if (const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(KillerPawn))
+			{
+				if (IsValid(Combat->CurrentWeapon))
+				{
+					WeaponIcon = Combat->CurrentWeapon->WeaponIcon;
+				}
+			}
+		}
 		const FString KillerName = KillerPS ? KillerPS->GetPlayerName() : FString();
 		GS->Multicast_KillFeed(KillerName, KillerPS ? KillerPS->GetTeamId() : AShooterPlayerState::NoTeam,
-			VictimPS ? VictimPS->GetPlayerName() : FString(), VictimPS ? VictimPS->GetTeamId() : AShooterPlayerState::NoTeam);
+			VictimPS ? VictimPS->GetPlayerName() : FString(), VictimPS ? VictimPS->GetTeamId() : AShooterPlayerState::NoTeam,
+			WeaponIcon);
 	}
 
 	if (!bSuicide)

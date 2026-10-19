@@ -12,6 +12,7 @@ class UAttachmentMenu;
 class AWeapon;
 class ULoadoutScreen;
 class UPauseMenuScreen;
+class UMatchHUD;
 struct FInputActionValue;
 /**
  * 
@@ -32,6 +33,11 @@ public:
 	void StopSprinting();
 
 	bool bPawnAlive;
+
+	// ---------- 局内头顶 HUD（计分条 + 击杀播报） ----------
+	// 填 WBP_MatchHUD（父类 MatchHUD）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|HUD")
+	TSubclassOf<UMatchHUD> MatchHUDClass;
 
 	// ---------- 局内暂停菜单 ----------
 	// 菜单控件（WBP_PauseMenu，父类 PauseMenuScreen）
@@ -149,6 +155,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPauseMenuScreen> PauseMenu;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMatchHUD> MatchHUD;
+
+	void EnsureMatchHUD();
 
 	bool bMatchOver = false;
 

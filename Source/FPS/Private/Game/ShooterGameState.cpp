@@ -83,7 +83,7 @@ void AShooterGameState::OnRep_TeamScores()
 	LastBroadcastScores = TeamScores;
 }
 
-void AShooterGameState::Multicast_KillFeed_Implementation(const FString& KillerName, uint8 KillerTeam, const FString& VictimName, uint8 VictimTeam)
+void AShooterGameState::Multicast_KillFeed_Implementation(const FString& KillerName, uint8 KillerTeam, const FString& VictimName, uint8 VictimTeam, UTexture2D* WeaponIcon)
 {
-	OnKillFeed.Broadcast(KillerName, KillerTeam, VictimName, VictimTeam);
+	OnKillFeed.Broadcast(KillerName, KillerTeam, VictimName, VictimTeam, WeaponIcon);
 }

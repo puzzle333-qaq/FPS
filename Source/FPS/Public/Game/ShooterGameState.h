@@ -18,7 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTeamScoreChanged, uint8, TeamId, i
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchStateChanged, EShooterMatchState, NewState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchEnded, uint8, WinningTeam);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchModeChanged, EShooterGameMode, NewMode);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FKillFeed, const FString&, KillerName, uint8, KillerTeam, const FString&, VictimName, uint8, VictimTeam);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FKillFeed, const FString&, KillerName, uint8, KillerTeam, const FString&, VictimName, uint8, VictimTeam, UTexture2D*, WeaponIcon);
 
 // 比赛状态（所有人都能读）：比分、剩余时间、胜方、击杀播报
 UCLASS()
@@ -88,7 +88,7 @@ public:
 	void SetMatchRules(EShooterGameMode Mode);
 
 	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_KillFeed(const FString& KillerName, uint8 KillerTeam, const FString& VictimName, uint8 VictimTeam);
+	void Multicast_KillFeed(const FString& KillerName, uint8 KillerTeam, const FString& VictimName, uint8 VictimTeam, UTexture2D* WeaponIcon);
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_MatchState)

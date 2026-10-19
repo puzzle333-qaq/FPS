@@ -15,6 +15,7 @@
 #include "InputMappingContext.h"
 #include "ShooterGameInstance.h"
 #include "Ui/PauseMenuScreen.h"
+#include "Ui/MatchHUD.h"
 #include "Weapon/Weapon.h"
 #include "Weapon/AttachmentData.h"
 
@@ -39,6 +40,7 @@ void AShooterPlayerController::BeginPlay()
 	{
 		bShowMouseCursor = false;
 		SetInputMode(FInputModeGameOnly());
+		EnsureMatchHUD();
 	}
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
@@ -626,6 +628,21 @@ void AShooterPlayerController::EnsurePauseInput()
 	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(PauseMenuIMC))
 	{
 		Subsystem->AddMappingContext(PauseMenuIMC, 2);
+	}
+}
+
+void AShooterPlayerController::EnsureMatchHUD()
+{
+	if (!IsLocalController() || IsValid(MatchHUD)) return;
+	if (!MatchHUDClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[MatchHUD] MatchHUDClass is not set on %s. Assign WBP_MatchHUD."), *GetClass()->GetName());
+		return;
+	}
+	MatchHUD = CreateWidget<UMatchHUD>(this, MatchHUDClass);
+	if (IsValid(MatchHUD))
+	{
+		MatchHUD->AddToViewport(5);
 	}
 }
 
