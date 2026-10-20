@@ -4,7 +4,9 @@
 
 # FPS — Unreal Engine 5 C++ 第一人称射击项目
 
-一个使用 **Unreal Engine 5.8 + C++** 实现的第一人称射击（FPS）玩法框架：角色移动与视角、静步/冲刺移动模式与耐力、**Ctrl 按住 / C 切换蹲伏、按速度触发的滑铲与趴行**、武器（长枪 / AK / 手枪 / 近战）装备/切换/切枪自动关镜、开火与命中判定（近战为**沿刀刃的扫掠**）、**后坐力弹道（Recoil Pattern）与回正**、换弹、瞄准（ADS）、狙击镜、**数据驱动的武器配件系统**（枪管 / 护木 / 枪口 / 瞄具 / 握把 / 枪托 / 战术 / 弹匣）以及游戏内配件菜单与 Tab 整备界面、**画中画倍镜**、手电、生命值与治疗、部位伤害、受击动画，以及完整的多人网络同步。
+一个使用 **Unreal Engine 5.8 + C++** 实现的第一人称射击（FPS）玩法框架：角色移动与视角、静步/冲刺移动模式与耐力、**Ctrl 按住 / C 切换蹲伏、按速度触发的滑铲与趴行**、武器（长枪 / **双管霰弹枪** / AK / 手枪 / 近战 / **投掷物** / **炸弹**）装备/切换/切枪自动关镜、开火与命中判定（近战为**沿刀刃的扫掠**）、**后坐力弹道（Recoil Pattern）与回正**、换弹、瞄准（ADS）、狙击镜、**数据驱动的武器配件系统**（枪管 / 护木 / 枪口 / 瞄具 / 握把 / 枪托 / 战术 / 弹匣）以及游戏内配件菜单与 Tab 整备界面、**画中画倍镜**、手电、生命值与治疗、部位伤害、受击动画，以及完整的多人网络同步。
+
+三种比赛模式共用同一套 `AShooterGameModeBase` / `AShooterGameState` 基类：**团队竞技**、**爆破（Search & Destroy：回合制 + 可安放的 C4 + 两个包点）** 和自由练习靶场。在此之上是**局内 HUD**（按模式切换的头顶计分条 TDM / 爆破、带武器图标的击杀播报、复活倒计时），以及菜单里的枪匠/整备流程（可直接把改好的枪装备成主武器）。
 
 > 本文档由阅读源码整理而成，**未修改任何代码文件**。
 > 逐函数、逐组件的详细说明（含每个函数的签名、作用、调用链与效果）请见 [DOCUMENTATION.zh-CN.md](<DOCUMENTATION.zh-CN.md>)。
@@ -20,14 +22,14 @@
 | 主模块 | `FPS`，类型 Runtime（[FPS.Build.cs](<Source/FPS/FPS.Build.cs>)） |
 | 语言 | C++，大量接口通过 `BlueprintCallable` / `BlueprintImplementableEvent` 暴露给蓝图 |
 | 输入 | Enhanced Input（`UEnhancedInputComponent` + `UInputMappingContext`） |
-| 默认关卡 | `/Game/FirstPerson/Lvl_FirstPerson` |
+| 默认关卡 | `/Game/FPS/Level/MainMenu/MainMenu` —— 主菜单关卡；每种模式再各自切到自己的地图（见 §10.4、§10.5） |
 | 默认 GameMode | `/Script/FPS.ShooterGameModeBase`（见 [DefaultEngine.ini](<Config/DefaultEngine.ini>)） |
 | 自定义碰撞通道 | `Weapon` = `ECC_GameTraceChannel2`（Trace 类型） |
 | 构建目标 | `FPS`（Game）、`FPSEditor`（Editor），`BuildSettingsVersion.V7` |
 
 模块依赖（[FPS.Build.cs](<Source/FPS/FPS.Build.cs>)）：
 
-- Public：`Core`、`CoreUObject`、`Engine`、`InputCore`、`EnhancedInput`、`GameplayTags`、`PhysicsCore`、`UMG`
+- Public：`Core`、`CoreUObject`、`Engine`、`InputCore`、`EnhancedInput`、`GameplayTags`、`PhysicsCore`、`UMG`、`Niagara`
 - Private：`Slate`、`SlateCore`
 
 启用的插件（[FPS.uproject](<FPS.uproject>)）：`ModelingToolsEditorMode`（仅编辑器）、`GameplayStateTree`、`AnimationWarping`、`ModelContextProtocol`、`AllToolsets`。
@@ -45,7 +47,13 @@
 | 趴下 / 趴行 | **Z** 键切换趴下（字段为空时运行时创建输入）。趴下复用 CMC 蹲伏并把 `CrouchedHalfHeight` 设为 34，压低相机，以 `RunSpeed × 0.25` 爬行，禁止跳跃 / 探头 / 冲刺，头顶空间不足时拒绝起身，服务器权威并用 `Client_ProneRejected` 回滚。`bProneCrawling`（趴下**且**在移动）让 ABP 移动时播放全身爬行、停下时播放端枪的上半身 | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>)、[ShooterPlayerController.cpp](<Source/FPS/Private/ShooterPlayerController.cpp>) |
 | 耐力 | 服务器权威的消耗/回复、跳跃消耗、`OnStaminaDepleted` 广播、耐力条 HUD | [StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
 | 移动手感 | `GroundSpeed`、慢走步态 BlendSpace 替换（`Strafe_Walking`）、每帧把 Locomotion 播放速率写进 AnimBP（趴下用 `ProneAnimReferenceSpeed` 100） | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
-| 武器 | 长枪 / 手枪 / 近战三类；主 / 副 / 手枪 / 近战四个槽位，用数字键选择（循环切枪已删除）；切枪 Montage（可配随机变体池）；拔枪/换弹可被打断（见 §10.2）；切枪自动关镜 | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| 武器 | 长枪 / 手枪 / 近战 / 投掷物 / 炸弹五类；主 / 副 / 手枪 / 近战 / 投掷 / 炸弹六个槽位，用数字键选择；切枪 Montage（可配随机变体池）；拔枪/换弹可被打断（见 §10.2）；切枪自动关镜。`UsesAmmo()` / `CanAimWeapon()` 由枪种决定：近战和炸弹永不瞄准，投掷物不会自动换弹（见 §10.5） | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| 射击模式 | `EFireType` = 单发 / 全自动 / **三连发**。`AllowedFireModes` 决定一把枪能切哪几种（默认：手枪 = 单发 + 三连发，勾了 `bCanSwitchFireMode` 的步枪 = 单发 + 全自动），`BurstCount` 3、`BurstShotInterval` 控制连发节奏；连发循环在 `FireTimerFinished` 里跑，服务端射速节流用同一间隔（见 §10.5） | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| 双管霰弹枪 | 走普通开火流程；膛内两发弹壳是挂在 `Bullet1Socket` / `Bullet2Socket` 上的真实静态网格，由手臂换弹 Montage 里的 `Bullet1Spawn` / `Bullet1Delete` / `Bullet2Spawn` / `Bullet2Delete` / `DeleteAllBullets` 通知开关，弹壳插槽强制 `bForceAlwaysAnimated`，不会卡在绑定姿势（见 §10.5） | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>) |
+| 投掷物 | 破片 / 烟雾 / 燃烧瓶 / 闪光共用 `AThrownProjectile`。按下开火先拉保险，松手投出：左键高抛、右键低抛，出手时机由 `ThrowReleaseTime` **或** `Notify_ThrowWeapon` 动画通知里先到的那个决定；破片是带视线检测的球形伤害，其它效果在蓝图里重写 `OnDetonate`（见 §10.5） | [ThrownProjectile.cpp](<Source/FPS/Private/Weapon/ThrownProjectile.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| 游戏模式 | `AShooterGameModeBase`（玩家、击杀、击杀播报、复活）→ `ATDMGameMode`（团队竞技）、`ASearchDestroyGameMode`（回合制 + 炸弹）和靶场。`UShooterGameInstance` 维护模式表（`GameModeClass` + `Map` + `bImplemented`），并负责开房 / 按 IP 加入（见 §10.4、§10.5） | [ShooterGameModeBase.cpp](<Source/FPS/Private/ShooterGameModeBase.cpp>)、[SearchDestroyGameMode.cpp](<Source/FPS/Private/Game/SearchDestroyGameMode.cpp>)、[ShooterGameInstance.cpp](<Source/FPS/Private/ShooterGameInstance.cpp>) |
+| 爆破模式 | 两队，进攻方在 A / B 两个包点之一安放 C4，防守方拆除。回合阶段为准备 / 冻结 / 回合中 / 回合结束，非「回合中」时锁移动与操作，回合内不复活，先赢 6 局、平局后换边（见 §10.5） | [SearchDestroyGameMode.cpp](<Source/FPS/Private/Game/SearchDestroyGameMode.cpp>)、[BombActor.cpp](<Source/FPS/Private/Game/BombActor.cpp>)、[BombSite.cpp](<Source/FPS/Private/Game/BombSite.cpp>) |
+| 局内 HUD | `UMatchHUD` 承载按模式创建的头顶计分条（`UTDMHeaderWidget` / `USDHeaderWidget`）和击杀播报；计分条显示比分、暖身 / 比赛 / 炸弹倒计时，爆破版另有回合数、炸弹状态、交互提示和安放/拆除进度条。`UKillFeedWidget` 画「击杀者 → 武器图标 → 被击杀者」并按队伍着色、到期消失（见 §10.5） | [MatchHUD.cpp](<Source/FPS/Private/Ui/MatchHUD.cpp>)、[MatchHeaderWidget.cpp](<Source/FPS/Private/Ui/MatchHeaderWidget.cpp>)、[KillFeedWidget.cpp](<Source/FPS/Private/Ui/KillFeedWidget.cpp>) |
 | 近战 | `EWeaponKind::Melee` 不能开镜、不消耗弹药（`UsesAmmo()`）、不会自动换弹，两个 FABRIK alpha 都强制为 0；命中判定改为**沿刀刃的球形扫掠**（`MeleeSocketName`、`MeleeHitRadius` 40、`MeleeHitReach` 120），并播放 3P 全身挥砍 Montage | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 | 射击 | 球形 Sweep 命中判定，带**腰射散布锥**（由 `HipFireSpread` × 配件倍率随机，开镜时为 0）、单发 / 全自动（每把枪可选**切换开火模式**：`bCanSwitchFireMode`，`FireType` 已同步）、拉栓（`BoltCycling` 状态）、**后坐力弹道 + 回正 + 配件修正接口**、服务端射速节流、蓝图枪口/命中特效、弹匣与备弹 | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>)、[CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>)、[RecoilModifierInterface.h](<Source/FPS/Public/Interface/RecoilModifierInterface.h>) |
 | 换弹 | 1P/3P 换弹 Montage，**分种类**（首次 / 空仓 / 战术，没配就回落到默认 Montage），换弹和拉栓时左手 IK 渐隐、动画通知填弹、空仓自动换弹、C++ 动画通知把枪重新握到手上 | [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>)、[AnimNotify_WeaponGrip.cpp](<Source/FPS/Private/AnimNotify/AnimNotify_WeaponGrip.cpp>) |
@@ -91,7 +99,7 @@ FPS/
       │  ├─ ShooterGamePlayTags.h         # 原生 GameplayTag 声明
       │  ├─ ShooterCharacter.h            # 玩家角色
       │  ├─ ShooterPlayerController.h     # 玩家控制器（移动/视角/跳跃/蹲伏/冲刺/静步）
-      │  ├─ ShooterGameModeBase.h         # GameMode（空壳，供蓝图继承）
+      │  ├─ ShooterGameModeBase.h         # 所有局内模式的基类：击杀、播报、复活
       │  ├─ CombatComponent.h             # 战斗核心组件（库存/开火/换弹/瞄准/后坐力）
       │  ├─ WeaponData.h                  # 武器数据资产 + FPlayerAnim / FMontageData
       │  ├─ AnimNotify/
@@ -123,7 +131,7 @@ FPS/
 ## 4. 快速开始
 
 1. **打开工程**：用 UE 5.8 打开 [FPS.uproject](<FPS.uproject>)，首次打开时选择 "Rebuild" 或先生成工程文件再编译 `FPS` 模块。
-2. **默认关卡**：`/Game/FirstPerson/Lvl_FirstPerson`（[DefaultEngine.ini](<Config/DefaultEngine.ini>) 已设为 `GameDefaultMap`）。
+2. **默认关卡**：`/Game/FPS/Level/MainMenu/MainMenu`（[DefaultEngine.ini](<Config/DefaultEngine.ini>) 已同时设为 `GameDefaultMap` 与 `EditorStartupMap`）；进入菜单后再由 `UShooterGameInstance` 切到各模式自己的地图。
 3. **GameMode**：全局默认为 `AShooterGameModeBase`；实际使用请继承为 `BP_ShooterGameMode`（[BP_ShooterGameMode.uasset](<Content/FPS/Game/BP_ShooterGameMode.uasset>)），并在其中指定：
    - `DefaultPawnClass = BP_ShooterCharacter`
    - `PlayerControllerClass = BP_ShooterPlayerController`
@@ -205,14 +213,16 @@ FPS/
 | 治疗 | `IA_Heal` | 角色 | `Started` | 播放 `HealMontage`，期间隐藏武器；服务端钳制并结算治疗量 |
 | 左 / 右探头 | `LeanLeftAction` / `LeanRightAction`（留空 → 运行时创建 `IA_LeanLeft_Runtime` / `IA_LeanRight_Runtime`，绑 **Q / E**） | 角色 | `Started` / `Completed` | 按住探头（`bLeanToggleMode` = 按一下切换）；冲刺移动中禁止 |
 | 检视武器 | `IA_VersionWeapon` → `VersionWeaponAction` | 角色 | `Started` | 播放武器的 `InspectMontage1P`（只在本地 1P）；开火、开镜、换弹、切枪、冲刺会打断 |
-| 主武器 | `IA_EquipMainWeapon` | 角色 | `Started` | 切到第一把长枪，并自动关镜 |
-| 副武器 | `IA_EquipSecondaryWeapon` | 角色 | `Started` | 切到第二把长枪，并自动关镜 |
-| 手枪 | `IA_EquipPistol` | 角色 | `Started` | 切到第一把手枪，并自动关镜 |
-| 近战 | `IA_EquipMeleeWeapon` | 角色 | `Started` | 切到第一把近战武器，并自动关镜 |
-| 切换开火模式 | 自建 IA → `SwitchFireModeAction` | 角色 | `Started` | 对 `bCanSwitchFireMode` 的枪切单发 / 全自动；换弹、拉栓时不能切；服务器 RPC + `OnFireModeChanged` |
+| 主武器（**1**） | `IA_EquipMainWeapon` | 角色 | `Started` | `Combat->Initiate_Hotkey(1)` → 第一把长枪，并自动关镜 |
+| 副武器（**2**） | `IA_EquipSecondaryWeapon` | 角色 | `Started` | `Initiate_Hotkey(2)` → 摸金模式是第二把长枪，竞技模式是手枪 |
+| 近战（**3**） | `IA_EquipMeleeWeapon` | 角色 | `Started` | `Initiate_Hotkey(3)` → 第一把近战武器 |
+| 手枪（**4**） | `IA_EquipPistol` | 角色 | `Started` | `Initiate_Hotkey(4)` → 摸金模式是手枪，竞技模式是**投掷物** |
+| 炸弹（**5**，仅爆破） | `IA_Heal`（共用键） | 角色 | `Started` | `Initiate_Hotkey(5)` 在非爆破模式返回 `false`，于是同一个键回落到治疗；爆破模式里切出炸弹（见 §10.5） |
+| 切换开火模式 | 自建 IA → `SwitchFireModeAction` | 角色 | `Started` | 在 `AllowedFireModes` 里循环（单发 / 全自动 / **三连发**）；换弹、拉栓时不能切；服务器 RPC + `OnFireModeChanged` |
+| 交互（安放 / 拆除 / 捡包） | `InteractAction` 为空时运行时创建 `IA_Interact_Runtime`（**F**） | 控制器，运行时注册 | `Started` / `Completed` | 发 `Server_BeginBombInteract` / `Server_EndBombInteract`；只有爆破模式会响应 |
 | 切换倍率 | 自建 IA → `SwitchZoomAction` | 角色 | `Started` | 开镜且装了 `Variable` 瞄具时，在 `ZoomLevelsFOV` 几档之间切换；`OnZoomLevelChanged` 给界面用 |
 
-> 说明：`IMC_Shooter` 中存在 `LeftMouseButton`、`RightMouseButton`、`SpaceBar`、`LeftControl`、`LeftShift`、`LeftAlt`、`One`~`Four`、`R`、`Q`、`E` 及手柄扳机等按键；上表"哪个键对应哪个动作"是常见配置，**最终以编辑器内 `IMC_Shooter` 的实际绑定为准**。
+> 说明：`IMC_Shooter` 中存在 `LeftMouseButton`、`RightMouseButton`、`SpaceBar`、`LeftControl`、`LeftShift`、`LeftAlt`、`One`~`Five`、`R`、`Q`、`E` 及手柄扳机等按键；槽位 1–5 的语义由 `UCombatComponent::Initiate_Hotkey()` 按模式解释（见上表，以及 §10.5 的完整映射），炸弹交互键 **F** 是运行时动作、不需要资产。上表"哪个键对应哪个动作"是常见配置，**最终以编辑器内 `IMC_Shooter` 的实际绑定为准**。
 
 > 循环切枪已**删除**（C++ 绑定、`Input_CycleWeapon`、`Initiate_CycleWeapon`、`CycleWeaponAction`）。如果 `IMC_Shooter` 里还有 `IA_CycleWeapon` 映射（以及该资产），可以删掉。切枪只用槽位键。
 
@@ -226,6 +236,15 @@ FPS/
 | `Character/ABP_FirstPerson` / `ABP_ThirdPerson` | 1P / 3P 动画蓝图；读取 `AO_Yaw`、`MovementOffsetYaw`、`TurningStatus`、`FABRIK_SocketTransform`、`CurrenrAnim` / `CurrentAnim`，以及 3P 的 `bUseWalkGait` / `LocomotionPlayRate` / `GroundSpeed` |
 | `Player/BP_ShooterPlayerController` | 输入映射、移动/视角绑定、冲刺/静步动作、速度与倍率配置 |
 | `Game/BP_ShooterGameMode` | GameMode，指定默认 Pawn 与 Controller |
+| `Game/BP_TDMGameMode`、`Game/BP_SearchDestroyGameMode` | 两个比赛 GameMode（团队竞技、回合制爆破）；爆破的在 `BombClass` 里指向 `BP_Bomb` |
+| `Game/BP_ShooterGameInstance` | `UShooterGameInstance`：模式表（`Modes`：`GameModeClass` + `Map` + `bImplemented`）、`RangeMap` / `RangeGameMode`、`MainMenuMap`，以及存档的配装（`Loadout` 存档槽） |
+| `Game/BP_MainMenuPC`、`Menu/BP_MainMenuGameMode`、`UI/WBP_MainMenu`、`UI/WBP_Lobby` | 主菜单关卡：UI 输入模式、模式按钮（`HostRoom`）、按 IP 加入（`JoinByIP`） |
+| `Level/Lvl_TeamDeathMatch`、`Level/Lvl_BombDefuceMatch`、`Level/Lvl_Range` | 三种模式的可玩地图 |
+| `Blueprint/BP_Bomb`、`Blueprint/BP_BombSite` | 爆破的 C4（`ABombActor`）与包点体积（`ABombSite`） |
+| `Weapon/BP_DSShotGun`、`Weapon/ABP_ShotGun`、`Weapon/BP_BulletShell` | 双管霰弹枪、它的枪身动画蓝图和膛内弹壳网格 |
+| `Weapon/Throwable/BP_Weapon_Grenade`、`BP_ThrownFrag`、`AM_TPP_Grenade_Start` | 投掷武器（拉保险 / 投掷 Montage 走 `DA_WeaponData`）、飞行中的投射物 Actor、3P 投掷 Montage |
+| `UI/WBP_MatchHUD`、`WBP_TDMHeader`、`WBP_SDHeader`、`WBP_KillFeed`、`WBP_KillFeedEntry` | 局内 HUD：根控件、按模式的计分条（`HeaderHost`）、击杀播报列表（`FeedList`）与单条播报（`Image_Weapon`） |
+| `UI/WBP_Gunsmith` | 局外枪匠界面（`UGunsmithScreen`），带三把枪的预览 |
 | `Data/DA_WeaponData` | 唯一的武器数据资产（挂点、Montage、动画结构体，含 `Strafe_Walking`） |
 | `Weapon/BP_Weapon`、`BP_RIfle`、`BP_Refile`、`BP_Pistol`、`BP_M700`、`BP_Weapon_AK`、`BP_Knife` | 武器 Actor 蓝图；`BP_RIfle` 覆盖了 `RecoilPattern`，`BP_Weapon_AK` 用 `Weapon.type.ak` 并在 3P 网格体上用 `RifleSocketak` |
 | `Animation/Prone/BS_Prone` | 趴行 BlendSpace（14 个采样点，3P 骨架），由 `ABP_ThirdPerson` 的 Prone 状态引用 |
@@ -280,6 +299,10 @@ graph TD
 - **趴下与滑铲**：两者都由 **Owner 预测**（本地立即改变胶囊与状态），再由服务器校验 —— `Server_SetProne` 重新检查是否着地 / 是否在治疗 / 头顶空间，`Server_SetSliding` 重新检查是否着地和 75 % 的 `SlideMinSpeed`。被拒绝时回传 `Client_ProneRejected(服务器值)` 或 `Client_SlideRejected()`，而 `bIsProne` / `bIsSliding`（都是 `ReplicatedUsing`）驱动其他所有机器；如果 Owner 的结束 RPC 丢了，服务器会在 `SlideDuration` 之后半秒强制结束滑铲。
 - **开火打断冲刺**完全在拥有者客户端上处理（`StopSprinting()`），随后照常通过 `Server_SetMovementState` 把状态镜像给服务器。
 - **腰射散布**在拥有者客户端的 `AWeapon::WeaponTrace` 里随机（`FMath::VRandCone`），服务器直接复用客户端的 `FHitResult`，与不散布的情况完全一样 —— 服务端没有散布锥，也没有任何同步的散布状态。准星在本地重算同一个角度，所以客户端与服务器永远不需要就某个数值达成一致。
+- **比赛状态与击杀播报**：`AShooterGameState` 同步比赛计时、`MatchMode` / `bHasMatchHeader` 与两队比分，击杀播报走 `NetMulticast, Reliable` 的 `Multicast_KillFeed`，连击杀者的 `UTexture2D` 武器图标一起下发。`ASearchDestroyGameState` 用同一套模式扩展出回合阶段、炸弹状态 / 包点、交互计时与 `OnRoundEnded`。
+- **炸弹交互**：客户端只发 `Server_BeginBombInteract` / `Server_EndBombInteract`；携带者、安放 / 拆除计时、爆炸与回合结算全在 GameMode 里。炸弹 Actor 同步 `Carrier` / `bPlanted`，每次状态变化都配一个 `Multicast_*` 蓝图事件。
+- **投掷物**：`Server_BeginThrow` / `ReleaseThrow` / `CommitThrow` 是可靠的服务器 RPC，3P 的拔销 / 投掷 Montage 走 `Multicast_BeginThrow` / `Multicast_ReleaseThrow`，投射物 Actor 同步移动，弹药在本地预测后由 `Client_ThrowAmmo` → `AWeapon::Rep_Fire` 校正。
+- **三连发**不引入新的同步状态：`FireType` 本来就在同步，服务端射速节流改用连发间隔，客户端无法以快于 `BurstShotInterval` 的节奏打出连发。
 
 ---
 
@@ -301,7 +324,7 @@ graph TD
 - `DA_Sight` 勾了 `bOverridesAimFOV` 但没有填镜片材质，因此目前只相当于红点类瞄具；要做倍镜必须把 `OpticType = Magnified` 那一整块（Lens Socket、Lens Material、材质槽序号、渲染目标尺寸）填全，否则画中画会打警告并且不生效。
 - 整备界面只显示背包里的**前三把**武器；预览装置是一个生成在地图下方极远处（Z = −100000）的临时 Actor，控件销毁时一并销毁。
 - 配件装卸在服务器校验，但菜单是基于同步状态重建的，所以被服务器拒绝的请求只会留下一条 Warning，界面不会变化。
-- `AShooterGameModeBase` 目前是空壳，规则逻辑（回合、计分、复活）需要自行扩展。
+- `AShooterGameModeBase` 已不再是空壳：它负责默认 PlayerState / GameState、登录时分配简短 `PlayerN` 名字、击杀 / 死亡统计、击杀播报（带击杀者武器图标）和定时复活（`RespawnDelay`）；`ATDMGameMode` 与 `ASearchDestroyGameMode` 在此之上实现各自的比赛规则。
 - **趴下**是复用 CMC 蹲伏、通过替换 `CrouchedHalfHeight` 实现的；`DefaultCrouchedHalfHeight` 在 `BeginPlay` 时记录，而 `CanExitProne` 自己做了一次胶囊重叠检测（`ProneStandUp`）—— 如果胶囊碰撞设置和 CMC 的不一致，"能不能站起来"的判定可能和移动组件不一致。滑铲中不能进入趴下，退出趴下会清空探头输入。
 - **1P FABRIK 是有意停用的**：`FABRIK_Alpha1P` 恒为 0，`bDisableLeftHandIKDuringReload` / `LeftHandIKBlendSpeed` / `DisableLeftHandIKCurveName` 都已经不起作用。1P 持枪姿态来自武器的持枪动画和握把持姿。**3P** 的 FABRIK alpha 要绑到 `FABRIK_Alpha`（近战和爬行时为 0）。
 - **滑铲需要角色骨架上有一个名为 `BodySlot` 的动画槽**，以及 `ABP_ThirdPerson` 里的按骨骼分层混合；没有的话滑铲什么都不会动，而且**不会打印任何日志**。工程自带的默认 `SlideAnim` 是软引用路径（`anim_Slide_L`）—— 移动资产会让滑铲身体动画失效。
@@ -315,6 +338,12 @@ graph TD
 - 移动 / 跳跃的散布惩罚尚未实现：`GetHipFireSpread()` 只判断 `bAiming`，头文件注释里标注了应该在这里补上。
 - `AWeapon::ResolveAttachPoint` 在配置的 Socket 不可用时会静默**回落**（`RifleSocketak` → `RifleSocket` → `hand_r` → `HandGrip_R`），但每次都会打 Warning；枪挂得奇怪时先看 `[WeaponAttach]` 日志。没有父级又不是根骨骼的孤立骨骼会被有意拒绝。
 - `Weapon.type.ak` 是 [DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>) 里唯一注册的 Tag；它同时也是一个原生 Tag，所以两种方式都存在。
+- **局内 HUD 需要一处赋值**：`BP_ShooterPlayerController → MatchHUDClass` 必须指向 `WBP_MatchHUD`，否则 `EnsureMatchHUD()` 会打日志 `[MatchHUD] MatchHUDClass is not set`，既没有计分条也没有击杀播报。按模式的计分条创建进 `HeaderHost`；如果直接把计分条拖进 WBP，名字必须是 `TDMHeader` / `SDHeader` 才会被复用。
+- **霰弹枪的弹丸数量是数据不是代码**：`AWeapon` 走普通射线，霰弹枪专属的 C++ 只有膛内弹壳（`Bullet1Socket` / `Bullet2Socket` + 五个弹壳通知）。散布、伤害、弹药和射速都在 `BP_DSShotGun` 上配（`HipFireSpread`、`FireTime`、`MagCapacity`……）。
+- **投掷物弹药记在武器上**：`CommitThrow()` 先在本地扣，服务器再用 `Client_ThrowAmmo` 校正；弹药为 0 的投掷物 `Initiate_EquipSlot` 会拒绝装备，也就是说它不会像枪械那样从备弹里自动补满。
+- **炸弹在 C++ 里没有动画**：`ABombWeapon` 只是纯 C++ 兜底（两个静态网格组件、无 Montage）。想让炸弹拿在手上时播动画，把 `BP_ShooterCharacter → Combat → BombWeaponClass` 指到一个带网格和 Montage 的蓝图。
+- **爆破模式回合内不复活**：回合进行中 `ASearchDestroyGameMode::CanRespawn` 返回 false，`AShooterGameModeBase::RespawnPlayer(Controller, /*bForce*/ true)` 只在回合之间用，所以阵亡的进攻方不能再下包、阵亡的防守方也不能再拆包。
+- **击杀播报的条数上限在控件侧**：`UKillFeedWidget::MaxEntries`（5）与 `EntryLifetime`（5 秒）会淘汰最旧的一条；`UKillFeedEntry` 需要按名字绑定 `Text_Killer`、`Text_Victim`、`Image_Weapon`，自杀 / 环境击杀时武器图标为 null。
 
 ---
 
@@ -447,6 +476,52 @@ graph TD
 - `BP_ShooterGameMode` / `BP_TDMGameMode` 的 Player State / Game State Class 保持默认。
 - TDM HUD：GameState 绑 `OnTeamScoreChanged`、`OnKillFeed`、`OnMatchStateChanged`、`OnMatchEnded`，读 `GetRemainingTime`；PlayerState 绑 `OnTeamChanged`、`OnStatsChanged`，读 `GetRespawnRemaining`。
 - 每把 `DA_RAR_*` 填写 `DisplayName`，否则改枪界面不显示名字。
+
+### 10.5 局内 HUD、爆破模式、投掷物与双管霰弹枪（2026-10 修订 2）
+
+> 本节与 §2 / §5 / §9 / §10.4 冲突时，以本节为准。
+
+**局内 HUD**
+- `UMatchHUD`（`WBP_MatchHUD`，父类 `UMatchHUD`）由 `AShooterPlayerController::BeginPlay` → `EnsureMatchHUD()` 以 ZOrder 5 创建，需要 `BP_ShooterPlayerController → MatchHUDClass = WBP_MatchHUD`。它绑定 GameState（`OnTeamScoreChanged`、`OnMatchStateChanged`、`OnMatchEnded`、`OnKillFeed`、`OnMatchModeChanged`），并按 `GameState.GetMatchMode()` 在 `HeaderHost` 里创建对应计分条（也可以直接在 WBP 里放一个名为 `TDMHeader` / `SDHeader` 的计分条给它复用）。
+- `UTDMHeaderWidget`（WBP_TDMHeader）：`Text_TeamAScore` / `Text_TeamBScore`、`Text_Timer`，可选 `Text_ScoreToWin` / `Text_MatchState`（现有 WBP 绑了前三个加 `Text_ScoreToWin`，没有绑 `Text_MatchState`）；比赛未开始时倒计时显示暖身剩余（`GetWarmupRemaining()`），开始后显示比赛剩余时间（`GetRemainingTime()`，无时限显示 `--:--`）。
+- `USDHeaderWidget`（WBP_SDHeader）：两队比分、`Text_Round`、`Text_Timer`（回合倒计时，下包后切到引信倒计时）、`Text_BombState`、`Text_Prompt`（拾取 / 安放 / 拆除）、`Text_Role`（进攻 / 防守）以及安放拆除进度条 `Progress_Action`。事件：`OnScoresUpdated`、`OnLocalTeamChanged`、`OnHeaderBombStateChanged`、`OnHeaderRoundPhaseChanged`、`OnHeaderPromptChanged`。⚠ 现有 `WBP_SDHeader` 只绑定了其中 **5 个**：`Text_TeamAScore`、`Text_TeamBScore`、`Text_Timer`、`Text_Round`、`Text_Prompt`；`Text_BombState`、`Text_Role`、`Progress_Action` 是 `BindWidgetOptional`，C++ 会写值但界面不显示，需要自己在 WBP 里补上这几个控件。
+- `UKillFeedWidget`（WBP_KillFeed，`FeedList` 容器）生成 `UKillFeedEntry` 行（`Text_Killer`、`Text_Victim`、`Image_Weapon`）：名字按队伍着色、本地玩家高亮、中间是击杀者的武器图标，`MaxEntries` 5 条、`EntryLifetime` 5 秒。
+- 暖身 / 计时拆分：`AShooterGameState` 现在同步 `MatchStartServerTime`，并提供 `GetWarmupRemaining()`、`HasTimeLimit()`、`GetMatchMode()`、`HasMatchHeader()`、`OnMatchModeChanged`；`AShooterGameModeBase` 在登录时给每个玩家分配 `PlayerN` 名字。
+- 冲刺与换弹互斥：`UCombatComponent::IsReloading()` 拦住 `Input_Sprint`，开始换弹会调 `StopSprinting()`，`ApplyMovementSpeed` 里换弹状态也会取消冲刺，`Server_SetMovementState` 在服务端再校验一次。
+
+**爆破模式（Search & Destroy）**
+- `ASearchDestroyGameMode`（BP_SearchDestroyGameMode，地图 `Lvl_BombDefuceMatch`）默认值：`RoundsToWin` 6、`WarmupTime` 3 秒、`FreezeTime` 5 秒、`RoundTime` 115 秒、`PlantTime` 3.5 秒、`DefuseTime` 7 秒、`BombTimer` 40 秒、`RoundEndDelay` 5 秒、`PostMatchDelay` 8 秒、`PlantCancelSpeed` 120 cm/s、`DefuseRange` 140 cm、`ExplosionRadius` 2000 cm、`ExplosionDamage` 500，默认关闭友伤。开赛时 0 队固定为进攻方；出生点 Tag 为 `Attacker` / `Defender`（取不到时回落 `TeamA` / `TeamB`）。`SwitchSides()` 在回合序号达到 `RoundsToWin` 时翻转进攻方，但它**只翻攻守身份，不清空比分、不重排玩家队伍**，而且只要某队已经够分结束比赛，这个分支根本不会走到。
+- 回合阶段（`EBombRoundPhase`）：`Warmup` → `Freeze` → `Live` → `PostRound`；炸弹状态 `Idle` → `Carried` → `Planting` → `Planted` → `Defusing` → `Exploded` / `Defused`。回合以歼灭、爆炸、拆除或超时结束（`ERoundWinReason`），胜方加一局分。
+- 非 `Live` 阶段 GameState 会锁输入与战斗：`IsMovementLocked()`（移动 / 视角 / 跳跃 / 蹲伏 / 冲刺 / 静步）与 `IsActionLocked()`（开火、换弹、安放、拆除）。⚠ 移动锁**只拦客户端输入层**，服务器不会冻结 `CharacterMovement`，真正权威的只有动作锁（开火 / 投掷 / 安放）。
+- 回合结束条件及其细节：歼灭（防守方全灭 → 进攻方赢；进攻方全灭 → 防守方赢，**但炸弹已安放时不结束**）、`BombExploded`（进攻方）、`BombDefused`（防守方）、`TimeExpired`（防守方）。同一帧内判定时，「防守方全灭」优先，拆包优先于爆炸。
+- 炸弹爆炸：`ExplosionRadius` 2000 cm、固定 `ExplosionDamage` 500，**没有距离衰减、没有遮挡检测、也没有队伍过滤** —— 会炸死进攻方自己人，而且伤害来源记在炸弹 Actor 上，所以击杀播报里凶手名为空。`BP_Bomb` 没有实现 `OnBombExploded`，因此 C4 目前**没有爆炸特效和音效**。
+- 未实现（当前有意留白）：经济 / 购买菜单、护甲、拆弹器、半场比分重置、加时、平局处理、观战 / 自由视角、回合结算面板、C4 滴滴声、投降。在 `Live` 中途加入的玩家本回合不生成角色（也没有观战相机），要等下一回合。
+- `ABombActor`（BP_Bomb）就是 C4：开局随机一名进攻方拿到，`AShooterPlayerState::IsCarryingBomb()` / `OnBombCarryChanged` 跟踪携带状态，携带者阵亡后炸弹掉在地上，进攻方可以捡；`ABombSite`（BP_BombSite）标记包点，站在包点里按交互键安放，防守方在 `DefuseRange` 内拆除。⚠ `TryPickupBomb` **不校验距离**，按 F 可以在任意位置捡起地上的炸弹（重叠球半径 80 cm，提示按 120 cm 算）；而且炸弹携带时并没有挂到角色身上（`GiveTo` 只是隐藏 Actor），「拿在手上」的视觉是 5 号位 `ABombWeapon`。
+- 爆破热键：**1** 主武器、**2** 手枪、**3** 刀、**4** 投掷物、**5** 炸弹（`Initiate_Hotkey`）；交互键是运行时创建的 **F**。
+
+**投掷物**
+- `EWeaponKind::Throwable` 的武器（破片 / 烟雾 / 燃烧瓶 / 闪光，Tag `Weapon.type.grenade` / `smoke` / `molotov` / `flash`）配 `ProjectileClass`（`AThrownProjectile`）、`HighThrowSpeed` 2200、`LowThrowSpeed` 900、`HighThrowPitchOffset` 8°、`LowThrowPitchOffset` −18°、`ThrowReleaseTime` 0.35 秒、`ThrowSpawnForward` 40 cm。
+- 左键高抛、右键（瞄准键）低抛；出手时机由 `ThrowReleaseTime` **或**投掷 Montage 上的 `Notify_ThrowWeapon` 动画通知中先到的那个决定。⚠ 现有资产里没有任何蒙太奇挂了 `UAnimNotify_ThrowProjectile`，所以实际出手靠的是 0.35 秒定时器。拉保险用的 Montage 走装备 Montage 槽位，低抛变体是 `FMontageData::SecondaryFireMontage`。
+- `AThrownProjectile` 会弹跳（`Bounciness` 0.35、`Friction` 0.2），`FuseTime` 2 秒后或撞击时（`bDetonateOnImpact`）引爆；破片做球形伤害（中心 100、`DamageRadius` 550 cm 处为 0，`InnerRadius` 150 cm 内满伤，需要视线），并广播 `OnDetonate`（蓝图）与 `ExplosionFX` / `ExplosionSound`。烟雾 / 燃烧瓶 / 闪光只需要在蓝图里实现效果。
+
+**双管霰弹枪**
+- `BP_DSShotGun` 走普通开火流程；膛内两发弹壳是挂在 `Bullet1Socket` / `Bullet2Socket` 上的静态网格，由手臂换弹 Montage 里的 `Bullet1Spawn` / `Bullet1Delete` / `Bullet2Spawn` / `Bullet2Delete` / `DeleteAllBullets` 通知开关，弹壳插槽强制 `bForceAlwaysAnimated`，不会卡在绑定姿势。
+
+**枪匠与整备**
+- `UGunsmithComponent::SaveCurrent()` 保存配装的同时**把它装备成主武器**：`UShooterGameInstance::EquipPrimaryWeapon()` 把长枪放到第一把长枪的位置、最多保留两把，原来的主枪顺延到 2 号位。`UGunsmithScreen` 提供 `Equip()`（可选 `Button_Equip`）与 `OnEquippedPrimary` 事件。
+- 局内 Tab 整备仍然停用；局内改配件还是用 **B** 键菜单。新增的配件数据：`FoldedMesh`（装了瞄具后换用的倒下机瞄）、`MagazineCapacity`（AK 弹鼓 = 95）以及每个弹匣自己的手臂换弹 Montage。
+
+**怎么测**
+- HUD：任意地图 Standalone 进局，确认计分条先显示暖身再到比赛倒计时，击杀后播报里能看到武器图标。
+- 爆破：打开 `Lvl_BombDefuceMatch`，World Settings 的 GameMode Override 选 `BP_SearchDestroyGameMode`，2 名玩家、Listen Server；把 `RoundsToWin` 调成 1 就能直接看到比赛结束。
+- 投掷物：把 `BP_Weapon_Grenade` 加进角色默认武器，左键高抛、右键低抛，看引信与破片范围。
+- 霰弹枪：装备 `BP_DSShotGun` 并换弹——每次装一发，弹壳随通知出现 / 消失。
+
+**蓝图 / UMG 配置要点**
+- `BP_ShooterPlayerController`：`MatchHUDClass = WBP_MatchHUD`；`InteractAction` 留空（运行时创建 F）或填自己的资产。
+- `BP_ShooterCharacter`：`Combat → DefaultWeaponClass` 里应有霰弹枪 / 投掷物；`Combat → BombWeaponClass` 可选。
+- `BP_ShooterGameInstance → Modes`：新增 SearchDestroy 行（`GameModeClass = BP_SearchDestroyGameMode`、`Map = Lvl_BombDefuceMatch`、勾 `bImplemented`）。
+- `WBP_MatchHUD`：计分条容器命名为 `HeaderHost`、击杀播报命名为 `KillFeed`；`WBP_KillFeed` 需要一个 `FeedList` 面板；`WBP_KillFeedEntry` 需要 `Text_Killer` / `Text_Victim` / `Image_Weapon`。
 
 ---
 

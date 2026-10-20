@@ -39,7 +39,11 @@
 25. [Combat feedback, lean, loadout WBP and switch/reload rules (since Step 8)](#25-combat-feedback-lean-loadout-wbp-and-switchreload-rules-since-step-8)
 26. [Prone, slide, crouch modes, grip hold style and magazine attachments](#26-prone-slide-crouch-modes-grip-hold-style-and-magazine-attachments)
 27. [Menus, out-of-match loadouts, rooms, pause, Team Deathmatch and death camera (2026-10 revision)](#27-menus-out-of-match-loadouts-rooms-pause-team-deathmatch-and-death-camera-2026-10-revision)
+28. [In-match HUD, warmup clock, Search & Destroy, throwables and burst/shotgun weapon work (2026-10 revision 2)](#28-in-match-hud-warmup-clock-search--destroy-throwables-and-burstshotgun-weapon-work-2026-10-revision-2)
+29. [Match HUD widgets — `UMatchHUD`, headers and kill feed](#29-match-hud-widgets--umatchhud-headers-and-kill-feed)
 
+> **Latest revision (2026-10 revision 2):** new top-level sections `28` and `29` cover the **in-match HUD** (`UMatchHUD`, `UMatchHeaderWidget` / `UTDMHeaderWidget` / `USDHeaderWidget`, `UKillFeedWidget` / `UKillFeedEntry`), the **warmup clock**, **`PlayerN` names**, **sprint vs. reload**, the whole **Search & Destroy** round mode (`ASearchDestroyGameMode`, `ASearchDestroyGameState`, `ABombActor`, `ABombSite`, `ABombWeapon`), the **throwable pipeline** (`AThrownProjectile`, high/low throw, projectile damage), **`EFireType::Burst`**, the **double-barrel shotgun** chamber shells and the **gunsmith "equip as primary"** flow plus the **X24 attachment set**. Where it disagrees with §4.1, §4.2, §4.4, §13, §17.1, §17.3, §22, §24.3, §27 or §3.4, §28 / §29 win.
+>
 > **Latest revision (since Step 14):** new top-level section `26` covers **prone / crawl**, the **slide**, the **Ctrl-hold + C-toggle crouch** input rework, the **GripHoldStyle (Cradle / Grab)** system, **skeletal-mesh magazine attachments** (`SkeletalMesh`, `MagReloadAnim`, `bHideSpareMagazineBone`), the **melee sweep** (`WeaponMeleeHit`), the **AK weapon tag and 3P attach-point fallbacks**, the **spreading crosshair** and the **hip-fire spread cone** (`HipFireSpread` × `HipFireSpreadMultiplier`, rolled in `WeaponTrace`). Where it disagrees with §4.8, §4.9, §6.3, §6.7, §7.4, §7.5, §7.6, §8.2, §12, §14 or §23.3, §26 wins.
 >
 > **Previous revision (since Step 8):** new top-level section `25` covers PiP scope exposure, the Concrete impact default, directional hit reacts, the damage direction ring and hit confirm marks, per-weapon preview offsets, the WBP-designable loadout UI, Q/E lean (C++ + 3P ABP spine), the lean-aware weapon trace, the removal of CycleWeapon, the switch/reload interrupt rules, and a summary of Steps 9–14 (inspect, canted sight, laser). Where it disagrees with §6.3, §7.3, §7.5, §8.2 or §18.4, §25 wins.
@@ -63,7 +67,7 @@
 | 10–16 | Damage, health, input, UI, sniper scope | Look up by feature |
 | 17–19 | Config, sequences, blueprint contract | Anyone debugging integration |
 | 20 | Pitfalls and TODOs | Whoever inherits the project |
-| 21–26 | Attachment data/UI, optics + flashlight, weapon-feel revisions, combat feedback + lean, prone/slide/grip hold/magazine attachments | Look up by feature (these sections win over the older ones they reference) |
+| 21–29 | Attachment data/UI, optics + flashlight, weapon-feel revisions, combat feedback + lean, prone/slide/grip hold/magazine attachments, the in-match HUD and the Search & Destroy / throwable / shotgun revision | Look up by feature (these sections win over the older ones they reference) |
 
 Legend:
 
@@ -174,15 +178,20 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | --- | --- | --- |
 | `Tag_WeaponType_None` | `Weapon.type.none` | Unspecified type |
 | `Tag_WeaponType_Rifle` | `Weapon.type.rifle` | Rifle (long gun) |
-| `Tag_WeaponType_Pistol` | `Weapon.type.pistol` | Pistol |
-| `Tag_WeaponType_Sniper` | `Weapon.type.sniper` | Sniper rifle (no longer special-cased — §24.6) |
+| `Tag_WeaponType_Pistol` | `Weapon.type.pistol` | Pistol (single + burst by default, §28.3) |
 | `Tag_WeaponType_Melee` | `Weapon.type.melee` | Melee (knife) |
 | `Tag_WeaponType_AK` | `Weapon.type.ak` | AK rifle. A **separate tag on purpose**: the AK needs its own animation/montage set, and it is the only tag with a dedicated third-person attach path (`RifleSocketak`, §26.6) |
+| `Tag_WeaponType_ShotGun` | `Weapon.type.shotgun` | Double-barrel shotgun — its own montage set, plus the chamber-shell notifies (§28.5) |
+| `Tag_WeaponType_X24` | `Weapon.type.x24` | X24 pistol. Guards the body-sequence workaround (the X24 body has no slot that matches the arm montages) and its skeletal attachments (§28.6) |
+| `Tag_WeaponType_Grenade` | `Weapon.type.grenade` | Frag grenade — `FirstPersonMontages` are keyed separately from guns (§28.4) |
+| `Tag_WeaponType_Smoke` | `Weapon.type.smoke` | Smoke grenade (Blueprint `OnDetonate` only) |
+| `Tag_WeaponType_Molotov` | `Weapon.type.molotov` | Molotov / incendiary (Blueprint `OnDetonate` only) |
+| `Tag_WeaponType_Flash` | `Weapon.type.flash` | Flashbang (Blueprint `OnDetonate` only) |
 
 - Declared as native tags (`UE_DECLARE/DEFINE_GAMEPLAY_TAG_EXTERN`), so no ini registration is required.
-- `Weapon.type.ak` is **also** listed in [DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>) (`ImportTagsFromConfig=True`) — the only tag carried in config, so it stays pickable even when the tag list is read from config alone.
+- `Weapon.type.ak` is **also** listed in [DefaultGameplayTags.ini](<Config/DefaultGameplayTags.ini>) (`ImportTagsFromConfig=True`) — the only weapon tag carried in config; the four throwable tags are registered there too since 2026-10 revision 2, together with the new `Attachment.Slot.RearSight`.
 
-- **Effect**: `AWeapon::WeaponType` and every `TMap<FGameplayTag, …>` in `UWeaponData` are keyed by these tags. ⚠ `USniperScopeComponent` **used to** test `MatchesTagExact(Tag_WeaponType_Sniper)` to raise the scope; since Step 6 the sniper follows its equipped optic like every other weapon (§24.6) and the component is idle.
+- **Effect**: `AWeapon::WeaponType` and every `TMap<FGameplayTag, …>` in `UWeaponData` are keyed by these tags. ⚠ `Weapon.type.sniper` **no longer exists** (the AWP / M700 was removed, §10.4) — the tag table used to list it; the sniper now follows its equipped optic like every other weapon (§24.6) and `USniperScopeComponent` is idle.
 
 ### 3.5 Target files
 
@@ -199,9 +208,11 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 
 | Value | Display name | Notes |
 | --- | --- | --- |
-| `LongGun` | Long Gun | Only long guns can occupy the main / secondary slots |
-| `Pistol` | Pistol | Pistol slot |
+| `LongGun` | Long Gun | Only long guns can occupy the main / secondary slots (Extraction allows two, arena modes one — §28.2) |
+| `Pistol` | Pistol | Pistol slot; default fire modes are single + burst (`GetAllowedFireModes`) |
 | `Melee` | Knife | Melee slot; melee can never aim (`Initiate_Aim_Pressed` / `Local_Aim` force it off), **never consumes ammo** (`AWeapon::UsesAmmo()` is false), uses the melee sweep instead of the camera trace, and turns both FABRIK alphas off (§26.4/§26.5) |
+| `Throwable` | Throwable | Throwable slot (key 4 in arena modes). Consumes ammo but never auto-reloads; fire starts a throw instead of a shot; never aims (§28.4) |
+| `Bomb` | Bomb | Search & Destroy key 5. Never aims, never uses ammo; planting / defusing happens through the game mode, not the weapon (§28.2) |
 
 ### 4.2 `EFireType` (Weapon.h)
 
@@ -209,6 +220,9 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | --- | --- |
 | `Single` | Never re-fires automatically; `FireTimerFinished` will not call `Local_FireWeapon` again |
 | `Automatic` | As long as `bTriggerPressed == true` and the magazine is non-empty, `FireTimerFinished` keeps firing |
+| `Burst` | Fires `BurstCount` shots spaced by `GetBurstShotInterval()` without needing the trigger to stay down; `BurstShotsRemaining` is the counter and the server rate limit uses the same interval (§28.3) |
+
+`AWeapon::GetAllowedFireModes()` decides which of the three a weapon may use: explicit `AllowedFireModes` wins, otherwise pistol = `Single` + `Burst`, `bCanSwitchFireMode` rifle = `Single` + `Automatic`, everything else = its authored `FireType`. `SanitizeFireType()` runs on `BeginPlay` / on equip, `GetNextFireMode()` cycles the list.
 
 ### 4.3 `EWeaponStatus` (Weapon.h) — the weapon state machine
 
@@ -225,9 +239,11 @@ namespace FPSTraceChannels { constexpr ECollisionChannel ECC_Weapon = ECC_GameTr
 | Value | Resolution rule (`FindWeaponForSlot`) |
 | --- | --- |
 | `Main` | The 1st `EWeaponKind::LongGun` |
-| `Secondary` | The 2nd `LongGun` |
+| `Secondary` | The 2nd `LongGun` (Extraction; arena modes remap key 2 to `Pistol` in `Initiate_Hotkey`) |
 | `Pistol` | The 1st `Pistol` |
 | `Melee` | The 1st `Melee` |
+| `Throwable` | The 1st `Throwable`; refused by `Initiate_EquipSlot` when its `Ammo` is 0 |
+| `Bomb` | The 1st `Bomb` (granted by `GrantBombWeapon()` in Search & Destroy, dropped with `RemoveBombWeapon()`) |
 
 ### 4.5 `ETurningInPlace` (ShooterType.h)
 
@@ -1238,8 +1254,15 @@ Automatic cancellations: sprint is refused while aiming, crouched **or prone**, 
 
 **Location**: [ShooterGameModeBase.h](<Source/FPS/Public/ShooterGameModeBase.h>) / [.cpp](<Source/FPS/Private/ShooterGameModeBase.cpp>)
 
-- An empty `AGameModeBase` subclass with no overrides.
-- **Purpose**: acts as the C++ type anchor so `GlobalDefaultGameMode=/Script/FPS.ShooterGameModeBase` in `DefaultEngine.ini` resolves; real projects should use the blueprint subclass `BP_ShooterGameMode` to set `DefaultPawnClass` / `PlayerControllerClass` / `HUDClass` and the scoring rules.
+- `AGameModeBase` subclass that is the **base of every in-match mode** (team deathmatch, Search & Destroy, the range); it is no longer empty.
+- Constructor sets `PlayerStateClass = AShooterPlayerState` and `GameStateClass = AShooterGameState`.
+- `CanDamage(Instigator, Victim)` — false once the match state is `PostMatch`; subclasses override it for team rules (friendly fire).
+- `OnPlayerKilled(Killer, Victim)` — adds the kill / death counters, then broadcasts the kill feed through `AShooterGameState::Multicast_KillFeed` **including the killer's `AWeapon::WeaponIcon`** (read from `UCombatComponent::CurrentWeapon`, null for suicides), calls `ScoreKill` (subclass hook) and starts the respawn timer.
+- `RespawnPlayer(Controller, bForce = false)` — `RestartPlayer` after `RespawnDelay` (5 s); `bForce` skips the `CanRespawn` check and is used between Search & Destroy rounds.
+- `PostLogin(NewPlayer)` → `AssignShortPlayerName()` — renames a joining player to `PlayerN` (N = current player count) unless the name already looks like `PlayerN`, so the kill feed and scoreboard stay short.
+- `ClearRespawnTimers()` — called when the match ends.
+- **Subclasses**: `ATDMGameMode` (team assignment, team scoring, match clock / warmup) and `ASearchDestroyGameMode` (rounds, bomb, plant / defuse — §28.2). `BP_ShooterGameMode` is the plain blueprint used by the range.
+- **Purpose**: `GlobalDefaultGameMode=/Script/FPS.ShooterGameModeBase` in `DefaultEngine.ini` resolves to this class; the blueprints set `DefaultPawnClass` / `PlayerControllerClass` / `HUDClass`.
 
 ---
 
@@ -1348,6 +1371,7 @@ Rather than changing the main camera FOV (which would zoom the entire screen and
 ```
 
 - `ECC_GameTraceChannel2` is **Weapon**, i.e. `FPSTraceChannels::ECC_Weapon`.
+- `ECC_GameTraceChannel1` is **Projectile**, i.e. `FPSTraceChannels::ECC_Projectile` (added 2026-10 revision 2). `AThrownProjectile` uses it as its object type: it ignores Pawns / Camera / Visibility and blocks everything else, so a thrown grenade bounces off geometry without shoving characters (§28.4).
 - Character setup: the capsule ignores it, the body mesh blocks it (see 6.3) → bullets pass through the capsule and hit the skeleton.
 - `WeaponTrace` additionally narrows hittable types to Pawn / WorldStatic / WorldDynamic / PhysicsBody with `FCollisionResponseParams`.
 
@@ -1365,10 +1389,14 @@ Rather than changing the main camera FOV (which would zoom the entire screen and
 ### 17.3 Default map and GameMode ([DefaultEngine.ini](<Config/DefaultEngine.ini>))
 
 ```ini
-EditorStartupMap=/Game/FirstPerson/Lvl_FirstPerson.Lvl_FirstPerson
-GameDefaultMap=/Game/FirstPerson/Lvl_FirstPerson.Lvl_FirstPerson
+EditorStartupMap=/Game/FPS/Level/MainMenu/MainMenu.MainMenu
+GameDefaultMap=/Game/FPS/Level/MainMenu/MainMenu.MainMenu
 GlobalDefaultGameMode=/Script/FPS.ShooterGameModeBase
+GameInstanceClass=/Game/FPS/Game/BP_ShooterGameInstance.BP_ShooterGameInstance_C
 ```
+
+- The project boots into the **menu level**; `UShooterGameInstance` (`BP_ShooterGameInstance`) then travels to the map of the chosen mode (`HostRoom` → `Modes[Mode].Map` with `?listen?game=<GameModeClass>`, or `OpenRange()` for the range). See §10.4 / §28.2.
+- ⚠ `GlobalDefaultGameMode` is the *match* base class; the menu level overrides it with `AMainMenuGameMode` in its World Settings, and each match map (or the mode-table `GameModeClass`) selects `BP_TDMGameMode` / `BP_SearchDestroyGameMode`.
 
 ### 17.4 Physical surfaces and gameplay tags
 
@@ -1639,6 +1667,26 @@ Fixed in this revision (no longer issues in 20.1):
 | 54 | `AWeapon::GetHipFireSpread` / `WeaponTrace` | The cone is rolled on the tracing (owning) client; `Server_FireWeapon` trusts the resulting `FHitResult` | Consistent with the rest of the client-authoritative hit model, but spread is therefore a feel/balance feature, not an anti-cheat accuracy penalty |
 | 55 | `AWeapon::GetHipFireSpread` | Only `bAiming` is modelled — no movement / jump / fire-rate spread penalty | The header comment marks the getter as the place to add them; the crosshair and the trace both pick the change up automatically |
 
+#### 20.1.4 Added with the 2026-10 revision 2 (HUD, Search & Destroy, throwables, shotgun, gunsmith)
+
+| # | Where | Observation | Effect / how to handle it |
+| --- | --- | --- | --- |
+| 56 | `AShooterPlayerController::EnsureMatchHUD` | Nothing is created unless `MatchHUDClass` is set on the controller blueprint; it only logs a warning | Assign `WBP_MatchHUD`; without it there is no header and no kill feed |
+| 57 | `WBP_SDHeader` | Only `Text_TeamAScore`, `Text_TeamBScore`, `Text_Timer`, `Text_Round`, `Text_Prompt` exist; `Text_BombState`, `Text_Role`, `Progress_Action` are `BindWidgetOptional` | The C++ writes all of them but three stay invisible until the widgets are added (§29.2) |
+| 58 | `ASearchDestroyGameMode::SwitchSides` | Triggered by `RoundIndex == RoundsToWin` only, and it flips `AttackerTeam` without resetting scores or re-teaming players | Practically unreachable when a team already reached the round target; treat half-time as unimplemented |
+| 59 | `ASearchDestroyGameMode::TryPickupBomb` | No distance check: any attacker pressing F anywhere picks up a dropped bomb | Exploitable; the overlap sphere is 80 cm while the HUD prompt assumes 120 cm |
+| 60 | `ASearchDestroyGameMode::ExplodeBomb` | 500 flat damage inside 2000 cm, **no falloff, no line of sight, no team filter**; `DamageInstigator` is the bomb actor | Kills attackers too and produces a kill-feed entry with an empty killer name; add LOS / team filtering in `ABombActor` or the game mode |
+| 61 | `BP_Bomb` | `OnBombExploded` / `OnBombDefused` are Blueprint events but are **not implemented** in the blueprint | No explosion FX, no beeps, no defuse feedback |
+| 62 | `ABombActor::GiveTo` | Never calls `ApplyCarryAttach()` (dead code); the actor is only hidden while carried | The "carrying" visual is entirely the key-5 `ABombWeapon` mesh |
+| 63 | `AShooterGameState::IsMovementLocked` | Enforced on the client input layer only; the server never freezes `CharacterMovement` | A modified client can move during freeze; the action lock (`IsActionLocked`) *is* checked on the server |
+| 64 | `ASearchDestroyGameState::GetLifetimeReplicatedProps` | `RoundPhase` is listed before `LastWinReason` / `RoundWinningTeam`, and `OnRep_RoundPhase` broadcasts `OnRoundEnded` with those two fields | A client can receive `OnRoundEnded` with stale `None` / 255 on the transition into `PostRound` |
+| 65 | `UCombatComponent::bThrowInProgress` | Cleared only by `FinishThrow()`, which only runs from the throw montage's end delegate | If a throwable has no throw montage in `DA_WeaponData`, `PlayThrowMontage` returns early, the weapon is already hidden by `SetHiddenForHeal(true)` and reload / switch stay blocked — add a timeout fallback |
+| 66 | `UCombatComponent::CommitThrow` | Contains an empty `if` branch (comment only) where the client predicted ammo was meant to advance `AWeapon::Sequence` | A server rejection therefore does not roll the client's predicted ammo back |
+| 67 | `AWeapon::GetAllowedFireModes` + `SanitizeFireType` | Pistols always expose `{Single, Burst}` and any authored `FireType` outside the list is rewritten on `BeginPlay` / equip / Rep | A pistol blueprint authored as `Automatic` silently becomes `Single`; check `BP_Pistol` / `BP_Weapon_X24` |
+| 68 | `AWeapon::SetupChamberShells` / `PlayX24Shot` | Hard-coded asset paths (`SM_ShotgunBullet`, `A_X24_Body_*`) and one `UE_LOG(Log)` per spawned weapon | Renaming those assets silently loses the shells / sequences; the log line should drop to `Verbose` |
+| 69 | `UAnimNotify_ThrowProjectile` | No montage in the project references it | The throw always releases through the `ThrowReleaseTime` timer; the notify is available but unwired |
+| 70 | `UShooterGameInstance::EquipPrimaryWeapon` | Long-gun inserts and the "at most two long guns" trim live in the game instance, not in the loadout preset | Saving a preset from the gunsmith therefore *also* changes the in-match primary; call `SetWeaponPreset` instead if you only want to store it |
+
 ### 20.2 Review notes (code-quality observations)
 
 - **Comments record design decisions**: many comments explain *why not* to do something (the recursion overflow in `Multicast_CycleWeapon`, why `Initiate_FireWeapon_Pressed` must not gate on `FireTimer`, why the 1P equip montage plays even with a mismatched skeleton). Do **not** treat them as redundant when refactoring.
@@ -1710,6 +1758,8 @@ Fixed in this revision (no longer issues in 20.1):
 ---
 
 ## 22. Attachment and loadout UI
+
+> ⚠ **Status (2026-10 revision 2):** the in-match **Tab loadout screen** described in §22.4 / §22.5 is **disabled** — `IA_Loadout_Runtime` is no longer registered, so `ULoadoutScreen` only exists as legacy code. Customisation happens in the main menu through `UGunsmithScreen` / `UGunsmithComponent` (§28.6), and the in-match way to change attachments is still the **B** attachment menu (`UAttachmentMenu`, §22.1). `ALoadoutPreviewRig` is still used — by the gunsmith preview.
 
 ### 22.1 `UAttachmentMenu`
 
@@ -2208,3 +2258,135 @@ Design notes and caveats:
 - Keep the default Player State / Game State classes on `BP_ShooterGameMode` / `BP_TDMGameMode`.
 - TDM HUD: bind GameState `OnTeamScoreChanged`, `OnKillFeed`, `OnMatchStateChanged`, `OnMatchEnded`, read `GetRemainingTime`; bind PlayerState `OnTeamChanged`, `OnStatsChanged`, read `GetRespawnRemaining`.
 - Fill `DisplayName` on every `DA_RAR_*`, otherwise the gunsmith shows no name.
+
+---
+
+## 28. In-match HUD, warmup clock, Search & Destroy, throwables and burst/shotgun weapon work (2026-10 revision 2)
+
+> Applies on top of §4.1 / §4.2 / §4.4 / §13 / §17 / §22 / §24.3 / §27; where they disagree, this section wins.
+
+### 28.1 Warmup clock, `PlayerN` names and sprint vs. reload
+
+| Piece | Detail |
+| --- | --- |
+| `AShooterGameState::MatchStartServerTime` | Replicated float set by the game mode when warmup starts (`SetMatchStartServerTime`); `GetWarmupRemaining()` returns `MatchStartServerTime − serverWorldTime` clamped at 0 and only while `ShooterMatchState == WaitingToStart` |
+| `AShooterGameState::GetRemainingTime` | Now `virtual`, so `ASearchDestroyGameState` can return the round clock / bomb fuse instead of the match clock (§28.2) |
+| `AShooterGameState::IsMovementLocked` / `IsActionLocked` | Also virtual; the base returns true only for `PostMatch`. `ASearchDestroyGameState` extends them to `Freeze` / `PostRound`. Consumers: `AShooterPlayerController::IsMovementLocked` (move / look / jump / crouch / sprint / walk) and `UCombatComponent` (fire, throw, reload guards) |
+| `HasMatchHeader()` + `MatchMode` | `SetMatchRules(EShooterGameMode)` writes the mode, sets `bHasMatchHeader` and broadcasts `OnMatchModeChanged`; the combat component uses it to size the inventory per mode (arena = 1 long gun + throwable, Extraction = 2 long guns, no throwable) |
+| `AShooterGameModeBase::AssignShortPlayerName` | Called from `PostLogin` and from `ATDMGameMode::HandleStartingNewPlayer`; renames the PlayerState to `PlayerN` where N is the player count, skipping names that already match `Player?N` |
+| Sprint vs. reload | `UCombatComponent::IsReloading()` gates `Input_Sprint`; `Initiate_ReloadWeapon` calls `PC->StopSprinting()`; `ApplyMovementSpeed` clears `bIsSprinting` while reloading; `Server_SetMovementState` re-validates |
+
+### 28.2 Search & Destroy — `ASearchDestroyGameMode` / `ASearchDestroyGameState`
+
+**Defaults** (`FPS|SD`): `RoundsToWin` 6, `WarmupTime` 3, `FreezeTime` 5, `RoundTime` 115, `PlantTime` 3.5, `DefuseTime` 7, `BombTimer` 40, `RoundEndDelay` 5, `PostMatchDelay` 8, `PlantCancelSpeed` 120, `DefuseRange` 140, `ExplosionRadius` 2000, `ExplosionDamage` 500, `bFriendlyFire` false, `BombClass` = `BP_Bomb`, spawn tags `Attacker` / `Defender` (fallback `TeamA` / `TeamB`).
+
+| Function | Behaviour |
+| --- | --- |
+| `InitGameState` / `StartPlay` | `ApplyMatchRules()` (mode → GameState, 2 teams, `ScoreToWin = RoundsToWin`, warmup start time) then `StartWarmupOrMatch()` guarded by `bMatchClockStarted` |
+| `StartMatch` | `InProgress`, attacker team = 0, 0.05 s objective tick, then `StartRound()` |
+| `StartRound` | `RoundIndex++`, reset bomb / interaction, `RespawnAllPlayers()` (forced `RespawnPlayer(PC, true)`), spawn the bomb at a random `Attacker` start, `GiveBombToRandomAttacker()`, phase `Freeze` |
+| `GoLive` | Phase `Live`, `MatchEndServerTime = now + RoundTime` |
+| `BeginBombInteract` / `EndBombInteract` | Interact press / release: starts planting when inside a site while carrying, starts defusing within `DefuseRange`, picks a dropped bomb up, or cancels |
+| `TickObjective` | 0.05 s poll: plant / defuse completion, explosion timer, `TimeExpired` |
+| `FinishRound(Team, Reason)` | +1 round to the winner, phase `PostRound`, `OnRoundEnded`; after `RoundEndDelay` either `StartRound()` (and `SwitchSides()` at `RoundIndex == RoundsToWin`) or `EndMatch()` at `RoundsToWin` wins |
+| `EndMatch` | `PostMatch`, then `ReturnAllToMainMenu()` after `PostMatchDelay` |
+| `ScoreKill` | **Empty** — kills are recorded on the PlayerState and in the kill feed but do not score rounds |
+
+**Replicated state on `ASearchDestroyGameState`**: `RoundIndex`, `AttackerTeam`, `BombState`, `PlantedSite`, `RoundPhase`, `LastWinReason`, `RoundWinningTeam`, `Bomb` (actor), `FreezeEndServerTime`, `BombExplodeServerTime`, `ActionStartServerTime`, `ActionDuration`; delegates `OnBombStateChanged`, `OnRoundPhaseChanged`, `OnRoundEnded`; helpers `GetRoundsToWin`, `GetAttackerTeam` / `GetDefenderTeam` / `IsAttackingTeam`, `IsBombDown`, `GetActionProgress`, `GetPromptForPawn`.
+
+| Enum | Values and use |
+| --- | --- |
+| `EBombSiteId` | `None` / `A` / `B` (a site with `None` is ignored) |
+| `EBombState` | `Idle` (on the ground) → `Carried` → `Planting` → `Planted` → `Defusing` → `Exploded` / `Defused` |
+| `EBombRoundPhase` | `Warmup` → `Freeze` → `Live` → `PostRound` |
+| `ERoundWinReason` | `None` / `Elimination` / `BombExploded` / `BombDefused` / `TimeExpired` |
+| `EBombPrompt` | `None` / `Pickup` / `Plant` / `Defuse` — computed client-side by `GetPromptForPawn` from the local pawn only |
+
+**Win checks** (`CheckElimination` + `TickObjective`): all defenders dead → attackers win (`Elimination`); all attackers dead **and the bomb is not planted** → defenders win; all attackers dead but the bomb is down → the round continues; explosion → attackers; defuse → defenders; `Live` timer expiring without a plant → defenders (`TimeExpired`).
+
+**Actors**: `ABombActor` (`PickupSphere` 80 cm, `CarryOffset`, `Carrier` / `bPlanted` replicated, `GiveTo` / `DropAt` / `PlantAt` + five Blueprint events and matching `Multicast_*` calls); `ABombSite` (box overlap of Pawns, `SiteId`, `GetSiteLetter`); `ABombWeapon` (key-5 bomb, `Visual1P` / `Visual3P` static meshes, no montages).
+
+**Player side**: `EWeaponSlot::Bomb` / `EWeaponKind::Bomb`, `UCombatComponent::GrantBombWeapon()` / `RemoveBombWeapon()` (spawns `BombWeaponClass` or the C++ `ABombWeapon`, gated on `ROLE_Authority`), `AShooterPlayerState::IsCarryingBomb()` (`bHasBomb`, replicated with `OnRep_HasBomb` → `OnBombCarryChanged`), `RebuildInventory()` re-grants the bomb when the flag is set. Interact input: `InteractAction` (or runtime `IA_Interact_Runtime` on **F**) → `Server_BeginBombInteract` / `Server_EndBombInteract` → `ASearchDestroyGameMode`.
+
+**Hotkey routing** (`UCombatComponent::Initiate_Hotkey`): 1 → `Main`; 2 → `Secondary` in Extraction, `Pistol` otherwise; 3 → `Melee`; 4 → `Pistol` in Extraction, `Throwable` otherwise; 5 → `Bomb` in Search & Destroy, `false` otherwise so `AShooterCharacter::Input_Heal` falls through to healing. `AllowsHeal()` is true only outside a match or in Extraction.
+
+**Not implemented**: economy / buy menu, armour, defuse kit, half-time score reset (see §20.1.4 #58), overtime, draw handling, spectators (a `Live` joiner stays pawn-less until the next round), round-result UI, C4 sounds.
+
+### 28.3 Burst fire and data-driven fire modes
+
+| Piece | Detail |
+| --- | --- |
+| `EFireType::Burst` | New value. `BurstShotsRemaining` (component) counts down in `FireTimerFinished`; the interval is `GetBurstShotInterval()` (`BurstShotInterval`, 0 → `FireTime`) |
+| `GetAllowedFireModes()` | Explicit `AllowedFireModes` → used as-is; else pistol = `{Single, Burst}`; else `bCanSwitchFireMode` = `{Single, Automatic}`; else `{FireType}` |
+| `GetNextFireMode()` / `AllowsFireType()` / `SanitizeFireType()` | Cycle / validate / clamp the authored value (called on `BeginPlay`, on `Equip`, on `OnRep_CurrentWeapon`) |
+| `CanSwitchFireMode()` | True when the current weapon exposes ≥ 2 modes and the status is not `Reloading` / `Cycling` |
+| `Server_SetFireMode` | Rejects modes the weapon does not allow and zeroes `BurstShotsRemaining` |
+| Server rate limit | `Server_FireWeapon` uses the same interval as the client (`GetBurstShotInterval` for bursts, otherwise `FireTime`) minus 0.02 s |
+| `Initiate_Aim_Released` | New: bound to the `AimWeaponAction` `Completed` event; on a throwable it releases the throw, it is a no-op otherwise |
+
+### 28.4 Throwables — `AThrownProjectile` + the throw pipeline
+
+**Weapon side** (`AWeapon`, `EWeaponKind::Throwable`): `ProjectileClass`, `HighThrowSpeed` 2200, `LowThrowSpeed` 900, `HighThrowPitchOffset` +8°, `LowThrowPitchOffset` −18°, `ThrowReleaseTime` 0.35 s, `ThrowSpawnForward` 40 cm; `ComputeThrowLaunch()` returns eye location + direction × `ThrowSpawnForward` (low throw −20 cm Z) and the speed. `AWeapon::CanAimWeapon()` is false for throwables and the bomb; `UsesAmmo()` is true for throwables (they do consume one round) but `Initiate_ReloadWeapon` bails out early, so there is no reload.
+
+**Component side** (`UCombatComponent`): `Initiate_Throw(bHighThrow)` → cancels inspect, refuses while sprinting (calls `StopSprinting`), plays the pin-pull montage (from the weapon's equip montage slot) and sends `Server_BeginThrow`; `ReleaseThrow()` → `Server_ReleaseThrow` + `TryBeginThrowRelease`; `BeginThrowRelease()` plays the throw montage (`FMontageData::ResolveThrowMontage` → `SecondaryFireMontage` for the low throw, else `FireMontage`) and starts the `ThrowReleaseTime` timer; `CommitThrow()` hides the weapon (`SetHiddenForHeal`), deducts ammo locally, and on the authority spawns the projectile (`SpawnThrownProjectile`); `Client_ThrowAmmo` reconciles the client's ammo through `AWeapon::Rep_Fire`. `Notify_ThrowWeapon()` (called by `UAnimNotify_ThrowProjectile`) also commits the throw, unless the pin-pull montage is still playing — no shipped montage uses the notify yet (§20.1.4 #69). `FinishThrow()` / `EquipFallbackAfterThrow()` / `FindFallbackWeaponAfterThrow()` end the throw and switch back to the previous weapon when the last grenade is gone.
+
+**Projectile** (`AThrownProjectile`): sphere collision (radius 8) with object type `ECC_Projectile`, ignoring Pawns / Camera / Visibility; `UProjectileMovementComponent` with `GravityScale` 1, `bShouldBounce`, `Bounciness` 0.35, `Friction` 0.2, `MaxSpeed` 4000, interpolation on clients; server `FuseTime` 2 s (or `bDetonateOnImpact`) → `Detonate()` → `ApplyThrownEffect()` + `Multicast_OnDetonate()` + `OnDetonate` Blueprint event. Frag damage: `Damage` 100, `InnerRadius` 150 (full), `DamageRadius` 550 (0), linear falloff, optional `bRequireLineOfSight` visibility trace, applied through `IPlayerInterface::Execute_DoDamage` (so team rules still apply) — but the thrower is **not** excluded from their own blast. `EThrownEffect` = `Frag` / `Smoke` / `Molotov` / `Flash`; only Frag has C++ behaviour.
+
+**Tags**: `Weapon.type.grenade` / `smoke` / `molotov` / `flash` (native + ini). `DA_WeaponData.FirstPersonMontages` / `ThirdPersonMontages` need a row per tag, otherwise no throw montage is found.
+
+### 28.5 Double-barrel shotgun — chamber shells
+
+`AWeapon::SetupChamberShells()` (runs in `BeginPlay`, skipped on a dedicated server) loads `SM_ShotgunBullet` and attaches one `UStaticMeshComponent` per socket `Bullet1Socket` / `Bullet2Socket` on both `Mesh1P` and `Mesh3P`, storing them in `ChamberShells1P` / `ChamberShells3P`. `ForceChamberSocketBones()` sets `bForceAlwaysAnimated` on every socket, then `RecalcRequiredBones` + `RefreshBoneTransforms`, because the un-skinned `Bullet` bones would otherwise leave the sockets in bind pose. Visibility is per viewer (`ApplyChamberShellVisibility`: 1P only for the local player, 3P otherwise) and per shell (`bChamberShellOn[2]`).
+
+`BindChamberShellNotifies()` hooks `UAnimInstance::OnPlayMontageNotifyBegin` on the character's 1P and 3P meshes; `HandleChamberShellNotify` reacts to `Bullet1Spawn`, `Bullet1Delete`, `Bullet2Spawn`, `Bullet2Delete`, `DeleteAllBullets`. The shells are cosmetic — ammo, damage and spread come from the normal fire path and the weapon blueprint.
+
+### 28.6 X24 attachments, magazine overrides and the gunsmith "equip as primary"
+
+| Piece | Detail |
+| --- | --- |
+| `UAttachmentData::FoldedMesh` | Used when an optic is equipped (`ResolveAttachmentVisualMesh`); without `FoldedMesh` the code tries the `Ironsight_B → IronSight_B_Folded` / `IronSight_F → IronSight_F_Folded` path substitution |
+| `UAttachmentData::MagazineCapacity` | `AWeapon::ApplyMagazineCapacity()` overrides `MagCapacity` (AK drum = 95) and restores `AuthoredMagCapacity` when the magazine is removed; called on `BeginPlay` and on `OnRep_EquippedAttachments` |
+| `UAttachmentData::MagCharacter*ReloadMontage` | Per-magazine character reload montages (normal / empty / tactical, Cradle and Grab variants); `UCombatComponent::GetReloadMontage` prefers them and falls back to the weapon set, and `StopReloadMontages` collects them too |
+| Skeletal attachments | ADS socket lookups, muzzle lookup, laser and flashlight now resolve through `USceneComponent` (`AttachmentViewComponent`), so attachments that are `SkeletalMesh`-only (X24 suppressor / flashlight / mini red dot) work |
+| X24 body sequences | `PlayX24BodySequence` / `PlayX24Shot` play `A_X24_Body_*` anim sequences directly on the weapon skeleton, because the X24 body has no montage matching the arm slots; guarded by `Weapon.type.x24` |
+| `UShooterGameInstance::EquipPrimaryWeapon` | Inserts a long gun at the first long-gun slot, keeps at most two and returns the class through `GetPrimaryLongGun()`; `SetWeaponPreset` now updates a preset of the same class instead of replacing by `WeaponKind` |
+| `UGunsmithComponent::SaveCurrent` / `UGunsmithScreen::Equip` | Save + equip in one step, `OnEquippedPrimary(WeaponClass, bSuccess)` for the UI; the optional `Button_Equip` is the separate button |
+
+---
+
+## 29. Match HUD widgets — `UMatchHUD`, headers and kill feed
+
+### 29.1 `UMatchHUD`
+
+| Member | Role |
+| --- | --- |
+| `HeaderHost` (`UWidget`, optional) | Container the per-mode header is spawned into; `RebuildHeader()` also accepts an already-placed widget named `TDMHeader` / `SDHeader` |
+| `TDMHeader` / `KillFeed` (optional) | Optional pre-placed widgets; `FindPlacedHeader()` checks `TDMHeader`, then `SDHeader`, then `Header`, then scans the widget tree |
+| `HeaderClasses` (`TMap<EShooterGameMode, TSubclassOf<UMatchHeaderWidget>>`) | Per-mode header class; `TDMHeaderClass` is the shortcut for TDM, and `ResolveHeaderClass` falls back to loading `/Game/FPS/UI/WBP_TDMHeader` or `WBP_SDHeader` |
+| `Text_Respawn` / `ResultPanel` / `Text_MatchResult` | Optional respawn countdown, result plate and result text |
+| `NativeConstruct` / `NativeDestruct` | Bind / unbind the GameState (`OnTeamScoreChanged`, `OnMatchStateChanged`, `OnMatchEnded`, `OnKillFeed`, `OnMatchModeChanged`) and the local PlayerState; a 0.1 s timer refreshes the respawn countdown |
+| `OnShowMatchResult(WinningTeam, bLocalWon, bDraw)` / `OnHeaderSpawned(Header, Mode)` | Blueprint hooks for the result panel and for animating the spawned header |
+| `FormatMatchTime(Seconds)` | Static `MM:SS` formatter shared with the headers |
+
+### 29.2 `UMatchHeaderWidget` / `UTDMHeaderWidget` / `USDHeaderWidget`
+
+| Class | Widgets (all `BindWidgetOptional`) | Behaviour |
+| --- | --- | --- |
+| `UMatchHeaderWidget` (Abstract) | — | `BindMatch(GameState)` / `UnbindMatch()`, `GetMatchGameState()`, `FormatMatchTime()`; binds the local PlayerState in subclasses |
+| `UTDMHeaderWidget` | `Text_TeamAScore`, `Text_TeamBScore`, `Text_Timer`, `Text_ScoreToWin`, `Text_MatchState` | Scores from `GetTeamScore`, timer from `GetWarmupRemaining` / `GetRemainingTime` (`UnlimitedTimeText` when untimed), state text from `Text_MatchState`; keeps `LastDisplayedSeconds` to avoid redundant writes; events `OnScoresUpdated`, `OnLocalTeamChanged`, `OnHeaderMatchStateChanged` |
+| `USDHeaderWidget` | `Text_TeamAScore`, `Text_TeamBScore`, `Text_Timer`, `Text_Round`, `Text_BombState`, `Text_Prompt`, `Text_Role`, `Progress_Action` (bar) | Reads `ASearchDestroyGameState` (`GetRoundIndex`, `GetBombState`, `GetRoundPhase`, `GetRemainingTime`, `GetActionProgress`, `GetPromptForPawn`); the timer switches to `BombTimerColor` while the bomb is down; events `OnScoresUpdated`, `OnLocalTeamChanged`, `OnHeaderBombStateChanged`, `OnHeaderRoundPhaseChanged`, `OnHeaderPromptChanged` |
+
+⚠ Shipped WBP binding status: `WBP_TDMHeader` binds `Text_TeamAScore` / `Text_TeamBScore` / `Text_Timer` / `Text_ScoreToWin` (no `Text_MatchState`); `WBP_SDHeader` binds `Text_TeamAScore` / `Text_TeamBScore` / `Text_Timer` / `Text_Round` / `Text_Prompt`. Everything else in the table is written by C++ but needs the widget to exist.
+
+### 29.3 `UKillFeedWidget` / `UKillFeedEntry`
+
+| Piece | Detail |
+| --- | --- |
+| Data source | `AShooterGameState::Multicast_KillFeed(KillerName, KillerTeam, VictimName, VictimTeam, WeaponIcon)` → `OnKillFeed` delegate. The icon comes from the killer's `AWeapon::WeaponIcon` in `AShooterGameModeBase::OnPlayerKilled` (null for suicides) |
+| `FeedList` | `UPanelWidget` the entries are added to (a `VerticalBox` in the shipped WBP) |
+| `EntryClass` | `TSubclassOf<UKillFeedEntry>`; `MaxEntries` 5 and `EntryLifetime` 5 s, the oldest row is removed first |
+| `UKillFeedEntry::Setup` | Names, teams, the weapon icon, and the local player name for highlighting; `Text_Killer` / `Text_Victim` / `Image_Weapon` are optional, `Text_Separator` is hidden when present |
+| Colours | `TeamAColor` / `TeamBColor` / `NeutralColor` for team 0 / team 1 / no team, `LocalPlayerColor` overrides the local player's own name |
+| Events | `OnEntryReady(KillerName, KillerTeam, VictimName, VictimTeam, bSuicide)` for per-entry animation |
+
+**Networking**: the kill feed is a `NetMulticast, Reliable` on the GameState, so every client builds the same rows; the icon is a `UTexture2D*` asset reference, which is replicated as part of the RPC payload.
