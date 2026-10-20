@@ -70,9 +70,9 @@ void AShooterGameModeBase::OnPlayerKilled(AController* KillerController, AContro
 	}
 }
 
-void AShooterGameModeBase::RespawnPlayer(AController* Controller)
+void AShooterGameModeBase::RespawnPlayer(AController* Controller, bool bForce)
 {
-	if (!IsValid(Controller) || !CanRespawn(Controller)) return;
+	if (!IsValid(Controller) || (!bForce && !CanRespawn(Controller))) return;
 
 	if (APawn* OldPawn = Controller->GetPawn())
 	{

@@ -119,6 +119,11 @@ TSubclassOf<UMatchHeaderWidget> UMatchHUD::ResolveHeaderClass(EShooterGameMode M
 		if (TDMHeaderClass) return TDMHeaderClass;
 		return LoadClass<UMatchHeaderWidget>(nullptr, TEXT("/Game/FPS/UI/WBP_TDMHeader.WBP_TDMHeader_C"));
 	}
+	if (Mode == EShooterGameMode::SearchDestroy)
+	{
+		if (SDHeaderClass) return SDHeaderClass;
+		return LoadClass<UMatchHeaderWidget>(nullptr, TEXT("/Game/FPS/UI/WBP_SDHeader.WBP_SDHeader_C"));
+	}
 	return nullptr;
 }
 
@@ -126,6 +131,7 @@ UMatchHeaderWidget* UMatchHUD::FindPlacedHeader() const
 {
 	if (IsValid(TDMHeader)) return TDMHeader;
 	if (UMatchHeaderWidget* Named = Cast<UMatchHeaderWidget>(GetWidgetFromName(TEXT("TDMHeader")))) return Named;
+	if (UMatchHeaderWidget* Named = Cast<UMatchHeaderWidget>(GetWidgetFromName(TEXT("SDHeader")))) return Named;
 	if (UMatchHeaderWidget* Named = Cast<UMatchHeaderWidget>(GetWidgetFromName(TEXT("Header")))) return Named;
 	if (WidgetTree)
 	{

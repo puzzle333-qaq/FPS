@@ -8,7 +8,7 @@
 
 class AShooterPlayerState;
 
-// 所有局内模式的父类：击杀记录、击杀播报、定时复活。靶场/死斗直接用它，团队竞技用 ATDMGameMode
+// 所有局内模式的父类：击杀记录、击杀播报、定时复活。靶场/死斗直接用它，团队竞技用 ATDMGameMode，爆破用 ASearchDestroyGameMode
 UCLASS()
 class FPS_API AShooterGameModeBase : public AGameModeBase
 {
@@ -28,7 +28,7 @@ public:
 	virtual void OnPlayerKilled(AController* KillerController, AController* VictimController);
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Match")
-	void RespawnPlayer(AController* Controller);
+	void RespawnPlayer(AController* Controller, bool bForce = false);
 
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 

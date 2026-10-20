@@ -113,6 +113,10 @@ private:
 
 	void Input_ToggleFlashlight();
 
+	// 爆破交互（安放 / 拆除）。空着时运行时绑 F
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> InteractAction;
+
 	// 配件菜单开关（例如 B 键）
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> ToggleAttachmentMenuAction;
@@ -188,6 +192,19 @@ private:
 	void Input_Walk();
 	void Input_Move(const FInputActionValue& InputActionValue);
 	void Input_Look(const FInputActionValue& InputActionValue);
+	void Input_Interact_Started();
+	void Input_Interact_Completed();
+	void EnsureInteractInput();
+	bool IsMovementLocked() const;
+
+	UFUNCTION(Server, Reliable)
+	void Server_BeginBombInteract();
+
+	UFUNCTION(Server, Reliable)
+	void Server_EndBombInteract();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> InteractIMC;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement")
 	float WalkSpeed = 250.f;

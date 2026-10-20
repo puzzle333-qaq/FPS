@@ -13,11 +13,14 @@
 #include "Ui/LoadoutScreen.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "InputCoreTypes.h"
 #include "ShooterGameInstance.h"
 #include "Ui/PauseMenuScreen.h"
 #include "Ui/MatchHUD.h"
 #include "Weapon/Weapon.h"
 #include "Weapon/AttachmentData.h"
+#include "Game/ShooterGameState.h"
+#include "Game/SearchDestroyGameMode.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -116,6 +119,13 @@ void AShooterPlayerController::SetupInputComponent()
 	if (FlashlightAction)
 	{
 		ShooterInputComponent->BindAction(FlashlightAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFlashlight);
+	}
+	EnsureInteractInput();
+	if (InteractAction)
+	{
+		ShooterInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &ThisClass::Input_Interact_Started);
+		ShooterInputComponent->BindAction(InteractAction, ETriggerEvent::Completed, this, &ThisClass::Input_Interact_Completed);
+		ShooterInputComponent->BindAction(InteractAction, ETriggerEvent::Canceled, this, &ThisClass::Input_Interact_Completed);
 	}
 	if (ToggleAttachmentMenuAction)
 	{
@@ -283,6 +293,7 @@ void AShooterPlayerController::EnsureCrouchInput()
 void AShooterPlayerController::Input_CrouchHold_Started()
 {
 	if (!bPawnAlive)return;
+	if (IsMovementLocked()) return;
 	bCrouchHeld = true;
 	ACharacter* MyChar = GetCharacter();
 	if (!IsValid(MyChar)) return;
@@ -334,6 +345,7 @@ void AShooterPlayerController::Input_CrouchHold_Completed()
 void AShooterPlayerController::Input_Crouch()
 {
 	if (!bPawnAlive)return;
+	if (IsMovementLocked()) return;
 	if (!IsValid(GetCharacter())) return;
 	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(Shooter))
 	{
@@ -364,6 +376,7 @@ void AShooterPlayerController::Input_Crouch()
 void AShooterPlayerController::Input_Jump()
 {
 	if (!bPawnAlive)return;
+	if (IsMovementLocked()) return;
 	if (!IsValid(GetCharacter())) return;
 	UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();
 	if (!IsValid(CMC)) return;
@@ -395,6 +408,7 @@ void AShooterPlayerController::Input_Jump()
 void AShooterPlayerController::Input_Sprint()
 {
 	if (!bPawnAlive)return;
+	if (IsMovementLocked()) return;
 
 	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
 	if (!bIsSprinting && IsValid(Combat) && Combat->IsReloading())
@@ -418,6 +432,7 @@ void AShooterPlayerController::Input_Sprint()
 void AShooterPlayerController::Input_Walk()
 {
 	if (!bPawnAlive)return;
+	if (IsMovementLocked()) return;
 	bIsWalking = !bIsWalking;
 	if (bIsWalking) bIsSprinting = false;   // 静步会打断冲刺
 	UpdateMovementSpeed();
@@ -429,6 +444,7 @@ void AShooterPlayerController::Input_Walk()
 void AShooterPlayerController::Input_Move(const FInputActionValue& InputActionValue)
 {
 	if (!bPawnAlive)return;
+	if (IsMovementLocked()) return;
 	const FVector2D InputAxisVector = InputActionValue.Get<FVector2D>();
 
 	const FRotator Rotation = GetControlRotation();
@@ -576,14 +592,26 @@ void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadou
 	FLoadoutPreset Clean;
 	Clean.Name = Loadout.Name;
 	TSet<EWeaponKind> SeenKinds;
+	int32 LongGunCount = 0;
+	const AShooterGameState* MatchGS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
+	const int32 MaxLong = (!MatchGS || !MatchGS->HasMatchHeader() || MatchGS->GetMatchMode() == EShooterGameMode::Extraction) ? 2 : 1;
 	for (const FWeaponPreset& Preset : Loadout.Weapons)
 	{
 		if (Clean.Weapons.Num() >= 4) break;
 		if (!Preset.WeaponClass || !Preset.WeaponClass->IsChildOf(AWeapon::StaticClass())) continue;
 		if (AllowedLoadoutWeapons.Num() > 0 && !AllowedLoadoutWeapons.Contains(Preset.WeaponClass)) continue;
 		const AWeapon* CDO = Preset.WeaponClass->GetDefaultObject<AWeapon>();
-		if (SeenKinds.Contains(CDO->WeaponKind)) continue;
-		SeenKinds.Add(CDO->WeaponKind);
+		if (CDO->WeaponKind == EWeaponKind::Bomb) continue;
+		if (CDO->WeaponKind == EWeaponKind::LongGun)
+		{
+			if (LongGunCount >= MaxLong) continue;
+			++LongGunCount;
+		}
+		else
+		{
+			if (SeenKinds.Contains(CDO->WeaponKind)) continue;
+			SeenKinds.Add(CDO->WeaponKind);
+		}
 
 		FWeaponPreset CleanPreset;
 		CleanPreset.WeaponClass = Preset.WeaponClass;
@@ -726,6 +754,60 @@ void AShooterPlayerController::AcknowledgePossession(APawn* P)
 	if (!bMatchOver)
 	{
 		bPawnAlive = true;
+	}
+}
+
+bool AShooterPlayerController::IsMovementLocked() const
+{
+	const UWorld* World = GetWorld();
+	const AShooterGameState* GS = World ? World->GetGameState<AShooterGameState>() : nullptr;
+	return GS && GS->IsMovementLocked();
+}
+
+void AShooterPlayerController::EnsureInteractInput()
+{
+	if (!InteractAction)
+	{
+		InteractAction = NewObject<UInputAction>(this, TEXT("IA_Interact_Runtime"));
+		InteractAction->ValueType = EInputActionValueType::Boolean;
+		if (!InteractIMC)
+		{
+			InteractIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Interact_Runtime"));
+			InteractIMC->MapKey(InteractAction, EKeys::F);
+		}
+	}
+	if (!InteractIMC) return;
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(InteractIMC))
+	{
+		Subsystem->AddMappingContext(InteractIMC, 1);
+	}
+}
+
+void AShooterPlayerController::Input_Interact_Started()
+{
+	if (!bPawnAlive) return;
+	Server_BeginBombInteract();
+}
+
+void AShooterPlayerController::Input_Interact_Completed()
+{
+	Server_EndBombInteract();
+}
+
+void AShooterPlayerController::Server_BeginBombInteract_Implementation()
+{
+	if (ASearchDestroyGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>() : nullptr)
+	{
+		GM->BeginBombInteract(this);
+	}
+}
+
+void AShooterPlayerController::Server_EndBombInteract_Implementation()
+{
+	if (ASearchDestroyGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>() : nullptr)
+	{
+		GM->EndBombInteract(this);
 	}
 }
 

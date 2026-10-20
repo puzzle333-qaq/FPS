@@ -59,6 +59,9 @@ protected:
 	TSubclassOf<UMatchHeaderWidget> TDMHeaderClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
+	TSubclassOf<UMatchHeaderWidget> SDHeaderClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
 	FText RespawnFormat = NSLOCTEXT("MatchHUD", "RespawnFmt", "复活 {0}");
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
