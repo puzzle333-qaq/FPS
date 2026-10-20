@@ -80,6 +80,7 @@ public:
 	virtual AWeapon* GetCurrentWeapon_Implementation() override;
 	virtual int32 GetReserveAmmo_Implementation() const override;
 	virtual void Notify_ReloadWeapon_Implementation() override;
+	virtual void Notify_ThrowWeapon_Implementation() override;
 	virtual bool DoDamage_Implementation(float DamageAmout,AActor* DamageInstigator) override;
 	/** PlayerInterface */
 
@@ -563,6 +564,7 @@ private:
 	void Input_FireWeapon_Pressed();
 	void Input_FireWeapon_Released();
 	void Input_Aim_Pressed();
+	void Input_Aim_Released();
 	void Input_EquipMainWeapon();
 	void Input_EquipSeconedaryWeapon();
 	void Input_EquipMeleeWeapon();

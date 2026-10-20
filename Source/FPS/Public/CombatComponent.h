@@ -16,7 +16,9 @@ enum class EWeaponSlot : uint8
 	Main,
 	Secondary,
 	Pistol,
-	Melee
+	Melee,
+	Throwable,
+	Bomb
 };
 
 class UAnimInstance;
@@ -59,11 +61,12 @@ public:
 	void Initiate_FireWeapon_Released();
 	void Initiate_ReloadWeapon();
 	void Initiate_Aim_Pressed();
+	void Initiate_Aim_Released();
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
 	bool IsReloading() const;
 
-	// 单发/自动切换：本地先改，再发服务器。换弹、拉栓、切枪中或这把枪不允许切换时无效
+	// 射击模式切换：本地先改，再发服务器。按武器 AllowedFireModes 循环。
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_SwitchFireMode();
 
@@ -90,6 +93,22 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_EquipPistolWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_EquipThrowableWeapon();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_EquipBombWeapon();
+
+	// 数字键 1-5：按当前模式解释。5 在摸金是治疗（返回 false），爆破是切炸弹。
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	bool Initiate_Hotkey(int32 Hotkey);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	bool AllowsHeal() const;
+
+	void GrantBombWeapon();
+	void RemoveBombWeapon();
 	
 	// 第 9 步：检视武器。只在本地第一人称播放，不走网络
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
@@ -103,6 +122,7 @@ public:
 	bool IsInspecting() const;
 
 	void Notify_ReloadWeapon();
+	void Notify_ThrowWeapon();
 
 	// ================= 配件（给 UI / 输入调用，本地调用即可，内部会发给服务器） =================
 	UFUNCTION(BlueprintCallable, Category = "FPS|Attachment")
@@ -193,9 +213,36 @@ private:
 
 	TMap<FGameplayTag, int32> ReserveAmmo;
 	bool bTriggerPressed;
+	int32 BurstShotsRemaining = 0;
 	FTimerHandle FireTimer;
+	FTimerHandle ThrowReleaseTimer;
 	float ServerNextFireTime = 0.f;
+	bool bThrowInProgress = false;
+	bool bThrowHigh = true;
+	bool bThrowCommitted = false;
+	bool bThrowPinPulling = false;
+	bool bThrowReleaseRequested = false;
+	TWeakObjectPtr<UAnimInstance> ActiveThrowAnim;
+	TWeakObjectPtr<UAnimMontage> ActiveThrowMontage;
 	void FireTimerFinished();
+
+	UFUNCTION(Server, Reliable)
+	void Server_BeginThrow(bool bHighThrow);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_BeginThrow(bool bHighThrow);
+
+	UFUNCTION(Server, Reliable)
+	void Server_ReleaseThrow();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_ReleaseThrow();
+
+	UFUNCTION(Server, Reliable)
+	void Server_CommitThrow();
+
+	UFUNCTION(Client, Reliable)
+	void Client_ThrowAmmo(int32 AuthAmmo);
 
 	UFUNCTION()
 	void OnRep_CurrentWeapon(AWeapon* LastWeapon);
@@ -205,6 +252,10 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon")
 	TArray<TSubclassOf<AWeapon>> DefaultWeaponClass;
+
+	// 爆破模式 5 切出来的炸弹。空 = 用 C++ ABombWeapon（无动画）
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon")
+	TSubclassOf<AWeapon> BombWeaponClass;
 	
 	AWeapon* SpawnWeapon(TSubclassOf<AWeapon> WeaponClass) const;
 
@@ -220,6 +271,21 @@ private:
 	void Local_Aim(bool bPressed);
 
 	void Local_FireWeapon();
+	void Initiate_Throw(bool bHighThrow);
+	void ReleaseThrow();
+	void TryBeginThrowRelease();
+	void PlayThrowMontage(bool bFirstPerson, bool bHighThrow);
+	bool PlayThrowPinPull(bool bFirstPerson);
+	void BeginThrowRelease();
+	UAnimMontage* ResolveThrowPinPullMontage(bool bFirstPerson) const;
+	void StopActiveThrowMontages();
+	void CommitThrow();
+	void SpawnThrownProjectile();
+	void FinishThrow();
+	void EquipFallbackAfterThrow();
+	AWeapon* FindFallbackWeaponAfterThrow() const;
+	void OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	void OnRemoteThrowPinPullEnded(UAnimMontage* Montage, bool bInterrupted);
 	void ApplyFireRecoil();
 	void TickRecoil(float DeltaTime);
 	void ResetRecoilPattern();

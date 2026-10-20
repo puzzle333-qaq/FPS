@@ -42,13 +42,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	int32 GetScoreToWin() const { return ScoreToWin; }
 
-	// 比赛剩余秒数（没限时或没开始返回 0）
+	// 比赛剩余秒数（没限时或没开始返回 0）。爆破模式在回合冻结/拆弹时也会走这里。
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
-	float GetRemainingTime() const;
+	virtual float GetRemainingTime() const;
 
 	// 暖身剩余秒数（已开赛或没设暖身返回 0）
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	float GetWarmupRemaining() const;
+
+	// 冻结回合：不能移动、开火、安放/拆除
+	UFUNCTION(BlueprintPure, Category = "FPS|Match")
+	virtual bool IsMovementLocked() const { return ShooterMatchState == EShooterMatchState::PostMatch; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Match")
+	virtual bool IsActionLocked() const { return ShooterMatchState == EShooterMatchState::PostMatch; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	bool HasTimeLimit() const { return MatchEndServerTime > 0.f; }

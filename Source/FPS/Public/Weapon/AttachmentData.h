@@ -8,6 +8,7 @@
 class UStaticMesh;
 class USkeletalMesh;
 class UAnimSequence;
+class UAnimMontage;
 class UTexture2D;
 class UMaterialInterface;
 
@@ -55,6 +56,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
 	TObjectPtr<UStaticMesh> Mesh;
 
+	// 倒下形态。填了之后，瞄具槽有配件时用这个模型，没镜子时用上面的 Mesh（竖起）。
+	// RAR 前后机瞄：Mesh = 竖起，FoldedMesh = 旁边那套倒下 StaticMesh。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
+	TObjectPtr<UStaticMesh> FoldedMesh;
+
 	// Optional skeletal mesh (e.g. AK magazine). When set, weapon spawns this instead of Mesh.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
 	TObjectPtr<USkeletalMesh> SkeletalMesh;
@@ -68,6 +74,26 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")
 	TObjectPtr<UAnimSequence> MagTacticalReloadAnim;
+
+	// 0 = 不改枪上的 MagCapacity。AK 弹鼓填 95。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine", meta = (ClampMin = "0"))
+	int32 MagazineCapacity = 0;
+
+	// 手臂换弹。填了就覆盖 DA_WeaponData 里这把枪的换弹。AK MAG30 留空，弹鼓填 DrumMag 那套。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine|CharacterReload")
+	TObjectPtr<UAnimMontage> MagCharacterReloadMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine|CharacterReload")
+	TObjectPtr<UAnimMontage> MagCharacterEmptyReloadMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine|CharacterReload")
+	TObjectPtr<UAnimMontage> MagCharacterTacticalReloadMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine|CharacterReload")
+	TObjectPtr<UAnimMontage> MagCharacterEmptyReloadMontage_Grab;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine|CharacterReload")
+	TObjectPtr<UAnimMontage> MagCharacterTacticalReloadMontage_Grab;
 
 	// Hide bone mag_02 (spare mag on SKM_AK_Mag). Uncheck to show the second mag mesh.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")

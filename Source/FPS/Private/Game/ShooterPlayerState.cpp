@@ -11,6 +11,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(AShooterPlayerState, Kills);
 	DOREPLIFETIME(AShooterPlayerState, Deaths);
 	DOREPLIFETIME(AShooterPlayerState, RespawnServerTime);
+	DOREPLIFETIME(AShooterPlayerState, bHasBomb);
 }
 
 float AShooterPlayerState::GetRespawnRemaining() const
@@ -53,4 +54,16 @@ void AShooterPlayerState::OnRep_TeamId()
 void AShooterPlayerState::OnRep_Stats()
 {
 	OnStatsChanged.Broadcast(Kills, Deaths);
+}
+
+void AShooterPlayerState::SetHasBomb(bool bInHasBomb)
+{
+	bHasBomb = bInHasBomb;
+	OnRep_HasBomb();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_HasBomb()
+{
+	OnBombCarryChanged.Broadcast(bHasBomb);
 }

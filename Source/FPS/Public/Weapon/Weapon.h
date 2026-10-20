@@ -8,11 +8,13 @@
 #include "Engine/Texture2D.h"
 #include "Interface/RecoilModifierInterface.h"
 #include "Weapon/AttachmentData.h"
+#include "Animation/AnimNotifies/AnimNotify.h"
 #include "Weapon.generated.h"
 
 class UMaterialInstanceDynamic;
 class UStaticMeshComponent;
 class USkeletalMeshComponent;
+class AThrownProjectile;
 
 enum class EReloadType : uint8;
 class USpotLightComponent;
@@ -97,8 +99,9 @@ struct FRecoilStep
 UENUM(BlueprintType)
 enum class EFireType : uint8
 {
-	Single UMETA(DisplayName = "Single"),
-	Automatic UMETA(DisplayName = "Automatic")
+	Single     UMETA(DisplayName = "Single"),
+	Automatic  UMETA(DisplayName = "Automatic"),
+	Burst      UMETA(DisplayName = "Burst")
 };
 
 UENUM(BlueprintType)
@@ -116,9 +119,11 @@ enum class EWeaponStatus : uint8
 UENUM(BlueprintType)
 enum class EWeaponKind : uint8
 {
-	LongGun UMETA(DisplayName = "Long Gun"),
-	Pistol UMETA(DisplayName = "Pistol"),
-	Melee UMETA(DisplayName = "Knife")
+	LongGun    UMETA(DisplayName = "Long Gun"),
+	Pistol     UMETA(DisplayName = "Pistol"),
+	Melee      UMETA(DisplayName = "Knife"),
+	Throwable  UMETA(DisplayName = "Throwable"),
+	Bomb       UMETA(DisplayName = "Bomb")
 };
 
 UCLASS()
@@ -265,9 +270,26 @@ public:
 	void PlayMagazineReload(EReloadType ReloadType);
 	USkeletalMeshComponent* GetMagazineSkelMesh1P() const;
 
-	/** 刀不消耗弹药。 */
+	// 双管霰弹：手臂换弹蒙太奇的 Bullet1Spawn / Bullet1Delete / Bullet2Spawn / Bullet2Delete。
+	void HandleChamberShellNotify(FName NotifyName);
+
+	// 弹匣配件 MagazineCapacity > 0 时覆盖 MagCapacity，否则回到枪蓝图上的容量。
+	void ApplyMagazineCapacity();
+
+	/** 刀和炸弹不消耗弹药。 */
 	UFUNCTION(BlueprintPure, Category = "FPS|Ammo")
-	bool UsesAmmo() const { return WeaponKind != EWeaponKind::Melee; }
+	bool UsesAmmo() const
+	{
+		return WeaponKind == EWeaponKind::LongGun
+			|| WeaponKind == EWeaponKind::Pistol
+			|| WeaponKind == EWeaponKind::Throwable;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	bool CanAimWeapon() const
+	{
+		return WeaponKind == EWeaponKind::LongGun || WeaponKind == EWeaponKind::Pistol;
+	}
 
 	UPROPERTY(EditAnywhere,BlueprintReadOnly , Category = "FPS|WeaponType")
 	FGameplayTag WeaponType;
@@ -341,13 +363,42 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	FName ResolveAttachmentSocket(const UAttachmentData* Data) const;
 
+	// 配件要生成的 StaticMesh。FoldedMesh 有值且瞄具槽有配件时用倒下模型，否则用 Mesh。
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	UStaticMesh* ResolveAttachmentVisualMesh(const UAttachmentData* Data) const;
+
 	// 当前射击模式。同步给其他玩家（拥有者自己本地先改，跳过拥有者避免被旧值盖回）
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "FPS|FireType")
 	EFireType FireType;
 
-	// 能否按键在单发/自动之间切换。步枪、冲锋枪勾上；手枪、狙击不勾
+	// 步枪、冲锋枪勾上切单发/自动。手枪即使不勾也是单发/三连发。
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
 	bool bCanSwitchFireMode = false;
+
+	// 空 = 按枪种默认：手枪单发+三连发，能切模式的步枪单发+自动，其它只用 FireType。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
+	TArray<EFireType> AllowedFireModes;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType", meta = (ClampMin = "2"))
+	int32 BurstCount = 3;
+
+	// 三连发每发间隔。0 = 用 FireTime。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType", meta = (ClampMin = "0"))
+	float BurstShotInterval = 0.f;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|FireType")
+	TArray<EFireType> GetAllowedFireModes() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|FireType")
+	bool AllowsFireType(EFireType Type) const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|FireType")
+	EFireType GetNextFireMode() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|FireType")
+	float GetBurstShotInterval() const;
+
+	void SanitizeFireType();
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|FireType")
 	float FireTime;
@@ -416,6 +467,32 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Melee", meta = (EditCondition = "WeaponKind==EWeaponKind::Melee"))
 	FName MeleeSocketName = TEXT("Melee");
 
+	// ---------- 投掷物（手雷 / 烟雾 / 燃烧瓶 / 闪光共用） ----------
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Throwable", meta = (EditCondition = "WeaponKind==EWeaponKind::Throwable"))
+	TSubclassOf<AThrownProjectile> ProjectileClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Throwable", meta = (EditCondition = "WeaponKind==EWeaponKind::Throwable", ClampMin = "0"))
+	float HighThrowSpeed = 2200.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Throwable", meta = (EditCondition = "WeaponKind==EWeaponKind::Throwable", ClampMin = "0"))
+	float LowThrowSpeed = 900.f;
+
+	// 相对镜头 pitch，正数往上。高抛略抬，低抛往下砸。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Throwable", meta = (EditCondition = "WeaponKind==EWeaponKind::Throwable"))
+	float HighThrowPitchOffset = 8.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Throwable", meta = (EditCondition = "WeaponKind==EWeaponKind::Throwable"))
+	float LowThrowPitchOffset = -18.f;
+
+	// 出手时刻（秒）。蒙太奇 notify 也会出手，取先到的那个。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Throwable", meta = (EditCondition = "WeaponKind==EWeaponKind::Throwable", ClampMin = "0"))
+	float ThrowReleaseTime = 0.35f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Throwable", meta = (EditCondition = "WeaponKind==EWeaponKind::Throwable", ClampMin = "0"))
+	float ThrowSpawnForward = 40.f;
+
+	void ComputeThrowLaunch(bool bHighThrow, FVector& OutLocation, FVector& OutDirection, float& OutSpeed) const;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage")
 	float Damage;
 
@@ -438,6 +515,8 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Ammo")
 	int32 MagCapacity;
+
+	int32 AuthoredMagCapacity = 0;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Ammo")
 	int32 StartingCarriedAmmo;
@@ -466,6 +545,25 @@ private:
 
 	void SetMeshVisibility(APawn* OwningPawn) const;
 	void CaptureAuthoredMeshRelative();
+
+	// 双管霰弹弹壳。插槽挂在没蒙皮的 Bullet 骨上，不强制刷新的话运行时会停在绑定姿势。
+	void SetupChamberShells();
+	void ForceChamberSocketBones(USkeletalMeshComponent* Mesh) const;
+	void ApplyChamberShellVisibility() const;
+	void BindChamberShellNotifies();
+
+	UFUNCTION()
+	void OnChamberShellNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload);
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> ChamberShells1P;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> ChamberShells3P;
+
+	uint8 bChamberShellOn[2] = { 0, 0 };
+	bool bChamberShellsReady = false;
+	bool bChamberShellNotifyBound = false;
 
 	// ---------- 配件内部 ----------
 	// 已装配件列表。TMap 不能网络同步，所以用数组，每个槽位最多一个

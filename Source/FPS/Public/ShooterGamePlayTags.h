@@ -11,6 +11,11 @@ namespace ShooterTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Melee);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_AK);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_ShotGun);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Grenade);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Smoke);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Molotov);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Flash);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_X24)
 
 	// ---- 配件槽位类型（原生标签）。更多类型可在 Project Settings -> GameplayTags 里加 Attachment.Slot.xxx ----
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Barrel);

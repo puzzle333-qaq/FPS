@@ -6,6 +6,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterStatChanged, int32, Kills, int32, Deaths);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FShooterTeamChanged, uint8, TeamId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FShooterBombCarryChanged, bool, bHasBomb);
 
 // 每个玩家的队伍和战绩（服务器写，复制给所有人）
 UCLASS()
@@ -30,6 +31,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	int32 GetDeaths() const { return Deaths; }
 
+	UFUNCTION(BlueprintPure, Category = "FPS|Bomb")
+	bool IsCarryingBomb() const { return bHasBomb; }
+
 	// 距离复活还有几秒（没在等复活返回 0）。本地 HUD 每帧读它显示倒计时
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	float GetRespawnRemaining() const;
@@ -40,11 +44,15 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Match")
 	FShooterTeamChanged OnTeamChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Bomb")
+	FShooterBombCarryChanged OnBombCarryChanged;
+
 	// ---- 只在服务器调用 ----
 	void SetTeamId(uint8 NewTeam);
 	void AddKill();
 	void AddDeath();
 	void SetRespawnServerTime(float ServerTime);
+	void SetHasBomb(bool bInHasBomb);
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_TeamId)
@@ -60,9 +68,15 @@ protected:
 	UPROPERTY(Replicated)
 	float RespawnServerTime = 0.f;
 
+	UPROPERTY(ReplicatedUsing = OnRep_HasBomb)
+	bool bHasBomb = false;
+
 	UFUNCTION()
 	void OnRep_TeamId();
 
 	UFUNCTION()
 	void OnRep_Stats();
+
+	UFUNCTION()
+	void OnRep_HasBomb();
 };

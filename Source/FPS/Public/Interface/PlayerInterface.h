@@ -45,6 +45,9 @@ public:
 	UFUNCTION(BlueprintNativeEvent,BlueprintCallable)
 	void Notify_ReloadWeapon();
 
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
+	void Notify_ThrowWeapon();
+
 	UFUNCTION(BlueprintNativeEvent,BlueprintCallable)
 	bool DoDamage(float DamageAmout, AActor* DamageInstigator);
 

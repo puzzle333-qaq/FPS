@@ -84,6 +84,10 @@ struct FMontageData
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TObjectPtr<UAnimMontage>FireMontage = nullptr;
 
+	// 投掷物右键低抛。空则退回 FireMontage。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Throw")
+	TObjectPtr<UAnimMontage> SecondaryFireMontage = nullptr;
+
 	// ---- 换弹分种类（都可以不填，不填就退回上面的 ReloadMontage） ----
 
 	// 弹匣打空后的换弹（一般多一段拉机柄/按空仓挂机）
@@ -127,6 +131,15 @@ struct FMontageData
 		if (FireMontage) { Candidates.AddUnique(FireMontage.Get()); }
 		if (Candidates.Num() == 0) { return nullptr; }
 		return Candidates[FMath::RandRange(0, Candidates.Num() - 1)];
+	}
+
+	UAnimMontage* ResolveThrowMontage(bool bHighThrow) const
+	{
+		if (!bHighThrow && SecondaryFireMontage)
+		{
+			return SecondaryFireMontage;
+		}
+		return ResolveFireMontage();
 	}
 
 	UAnimMontage* ResolveEquipMontage() const

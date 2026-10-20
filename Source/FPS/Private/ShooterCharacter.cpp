@@ -687,6 +687,7 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_FireWeapon_Pressed);
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_FireWeapon_Released);
 	ShooterInputComponent->BindAction(AimWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_Aim_Pressed);
+	ShooterInputComponent->BindAction(AimWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_Aim_Released);
 	ShooterInputComponent->BindAction(ReloadWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_ReloadWeapon);
 	ShooterInputComponent->BindAction(EquipMainWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipMainWeapon);
 	ShooterInputComponent->BindAction(EquipSeconedaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipSeconedaryWeapon);
@@ -772,6 +773,11 @@ int32 AShooterCharacter::GetReserveAmmo_Implementation() const
 void AShooterCharacter::Notify_ReloadWeapon_Implementation()
 {
 	Combat->Notify_ReloadWeapon();
+}
+
+void AShooterCharacter::Notify_ThrowWeapon_Implementation()
+{
+	if (IsValid(Combat)) Combat->Notify_ThrowWeapon();
 }
 
 
@@ -1549,6 +1555,11 @@ void AShooterCharacter::Input_Aim_Pressed()
 	Combat->Initiate_Aim_Pressed();   // OnAim 现在由 HandleAimStateChanged 统一调用
 }
 
+void AShooterCharacter::Input_Aim_Released()
+{
+	if (IsValid(Combat)) Combat->Initiate_Aim_Released();
+}
+
 void AShooterCharacter::EquipMainWeapon()
 {
 	if (IsValid(Combat)) Combat->Initiate_EquipMainWeapon();
@@ -1631,6 +1642,7 @@ void AShooterCharacter::RestoreWeaponAfterHeal()
 
 void AShooterCharacter::HealPlayer(float InHealAmout)
 {
+	if (IsValid(Combat) && !Combat->AllowsHeal()) return;
 	if (!IsLocallyControlled() || bIsHealing || InHealAmout <= 0.f || !IsValid(Stats))
 	{
 		return;
@@ -1783,26 +1795,30 @@ void AShooterCharacter::Multicast_PlayHealMontage_Implementation()
 
 void AShooterCharacter::Input_EquipMainWeapon()
 {
-	EquipMainWeapon();
+	if (IsValid(Combat)) Combat->Initiate_Hotkey(1);
 }
 
 void AShooterCharacter::Input_EquipSeconedaryWeapon()
 {
-	EquipSeconedaryWeapon();
+	if (IsValid(Combat)) Combat->Initiate_Hotkey(2);
 }
 
 void AShooterCharacter::Input_EquipMeleeWeapon()
 {
-	EquipMeleeWeapon();
+	if (IsValid(Combat)) Combat->Initiate_Hotkey(3);
 }
 
 void AShooterCharacter::Input_EquipPistolWeapon()
 {
-	EquipPistolWeapon();
+	if (IsValid(Combat)) Combat->Initiate_Hotkey(4);
 }
 
 void AShooterCharacter::Input_Heal()
 {
+	if (IsValid(Combat) && Combat->Initiate_Hotkey(5))
+	{
+		return;
+	}
 	HealPlayer(HealAmout);
 }
 
