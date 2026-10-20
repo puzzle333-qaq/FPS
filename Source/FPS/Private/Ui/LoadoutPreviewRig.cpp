@@ -134,7 +134,7 @@ void ALoadoutPreviewRig::SpawnPreview(AWeapon* Weapon, int32 Index)
 	TArray<FPreviewPiece> Pending;
 	for (UAttachmentData* Data : Weapon->GetEquippedAttachments())
 	{
-		if (!IsValid(Data) || !IsValid(Data->Mesh)) continue;
+		if (!IsValid(Data) || !IsValid(Weapon->ResolveAttachmentVisualMesh(Data))) continue;
 
 		FPreviewPiece Piece;
 		Piece.Data = Data;
@@ -159,10 +159,13 @@ void ALoadoutPreviewRig::SpawnPreview(AWeapon* Weapon, int32 Index)
 		return nullptr;
 	};
 
-	auto SpawnPiece = [this, &SpawnedAttachments](const FPreviewPiece& Piece, USceneComponent* Mount)
+	auto SpawnPiece = [this, Weapon, &SpawnedAttachments](const FPreviewPiece& Piece, USceneComponent* Mount)
 	{
+		UStaticMesh* VisualMesh = Weapon->ResolveAttachmentVisualMesh(Piece.Data);
+		if (!IsValid(VisualMesh)) return;
+
 		UStaticMeshComponent* AttachmentMesh = NewObject<UStaticMeshComponent>(this);
-		AttachmentMesh->SetStaticMesh(Piece.Data->Mesh);
+		AttachmentMesh->SetStaticMesh(VisualMesh);
 		AttachmentMesh->SetMobility(EComponentMobility::Movable);
 		AttachmentMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		AttachmentMesh->SetCastShadow(false);

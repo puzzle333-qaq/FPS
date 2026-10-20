@@ -56,7 +56,7 @@ struct FWeaponPreset
 	TArray<TObjectPtr<UAttachmentData>> Attachments;
 };
 
-// 一套配装。每把枪按 WeaponKind 替换角色默认武器里同类的那把（主枪替换第一把长枪……）
+// 一套配装。数组里第一把长枪是进局 1 号位主枪；第二把长枪是摸金 2 号位。
 USTRUCT(BlueprintType)
 struct FLoadoutPreset
 {

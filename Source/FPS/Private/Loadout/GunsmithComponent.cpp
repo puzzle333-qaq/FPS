@@ -133,8 +133,12 @@ bool UGunsmithComponent::SaveCurrent()
 	{
 		if (IsValid(Data)) Preset.Attachments.Add(Data);
 	}
-	GI->SetWeaponPreset(Preset);
-	return GI->SaveLoadout();
+	GI->EquipPrimaryWeapon(Preset);
+	const bool bSaved = GI->SaveLoadout();
+	UE_LOG(LogTemp, Log, TEXT("[Gunsmith] Save+equip %s %s"),
+		*GetNameSafe(Preset.WeaponClass),
+		bSaved ? TEXT("ok") : TEXT("failed"));
+	return bSaved;
 }
 
 UTextureRenderTarget2D* UGunsmithComponent::GetPreviewRenderTarget() const

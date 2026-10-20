@@ -1,6 +1,7 @@
 ﻿#include "Ui/GunsmithScreen.h"
 
 #include "Loadout/GunsmithComponent.h"
+#include "Weapon/Weapon.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -17,6 +18,7 @@ void UGunsmithScreen::NativeConstruct()
 	Super::NativeConstruct();
 	if (Button_Back) Button_Back->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBack);
 	if (Button_Save) Button_Save->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSave);
+	if (Button_Equip) Button_Equip->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleEquip);
 	if (UGunsmithComponent* Gunsmith = GetGunsmith())
 	{
 		Gunsmith->OnPreviewChanged.AddUniqueDynamic(this, &ThisClass::HandlePreviewChanged);
@@ -61,7 +63,17 @@ bool UGunsmithScreen::Save()
 	UGunsmithComponent* Gunsmith = GetGunsmith();
 	const bool bOk = Gunsmith && Gunsmith->SaveCurrent();
 	OnSaved(bOk);
+	if (Gunsmith)
+	{
+		AWeapon* Preview = Gunsmith->GetPreviewWeapon();
+		OnEquippedPrimary(IsValid(Preview) ? Preview->GetClass() : nullptr, bOk);
+	}
 	return bOk;
+}
+
+bool UGunsmithScreen::Equip()
+{
+	return Save();
 }
 
 void UGunsmithScreen::HandleBack()
@@ -72,6 +84,11 @@ void UGunsmithScreen::HandleBack()
 void UGunsmithScreen::HandleSave()
 {
 	Save();
+}
+
+void UGunsmithScreen::HandleEquip()
+{
+	Equip();
 }
 
 void UGunsmithScreen::HandlePreviewChanged()

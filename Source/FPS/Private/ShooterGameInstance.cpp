@@ -100,19 +100,108 @@ bool UShooterGameInstance::GoToMainMenu()
 	return TravelTo(MainMenuMap, nullptr, false);
 }
 
+namespace
+{
+	EWeaponKind GetPresetKind(const FWeaponPreset& Preset)
+	{
+		const AWeapon* CDO = Preset.WeaponClass ? Preset.WeaponClass->GetDefaultObject<AWeapon>() : nullptr;
+		return CDO ? CDO->WeaponKind : EWeaponKind::LongGun;
+	}
+}
+
 void UShooterGameInstance::SetWeaponPreset(const FWeaponPreset& Preset)
 {
 	if (!Preset.WeaponClass) return;
-	const EWeaponKind Kind = Preset.WeaponClass->GetDefaultObject<AWeapon>()->WeaponKind;
+	const EWeaponKind Kind = GetPresetKind(Preset);
+	if (Kind == EWeaponKind::Bomb) return;
+
 	for (FWeaponPreset& Existing : CurrentLoadout.Weapons)
 	{
-		if (Existing.WeaponClass && Existing.WeaponClass->GetDefaultObject<AWeapon>()->WeaponKind == Kind)
+		if (Existing.WeaponClass == Preset.WeaponClass)
 		{
 			Existing = Preset;
 			return;
 		}
 	}
+
+	if (Kind != EWeaponKind::LongGun)
+	{
+		for (FWeaponPreset& Existing : CurrentLoadout.Weapons)
+		{
+			if (Existing.WeaponClass && GetPresetKind(Existing) == Kind)
+			{
+				Existing = Preset;
+				return;
+			}
+		}
+	}
+
 	CurrentLoadout.Weapons.Add(Preset);
+}
+
+void UShooterGameInstance::EquipPrimaryWeapon(const FWeaponPreset& Preset)
+{
+	if (!Preset.WeaponClass) return;
+	const EWeaponKind Kind = GetPresetKind(Preset);
+	if (Kind == EWeaponKind::Bomb) return;
+
+	CurrentLoadout.Weapons.RemoveAll([&Preset, Kind](const FWeaponPreset& Existing)
+	{
+		if (!Existing.WeaponClass) return true;
+		if (Existing.WeaponClass == Preset.WeaponClass) return true;
+		return Kind != EWeaponKind::LongGun && GetPresetKind(Existing) == Kind;
+	});
+
+	int32 InsertAt = CurrentLoadout.Weapons.Num();
+	if (Kind == EWeaponKind::LongGun)
+	{
+		InsertAt = 0;
+		for (int32 i = 0; i < CurrentLoadout.Weapons.Num(); ++i)
+		{
+			if (GetPresetKind(CurrentLoadout.Weapons[i]) == EWeaponKind::LongGun)
+			{
+				InsertAt = i;
+				break;
+			}
+		}
+	}
+	CurrentLoadout.Weapons.Insert(Preset, InsertAt);
+
+	if (Kind == EWeaponKind::LongGun)
+	{
+		int32 Longs = 0;
+		for (int32 i = 0; i < CurrentLoadout.Weapons.Num();)
+		{
+			if (GetPresetKind(CurrentLoadout.Weapons[i]) != EWeaponKind::LongGun)
+			{
+				++i;
+				continue;
+			}
+			++Longs;
+			if (Longs > 2)
+			{
+				CurrentLoadout.Weapons.RemoveAt(i);
+				continue;
+			}
+			++i;
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Loadout] Equipped %s as %s"),
+		*GetNameSafe(Preset.WeaponClass),
+		Kind == EWeaponKind::LongGun ? TEXT("primary long gun") : TEXT("slot weapon"));
+}
+
+TSubclassOf<AWeapon> UShooterGameInstance::GetPrimaryLongGun() const
+{
+	for (const FWeaponPreset& Existing : CurrentLoadout.Weapons)
+	{
+		if (Existing.WeaponClass && GetPresetKind(Existing) == EWeaponKind::LongGun)
+		{
+			return Existing.WeaponClass;
+		}
+	}
+	return nullptr;
 }
 
 bool UShooterGameInstance::FindWeaponPreset(TSubclassOf<AWeapon> WeaponClass, FWeaponPreset& OutPreset) const

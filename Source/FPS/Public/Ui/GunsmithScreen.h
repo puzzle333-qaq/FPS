@@ -39,12 +39,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Gunsmith")
 	bool Save();
 
+	// 和保存同一套：配件写入配装，长枪变成进局第一把。WBP 可另放名为 Button_Equip 的按钮。
+	UFUNCTION(BlueprintCallable, Category = "FPS|Gunsmith")
+	bool Equip();
+
 	// ---- 给蓝图实现的事件 ----
 	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|Gunsmith")
 	void OnBackRequested();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|Gunsmith")
 	void OnSaved(bool bSuccess);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|Gunsmith")
+	void OnEquippedPrimary(TSubclassOf<AWeapon> WeaponClass, bool bSuccess);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|Gunsmith")
 	void OnSlotSelected(FGameplayTag SlotTag, const TArray<UAttachmentData*>& Allowed, UAttachmentData* Equipped);
@@ -63,6 +70,9 @@ protected:
 	TObjectPtr<UButton> Button_Save;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_Equip;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Preview;
 
 private:
@@ -71,6 +81,9 @@ private:
 
 	UFUNCTION()
 	void HandleSave();
+
+	UFUNCTION()
+	void HandleEquip();
 
 	UFUNCTION()
 	void HandlePreviewChanged();

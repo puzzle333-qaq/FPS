@@ -64,7 +64,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Gunsmith")
 	bool RemovePreview(FGameplayTag SlotTag);
 
-	// 写进当前配装并存盘
+	// 保存当前预览枪的配件，长枪同时装备成第一把。并存盘。
 	UFUNCTION(BlueprintCallable, Category = "FPS|Gunsmith")
 	bool SaveCurrent();
 

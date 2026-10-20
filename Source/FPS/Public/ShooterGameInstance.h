@@ -68,9 +68,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Loadout")
 	void SetCurrentLoadout(const FLoadoutPreset& NewLoadout) { CurrentLoadout = NewLoadout; }
 
-	// 把一把枪写进当前配装（同 WeaponKind 的那把会被替换）
+	// 把一把枪写进当前配装（手枪/刀/投掷：同类只留一把；长枪：同 class 更新配件）
 	UFUNCTION(BlueprintCallable, Category = "FPS|Loadout")
 	void SetWeaponPreset(const FWeaponPreset& Preset);
+
+	// 装备成主武器：长枪插到第一把（原第一把变成第二把，最多两把）。手枪/刀同 SetWeaponPreset。
+	UFUNCTION(BlueprintCallable, Category = "FPS|Loadout")
+	void EquipPrimaryWeapon(const FWeaponPreset& Preset);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Loadout")
+	TSubclassOf<AWeapon> GetPrimaryLongGun() const;
 
 	// 当前配装里这把枪的预设（没有返回 false）
 	UFUNCTION(BlueprintPure, Category = "FPS|Loadout")
