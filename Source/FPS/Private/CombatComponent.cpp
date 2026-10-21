@@ -24,6 +24,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Game/ShooterGameState.h"
+#include "Game/SearchDestroyGameState.h"
 #include "Game/ShooterPlayerState.h"
 #include "Game/BombWeapon.h"
 #include "Weapon/ThrownProjectile.h"
@@ -192,12 +193,47 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 	OnCurrentWeaponChanged.Broadcast(CurrentWeapon); // 通知 UI：换枪了
 }
 
+
+// 爆破默认手枪：BuyCatalog 里第一个 Price=0 的手枪（填 Glock18），否则 DefaultWeaponClass 里第一把手枪
+static TSubclassOf<AWeapon> FPS_FindBombDefaultPistol(const UWorld* World, const TArray<TSubclassOf<AWeapon>>* Defaults)
+{
+	if (const ASearchDestroyGameState* SDGS = World ? World->GetGameState<ASearchDestroyGameState>() : nullptr)
+	{
+		for (const FBuyShopItem& Item : SDGS->GetBuyCatalog())
+		{
+			if (Item.Price == 0 && Item.WeaponClass && Item.WeaponClass->GetDefaultObject<AWeapon>()->WeaponKind == EWeaponKind::Pistol)
+				return Item.WeaponClass;
+		}
+	}
+	if (Defaults)
+	{
+		for (const TSubclassOf<AWeapon>& C : *Defaults)
+		{
+			if (C && C->GetDefaultObject<AWeapon>()->WeaponKind == EWeaponKind::Pistol) return C;
+		}
+	}
+	return nullptr;
+}
+
 void UCombatComponent::SpawnInventory()
 {
 	if (GetOwner()->GetLocalRole() < ROLE_Authority)return;
 
 	// 局外配装：每把预设枪替换默认武器里同 WeaponKind 的第一把；没有同类就追加
 	TArray<TSubclassOf<AWeapon>> SpawnClasses = DefaultWeaponClass;
+	const AShooterGameState* ModeGS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
+	if (ModeGS && ModeGS->GetMatchMode() == EShooterGameMode::SearchDestroy)
+	{
+		// 爆破：不用角色默认武器，只给默认手枪（Glock18）+ 购买的枪
+		SpawnClasses.Reset();
+		if (TSubclassOf<AWeapon> Pistol = FPS_FindBombDefaultPistol(GetWorld(), &DefaultWeaponClass)) SpawnClasses.Add(Pistol);
+		else UE_LOG(LogTemp, Warning, TEXT("[Shop] No default pistol: add Glock18 to BuyCatalog with Price=0"));
+		// 刀永远默认带
+		for (const TSubclassOf<AWeapon>& C : DefaultWeaponClass)
+		{
+			if (C && C->GetDefaultObject<AWeapon>()->WeaponKind == EWeaponKind::Melee) { SpawnClasses.Add(C); break; }
+		}
+	}
 	TArray<const FWeaponPreset*> SpawnPresets;
 	SpawnPresets.Init(nullptr, SpawnClasses.Num());
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
@@ -319,7 +355,13 @@ void UCombatComponent::SpawnInventory()
 
 	if (Inventory.Num() > 0)
 	{
-		Equip(Inventory[0]);
+		AWeapon* ToEquip = Inventory[0];
+		if (ModeGS && ModeGS->GetMatchMode() == EShooterGameMode::SearchDestroy)
+		{
+			// 爆破：买了长枪就直接拿长枪
+			for (AWeapon* W : Inventory) { if (IsValid(W) && W->WeaponKind == EWeaponKind::LongGun) { ToEquip = W; break; } }
+		}
+		Equip(ToEquip);
 		InitializeWeaponWidget();
 		IPlayerInterface::Execute_WeaponReplicated(GetOwner());
 	}
