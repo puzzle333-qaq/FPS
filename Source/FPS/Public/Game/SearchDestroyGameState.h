@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Game/ShooterGameState.h"
 #include "Game/SearchDestroyTypes.h"
+#include "Ui/BuyShopTypes.h"
 #include "SearchDestroyGameState.generated.h"
 
 class ABombActor;
@@ -47,6 +48,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Bomb")
 	EBombRoundPhase GetRoundPhase() const { return RoundPhase; }
+
+	// 冻结阶段可买枪（CS 风格）
+	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
+	bool IsBuyPhase() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
+	const TArray<FBuyShopItem>& GetBuyCatalog() const { return BuyCatalog; }
+
+	void SetBuyCatalog(const TArray<FBuyShopItem>& InCatalog);
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Bomb")
 	ERoundWinReason GetLastWinReason() const { return LastWinReason; }
@@ -124,6 +134,9 @@ protected:
 
 	UPROPERTY(Replicated)
 	float ActionDuration = 0.f;
+
+	UPROPERTY(Replicated)
+	TArray<FBuyShopItem> BuyCatalog;
 
 	UFUNCTION()
 	void OnRep_RoundIndex();

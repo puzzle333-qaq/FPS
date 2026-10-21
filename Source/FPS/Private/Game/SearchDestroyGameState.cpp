@@ -22,6 +22,7 @@ void ASearchDestroyGameState::GetLifetimeReplicatedProps(TArray<FLifetimePropert
 	DOREPLIFETIME(ASearchDestroyGameState, BombExplodeServerTime);
 	DOREPLIFETIME(ASearchDestroyGameState, ActionStartServerTime);
 	DOREPLIFETIME(ASearchDestroyGameState, ActionDuration);
+	DOREPLIFETIME(ASearchDestroyGameState, BuyCatalog);
 }
 
 float ASearchDestroyGameState::GetRemainingTime() const
@@ -196,4 +197,16 @@ void ASearchDestroyGameState::OnRep_RoundPhase()
 	{
 		OnRoundEnded.Broadcast(RoundWinningTeam, LastWinReason);
 	}
+}
+
+
+bool ASearchDestroyGameState::IsBuyPhase() const
+{
+	return ShooterMatchState == EShooterMatchState::InProgress && RoundPhase == EBombRoundPhase::Freeze;
+}
+
+void ASearchDestroyGameState::SetBuyCatalog(const TArray<FBuyShopItem>& InCatalog)
+{
+	BuyCatalog = InCatalog;
+	ForceNetUpdate();
 }

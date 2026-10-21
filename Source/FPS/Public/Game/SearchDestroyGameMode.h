@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "ShooterGameModeBase.h"
 #include "Game/SearchDestroyTypes.h"
+#include "Ui/BuyShopTypes.h"
 #include "SearchDestroyGameMode.generated.h"
 
 class ABombActor;
@@ -85,8 +86,42 @@ public:
 	void BeginBombInteract(AController* Controller);
 	void EndBombInteract(AController* Controller);
 	void NotifyBombOverlap(ABombActor* OverlappedBomb, AActor* OtherActor);
+	// ---------- 赏金购枪（CS 风格：冻结阶段 = 购买窗口） ----------
+	// BuyTime > 0 时覆盖 FreezeTime 作为购买/冻结时长
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy")
+	float BuyTime = 20.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy", meta = (ClampMin = "0"))
+	int32 StartMoney = 800;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy", meta = (ClampMin = "0"))
+	int32 MaxMoney = 16000;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy", meta = (ClampMin = "0"))
+	int32 KillReward = 300;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy", meta = (ClampMin = "0"))
+	int32 RoundWinReward = 3250;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy", meta = (ClampMin = "0"))
+	int32 RoundLossReward = 1400;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy")
+	TArray<FBuyShopItem> BuyCatalog;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
+	const TArray<FBuyShopItem>& GetBuyCatalog() const { return BuyCatalog; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
+	bool GetBuyCatalogItem(int32 Index, FBuyShopItem& OutItem) const;
+
+	// 服务器：尝试购买。成功返回 true
+	bool Auth_TryBuyItem(class AShooterPlayerController* Buyer, int32 CatalogIndex);
+
 
 protected:
+
+
 	virtual void ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerState* VictimPS) override;
 	virtual bool CanRespawn(AController* Controller) const override;
 
