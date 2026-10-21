@@ -50,7 +50,8 @@ float ASearchDestroyGameState::GetRemainingTime() const
 bool ASearchDestroyGameState::IsMovementLocked() const
 {
 	if (Super::IsMovementLocked()) return true;
-	return RoundPhase == EBombRoundPhase::Freeze || RoundPhase == EBombRoundPhase::PostRound;
+	// 回合结束（PostRound）允许走动；开枪等动作仍由 IsActionLocked 锁住
+	return RoundPhase == EBombRoundPhase::Freeze;
 }
 
 bool ASearchDestroyGameState::IsActionLocked() const

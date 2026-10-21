@@ -344,6 +344,11 @@ void USDHeaderWidget::RefreshTimer()
 	if (Text_Round)
 	{
 		const int32 Round = SD->GetRoundIndex();
+		if (SD->GetRoundPhase() == EBombRoundPhase::WaitingForPlayers)
+		{
+			Text_Round->SetText(NSLOCTEXT("SearchDestroy", "WaitingPlayers", "等待玩家"));
+		}
+		else
 		Text_Round->SetText(Round > 0
 			? FText::Format(NSLOCTEXT("SearchDestroy", "RoundFmt", "第 {0} 回合"), FText::AsNumber(Round))
 			: NSLOCTEXT("SearchDestroy", "WarmupRound", "准备中"));

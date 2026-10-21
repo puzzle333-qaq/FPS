@@ -29,7 +29,8 @@ enum class EBombRoundPhase : uint8
 	Warmup    UMETA(DisplayName = "准备"),
 	Freeze    UMETA(DisplayName = "冻结"),
 	Live      UMETA(DisplayName = "回合中"),
-	PostRound UMETA(DisplayName = "回合结束")
+	PostRound UMETA(DisplayName = "回合结束"),
+	WaitingForPlayers UMETA(DisplayName = "等待玩家")
 };
 
 UENUM(BlueprintType)
