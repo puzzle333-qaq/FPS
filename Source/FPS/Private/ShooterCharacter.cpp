@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
@@ -799,6 +799,7 @@ bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* Damag
 	}
 
 	Stats->ChangeHealthByAmout(-DamageAmout, DamageInstigator);
+	if (ShooterGM) ShooterGM->NotifyDamage(InstigatorController, GetController());
 	if (ShooterGM && Stats->DeathState != EDeathState::NotDead)
 	{
 		ShooterGM->OnPlayerKilled(InstigatorController, GetController());

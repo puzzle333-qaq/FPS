@@ -5,6 +5,9 @@
 #include "Game/BombActor.h"
 #include "Game/BombSite.h"
 #include "CombatComponent.h"
+#include "Weapon/Weapon.h"
+#include "Weapon/AttachmentData.h"
+#include "Loadout/LoadoutTypes.h"
 #include "ShooterPlayerController.h"
 #include "ShooterGameInstance.h"
 #include "Stats/StatsComponent.h"
@@ -15,6 +18,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Character.h"
 #include "EngineUtils.h"
+#include "Game/WeaponPickup.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 
@@ -49,6 +53,7 @@ void ASearchDestroyGameMode::ApplyMatchRules()
 	ASearchDestroyGameState* GS = GetSDState();
 	if (!GS) return;
 	GS->SetMatchRules(EShooterGameMode::SearchDestroy);
+	GS->SetBuyCatalog(BuyCatalog);
 	if (GS->GetNumTeams() < 2)
 	{
 		GS->InitTeams(2, RoundsToWin);
@@ -120,6 +125,10 @@ void ASearchDestroyGameMode::HandleStartingNewPlayer_Implementation(APlayerContr
 			PS->SetTeamId(PickTeamForNewPlayer());
 			UE_LOG(LogTemp, Log, TEXT("[SD] %s -> team %d"), *PS->GetPlayerName(), PS->GetTeamId());
 		}
+		if (PS->GetMoney() <= 0)
+		{
+			PS->SetMoney(StartMoney);
+		}
 	}
 	if (ShouldSpawnNewPlayer())
 	{
@@ -185,8 +194,11 @@ bool ASearchDestroyGameMode::CanRespawn(AController* Controller) const
 
 void ASearchDestroyGameMode::ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerState* VictimPS)
 {
-	(void)KillerPS;
 	(void)VictimPS;
+	if (IsValid(KillerPS) && KillReward > 0)
+	{
+		KillerPS->SetMoney(FMath::Min(MaxMoney, KillerPS->GetMoney() + KillReward));
+	}
 }
 
 bool ASearchDestroyGameMode::IsPawnAlive(const APawn* Pawn) const
@@ -230,6 +242,11 @@ int32 ASearchDestroyGameMode::CountAliveOnTeam(uint8 TeamId) const
 
 void ASearchDestroyGameMode::OnPlayerKilled(AController* KillerController, AController* VictimController)
 {
+	// 先掉枪（主枪/手枪），再走通用击杀逻辑
+	if (AShooterPlayerController* VictimPC = Cast<AShooterPlayerController>(VictimController))
+	{
+		VictimPC->Auth_DropWeaponsOnDeath(VictimPC->GetPawn());
+	}
 	Super::OnPlayerKilled(KillerController, VictimController);
 	if (Interactor.Get() == VictimController)
 	{
@@ -293,17 +310,23 @@ void ASearchDestroyGameMode::StartRound()
 		GS->SetBomb(nullptr);
 	}
 
+	// 清掉上回合地上的枪
+	for (TActorIterator<AWeaponPickup> It(GetWorld()); It; ++It)
+	{
+		It->Destroy();
+	}
 	RespawnAllPlayers();
 	SpawnOrResetBomb();
 	GiveBombToRandomAttacker();
 
 	const float Now = GS->GetServerWorldTimeSeconds();
-	if (FreezeTime > 0.f)
+	const float BuyWindow = BuyTime > 0.f ? BuyTime : FreezeTime;
+	if (BuyWindow > 0.f)
 	{
 		GS->SetRoundPhase(EBombRoundPhase::Freeze);
-		GS->SetFreezeEndServerTime(Now + FreezeTime);
+		GS->SetFreezeEndServerTime(Now + BuyWindow);
 		GS->SetMatchEndServerTime(0.f);
-		GetWorldTimerManager().SetTimer(FreezeTimer, this, &ThisClass::GoLive, FreezeTime, false);
+		GetWorldTimerManager().SetTimer(FreezeTimer, this, &ThisClass::GoLive, BuyWindow, false);
 	}
 	else
 	{
@@ -735,6 +758,17 @@ void ASearchDestroyGameMode::FinishRound(uint8 WinningTeam, ERoundWinReason Reas
 	{
 		GS->AddTeamScore(WinningTeam, 1);
 	}
+	// 回合赏金
+	for (APlayerState* BasePS : GS->PlayerArray)
+	{
+		AShooterPlayerState* SPS = Cast<AShooterPlayerState>(BasePS);
+		if (!IsValid(SPS) || !SPS->HasTeam()) continue;
+		const int32 Reward = (WinningTeam < 2 && SPS->GetTeamId() == WinningTeam) ? RoundWinReward : RoundLossReward;
+		if (Reward > 0)
+		{
+			SPS->SetMoney(FMath::Min(MaxMoney, SPS->GetMoney() + Reward));
+		}
+	}
 	GS->SetRoundPhase(EBombRoundPhase::PostRound);
 	UE_LOG(LogTemp, Log, TEXT("[SD] Round %d over. Winner=%d Reason=%s (%d : %d)"),
 		GS->GetRoundIndex(), WinningTeam, *UEnum::GetValueAsString(Reason), GS->GetTeamScore(0), GS->GetTeamScore(1));
@@ -815,4 +849,66 @@ void ASearchDestroyGameMode::ReturnAllToMainMenu()
 			GI->GoToMainMenu();
 		}
 	}), HostPC ? 1.0f : 0.1f, false);
+}
+
+
+bool ASearchDestroyGameMode::GetBuyCatalogItem(int32 Index, FBuyShopItem& OutItem) const
+{
+	if (!BuyCatalog.IsValidIndex(Index)) return false;
+	OutItem = BuyCatalog[Index];
+	return true;
+}
+
+bool ASearchDestroyGameMode::Auth_TryBuyItem(AShooterPlayerController* Buyer, int32 CatalogIndex)
+{
+	UE_LOG(LogTemp, Log, TEXT("[Shop] Buy request index=%d by %s"), CatalogIndex, *GetNameSafe(Buyer));
+	if (!HasAuthority() || !IsValid(Buyer)) return false;
+	ASearchDestroyGameState* GS = GetSDState();
+	if (!GS || !GS->IsBuyPhase()) { UE_LOG(LogTemp, Warning, TEXT("[Shop] Buy %d failed: not buy phase"), CatalogIndex); return false; }
+	if (!Buyer->bPawnAlive) { UE_LOG(LogTemp, Warning, TEXT("[Shop] Buy %d failed: dead"), CatalogIndex); return false; }
+	APawn* Pawn = Buyer->GetPawn();
+	if (!IsPawnAlive(Pawn)) { UE_LOG(LogTemp, Warning, TEXT("[Shop] Buy %d failed: pawn not alive"), CatalogIndex); return false; }
+
+	FBuyShopItem Item;
+	if (!GetBuyCatalogItem(CatalogIndex, Item) || !Item.WeaponClass) { UE_LOG(LogTemp, Warning, TEXT("[Shop] Buy %d failed: bad index or no WeaponClass (catalog=%d)"), CatalogIndex, BuyCatalog.Num()); return false; }
+
+	AShooterPlayerState* PS = Buyer->GetPlayerState<AShooterPlayerState>();
+	if (!IsValid(PS) || PS->GetMoney() < Item.Price) { UE_LOG(LogTemp, Warning, TEXT("[Shop] Buy %d failed: money %d < price %d"), CatalogIndex, PS ? PS->GetMoney() : -1, Item.Price); return false; }
+
+	const AWeapon* CDO = Item.WeaponClass->GetDefaultObject<AWeapon>();
+	if (!CDO || CDO->WeaponKind == EWeaponKind::Bomb) return false;
+
+	FWeaponPreset Preset;
+	Preset.WeaponClass = Item.WeaponClass;
+	if (Item.DefaultAttachments.Num() > 0)
+	{
+		for (UAttachmentData* Data : Item.DefaultAttachments)
+		{
+			if (IsValid(Data) && CDO->CanEquipAttachment(Data))
+			{
+				Preset.Attachments.Add(Data);
+			}
+		}
+	}
+	else if (UShooterGameInstance* GI = Cast<UShooterGameInstance>(Buyer->GetGameInstance()))
+	{
+		FWeaponPreset Saved;
+		if (GI->FindWeaponPreset(Item.WeaponClass, Saved))
+		{
+			for (UAttachmentData* Data : Saved.Attachments)
+			{
+				if (IsValid(Data) && CDO->CanEquipAttachment(Data))
+				{
+					Preset.Attachments.Add(Data);
+				}
+			}
+		}
+	}
+
+	if (!Buyer->Auth_ApplyBoughtWeapon(Preset)) { UE_LOG(LogTemp, Warning, TEXT("[Shop] Buy %d failed: apply weapon"), CatalogIndex); return false; }
+
+	PS->SetMoney(FMath::Max(0, PS->GetMoney() - Item.Price));
+	UE_LOG(LogTemp, Log, TEXT("[Buy] %s bought %s for %d (left %d)"),
+		*PS->GetPlayerName(), *GetNameSafe(Item.WeaponClass), Item.Price, PS->GetMoney());
+	return true;
 }

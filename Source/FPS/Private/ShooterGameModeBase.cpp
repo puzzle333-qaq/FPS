@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShooterGameModeBase.h"
 
@@ -25,6 +25,12 @@ bool AShooterGameModeBase::CanDamage(AController* InstigatorController, AControl
 	return !GS || GS->GetMatchState() != EShooterMatchState::PostMatch;
 }
 
+void AShooterGameModeBase::NotifyDamage(AController* InstigatorController, AController* VictimController)
+{
+	if (!IsValid(InstigatorController) || !IsValid(VictimController) || InstigatorController == VictimController) return;
+	RecentDamage.FindOrAdd(VictimController).Add(InstigatorController, GetWorld()->GetTimeSeconds());
+}
+
 void AShooterGameModeBase::OnPlayerKilled(AController* KillerController, AController* VictimController)
 {
 	AShooterPlayerState* VictimPS = IsValid(VictimController) ? VictimController->GetPlayerState<AShooterPlayerState>() : nullptr;
@@ -33,6 +39,26 @@ void AShooterGameModeBase::OnPlayerKilled(AController* KillerController, AContro
 
 	if (VictimPS) VictimPS->AddDeath();
 	if (!bSuicide) KillerPS->AddKill();
+
+	// 助攻：AssistWindow 秒内打过受害者、且不是击杀者的人
+	if (IsValid(VictimController))
+	{
+		if (TMap<TWeakObjectPtr<AController>, float>* Attackers = RecentDamage.Find(VictimController))
+		{
+			const float Now = GetWorld()->GetTimeSeconds();
+			for (const TPair<TWeakObjectPtr<AController>, float>& Pair : *Attackers)
+			{
+				AController* Attacker = Pair.Key.Get();
+				if (!IsValid(Attacker) || Attacker == KillerController || Attacker == VictimController) continue;
+				if (Now - Pair.Value > AssistWindow) continue;
+				if (AShooterPlayerState* AssistPS = Attacker->GetPlayerState<AShooterPlayerState>())
+				{
+					AssistPS->AddAssist();
+				}
+			}
+		}
+		RecentDamage.Remove(VictimController);
+	}
 
 	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
 	{

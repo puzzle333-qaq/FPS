@@ -1,4 +1,4 @@
-﻿#include "Game/ShooterPlayerState.h"
+#include "Game/ShooterPlayerState.h"
 
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/GameStateBase.h"
@@ -10,8 +10,10 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(AShooterPlayerState, TeamId);
 	DOREPLIFETIME(AShooterPlayerState, Kills);
 	DOREPLIFETIME(AShooterPlayerState, Deaths);
+	DOREPLIFETIME(AShooterPlayerState, Assists);
 	DOREPLIFETIME(AShooterPlayerState, RespawnServerTime);
 	DOREPLIFETIME(AShooterPlayerState, bHasBomb);
+	DOREPLIFETIME(AShooterPlayerState, Money);
 }
 
 float AShooterPlayerState::GetRespawnRemaining() const
@@ -40,6 +42,13 @@ void AShooterPlayerState::AddDeath()
 	OnRep_Stats();
 }
 
+void AShooterPlayerState::AddAssist()
+{
+	++Assists;
+	OnRep_Stats();
+	ForceNetUpdate();
+}
+
 void AShooterPlayerState::SetRespawnServerTime(float ServerTime)
 {
 	RespawnServerTime = ServerTime;
@@ -66,4 +75,21 @@ void AShooterPlayerState::SetHasBomb(bool bInHasBomb)
 void AShooterPlayerState::OnRep_HasBomb()
 {
 	OnBombCarryChanged.Broadcast(bHasBomb);
+}
+
+void AShooterPlayerState::SetMoney(int32 NewMoney)
+{
+	Money = FMath::Max(0, NewMoney);
+	OnRep_Money();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::AddMoney(int32 Delta)
+{
+	SetMoney(Money + Delta);
+}
+
+void AShooterPlayerState::OnRep_Money()
+{
+	OnMoneyChanged.Broadcast(Money);
 }

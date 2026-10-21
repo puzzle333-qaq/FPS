@@ -1,18 +1,24 @@
-﻿
+
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Loadout/LoadoutTypes.h"
+#include "Ui/BuyShopTypes.h"
+#include "Game/SearchDestroyTypes.h"
 #include "ShooterPlayerController.generated.h"
 
 class UInputMappingContext;
 class UInputAction;
 class UAttachmentMenu;
 class AWeapon;
-class ULoadoutScreen;
 class UPauseMenuScreen;
+class UBuyShopScreen;
+class UModeHudWidget;
 class UMatchHUD;
+class AGameStateBase;
+class AWeaponPickup;
+class UScoreboardScreen;
 struct FInputActionValue;
 /**
  * 
@@ -56,6 +62,66 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|PauseMenu")
 	bool IsPauseMenuOpen() const;
 
+	// ---------- 爆破购买商店 ----------
+	UFUNCTION(BlueprintCallable, Category = "FPS|Buy")
+	void ToggleBuyShop();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Buy")
+	void OpenBuyShop();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Buy")
+	void CloseBuyShop();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
+	bool IsBuyShopOpen() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
+	bool CanOpenBuyShop() const;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Buy")
+	bool RequestBuyShopItem(int32 CatalogIndex);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
+	TArray<FBuyShopItem> GetCachedBuyCatalog() const;
+
+	bool Auth_ApplyBoughtWeapon(const FWeaponPreset& Preset);
+
+	// ---- F 交互 / 武器掉落 ----
+	// 相机射线长度（cm）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Interact")
+	float InteractDistance = 250.f;
+
+	// 掉落物类，可填 AWeaponPickup 的蓝图子类；为空用 C++ 默认
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Interact")
+	TSubclassOf<AWeaponPickup> WeaponPickupClass;
+
+	// 本地：准星对着的可交互物（没有返回 nullptr）
+	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
+	AActor* TraceInteractable() const;
+
+	// HUD 绑定：当前交互提示（门/枪 > 爆破拾取/安放/拆除），没有则为空
+	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
+	FText GetInteractPromptText() const;
+
+	// 服务器：死亡掉落主枪/手枪（刀和炸弹不在这里）
+	void Auth_DropWeaponsOnDeath(APawn* DeadPawn);
+
+	// 服务器：捡枪，同槽位旧枪丢地上。成功返回 true（调用方销毁掉落物）
+	bool Auth_PickupWeapon(AWeaponPickup* Pickup);
+
+	// ---- 计分板（按住 Tab） ----
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|HUD")
+	TSubclassOf<UScoreboardScreen> ScoreboardWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|HUD")
+	void ShowScoreboard(bool bShow);
+
+	// 填 WBP_BuyShop（父类 BuyShopScreen）。只在爆破局使用；TDM 可留空。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy")
+	TSubclassOf<UBuyShopScreen> BuyShopWidgetClass;
+
+
+
 	// ---------- 局外配装 ----------
 	// 服务器上已校验的配装；SpawnInventory 读它。控制器跨重生存在，所以重生也会用
 	const FLoadoutPreset* GetSubmittedLoadout() const { return bHasSubmittedLoadout ? &SubmittedLoadout : nullptr; }
@@ -66,6 +132,9 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void Server_SubmitLoadout(const FLoadoutPreset& Loadout);
+
+	UFUNCTION(Server, Reliable)
+	void Server_BuyShopItem(int32 CatalogIndex);
 
 	// ---------- 比赛 ----------
 	// 比赛结束：本地停掉输入（结算界面由 HUD 监听 GameState.OnMatchEnded 显示）
@@ -131,21 +200,25 @@ private:
 
 	void Input_ToggleAttachmentMenu();
 
-	// Tab 打开的整备界面。按键在运行时注册，不写进 IMC_Shooter。
+	// Tab 打开爆破购买商店（仅购买阶段有效）。按键运行时注册。
 	UPROPERTY(Transient)
-	TObjectPtr<UInputAction> LoadoutAction;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UInputMappingContext> LoadoutIMC;
-
-	// Tab 整备界面用的控件类（填 WBP_LoadoutScreen）。为空用 C++ 默认布局
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Loadout")
-	TSubclassOf<ULoadoutScreen> LoadoutScreenClass;
+	TObjectPtr<UInputAction> BuyShopAction;
 
 	UPROPERTY(Transient)
-	TObjectPtr<ULoadoutScreen> LoadoutScreen;
+	TObjectPtr<UInputMappingContext> BuyShopIMC;
 
-	void EnsureLoadoutInput();
+	UPROPERTY(Transient)
+	TObjectPtr<UBuyShopScreen> BuyShop;
+
+	void EnsureBuyShopInput();
+	bool bBuyShopBound = false;
+	void Input_ToggleBuyShop();
+
+	UFUNCTION()
+	void HandleBuyPhaseChanged(EBombRoundPhase NewPhase);
+
+	void HandleGameStateSetForBuy(AGameStateBase* NewGameState);
+
 
 	// 暂停菜单按键（运行时创建：Esc + P，P 方便 PIE 里测，因为 PIE 默认 Esc 是停止）
 	void EnsurePauseInput();
@@ -165,11 +238,15 @@ private:
 
 	void EnsureMatchHUD();
 
+	void EnsureModeHud();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UModeHudWidget> ModeHud;
+
 	bool bMatchOver = false;
 
 	FLoadoutPreset SubmittedLoadout;
 	bool bHasSubmittedLoadout = false;
-	void Input_ToggleLoadout();
 
 	void Input_Crouch();          // C: toggle crouch / stand (prone -> crouch); slides when fast
 	void Input_CrouchHold_Started();   // Left Ctrl pressed: crouch (or slide when fast)
@@ -194,6 +271,25 @@ private:
 	void Input_Look(const FInputActionValue& InputActionValue);
 	void Input_Interact_Started();
 	void Input_Interact_Completed();
+
+	UFUNCTION(Server, Reliable)
+	void Server_Interact(AActor* Target);
+
+	AWeaponPickup* Auth_SpawnPickupFromWeapon(AWeapon* Weapon, APawn* FromPawn, const FVector& Offset);
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> ScoreboardAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputMappingContext> ScoreboardIMC;
+
+	UPROPERTY()
+	TObjectPtr<UScoreboardScreen> Scoreboard;
+
+	bool bScoreboardBound = false;
+	void EnsureScoreboardInput();
+	void Input_Scoreboard_Started();
+	void Input_Scoreboard_Completed();
 	void EnsureInteractInput();
 	bool IsMovementLocked() const;
 
