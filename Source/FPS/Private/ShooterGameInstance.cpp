@@ -1,10 +1,11 @@
-﻿#include "ShooterGameInstance.h"
+#include "ShooterGameInstance.h"
 
 #include "Loadout/ShooterLoadoutSave.h"
 #include "Weapon/Weapon.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "GameFramework/PlayerState.h"
 
 UShooterGameInstance::UShooterGameInstance()
 {
@@ -45,7 +46,7 @@ bool UShooterGameInstance::IsModeAvailable(EShooterGameMode Mode) const
 	return Found && Found->bImplemented && !Found->Map.IsNull();
 }
 
-bool UShooterGameInstance::TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, bool bListen)
+bool UShooterGameInstance::TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, bool bListen, const TArray<FString>& ExtraOptions)
 {
 	if (Map.IsNull())
 	{
@@ -53,7 +54,7 @@ bool UShooterGameInstance::TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSo
 		return false;
 	}
 
-	TArray<FString> Options;
+	TArray<FString> Options = ExtraOptions;
 	if (bListen)
 	{
 		Options.Add(TEXT("listen"));
@@ -86,7 +87,7 @@ bool UShooterGameInstance::JoinByIP(const FString& Address)
 	const FString Trimmed = Address.TrimStartAndEnd();
 	APlayerController* PC = GetFirstLocalPlayerController();
 	if (Trimmed.IsEmpty() || !IsValid(PC)) return false;
-	PC->ClientTravel(Trimmed, TRAVEL_Absolute);
+	PC->ClientTravel(Trimmed + GetNameOption(), TRAVEL_Absolute);
 	return true;
 }
 
@@ -232,5 +233,76 @@ bool UShooterGameInstance::LoadLoadout()
 	const UShooterLoadoutSave* Save = Cast<UShooterLoadoutSave>(UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0));
 	if (!IsValid(Save) || Save->Presets.Num() == 0) return false;
 	CurrentLoadout = Save->Presets.IsValidIndex(Save->SelectedIndex) ? Save->Presets[Save->SelectedIndex] : Save->Presets[0];
+	return true;
+}
+
+// ================= 房间 =================
+
+FString UShooterGameInstance::MakeRoomCode()
+{
+	static const TCHAR* Alphabet = TEXT("ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
+	const int32 Len = FCString::Strlen(Alphabet);
+	FString Code;
+	for (int32 i = 0; i < 6; ++i)
+	{
+		Code.AppendChar(Alphabet[FMath::RandRange(0, Len - 1)]);
+	}
+	return Code;
+}
+
+void UShooterGameInstance::ResetRoom(EShooterGameMode Mode)
+{
+	Room = FShooterRoomState();
+	Room.bActive = true;
+	Room.RoomCode = MakeRoomCode();
+	Room.Mode = Mode;
+	UE_LOG(LogTemp, Log, TEXT("[Room] New room %s mode=%d"), *Room.RoomCode, (int32)Mode);
+}
+
+FString UShooterGameInstance::GetRoomKey(const APlayerState* PS)
+{
+	if (!PS) return FString();
+	const FUniqueNetIdRepl& Id = PS->GetUniqueId();
+	if (Id.IsValid())
+	{
+		return Id.ToString();
+	}
+	return PS->GetPlayerName();
+}
+
+FString UShooterGameInstance::GetNameOption() const
+{
+	FString Name = LocalPlayerName.TrimStartAndEnd();
+	if (Name.IsEmpty()) return FString();
+	Name.ReplaceInline(TEXT("?"), TEXT(""));
+	Name.ReplaceInline(TEXT("="), TEXT(""));
+	Name.ReplaceInline(TEXT(" "), TEXT("_"));
+	return FString::Printf(TEXT("?Name=%s"), *Name.Left(20));
+}
+
+bool UShooterGameInstance::CreateRoom(EShooterGameMode Mode)
+{
+	if (RoomLobbyMap.IsNull())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Room] CreateRoom failed: RoomLobbyMap not set in BP_ShooterGameInstance"));
+		return false;
+	}
+	SelectedMode = Mode;
+	Room = FShooterRoomState(); // 本地当服务器：大厅 GameMode 会新建房间
+	TArray<FString> Extra;
+	Extra.Add(FString::Printf(TEXT("Mode=%d"), (int32)Mode));
+	Extra.Add(TEXT("Host=1"));
+	const FString NameOpt = GetNameOption();
+	if (!NameOpt.IsEmpty()) Extra.Add(NameOpt.RightChop(1)); // 去掉开头的 ?
+	return TravelTo(RoomLobbyMap, LobbyGameModeClass, true, Extra);
+}
+
+bool UShooterGameInstance::CreateRoomOnServer(const FString& Address, EShooterGameMode Mode)
+{
+	const FString Trimmed = Address.TrimStartAndEnd();
+	APlayerController* PC = GetFirstLocalPlayerController();
+	if (Trimmed.IsEmpty() || !IsValid(PC)) return false;
+	SelectedMode = Mode;
+	PC->ClientTravel(FString::Printf(TEXT("%s?Mode=%d?Host=1%s"), *Trimmed, (int32)Mode, *GetNameOption()), TRAVEL_Absolute);
 	return true;
 }

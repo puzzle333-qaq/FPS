@@ -25,6 +25,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD")
 	float WarmupTime = 3.f;
 
+	// 开局等待：每队至少这么多人才开始热身/购买
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD", meta = (ClampMin = "1"))
+	int32 MinPlayersPerTeam = 1;
+
+	// 等人超过这么多秒仍不满足就关房，所有人回主菜单（<=0 不关）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD")
+	float WaitForPlayersTimeout = 120.f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD")
 	float FreezeTime = 5.f;
 
@@ -135,6 +143,7 @@ private:
 	void FinishRound(uint8 WinningTeam, ERoundWinReason Reason);
 	void EndMatch(uint8 WinningTeam);
 	void ReturnAllToMainMenu();
+	virtual void HandleTeamForfeit(uint8 WinningTeam) override;
 	void SwitchSides();
 	void RespawnAllPlayers();
 	void SpawnOrResetBomb();
@@ -165,6 +174,12 @@ private:
 	TWeakObjectPtr<ABombSite> PlantingSite;
 
 	FTimerHandle WarmupTimer;
+	FTimerHandle WaitForPlayersTimer;
+	float WaitForPlayersStartTime = 0.f;
+	void BeginWaitingForPlayers();
+	void TickWaitingForPlayers();
+	int32 CountPlayersOnTeam(uint8 TeamId) const;
+	void CloseRoomToMainMenu();
 	FTimerHandle FreezeTimer;
 	FTimerHandle ObjectiveTimer;
 	FTimerHandle RoundEndTimer;

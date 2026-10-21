@@ -47,11 +47,30 @@ public:
 	void RespawnPlayer(AController* Controller, bool bForce = false);
 
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+	virtual void Logout(AController* Exiting) override;
+
+	// ---- 房间 ----
+	// 有房间时：无缝切回房间大厅（房间保留）。没有房间/没填大厅地图返回 false
+	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
+	bool ReturnToRoomLobby();
+
+	// 房间期望的玩家是否都到了（没有房间 = 视为到齐）
+	bool AreExpectedPlayersPresent(int32& OutArrived, int32& OutExpected) const;
+
+	bool HasActiveRoom() const;
+
+	// 某队在线人数
+	int32 CountActivePlayersOnTeam(uint8 TeamId) const;
 
 protected:
 	// 子类加分用
 	virtual void ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerState* VictimPS) {}
 	virtual bool CanRespawn(AController* Controller) const { return true; }
+
+	// 比赛中某队全部掉线：WinningTeam 是还有人的那队。子类结束比赛
+	virtual void HandleTeamForfeit(uint8 WinningTeam) {}
+	void CheckTeamsAfterLogout();
+	FTimerHandle LogoutCheckTimer;
 
 	TMap<TWeakObjectPtr<AController>, FTimerHandle> RespawnTimers;
 

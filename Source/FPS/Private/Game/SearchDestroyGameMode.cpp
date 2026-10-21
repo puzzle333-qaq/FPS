@@ -27,6 +27,8 @@ ASearchDestroyGameMode::ASearchDestroyGameMode()
 {
 	GameStateClass = ASearchDestroyGameState::StaticClass();
 	RespawnDelay = 0.f;
+	// 回合结束展示时间（头文件默认 5，这里改 8）
+	RoundEndDelay = 8.f;
 	BombClass = ABombActor::StaticClass();
 }
 
@@ -45,7 +47,7 @@ void ASearchDestroyGameMode::StartPlay()
 {
 	Super::StartPlay();
 	ApplyMatchRules();
-	StartWarmupOrMatch();
+	BeginWaitingForPlayers();
 }
 
 void ASearchDestroyGameMode::ApplyMatchRules()
@@ -60,10 +62,98 @@ void ASearchDestroyGameMode::ApplyMatchRules()
 	}
 	if (GS->GetMatchState() == EShooterMatchState::WaitingToStart)
 	{
+		if (!bMatchClockStarted)
+		{
+			// 等人阶段：倒计时显示关房剩余时间
+			GS->SetRoundPhase(EBombRoundPhase::WaitingForPlayers);
+			const float Now = GS->GetServerWorldTimeSeconds();
+			GS->SetMatchStartServerTime(WaitForPlayersTimeout > 0.f ? Now + WaitForPlayersTimeout : 0.f);
+		}
+	}
+}
+
+int32 ASearchDestroyGameMode::CountPlayersOnTeam(uint8 TeamId) const
+{
+	int32 Count = 0;
+	if (GameState)
+	{
+		for (const APlayerState* PS : GameState->PlayerArray)
+		{
+			const AShooterPlayerState* SPS = Cast<AShooterPlayerState>(PS);
+			if (SPS && !SPS->IsInactive() && SPS->GetTeamId() == TeamId) ++Count;
+		}
+	}
+	return Count;
+}
+
+void ASearchDestroyGameMode::BeginWaitingForPlayers()
+{
+	if (bMatchClockStarted) return;
+	WaitForPlayersStartTime = GetWorld()->GetTimeSeconds();
+	GetWorldTimerManager().SetTimer(WaitForPlayersTimer, this, &ThisClass::TickWaitingForPlayers, 0.5f, true);
+	UE_LOG(LogTemp, Log, TEXT("[SD] Waiting for players (min %d per team, timeout %.0fs)"), MinPlayersPerTeam, WaitForPlayersTimeout);
+	TickWaitingForPlayers();
+}
+
+void ASearchDestroyGameMode::TickWaitingForPlayers()
+{
+	ASearchDestroyGameState* GS = GetSDState();
+	if (!GS || bMatchClockStarted)
+	{
+		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
+		return;
+	}
+	const int32 A = CountPlayersOnTeam(0);
+	const int32 B = CountPlayersOnTeam(1);
+	int32 Arrived = 0, Expected = 0;
+	const bool bAllHere = AreExpectedPlayersPresent(Arrived, Expected);
+	if (bAllHere && A >= MinPlayersPerTeam && B >= MinPlayersPerTeam)
+	{
+		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
+		UE_LOG(LogTemp, Log, TEXT("[SD] Teams ready (%d vs %d) -> warmup"), A, B);
 		GS->SetRoundPhase(EBombRoundPhase::Warmup);
 		const float Now = GS->GetServerWorldTimeSeconds();
 		GS->SetMatchStartServerTime(WarmupTime > 0.f ? Now + WarmupTime : Now);
+		StartWarmupOrMatch();
+		return;
 	}
+	if (WaitForPlayersTimeout > 0.f && GetWorld()->GetTimeSeconds() - WaitForPlayersStartTime >= WaitForPlayersTimeout)
+	{
+		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
+		UE_LOG(LogTemp, Warning, TEXT("[SD] Wait for players timed out (%d vs %d, %d/%d) -> back to room / close"), A, B, Arrived, Expected);
+		if (!ReturnToRoomLobby())
+		{
+			CloseRoomToMainMenu();
+		}
+	}
+}
+
+void ASearchDestroyGameMode::CloseRoomToMainMenu()
+{
+	UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
+	const FString MenuPath = GI && !GI->MainMenuMap.IsNull() ? GI->MainMenuMap.ToSoftObjectPath().GetLongPackageName() : FString();
+	if (MenuPath.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[SD] CloseRoom: MainMenuMap not set in BP_ShooterGameInstance"));
+		return;
+	}
+	// 先把远端客户端送回主菜单，再让主机自己回去（主机 OpenLevel 会关掉监听服务器）
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		if (IsValid(PC) && !PC->IsLocalController())
+		{
+			PC->ClientTravel(MenuPath, TRAVEL_Absolute);
+		}
+	}
+	FTimerHandle Tmp;
+	GetWorldTimerManager().SetTimer(Tmp, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		if (UShooterGameInstance* HostGI = GetGameInstance<UShooterGameInstance>())
+		{
+			if (GetNetMode() != NM_DedicatedServer) HostGI->GoToMainMenu();
+		}
+	}), 1.0f, false);
 }
 
 void ASearchDestroyGameMode::StartWarmupOrMatch()
@@ -823,8 +913,15 @@ void ASearchDestroyGameMode::EndMatch(uint8 WinningTeam)
 	GetWorldTimerManager().SetTimer(PostMatchTimer, this, &ThisClass::ReturnAllToMainMenu, FMath::Max(PostMatchDelay, 0.1f), false);
 }
 
+void ASearchDestroyGameMode::HandleTeamForfeit(uint8 WinningTeam)
+{
+	// 爆破：一队全掉线 = 整场判负
+	EndMatch(WinningTeam);
+}
+
 void ASearchDestroyGameMode::ReturnAllToMainMenu()
 {
+	if (ReturnToRoomLobby()) return;
 	APlayerController* HostPC = nullptr;
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{

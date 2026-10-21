@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "ShooterGameModeBase.h"
@@ -31,6 +31,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|TDM")
 	bool bFriendlyFire = false;
 
+	// 从房间进来时：等房间里的人都到齐（且每队 >=1）；超时回房间大厅
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|TDM")
+	float WaitForPlayersTimeout = 120.f;
+
 	// PlayerStart 的 Player Start Tag：0 队 / 1 队
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|TDM")
 	FName TeamAStartTag = TEXT("TeamA");
@@ -47,6 +51,7 @@ public:
 protected:
 	virtual void ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerState* VictimPS) override;
 	virtual bool CanRespawn(AController* Controller) const override;
+	virtual void HandleTeamForfeit(uint8 WinningTeam) override;
 
 private:
 	void ApplyMatchRules();
@@ -59,6 +64,10 @@ private:
 
 	bool bMatchClockStarted = false;
 	FTimerHandle WarmupTimer;
+	FTimerHandle WaitForPlayersTimer;
+	float WaitForPlayersStartTime = 0.f;
+	void BeginWaitingForPlayers();
+	void TickWaitingForPlayers();
 	FTimerHandle MatchTimer;
 	FTimerHandle PostMatchTimer;
 };

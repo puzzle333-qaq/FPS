@@ -12,9 +12,12 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Engine/Texture2D.h"
+#include "ShooterGameInstance.h"
 
 AShooterGameModeBase::AShooterGameModeBase()
 {
+	// 房间 <-> 对局之间无缝切图（PlayerState::CopyProperties 带队伍）
+	bUseSeamlessTravel = true;
 	PlayerStateClass = AShooterPlayerState::StaticClass();
 	GameStateClass = AShooterGameState::StaticClass();
 }
@@ -139,8 +142,9 @@ void AShooterGameModeBase::AssignShortPlayerName(APlayerController* NewPlayer)
 	APlayerState* PS = IsValid(NewPlayer) ? NewPlayer->PlayerState : nullptr;
 	if (!IsValid(PS)) return;
 
+	// 不再覆盖名字：保留 ?Name= / 在线服务给的名字；只有空名字才补 PlayerN
 	const FString Current = PS->GetPlayerName();
-	if (Current.StartsWith(TEXT("Player")) && Current.Len() <= 10) return;
+	if (!Current.TrimStartAndEnd().IsEmpty()) return;
 
 	int32 Number = 1;
 	if (const AGameStateBase* GS = GameState)
@@ -154,4 +158,94 @@ void AShooterGameModeBase::AssignShortPlayerName(APlayerController* NewPlayer)
 		}
 	}
 	PS->SetPlayerName(FString::Printf(TEXT("Player%d"), Number));
+}
+
+// ================= 房间 =================
+
+bool AShooterGameModeBase::HasActiveRoom() const
+{
+	const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
+	return GI && GI->Room.bActive && !GI->RoomLobbyMap.IsNull();
+}
+
+bool AShooterGameModeBase::ReturnToRoomLobby()
+{
+	UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
+	if (!GI || !GI->Room.bActive || GI->RoomLobbyMap.IsNull()) return false;
+	FString URL = GI->RoomLobbyMap.ToSoftObjectPath().GetLongPackageName();
+	if (!GI->LobbyGameModeClass.IsNull())
+	{
+		URL += FString::Printf(TEXT("?game=%s"), *GI->LobbyGameModeClass.ToSoftObjectPath().ToString());
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Room] ServerTravel back to lobby: %s (room %s)"), *URL, *GI->Room.RoomCode);
+	GetWorld()->ServerTravel(URL);
+	return true;
+}
+
+int32 AShooterGameModeBase::CountActivePlayersOnTeam(uint8 TeamId) const
+{
+	int32 Count = 0;
+	if (GameState)
+	{
+		for (const APlayerState* PS : GameState->PlayerArray)
+		{
+			const AShooterPlayerState* SPS = Cast<AShooterPlayerState>(PS);
+			if (!IsValid(SPS) || SPS->IsInactive() || SPS->IsOnlyASpectator()) continue;
+			if (!IsValid(SPS->GetOwner())) continue; // 控制器已销毁（掉线中）
+			if (SPS->GetTeamId() == TeamId) ++Count;
+		}
+	}
+	return Count;
+}
+
+bool AShooterGameModeBase::AreExpectedPlayersPresent(int32& OutArrived, int32& OutExpected) const
+{
+	OutArrived = 0;
+	OutExpected = 0;
+	const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
+	if (!GI || !GI->Room.bActive || GI->Room.ExpectedPlayerKeys.Num() == 0) return true;
+	OutExpected = GI->Room.ExpectedPlayerKeys.Num();
+	if (GameState)
+	{
+		for (const FString& Key : GI->Room.ExpectedPlayerKeys)
+		{
+			for (const APlayerState* PS : GameState->PlayerArray)
+			{
+				if (IsValid(PS) && !PS->IsInactive() && UShooterGameInstance::GetRoomKey(PS) == Key)
+				{
+					++OutArrived;
+					break;
+				}
+			}
+		}
+	}
+	return OutArrived >= OutExpected;
+}
+
+void AShooterGameModeBase::Logout(AController* Exiting)
+{
+	Super::Logout(Exiting);
+	// 下一帧再数（这一帧 PlayerState 还在列表里）
+	GetWorldTimerManager().SetTimer(LogoutCheckTimer, this, &ThisClass::CheckTeamsAfterLogout, 0.2f, false);
+}
+
+void AShooterGameModeBase::CheckTeamsAfterLogout()
+{
+	const AShooterGameState* GS = GetGameState<AShooterGameState>();
+	if (!GS || GS->GetMatchState() != EShooterMatchState::InProgress || GS->GetNumTeams() < 2) return;
+	const int32 A = CountActivePlayersOnTeam(0);
+	const int32 B = CountActivePlayersOnTeam(1);
+	if (A > 0 && B > 0) return;
+	if (A == 0 && B == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Room] Everyone left mid-match"));
+		if (!ReturnToRoomLobby())
+		{
+			HandleTeamForfeit(AShooterPlayerState::NoTeam);
+		}
+		return;
+	}
+	const uint8 Winner = A > 0 ? 0 : 1;
+	UE_LOG(LogTemp, Warning, TEXT("[Room] Team %d fully disconnected -> team %d wins"), 1 - Winner, Winner);
+	HandleTeamForfeit(Winner);
 }

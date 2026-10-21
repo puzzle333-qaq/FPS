@@ -1,4 +1,4 @@
-﻿#include "Game/TDMGameMode.h"
+#include "Game/TDMGameMode.h"
 
 #include "Game/ShooterPlayerState.h"
 #include "Game/ShooterGameState.h"
@@ -23,7 +23,7 @@ void ATDMGameMode::StartPlay()
 {
 	Super::StartPlay();
 	ApplyMatchRules();
-	StartWarmupOrMatch();
+	BeginWaitingForPlayers();
 }
 
 void ATDMGameMode::ApplyMatchRules()
@@ -192,6 +192,8 @@ void ATDMGameMode::EndMatch(uint8 WinningTeam)
 
 void ATDMGameMode::ReturnAllToMainMenu()
 {
+	// 从房间来的：回房间大厅（房间保留、准备重置）
+	if (ReturnToRoomLobby()) return;
 	// 先让远程客户端各自回主菜单，房主最后走（房主一走服务器就关了）
 	APlayerController* HostPC = nullptr;
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
@@ -217,4 +219,50 @@ void ATDMGameMode::ReturnAllToMainMenu()
 			GI->GoToMainMenu();
 		}
 	}), HostPC ? 1.0f : 0.1f, false);
+}
+
+void ATDMGameMode::BeginWaitingForPlayers()
+{
+	WaitForPlayersStartTime = GetWorld()->GetTimeSeconds();
+	GetWorldTimerManager().SetTimer(WaitForPlayersTimer, this, &ThisClass::TickWaitingForPlayers, 0.5f, true);
+	TickWaitingForPlayers();
+}
+
+void ATDMGameMode::TickWaitingForPlayers()
+{
+	if (bMatchClockStarted)
+	{
+		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
+		return;
+	}
+	int32 Arrived = 0, Expected = 0;
+	const bool bAllHere = AreExpectedPlayersPresent(Arrived, Expected);
+	// 没有房间（直接开图测试）：照旧立刻开始
+	const bool bTeamsOk = !HasActiveRoom() || (CountActivePlayersOnTeam(0) >= 1 && CountActivePlayersOnTeam(1) >= 1);
+	if (bAllHere && bTeamsOk)
+	{
+		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
+		if (AShooterGameState* GS = GetGameState<AShooterGameState>())
+		{
+			const float Now = GS->GetServerWorldTimeSeconds();
+			GS->SetMatchStartServerTime(WarmupTime > 0.f ? Now + WarmupTime : Now);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[TDM] Players ready %d/%d -> warmup"), Arrived, Expected);
+		StartWarmupOrMatch();
+		return;
+	}
+	if (WaitForPlayersTimeout > 0.f && GetWorld()->GetTimeSeconds() - WaitForPlayersStartTime >= WaitForPlayersTimeout)
+	{
+		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
+		UE_LOG(LogTemp, Warning, TEXT("[TDM] Wait for players timed out %d/%d -> back to room"), Arrived, Expected);
+		if (!ReturnToRoomLobby())
+		{
+			StartWarmupOrMatch();
+		}
+	}
+}
+
+void ATDMGameMode::HandleTeamForfeit(uint8 WinningTeam)
+{
+	EndMatch(WinningTeam);
 }

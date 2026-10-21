@@ -35,6 +35,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	int32 GetAssists() const { return Assists; }
 
+	// ---- 房间大厅 ----
+	UFUNCTION(BlueprintPure, Category = "FPS|Room")
+	bool IsReady() const { return bReady; }
+
+	// 进房间的顺序（越小越早，房主迁移用）
+	int32 GetJoinOrder() const { return JoinOrder; }
+	void SetJoinOrder(int32 InOrder) { JoinOrder = InOrder; }
+	void SetReady(bool bInReady);
+
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Room")
+	FShooterTeamChanged OnReadyChanged;
+
+	// 无缝切图时把队伍/顺序带到新地图
+	virtual void CopyProperties(APlayerState* PlayerState) override;
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Bomb")
 	bool IsCarryingBomb() const { return bHasBomb; }
 
@@ -89,6 +104,15 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_Money)
 	int32 Money = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_Ready)
+	bool bReady = false;
+
+	UPROPERTY()
+	int32 JoinOrder = 0;
+
+	UFUNCTION()
+	void OnRep_Ready();
 
 	UFUNCTION()
 	void OnRep_TeamId();

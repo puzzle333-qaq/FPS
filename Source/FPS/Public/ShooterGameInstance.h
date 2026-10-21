@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
@@ -6,6 +6,30 @@
 #include "ShooterGameInstance.generated.h"
 
 class UShooterLoadoutSave;
+
+// 房间（服务器侧，存在 GameInstance 里，跨 ServerTravel 保留）
+USTRUCT(BlueprintType)
+struct FShooterRoomState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
+	bool bActive = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
+	FString RoomCode;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
+	EShooterGameMode Mode = EShooterGameMode::TDM;
+
+	// 房主的 RoomKey（UniqueId 或名字）
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
+	FString HostKey;
+
+	// 点开始时房间里的人（对局里等这些人到齐）
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
+	TArray<FString> ExpectedPlayerKeys;
+};
 
 // 局外数据：当前配装、选中的模式，以及开房/加入/去靶场/回主菜单。
 // 做一个蓝图子类 BP_ShooterGameInstance 填表，然后在 Project Settings → Game Instance Class 里选它。
@@ -58,6 +82,41 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool GoToMainMenu();
 
+	// ---------- 房间大厅 ----------
+	// 房间大厅地图（World Settings 的 GameMode 填 BP_LobbyGameMode，或者填下面 LobbyGameModeClass）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Room")
+	TSoftObjectPtr<UWorld> RoomLobbyMap;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Room")
+	TSoftClassPtr<AGameModeBase> LobbyGameModeClass;
+
+	// 本地玩家名字（加入时作为 ?Name= 发给服务器；空 = 用引擎默认名）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Room")
+	FString LocalPlayerName;
+
+	// 创建房间：自己当 listen server 打开大厅地图（你就是房主）
+	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
+	bool CreateRoom(EShooterGameMode Mode);
+
+	// 创建房间（专用服务器）：连接服务器 IP，作为第一个进入者成为房主，并请求模式
+	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
+	bool CreateRoomOnServer(const FString& Address, EShooterGameMode Mode);
+
+	// ---- 服务器侧房间状态 ----
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
+	FShooterRoomState Room;
+
+	// 新建房间（生成 6 位房间号）
+	void ResetRoom(EShooterGameMode Mode);
+
+	static FString MakeRoomCode();
+
+	// 玩家在房间里的标识：有 UniqueId 用 UniqueId，否则用名字
+	static FString GetRoomKey(const APlayerState* PS);
+
+	// 拼 ?Name= 选项
+	FString GetNameOption() const;
+
 	// ---------- 配装 ----------
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Loadout")
 	FString SaveSlotName = TEXT("Loadout");
@@ -93,5 +152,5 @@ private:
 	UPROPERTY()
 	FLoadoutPreset CurrentLoadout;
 
-	bool TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, bool bListen);
+	bool TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, bool bListen, const TArray<FString>& ExtraOptions = TArray<FString>());
 };
