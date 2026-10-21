@@ -1,4 +1,4 @@
-﻿
+
 
 
 #include "Stats/StatsComponent.h"
@@ -17,6 +17,9 @@ UStatsComponent::UStatsComponent()
 	
 	Stamina = 100.f;
 	MaxStamina = 100.f;
+	// 体力消耗减半（原 20 / 15，头文件默认值仍是旧值，这里覆盖）
+	StaminaDrainRate = 10.f;
+	JumpStaminaCost = 8.f;
 
 }
 
