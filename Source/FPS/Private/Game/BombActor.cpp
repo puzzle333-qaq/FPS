@@ -6,6 +6,8 @@
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Engine/World.h"
+#include "CollisionQueryParams.h"
 
 ABombActor::ABombActor()
 {
@@ -63,6 +65,39 @@ void ABombActor::GiveTo(APawn* NewCarrier)
 	Multicast_PickedUp(NewCarrier);
 }
 
+
+// 从目标点往下打射线，让模型底部（按 Mesh 包围盒，含 BP 里的缩放/轴心）贴地，并按地面法线对齐
+static void FPS_SnapBombToGround(AActor* Bomb, UStaticMeshComponent* Mesh, const FVector& WorldLocation, const AActor* IgnoreA)
+{
+	UWorld* World = Bomb ? Bomb->GetWorld() : nullptr;
+	if (!World) return;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BombGroundSnap), false, Bomb);
+	if (IgnoreA) Params.AddIgnoredActor(IgnoreA);
+	FHitResult Hit;
+	const FVector Start = WorldLocation + FVector(0.f, 0.f, 50.f);
+	const FVector End = WorldLocation - FVector(0.f, 0.f, 500.f);
+	const FRotator Yaw(0.f, Bomb->GetActorRotation().Yaw, 0.f);
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	{
+		Bomb->SetActorLocationAndRotation(WorldLocation, Yaw);
+		UE_LOG(LogTemp, Warning, TEXT("[SD] Bomb ground trace missed at %s"), *WorldLocation.ToString());
+		return;
+	}
+	// 先按水平朝向放在命中点，再量 Mesh 底部和 Actor 原点的高度差
+	FQuat Rot = Yaw.Quaternion();
+	const FVector Normal = Hit.ImpactNormal.GetSafeNormal();
+	if (!Normal.IsNearlyZero()) Rot = FQuat::FindBetweenNormals(FVector::UpVector, Normal) * Rot;
+	Bomb->SetActorLocationAndRotation(Hit.ImpactPoint, Rot);
+	float BottomOffset = 0.f;
+	if (Mesh && Mesh->GetStaticMesh())
+	{
+		Mesh->UpdateBounds();
+		const FBox Box = Mesh->Bounds.GetBox();
+		BottomOffset = Hit.ImpactPoint.Z - Box.Min.Z;
+	}
+	Bomb->SetActorLocation(Hit.ImpactPoint + Normal * FMath::Max(0.f, BottomOffset) + Normal * 0.5f);
+}
+
 void ABombActor::DropAt(const FVector& WorldLocation)
 {
 	if (!HasAuthority()) return;
@@ -70,7 +105,7 @@ void ABombActor::DropAt(const FVector& WorldLocation)
 	Carrier = nullptr;
 	ApplyWorldDrop();
 	SetActorHiddenInGame(false);
-	SetActorLocation(WorldLocation);
+	FPS_SnapBombToGround(this, Mesh, WorldLocation, nullptr);
 	SetPickupEnabled(true);
 	ForceNetUpdate();
 	Multicast_Dropped();
@@ -83,7 +118,7 @@ void ABombActor::PlantAt(const FVector& WorldLocation, EBombSiteId Site)
 	bPlanted = true;
 	ApplyWorldDrop();
 	SetActorHiddenInGame(false);
-	SetActorLocation(WorldLocation);
+	FPS_SnapBombToGround(this, Mesh, WorldLocation, nullptr);
 	SetPickupEnabled(false);
 	ForceNetUpdate();
 	Multicast_Planted(Site);
