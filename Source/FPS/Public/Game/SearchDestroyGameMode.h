@@ -10,6 +10,13 @@ class ABombActor;
 class ABombSite;
 class ASearchDestroyGameState;
 
+// 断线时记下的信息（重连还原）
+struct FSDReconnectInfo
+{
+	uint8 TeamId = 255;
+	int32 Money = 0;
+};
+
 // 爆破：两队回合制。进攻方安放，防守方拆除。回合内不复活，先赢 RoundsToWin 局。
 UCLASS()
 class FPS_API ASearchDestroyGameMode : public AShooterGameModeBase
@@ -90,6 +97,16 @@ public:
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	virtual bool CanDamage(AController* InstigatorController, AController* VictimController) const override;
 	virtual void OnPlayerKilled(AController* KillerController, AController* VictimController) override;
+	virtual void Logout(AController* Exiting) override;
+
+	// 死后多少秒切到队友观战（等死亡镜头播完）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD")
+	float SpectateDelay = 3.f;
+
+	// 中途加入分队时每队上限
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD", meta = (ClampMin = "1"))
+	int32 MaxPlayersPerTeam = 5;
+
 
 	void BeginBombInteract(AController* Controller);
 	void EndBombInteract(AController* Controller);
@@ -167,6 +184,13 @@ private:
 	uint8 PickTeamForNewPlayer() const;
 	ASearchDestroyGameState* GetSDState() const;
 	bool ShouldSpawnNewPlayer() const;
+
+	// ---- 观战 / 重连 ----
+	TMap<FString, FSDReconnectInfo> ReconnectCache;
+	FTimerHandle SpectateValidateTimer;
+	void ValidateSpectators();
+	void ScheduleSpectate(AController* Controller, float Delay);
+	bool IsMidRound() const;
 
 	bool bMatchClockStarted = false;
 	bool bRoundLocked = false;

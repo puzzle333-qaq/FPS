@@ -19,7 +19,9 @@ class UMatchHUD;
 class AGameStateBase;
 class AWeaponPickup;
 class UScoreboardScreen;
+class AShooterCharacter;
 struct FInputActionValue;
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterSpectateChanged, bool, bIsSpectating, APlayerState*, Target);
 /**
  * 
  */
@@ -147,6 +149,30 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	bool IsMatchOver() const { return bMatchOver; }
+
+	// ---------- 观战（爆破：死亡/回合中途加入） ----------
+	UFUNCTION(BlueprintPure, Category = "FPS|Spectate")
+	bool IsSpectating() const { return bSpectating; }
+
+	// 正在看的玩家（复制给自己，HUD 显示“正在观战: xxx”）
+	UFUNCTION(BlueprintPure, Category = "FPS|Spectate")
+	APlayerState* GetSpectateTarget() const { return SpectateTarget; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Spectate")
+	FString GetSpectateTargetName() const;
+
+	// 观战开始/结束/切换目标时（本地）触发
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Spectate")
+	FShooterSpectateChanged OnSpectateTargetChanged;
+
+	// ---- 服务器 ----
+	void Auth_StartSpectating();
+	void Auth_StopSpectating();
+	// bOnlyIfInvalid：当前目标还活着就不换
+	void Auth_SpectateNext(bool bOnlyIfInvalid = false);
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -291,6 +317,34 @@ private:
 	void Input_Scoreboard_Started();
 	void Input_Scoreboard_Completed();
 	void EnsureInteractInput();
+
+	// ---- 观战 ----
+	UPROPERTY(ReplicatedUsing = OnRep_Spectate)
+	bool bSpectating = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_Spectate)
+	TObjectPtr<APlayerState> SpectateTarget;
+
+	UFUNCTION()
+	void OnRep_Spectate();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SpectateNext();
+
+	void EnsureSpectateInput();
+	void Input_SpectateNext();
+	void ApplySpectateLocal();
+	FTimerHandle SpectateFadeTimer;
+	TWeakObjectPtr<AShooterCharacter> Viewed1PCharacter;
+	void SyncSpectatedCharacter();
+	bool bSpectateBound = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> SpectateNextAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> SpectateIMC;
+
 	bool IsMovementLocked() const;
 
 	UFUNCTION(Server, Reliable)

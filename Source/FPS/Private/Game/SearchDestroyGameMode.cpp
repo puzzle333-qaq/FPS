@@ -48,6 +48,7 @@ void ASearchDestroyGameMode::StartPlay()
 	Super::StartPlay();
 	ApplyMatchRules();
 	BeginWaitingForPlayers();
+	GetWorldTimerManager().SetTimer(SpectateValidateTimer, this, &ThisClass::ValidateSpectators, 0.5f, true);
 }
 
 void ASearchDestroyGameMode::ApplyMatchRules()
@@ -189,10 +190,13 @@ uint8 ASearchDestroyGameMode::PickTeamForNewPlayer() const
 		for (const APlayerState* PS : GS->PlayerArray)
 		{
 			const AShooterPlayerState* SPS = Cast<AShooterPlayerState>(PS);
-			if (SPS && SPS->GetTeamId() < 2) ++Counts[SPS->GetTeamId()];
+			if (SPS && !SPS->IsInactive() && SPS->GetTeamId() < 2) ++Counts[SPS->GetTeamId()];
 		}
 	}
-	return Counts[1] < Counts[0] ? 1 : 0;
+	// 进人少的那队；满 MaxPlayersPerTeam 就去另一队
+	uint8 Team = Counts[1] < Counts[0] ? 1 : 0;
+	if (Counts[Team] >= MaxPlayersPerTeam && Counts[1 - Team] < MaxPlayersPerTeam) Team = 1 - Team;
+	return Team;
 }
 
 bool ASearchDestroyGameMode::ShouldSpawnNewPlayer() const
@@ -202,7 +206,8 @@ bool ASearchDestroyGameMode::ShouldSpawnNewPlayer() const
 	if (GS->GetMatchState() == EShooterMatchState::PostMatch) return false;
 	if (GS->GetMatchState() == EShooterMatchState::WaitingToStart) return true;
 	const EBombRoundPhase Phase = GS->GetRoundPhase();
-	return Phase == EBombRoundPhase::Freeze || Phase == EBombRoundPhase::PostRound || Phase == EBombRoundPhase::Warmup;
+	// 购买阶段/准备/等人：直接参战；回合中/回合结束：观战，下回合再出生
+	return Phase == EBombRoundPhase::Freeze || Phase == EBombRoundPhase::Warmup || Phase == EBombRoundPhase::WaitingForPlayers;
 }
 
 void ASearchDestroyGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
@@ -210,6 +215,16 @@ void ASearchDestroyGameMode::HandleStartingNewPlayer_Implementation(APlayerContr
 	AssignShortPlayerName(NewPlayer);
 	if (AShooterPlayerState* PS = IsValid(NewPlayer) ? NewPlayer->GetPlayerState<AShooterPlayerState>() : nullptr)
 	{
+		// 断线重连：还原队伍和钱
+		const FString Key = UShooterGameInstance::GetRoomKey(PS);
+		if (const FSDReconnectInfo* Info = Key.IsEmpty() ? nullptr : ReconnectCache.Find(Key))
+		{
+			if (Info->TeamId < 2) PS->SetTeamId(Info->TeamId);
+			if (Info->Money > 0) PS->SetMoney(Info->Money);
+			UE_LOG(LogTemp, Log, TEXT("[SD] %s reconnected -> team %d, $%d"), *PS->GetPlayerName(), PS->GetTeamId(), PS->GetMoney());
+			ReconnectCache.Remove(Key);
+		}
+		// 从大厅来的已经带着队伍（CopyProperties）；中途新加入的进人少的队
 		if (!PS->HasTeam())
 		{
 			PS->SetTeamId(PickTeamForNewPlayer());
@@ -223,6 +238,11 @@ void ASearchDestroyGameMode::HandleStartingNewPlayer_Implementation(APlayerContr
 	if (ShouldSpawnNewPlayer())
 	{
 		Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+	}
+	else if (IsMidRound())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[SD] %s joined mid-round -> spectate"), *GetNameSafe(NewPlayer));
+		ScheduleSpectate(NewPlayer, 0.5f);
 	}
 }
 
@@ -353,6 +373,7 @@ void ASearchDestroyGameMode::OnPlayerKilled(AController* KillerController, ACont
 		}
 	}
 	CheckElimination();
+	if (IsMidRound()) ScheduleSpectate(VictimController, SpectateDelay);
 }
 
 void ASearchDestroyGameMode::CheckElimination()
@@ -1008,4 +1029,54 @@ bool ASearchDestroyGameMode::Auth_TryBuyItem(AShooterPlayerController* Buyer, in
 	UE_LOG(LogTemp, Log, TEXT("[Buy] %s bought %s for %d (left %d)"),
 		*PS->GetPlayerName(), *GetNameSafe(Item.WeaponClass), Item.Price, PS->GetMoney());
 	return true;
+}
+
+// ================= 观战 / 中途加入 / 重连 =================
+
+bool ASearchDestroyGameMode::IsMidRound() const
+{
+	const ASearchDestroyGameState* GS = GetSDState();
+	if (!GS || GS->GetMatchState() != EShooterMatchState::InProgress) return false;
+	const EBombRoundPhase Phase = GS->GetRoundPhase();
+	return Phase == EBombRoundPhase::Live || Phase == EBombRoundPhase::PostRound;
+}
+
+void ASearchDestroyGameMode::ScheduleSpectate(AController* Controller, float Delay)
+{
+	TWeakObjectPtr<AShooterPlayerController> WeakPC = Cast<AShooterPlayerController>(Controller);
+	if (!WeakPC.IsValid()) return;
+	FTimerHandle Tmp;
+	GetWorldTimerManager().SetTimer(Tmp, FTimerDelegate::CreateWeakLambda(this, [this, WeakPC]()
+	{
+		if (WeakPC.IsValid() && IsMidRound()) WeakPC->Auth_StartSpectating();
+	}), FMath::Max(Delay, 0.01f), false);
+}
+
+void ASearchDestroyGameMode::ValidateSpectators()
+{
+	if (!GetWorld()) return;
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (AShooterPlayerController* SPC = Cast<AShooterPlayerController>(It->Get()))
+		{
+			if (SPC->IsSpectating()) SPC->Auth_SpectateNext(true);
+		}
+	}
+}
+
+void ASearchDestroyGameMode::Logout(AController* Exiting)
+{
+	// 记下队伍和钱，断线重连时还原
+	if (const AShooterPlayerState* PS = IsValid(Exiting) ? Exiting->GetPlayerState<AShooterPlayerState>() : nullptr)
+	{
+		const FString Key = UShooterGameInstance::GetRoomKey(PS);
+		if (!Key.IsEmpty())
+		{
+			FSDReconnectInfo& Info = ReconnectCache.FindOrAdd(Key);
+			Info.TeamId = PS->GetTeamId();
+			Info.Money = PS->GetMoney();
+		}
+	}
+	if (Interactor.Get() == Exiting) CancelAction();
+	Super::Logout(Exiting);
 }

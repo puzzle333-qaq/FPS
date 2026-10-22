@@ -1,4 +1,4 @@
-﻿#include "CombatComponent.h"
+#include "CombatComponent.h"
 #include "Animation/FirstPersonAnimInstance.h"
 #include "ShooterCharacter.h"
 #include "ShooterGamePlayTags.h"
@@ -1209,6 +1209,7 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 			AnimInstance3P->Montage_Play(Montage3P);
 		}
 	}
+	if (IsViewedFirstPersonLocally()) PlaySpectated1PFire();
 }
 
 
@@ -1504,6 +1505,7 @@ void UCombatComponent::Multicast_ReloadWeapon_Implementation(EReloadType ReloadT
 	}
 
 	PlayReloadMontage(false, ReloadType);
+	if (IsViewedFirstPersonLocally()) PlaySpectated1PReload(ReloadType);
 }
 
 void UCombatComponent::Initiate_CycleZoom()
@@ -2495,4 +2497,57 @@ float UCombatComponent::GetCurrentAimFOV(float Fallback) const
 {
 	const float AimFOV = IsValid(CurrentWeapon) ? CurrentWeapon->GetEffectiveAimFOV() : 0.f;
 	return AimFOV > 0.f ? AimFOV : Fallback;
+}
+
+// ================= 观战第一人称 =================
+
+bool UCombatComponent::IsViewedFirstPersonLocally() const
+{
+	const AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetOwner());
+	return Shooter && !Shooter->IsLocallyControlled() && Shooter->IsFirstPersonViewedLocally();
+}
+
+void UCombatComponent::PlaySpectated1PFire()
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
+	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
+	{
+		UAnimMontage* Montage1P = MontageData->ResolveFireMontage();
+		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+		UAnimInstance* Anim1P = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+		if (IsValid(Montage1P) && IsValid(Anim1P)) Anim1P->Montage_Play(Montage1P);
+	}
+	if (CurrentWeapon->WeaponKind != EWeaponKind::Melee)
+	{
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+		{
+			UAnimMontage* WeaponFire = WeaponMontageData->ResolveFireMontage();
+			USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
+			UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
+			if (IsValid(WeaponFire) && IsValid(WeaponAnim)) WeaponAnim->Montage_Play(WeaponFire);
+		}
+	}
+}
+
+void UCombatComponent::PlaySpectated1PReload(EReloadType ReloadType)
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
+	UAnimMontage* ArmsMontage = nullptr;
+	UAnimInstance* ArmsAnim = nullptr;
+	if (GetReloadMontage(true, ReloadType, ArmsMontage, ArmsAnim))
+	{
+		ArmsAnim->Montage_Play(ArmsMontage);
+	}
+	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+	{
+		EReloadType WeaponReloadType = ReloadType;
+		if (WeaponReloadType == EReloadType::First && !IsValid(WeaponMontageData->FirstReloadMontage))
+		{
+			WeaponReloadType = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
+		}
+		UAnimMontage* WeaponReload = WeaponMontageData->ResolveReloadMontage(WeaponReloadType, CurrentWeapon->GetGripHoldStyle());
+		USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
+		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
+		if (IsValid(WeaponReload) && IsValid(WeaponAnim)) WeaponAnim->Montage_Play(WeaponReload);
+	}
 }

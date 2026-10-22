@@ -29,6 +29,10 @@
 #include "Interface/Interactable.h"
 #include "Ui/ScoreboardScreen.h"
 #include "EngineUtils.h"
+#include "Net/UnrealNetwork.h"
+#include "GameFramework/PlayerStart.h"
+#include "GameFramework/PlayerState.h"
+#include "Game/ShooterPlayerState.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -52,6 +56,7 @@ void AShooterPlayerController::BeginPlay()
 		bShowMouseCursor = false;
 		SetInputMode(FInputModeGameOnly());
 		EnsureMatchHUD();
+		EnsureSpectateInput();
 	}
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
@@ -141,6 +146,7 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		ShooterInputComponent->BindAction(FlashlightAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFlashlight);
 	}
+	EnsureSpectateInput();
 	EnsureInteractInput();
 	if (InteractAction)
 	{
@@ -692,6 +698,7 @@ void AShooterPlayerController::ClosePauseMenu()
 void AShooterPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	if (HasAuthority()) Auth_StopSpectating();
 	EnsureBuyShopInput();
 	if (IsLocalController() && PlayerCameraManager)
 	{
@@ -1231,4 +1238,190 @@ void AShooterPlayerController::ShowScoreboard(bool bShow)
 		Scoreboard->AddToViewport(20);
 	}
 	Scoreboard->RefreshScoreboard();
+}
+
+// ================= 观战 =================
+
+void AShooterPlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME_CONDITION(AShooterPlayerController, bSpectating, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(AShooterPlayerController, SpectateTarget, COND_OwnerOnly);
+}
+
+FString AShooterPlayerController::GetSpectateTargetName() const
+{
+	return IsValid(SpectateTarget) ? SpectateTarget->GetPlayerName() : FString();
+}
+
+static bool FPS_IsAlivePawn(const APawn* Pawn)
+{
+	if (!IsValid(Pawn)) return false;
+	const UStatsComponent* Stats = UStatsComponent::FindStatsComponent(Pawn);
+	return !Stats || Stats->DeathState == EDeathState::NotDead;
+}
+
+void AShooterPlayerController::Auth_StartSpectating()
+{
+	if (!HasAuthority() || bMatchOver) return;
+	if (FPS_IsAlivePawn(GetPawn())) return; // 已经复活了
+	bSpectating = true;
+	bPawnAlive = false;
+	SpectateTarget = nullptr;
+	Auth_SpectateNext(false);
+}
+
+void AShooterPlayerController::Auth_StopSpectating()
+{
+	if (!HasAuthority()) return;
+	const bool bWas = bSpectating;
+	bSpectating = false;
+	SpectateTarget = nullptr;
+	if (bWas)
+	{
+		if (APawn* P = GetPawn()) SetViewTarget(P);
+		ApplySpectateLocal();
+		ForceNetUpdate();
+	}
+}
+
+void AShooterPlayerController::Auth_SpectateNext(bool bOnlyIfInvalid)
+{
+	if (!HasAuthority() || !bSpectating || !GetWorld()) return;
+
+	auto TargetPawnOf = [](APlayerState* PS) -> APawn*
+	{
+		return IsValid(PS) ? PS->GetPawn() : nullptr;
+	};
+	if (bOnlyIfInvalid && FPS_IsAlivePawn(TargetPawnOf(SpectateTarget))) return;
+
+	const AShooterPlayerState* MyPS = GetPlayerState<AShooterPlayerState>();
+	const uint8 MyTeam = MyPS ? MyPS->GetTeamId() : AShooterPlayerState::NoTeam;
+
+	TArray<APlayerState*> Mates, Others;
+	if (const AGameStateBase* GS = GetWorld()->GetGameState())
+	{
+		for (APlayerState* PS : GS->PlayerArray)
+		{
+			if (!IsValid(PS) || PS == PlayerState) continue;
+			if (!FPS_IsAlivePawn(PS->GetPawn())) continue;
+			const AShooterPlayerState* SPS = Cast<AShooterPlayerState>(PS);
+			if (SPS && MyTeam != AShooterPlayerState::NoTeam && SPS->GetTeamId() == MyTeam) Mates.Add(PS);
+			else Others.Add(PS);
+		}
+	}
+	// 只看队友；队友全死才看其他人
+	const TArray<APlayerState*>& Pool = Mates.Num() > 0 ? Mates : Others;
+
+	APlayerState* NewTarget = nullptr;
+	if (Pool.Num() > 0)
+	{
+		const int32 Cur = Pool.IndexOfByKey(SpectateTarget.Get());
+		NewTarget = Pool[(Cur + 1) % Pool.Num()];
+	}
+	SpectateTarget = NewTarget;
+
+	if (APawn* TP = TargetPawnOf(NewTarget))
+	{
+		SetViewTargetWithBlend(TP, 0.15f);
+	}
+	else
+	{
+		// 没人可看：固定镜头（自己的尸体视角/出生点）
+		AActor* Fixed = GetPawn();
+		if (!IsValid(Fixed))
+		{
+			for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It) { Fixed = *It; break; }
+		}
+		if (IsValid(Fixed)) SetViewTarget(Fixed);
+	}
+	ApplySpectateLocal();
+	ForceNetUpdate();
+	UE_LOG(LogTemp, Log, TEXT("[Spectate] %s -> %s"), PlayerState ? *PlayerState->GetPlayerName() : TEXT("?"),
+		NewTarget ? *NewTarget->GetPlayerName() : TEXT("<fixed>"));
+}
+
+void AShooterPlayerController::OnRep_Spectate()
+{
+	ApplySpectateLocal();
+}
+
+void AShooterPlayerController::ApplySpectateLocal()
+{
+	if (!IsLocalController()) return;
+	if (bSpectating)
+	{
+		bPawnAlive = false;
+		// 死亡黑屏是定时器加的，观战期间一直清掉
+		TWeakObjectPtr<AShooterPlayerController> WeakThis = this;
+		auto ClearFade = [WeakThis]()
+		{
+			if (WeakThis.IsValid() && WeakThis->PlayerCameraManager)
+			{
+				WeakThis->PlayerCameraManager->StopCameraFade();
+				WeakThis->PlayerCameraManager->SetManualCameraFade(0.f, FLinearColor::Black, false);
+			}
+			if (WeakThis.IsValid()) WeakThis->SyncSpectatedCharacter();
+		};
+		ClearFade();
+		GetWorldTimerManager().SetTimer(SpectateFadeTimer, FTimerDelegate::CreateWeakLambda(this, ClearFade), 0.2f, true);
+	}
+	else
+	{
+		GetWorldTimerManager().ClearTimer(SpectateFadeTimer);
+		SyncSpectatedCharacter();
+	}
+	OnSpectateTargetChanged.Broadcast(bSpectating, SpectateTarget);
+}
+
+void AShooterPlayerController::Server_SpectateNext_Implementation()
+{
+	Auth_SpectateNext(false);
+}
+
+void AShooterPlayerController::Input_SpectateNext()
+{
+	if (bSpectating) Server_SpectateNext();
+}
+
+void AShooterPlayerController::EnsureSpectateInput()
+{
+	if (!IsLocalController()) return;
+	if (!SpectateNextAction)
+	{
+		SpectateNextAction = NewObject<UInputAction>(this, TEXT("IA_SpectateNext_Runtime"));
+		SpectateNextAction->ValueType = EInputActionValueType::Boolean;
+		// 不吞键：左键开火照常工作
+		SpectateNextAction->bConsumeInput = false;
+		SpectateIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Spectate_Runtime"));
+		SpectateIMC->MapKey(SpectateNextAction, EKeys::LeftMouseButton);
+	}
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+	if (IsValid(Subsystem) && SpectateIMC && !Subsystem->HasMappingContext(SpectateIMC))
+	{
+		Subsystem->AddMappingContext(SpectateIMC, 2);
+	}
+	if (!bSpectateBound)
+	{
+		if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
+		{
+			EIC->BindAction(SpectateNextAction, ETriggerEvent::Started, this, &ThisClass::Input_SpectateNext);
+			bSpectateBound = true;
+		}
+	}
+}
+
+void AShooterPlayerController::SyncSpectatedCharacter()
+{
+	// 本机观战时，让被看的角色显示第一人称（手臂+1P 枪），换人/停止观战时还原
+	AShooterCharacter* Want = nullptr;
+	if (bSpectating && IsLocalController())
+	{
+		Want = Cast<AShooterCharacter>(GetViewTarget());
+		if (Want == GetPawn()) Want = nullptr;
+	}
+	if (Viewed1PCharacter.Get() == Want) return;
+	if (AShooterCharacter* Old = Viewed1PCharacter.Get()) Old->SetFirstPersonViewedLocally(false);
+	Viewed1PCharacter = Want;
+	if (Want) Want->SetFirstPersonViewedLocally(true);
 }

@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -187,6 +187,20 @@ public:
 	const TArray<TObjectPtr<UAnimMontage>>& GetHitReactPool(EHitReactDirection Direction) const;
 
 	UCameraComponent* GetFirstPersonCamera() const { return FirstPersonCamera; }
+
+	// 观战：本机正在用这个角色的第一人称视角看它（只影响本机显示：1P 手臂/枪，隐藏 3P）
+	UFUNCTION(BlueprintCallable, Category = "FPS|Spectate")
+	void SetFirstPersonViewedLocally(bool bViewed);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Spectate")
+	bool IsFirstPersonViewedLocally() const { return bFirstPersonViewedLocally; }
+
+	// 本机是否该显示这个角色的第一人称（自己控制 或 被本机观战）。ABP 里可替代 IsLocallyControlled
+	UFUNCTION(BlueprintPure, Category = "FPS|Spectate")
+	bool UsesFirstPersonVisuals() const { return IsLocallyControlled() || bFirstPersonViewedLocally; }
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "FPS|Spectate")
+	bool bFirstPersonViewedLocally = false;
 
 	// 枪身视觉后坐总开关（第 4 步）。关掉时不加任何偏移，Mesh1P 完全不受影响，方便对比手感
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Recoil|Visual")

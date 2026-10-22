@@ -1,4 +1,4 @@
-﻿
+
 
 
 #include "Weapon/Weapon.h"
@@ -2119,7 +2119,8 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
 {
 	if (!IsValid(OwningPawn)) return;
 
-	const bool bLocal = OwningPawn->IsLocallyControlled();
+	const AShooterCharacter* ShooterOwner = Cast<AShooterCharacter>(OwningPawn);
+	const bool bLocal = OwningPawn->IsLocallyControlled() || (ShooterOwner && ShooterOwner->IsFirstPersonViewedLocally());
 	Mesh1P->SetHiddenInGame(!bLocal, true);
 	Mesh3P->SetHiddenInGame(bLocal, true);
 

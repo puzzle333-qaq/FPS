@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -297,6 +297,10 @@ private:
 	float SecondsSinceRecoilShot = 0.f;
 	bool GetReloadMontage(bool bFirstPerson, EReloadType ReloadType, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const;
 	bool PlayReloadMontage(bool bFirstPerson, EReloadType ReloadType);
+	// 观战：远端角色被本机第一人称观看时，额外在 1P 手臂/枪上播（不改弹药/状态）
+	bool IsViewedFirstPersonLocally() const;
+	void PlaySpectated1PFire();
+	void PlaySpectated1PReload(EReloadType ReloadType);
 	// 按当前弹匣和“是否第一次换弹”决定这次换弹的种类
 	EReloadType ChooseReloadType() const;
 

@@ -194,6 +194,11 @@ bool AShooterCharacter::HasCurrentWeapon() const
 void AShooterCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	// 被观战的远端角色：用复制的瞄准方向（RemoteViewPitch）驱动镜头，上下看也跟着
+	if (bFirstPersonViewedLocally && !IsLocallyControlled() && IsValid(SpringArm))
+	{
+		SpringArm->SetWorldRotation(GetFixedAimRotation());
+	}
 	UpdateLocomotionGait(true);
 
 	CalculateTurnInPlaceParameters(DeltaTime);
@@ -2086,4 +2091,30 @@ void AShooterCharacter::StartDeathView()
 		// 停在全黑，直到复活时控制器把淡出清掉
 		if (WeakPCM.IsValid()) WeakPCM->StartCameraFade(0.f, 1.f, FadeTime, FLinearColor::Black, false, true);
 	}), FMath::Max(FadeAt, 0.001f), false);
+}
+
+void AShooterCharacter::SetFirstPersonViewedLocally(bool bViewed)
+{
+	if (bFirstPersonViewedLocally == bViewed) return;
+	bFirstPersonViewedLocally = bViewed;
+	if (IsLocallyControlled()) return;
+
+	// 1P 手臂 OnlyOwnerSee、3P 身体 OwnerNoSee：视角目标是这个角色时引擎自动切换。这里处理枪和镜头。
+	if (IsValid(SpringArm))
+	{
+		SpringArm->bUsePawnControlRotation = !bViewed;
+		if (bViewed) SpringArm->SetWorldRotation(GetFixedAimRotation());
+	}
+	if (IsValid(Mesh1P))
+	{
+		Mesh1P->VisibilityBasedAnimTickOption = bViewed ? EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones
+			: EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	}
+	if (IsValid(Combat))
+	{
+		for (AWeapon* Weapon : Combat->GetInventory())
+		{
+			if (IsValid(Weapon)) Weapon->RefreshViewMeshVisibility();
+		}
+	}
 }

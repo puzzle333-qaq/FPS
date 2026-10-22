@@ -1,4 +1,4 @@
-﻿
+
 
 #pragma once
 
@@ -131,7 +131,10 @@ class FPS_API AWeapon : public AActor, public IRecoilModifier   // 实现后座�
 {
 	GENERATED_BODY()
 	
-public:	
+public:
+	// 观战切换时按本机视角重新切 1P/3P 网格
+	void RefreshViewMeshVisibility() const { SetMeshVisibility(GetInstigator()); }
+	
 	AWeapon();
 	virtual void OnRep_Instigator() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
