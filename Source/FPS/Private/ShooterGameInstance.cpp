@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerState.h"
+#include "Online/ShooterSessionSubsystem.h"
 
 UShooterGameInstance::UShooterGameInstance()
 {
@@ -78,6 +79,11 @@ bool UShooterGameInstance::HostRoom(EShooterGameMode Mode)
 		return false;
 	}
 	SelectedMode = Mode;
+	// 有房间大厅时，开房 = 进房间大厅（不再直接进对局地图）
+	if (!RoomLobbyMap.IsNull())
+	{
+		return CreateRoom(Mode);
+	}
 	const FShooterModeInfo& Info = Modes.FindChecked(Mode);
 	return TravelTo(Info.Map, Info.GameModeClass, true);
 }
@@ -98,6 +104,10 @@ bool UShooterGameInstance::OpenRange()
 
 bool UShooterGameInstance::GoToMainMenu()
 {
+	if (UShooterSessionSubsystem* Sessions = GetSubsystem<UShooterSessionSubsystem>())
+	{
+		Sessions->DestroyRoomSession();
+	}
 	return TravelTo(MainMenuMap, nullptr, false);
 }
 

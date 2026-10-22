@@ -37,6 +37,7 @@ public:
 	virtual void HandleSeamlessTravelPlayer(AController*& C) override;
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
+	virtual void StartPlay() override;
 
 	// ---- 由 LobbyPlayerController 的 Server RPC 调用 ----
 	void RequestTeam(ALobbyPlayerController* PC, int32 TeamId);
@@ -56,6 +57,9 @@ private:
 	bool IsHost(const APlayerController* PC) const;
 	void Reject(ALobbyPlayerController* PC, const FText& Reason);
 	void ResetAllReady();
+	// 把房间信息发布到会话（房间列表能搜到）
+	void UpdateSessionAdvertisement(bool bInGame = false);
+	FTimerHandle AdvertiseTimer;
 
 	int32 NextJoinOrder = 1;
 	// InitNewPlayer 解析到的 ?Host=1 / ?Mode=

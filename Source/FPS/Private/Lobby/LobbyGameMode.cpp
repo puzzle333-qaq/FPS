@@ -7,6 +7,8 @@
 #include "GameFramework/PlayerState.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "Online/ShooterSessionSubsystem.h"
+#include "TimerManager.h"
 
 ALobbyGameMode::ALobbyGameMode()
 {
@@ -177,6 +179,35 @@ void ALobbyGameMode::Logout(AController* Exiting)
 			}
 		}
 	}
+}
+
+void ALobbyGameMode::StartPlay()
+{
+	Super::StartPlay();
+	// 专用服务器/房主进入大厅就发布房间；之后每 2 秒刷新人数等信息
+	UpdateSessionAdvertisement(false);
+	GetWorldTimerManager().SetTimer(AdvertiseTimer, FTimerDelegate::CreateWeakLambda(this, [this]() { UpdateSessionAdvertisement(false); }), 2.f, true);
+}
+
+void ALobbyGameMode::UpdateSessionAdvertisement(bool bInGame)
+{
+	UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
+	UShooterSessionSubsystem* Sessions = GI ? GI->GetSubsystem<UShooterSessionSubsystem>() : nullptr;
+	if (!GI || !Sessions || !GI->Room.bActive) return;
+	int32 Players = 0;
+	FString HostName;
+	if (GameState)
+	{
+		for (const APlayerState* PS : GameState->PlayerArray)
+		{
+			if (PS && !PS->IsInactive()) ++Players;
+		}
+	}
+	if (const ALobbyGameState* GS = GetLobbyState())
+	{
+		if (const APlayerState* Host = GS->GetHostPlayerState()) HostName = Host->GetPlayerName();
+	}
+	Sessions->AdvertiseRoom(GI->Room.RoomCode, GI->Room.Mode, Players, MaxPlayersPerTeam * 2, HostName, bInGame);
 }
 
 void ALobbyGameMode::RefreshHost(APlayerState* Leaving)
@@ -352,6 +383,8 @@ void ALobbyGameMode::RequestStart(ALobbyPlayerController* PC)
 		URL += FString::Printf(TEXT("?game=%s"), *Info.GameModeClass.ToSoftObjectPath().ToString());
 	}
 	GS->SetStarting(true);
+	GetWorldTimerManager().ClearTimer(AdvertiseTimer);
+	UpdateSessionAdvertisement(true);
 	UE_LOG(LogTemp, Log, TEXT("[Room] Start %s with %d players -> %s"), *GI->Room.RoomCode, GI->Room.ExpectedPlayerKeys.Num(), *URL);
 	GetWorld()->ServerTravel(URL);
 }

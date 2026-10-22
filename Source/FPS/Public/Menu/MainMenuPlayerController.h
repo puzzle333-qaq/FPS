@@ -1,11 +1,14 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Loadout/LoadoutTypes.h"
 #include "MainMenuPlayerController.generated.h"
 
 class UUserWidget;
 class UGunsmithComponent;
+class URoomBrowserScreen;
+class UWidgetSwitcher;
 
 // 主菜单控制器：开局创建 MainMenuWidgetClass，切成纯 UI 输入并显示鼠标。改枪台逻辑在 Gunsmith 组件上
 UCLASS()
@@ -22,6 +25,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Menu")
 	UUserWidget* GetMainMenuWidget() const { return MainMenuWidget; }
 
+	// 填 WBP_RoomBrowser（父类 RoomBrowserScreen）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Menu")
+	TSubclassOf<URoomBrowserScreen> RoomBrowserWidgetClass;
+
+	// 主菜单右侧模式按钮调用：记下模式并打开房间列表
+	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
+	void ShowRoomBrowser(EShooterGameMode Mode);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
+	void HideRoomBrowser();
+
+	// 房间列表是否嵌在主菜单 WidgetSwitcher 里（RoomBrowserPage）
+	UFUNCTION(BlueprintPure, Category = "FPS|Menu")
+	bool IsRoomBrowserEmbedded() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Menu")
+	URoomBrowserScreen* GetRoomBrowser() const { return RoomBrowser; }
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Gunsmith")
 	UGunsmithComponent* GetGunsmith() const { return Gunsmith; }
 
@@ -34,4 +55,10 @@ protected:
 private:
 	UPROPERTY()
 	TObjectPtr<UUserWidget> MainMenuWidget;
+
+	UPROPERTY()
+	TObjectPtr<URoomBrowserScreen> RoomBrowser;
+
+	TWeakObjectPtr<UWidgetSwitcher> EmbeddedSwitcher;
+	int32 PreviousSwitcherIndex = 0;
 };
