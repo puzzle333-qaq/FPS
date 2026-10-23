@@ -1,6 +1,7 @@
-#include "CombatComponent.h"
+﻿#include "CombatComponent.h"
 #include "Animation/FirstPersonAnimInstance.h"
 #include "ShooterCharacter.h"
+#include "ShooterGameModeBase.h"
 #include "ShooterGamePlayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/Weapon.h"
@@ -672,6 +673,20 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 		{
 			AnimCopy.Strafe_Standing = AnimCopy.Strafe_Walking;
 		}
+		// SprintAnim 未填：RAR 用 Infima 冲刺循环（与 Idle Pose 同套）；其它枪先 Idle 保握点，避免通用 Anim_fp_sprint 扯枪。
+		if (!IsValid(AnimCopy.SprintAnim))
+		{
+			const FString TypeStr = CurrentWeapon->WeaponType.ToString();
+			if (TypeStr.Equals(TEXT("Weapon.type.rar"), ESearchCase::IgnoreCase))
+			{
+				static const TCHAR* RarSprintPath = TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Movement/A_RAR_FP_PCH_AssaultRifle_Sprint_F_Loop.A_RAR_FP_PCH_AssaultRifle_Sprint_F_Loop");
+				AnimCopy.SprintAnim = LoadObject<UAnimSequence>(nullptr, RarSprintPath);
+			}
+			if (!IsValid(AnimCopy.SprintAnim) && IsValid(AnimCopy.IdleAnim))
+			{
+				AnimCopy.SprintAnim = AnimCopy.IdleAnim;
+			}
+		}
 
 		// Grip hold style: Cradle vs Grab — same source as ResolveReloadMontage(GetGripHoldStyle()).
 		// Push IdleAnim_Grab into CurrenrAnim.IdleAnim. Do NOT InitAnim here: it destroys
@@ -689,6 +704,23 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 			}
 		}
 
+
+		// Shotgun FPSTP anims are authored as full arm poses. ABP AimOffset / Strafe / left-hand Layered
+		// blend deform them in-game (Persona preview has none of those). Strip for Weapon.type.shotgun 1P.
+		const bool bShotgunRaw1P = bFirstPerson
+			&& CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun);
+		if (bShotgunRaw1P)
+		{
+			AnimCopy.AimOffset_Hip = nullptr;
+			AnimCopy.AimOffset_Aim = nullptr;
+			AnimCopy.Strafe_Standing = nullptr;
+			AnimCopy.Strafe_Crouching = nullptr;
+			AnimCopy.Strafe_Walking = nullptr;
+			AnimCopy.LeftHandHoldPose_Cradle = nullptr;
+			AnimCopy.LeftHandHoldPose_Grab = nullptr;
+			AnimCopy.IdleAnim_Grab = nullptr;
+			AnimCopy.AimIdleAnim_Grab = nullptr;
+		}
 		const FName PropertyName = bFirstPerson ? TEXT("CurrenrAnim") : TEXT("CurrentAnim");
 		FStructProperty* AnimProperty = FindFProperty<FStructProperty>(AnimInstance->GetClass(), PropertyName);
 		if (!AnimProperty || AnimProperty->Struct != FPlayerAnim::StaticStruct()) return;
@@ -710,6 +742,11 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 				FPAnim->ActiveIdleAnim = AnimCopy.IdleAnim.Get();
 			}
 			FPAnim->bUseLeftHandHoldPose = IsValid(FPAnim->LeftHandHoldPose);
+			if (bShotgunRaw1P)
+			{
+				FPAnim->LeftHandHoldPose = nullptr;
+				FPAnim->bUseLeftHandHoldPose = false;
+			}
 
 			if (bFirstPerson)
 			{
@@ -1052,18 +1089,37 @@ void UCombatComponent::Local_FireWeapon()
 		}
 	}
 
-	FHitResult Hit;
+	TArray<FHitResult> Hits;
 	if (CurrentWeapon->WeaponKind == EWeaponKind::Melee)
 	{
+		FHitResult Hit;
 		CurrentWeapon->WeaponMeleeHit(Hit);
+		Hits.Add(Hit);
 	}
 	else
 	{
-		CurrentWeapon->WeaponTrace(Hit, TraceLength);
+		const int32 Pellets = FMath::Clamp(CurrentWeapon->PelletsPerShot, 1, 32);
+		Hits.Reserve(Pellets);
+		for (int32 i = 0; i < Pellets; ++i)
+		{
+			FHitResult Hit;
+			CurrentWeapon->WeaponTrace(Hit, TraceLength);
+			Hits.Add(Hit);
+		}
 	}
 
-	EPhysicalSurface ImpactSurfaceType = Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType2;
-	CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, true);
+	if (Hits.Num() > 0)
+	{
+		// 第一颗走原来的 FireEffect（枪口火光/声音/弹孔）并扣 1 发；其余弹丸不重复播枪声。
+		const FHitResult& Hit = Hits[0];
+		EPhysicalSurface ImpactSurfaceType = Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType2;
+		CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, true, true);
+	}
+	if (Hits.Num() > 1)
+	{
+		// 每颗弹丸都留弹孔 + 命中特效
+		CurrentWeapon->SpawnPelletImpacts(Hits);
+	}
 	OnWeaponFired.Broadcast();
 	ApplyFireRecoil();
 	NotifyAmmoChanged();
@@ -1078,7 +1134,7 @@ void UCombatComponent::Local_FireWeapon()
 		: CurrentWeapon->FireTime;
 	GetWorld()->GetTimerManager().SetTimer(FireTimer, this, &ThisClass::FireTimerFinished, Interval);
 
-	Server_FireWeapon(Hit);
+	Server_FireWeapon(Hits);
 }
 
 void UCombatComponent::OnRep_CurrentReserveAmmo()
@@ -1134,7 +1190,7 @@ void UCombatComponent::FireTimerFinished()
 }
 
 
-void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
+void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>& Hits)
 {
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponKind == EWeaponKind::Bomb) return;
@@ -1153,16 +1209,26 @@ void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 	if (MinInterval > 0.f && Now < ServerNextFireTime) return;
 	ServerNextFireTime = Now + MinInterval;
 
-	if (IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>())
+	const int32 MaxPellets = FMath::Clamp(CurrentWeapon->PelletsPerShot, 1, 32);
+	const int32 ApplyCount = FMath::Clamp(Hits.Num(), 0, MaxPellets);
+	for (int32 i = 0; i < ApplyCount; ++i)
 	{
-		const FName Bone = ResolveDamageBone(Hit);
-		const float Damage = ScaleDamageForBone(CurrentWeapon->Damage, Bone, CurrentWeapon->HeadshotMultiplier, CurrentWeapon->LimbMultiplier);
-		UE_LOG(LogTemp, Log, TEXT("Hit %s bone %s zone %s damage %.1f"),
-			*GetNameSafe(Hit.GetActor()),
-			*Bone.ToString(),
-			*UEnum::GetValueAsString(ResolveHitZone(Bone)),
-			Damage);
-		IPlayerInterface::Execute_DoDamage(Hit.GetActor(), Damage, GetOwner());
+		const FHitResult& Hit = Hits[i];
+		if (IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>())
+		{
+			const FName Bone = ResolveDamageBone(Hit);
+			const float Damage = ScaleDamageForBone(CurrentWeapon->Damage, Bone, CurrentWeapon->HeadshotMultiplier, CurrentWeapon->LimbMultiplier);
+			UE_LOG(LogTemp, Log, TEXT("Hit %s bone %s zone %s damage %.1f pellet %d"),
+				*GetNameSafe(Hit.GetActor()),
+				*Bone.ToString(),
+				*UEnum::GetValueAsString(ResolveHitZone(Bone)),
+				Damage,
+				i);
+			AShooterGameModeBase* DamageGM = GetWorld() ? GetWorld()->GetAuthGameMode<AShooterGameModeBase>() : nullptr;
+			if (DamageGM) DamageGM->SetPendingDamageIcon(CurrentWeapon->WeaponIcon);
+			IPlayerInterface::Execute_DoDamage(Hit.GetActor(), Damage, GetOwner());
+			if (DamageGM) DamageGM->ClearPendingDamageIcon();
+		}
 	}
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
@@ -1173,12 +1239,15 @@ void UCombatComponent::Server_FireWeapon_Implementation(const FHitResult& Hit)
 		CurrentWeapon->Auth_Fire();
 	}
 
-	Multicast_FireWeapon(Hit, CurrentWeapon->Ammo);
+	TArray<FHitResult> FxHits;
+	FxHits.Append(Hits.GetData(), FMath::Min(Hits.Num(), MaxPellets));
+	Multicast_FireWeapon(FxHits, CurrentWeapon->Ammo);
 }
 
-void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit, int32 AuthAmmo)
+void UCombatComponent::Multicast_FireWeapon_Implementation(const TArray<FHitResult>& Hits, int32 AuthAmmo)
 {
 	if (!IsValid(CurrentWeapon)) return;
+	const FHitResult Hit = Hits.Num() > 0 ? Hits[0] : FHitResult();
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bLocal = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
@@ -1198,6 +1267,10 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const FHitResult& Hit
 
 	EPhysicalSurface ImpactSurfaceType = Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType2;
 	CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, false);
+	if (Hits.Num() > 1)
+	{
+		CurrentWeapon->SpawnPelletImpacts(Hits);
+	}
 
 	if (const FMontageData* MontageData = WeaponData->ThirdPersonMontages.Find(CurrentWeapon->WeaponType))
 	{
@@ -1281,7 +1354,11 @@ bool UCombatComponent::ApplyReload()
 EReloadType UCombatComponent::ChooseReloadType() const
 {
 	if (!IsValid(CurrentWeapon)) return EReloadType::Tactical;
-	if (!CurrentWeapon->bHasReloadedOnce) return EReloadType::First;
+	// Shotguns / tube guns: skip FirstReload — pick Empty vs Reload solely by ammo in the weapon.
+	if (!CurrentWeapon->bSkipFirstReload && !CurrentWeapon->bHasReloadedOnce)
+	{
+		return EReloadType::First;
+	}
 	return CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
 }
 
@@ -1361,9 +1438,9 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson, EReloadType ReloadTy
 			UAnimMontage* WeaponReloadMontage = WeaponMontageData->ResolveReloadMontage(WeaponReloadType, WeaponGripStyle);
 			USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
 			UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
-			if (IsValid(WeaponReloadMontage) && IsValid(WeaponAnim))
+			if (IsValid(WeaponReloadMontage))
 			{
-				WeaponAnim->Montage_Play(WeaponReloadMontage);
+				AWeapon::PlayWeaponMontageOrSequence(WeaponMesh, WeaponReloadMontage);
 			}
 		}
 		EReloadType MagReloadType = ReloadType;
@@ -1816,6 +1893,8 @@ void UCombatComponent::SpawnThrownProjectile()
 		Params);
 	if (IsValid(Projectile))
 	{
+		// 击杀播报：投掷物没单独填图标就用投掷武器的图标
+		if (!Projectile->KillFeedIcon) Projectile->KillFeedIcon = CurrentWeapon->WeaponIcon;
 		Projectile->Launch(Dir, Speed);
 	}
 }
@@ -2548,6 +2627,6 @@ void UCombatComponent::PlaySpectated1PReload(EReloadType ReloadType)
 		UAnimMontage* WeaponReload = WeaponMontageData->ResolveReloadMontage(WeaponReloadType, CurrentWeapon->GetGripHoldStyle());
 		USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
 		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
-		if (IsValid(WeaponReload) && IsValid(WeaponAnim)) WeaponAnim->Montage_Play(WeaponReload);
+		if (IsValid(WeaponReload)) AWeapon::PlayWeaponMontageOrSequence(WeaponMesh, WeaponReload);
 	}
 }

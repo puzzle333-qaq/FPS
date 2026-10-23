@@ -21,6 +21,8 @@ enum class EThrownEffect : uint8
 	Flash    UMETA(DisplayName = "Flash")
 };
 
+class UTexture2D;
+
 UCLASS()
 class FPS_API AThrownProjectile : public AActor
 {
@@ -79,6 +81,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Throwable|FX")
 	TObjectPtr<USoundBase> ExplosionSound;
+
+	// 击杀播报图标。不填 = 用扔出它的投掷武器的 WeaponIcon
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "FPS|Throwable|KillFeed")
+	TObjectPtr<UTexture2D> KillFeedIcon;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Throwable")

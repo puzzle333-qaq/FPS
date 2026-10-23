@@ -1,4 +1,5 @@
 #include "Weapon/ThrownProjectile.h"
+#include "ShooterGameModeBase.h"
 
 #include "Interface/PlayerInterface.h"
 #include "FPSTraceChannels.h"
@@ -237,6 +238,9 @@ void AThrownProjectile::ApplyFragDamage()
 		const float Applied = Damage * Scale;
 		if (Applied < 1.f) continue;
 
+		AShooterGameModeBase* DamageGM = GetWorld() ? GetWorld()->GetAuthGameMode<AShooterGameModeBase>() : nullptr;
+		if (DamageGM) DamageGM->SetPendingDamageIcon(KillFeedIcon);
 		IPlayerInterface::Execute_DoDamage(Actor, Applied, GetInstigator());
+		if (DamageGM) DamageGM->ClearPendingDamageIcon();
 	}
 }

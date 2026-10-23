@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -263,10 +263,10 @@ private:
 	void Server_Aim(bool bPressed);
 
 	UFUNCTION(Server, Reliable)
-	void Server_FireWeapon(const FHitResult& Hit);
+	void Server_FireWeapon(const TArray<FHitResult>& Hits);
 
 	UFUNCTION(NetMulticast,Reliable)
-	void Multicast_FireWeapon(const FHitResult& Hit ,int32 AuthAmmo);
+	void Multicast_FireWeapon(const TArray<FHitResult>& Hits, int32 AuthAmmo);
 	
 	void Local_Aim(bool bPressed);
 

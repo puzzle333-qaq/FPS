@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
@@ -35,6 +35,10 @@ public:
 
 protected:
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
+
+	/** After AnimBP Event Graph: force shotgun 1P to SequencePlayer+Slot only (no left-hand BlendList). */
+	void ForceShotgunRawPose1P();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimSequence> GrabIdleSlotAsset = nullptr;

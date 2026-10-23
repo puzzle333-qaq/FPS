@@ -131,6 +131,26 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Muzzle")
 	FName MuzzleSocketName = TEXT("Muzzle");
 
+	// ---------- 改枪台属性（只用于界面显示和对比，不影响实际手感） ----------
+	// 加减分（-100~100）。改枪台属性条 = 枪的基础值 + 所有配件的分数。后座/散布倍率也会自动折算进操控/精准。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Stats")
+	FText Description;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Stats", meta = (UIMin = "-100", UIMax = "100"))
+	float StatDamage = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Stats", meta = (UIMin = "-100", UIMax = "100"))
+	float StatAccuracy = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Stats", meta = (UIMin = "-100", UIMax = "100"))
+	float StatControl = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Stats", meta = (UIMin = "-100", UIMax = "100"))
+	float StatRange = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Stats", meta = (UIMin = "-100", UIMax = "100"))
+	float StatMobility = 0.f;
+
 	// ---------- 后座 ----------
 	// 后座倍率：0.8 = 后座减少 20%。多个配件会相乘
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Recoil", meta = (ClampMin = "0"))
@@ -143,6 +163,13 @@ public:
 	// 腰射散布倍率，所有配件相乘（垂直握把可设 0.8）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Spread", meta = (ClampMin = "0"))
 	float HipFireSpreadMultiplier = 1.f;
+
+	// ---------- 互斥 ----------
+	// 装上这个配件后被锁住的槽位（例：PCC 短护木填 Attachment.Slot.Grip）。
+	// 已装在这些槽里的配件会被自动卸下；锁住期间服务器拒绝往这些槽装东西，改枪台显示为锁定。
+	// 会锁住必选槽（bRequired）的配件本身不能装。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Compatibility", meta = (Categories = "Attachment.Slot"))
+	FGameplayTagContainer BlockedSlots;
 
 	// ---------- 瞄具（红点 / 倍镜） ----------
 	// 勾上后，镜外的开镜 FOV 用下面的 AimFOV，而不是枪自己的 AimFeildOfView。

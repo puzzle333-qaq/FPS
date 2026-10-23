@@ -1,4 +1,4 @@
-
+﻿
 
 #pragma once
 
@@ -19,6 +19,7 @@ class AThrownProjectile;
 enum class EReloadType : uint8;
 class USpotLightComponent;
 class UDecalComponent;
+class UAnimMontage;
 
 // 一个已装配件在本地生成的模型（1P/3P 各一个）。只在本地存在，不同步
 USTRUCT()
@@ -161,6 +162,10 @@ public:
 	// 这个配件能不能装到这把枪上（有对应槽位 且 在白名单里）
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool CanEquipAttachment(const UAttachmentData* Attachment) const;
+
+	// 这个槽被哪个已装配件锁住（配件的 BlockedSlots，例如短护木锁握把）。没被锁返回空
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	UAttachmentData* GetSlotBlocker(FGameplayTag SlotTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	bool HasAttachmentSlot(FGameplayTag SlotTag) const { return FindSlot(SlotTag) != nullptr; }
@@ -508,7 +513,27 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Icon")
 	TObjectPtr<UTexture2D> WeaponIcon;
 
-	void Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal,TEnumAsByte<EPhysicalSurface>ImpactSurfaceType,bool bIsFirstPerson);
+	void Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson, bool bConsumeAmmo = true);
+
+	// 多弹丸（霰弹）每颗命中都生成和普通子弹相同的弹孔/命中特效（B_WeaponImpacts / B_WeaponDecals）。
+	void SpawnPelletImpacts(const TArray<FHitResult>& Hits);
+
+	// 枪身换弹动画：有 AnimBP 就播蒙太奇；没有 AnimBP（PCC 等资源包枪）就直接播蒙太奇里的第一段序列。
+	static void PlayWeaponMontageOrSequence(USkeletalMeshComponent* WeaponMesh, UAnimMontage* Montage);
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Effects")
+	TSoftClassPtr<AActor> PelletImpactClass = TSoftClassPtr<AActor>(FSoftObjectPath(TEXT("/Game/Effects/Blueprints/B_WeaponImpacts.B_WeaponImpacts_C")));
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Effects")
+	TSoftClassPtr<AActor> PelletDecalClass = TSoftClassPtr<AActor>(FSoftObjectPath(TEXT("/Game/Effects/Blueprints/B_WeaponDecals.B_WeaponDecals_C")));
+
+	// Pellets per trigger pull (shotgun). 1 = single slug/bullet. Each pellet does Damage.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Ammo", meta = (ClampMin = "1", ClampMax = "32"))
+	int32 PelletsPerShot = 1;
+
+	// When true, never use FirstReload — choose Empty vs Tactical/Reload by Ammo only (shotguns).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Ammo")
+	bool bSkipFirstReload = false;
 	void Auth_Fire();
 
 	void Rep_Fire(int32 AuthAmmo);
@@ -531,6 +556,9 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+	/** Kit / mesh swap: force next AttachToOwingPawn to re-capture RelativeTransform (incl. scale). */
+	void InvalidateAuthoredMeshCapture() { bCapturedAuthoredRelative = false; }
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void FireEffect(const FVector& ImpactPoint, const FVector& ImpactNormal, EPhysicalSurface ImpactSurfaceType, bool bIsFirstPerson);

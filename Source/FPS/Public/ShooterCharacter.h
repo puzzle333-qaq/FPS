@@ -21,6 +21,8 @@ class UInputMappingContext;
 class UTimelineComponent;
 class UAnimMontage;
 class AWeapon;
+class USoundBase;
+class USoundAttenuation;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
 // 第 10 步：侧瞄开/关（只在本地）
@@ -36,6 +38,33 @@ enum class EHitReactDirection : uint8
 	Back,
 	Left,
 	Right
+};
+
+
+// 脚步：按地面 PhysicalSurface 选音效。默认指向 FPS_Controller 自带 Cue；可在 BP 覆盖。
+USTRUCT(BlueprintType)
+struct FFootstepSurfaceSounds
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
+	TSoftObjectPtr<USoundBase> Default;
+
+	// SurfaceType2 Concrete — 项目里用 Tile Cue
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
+	TSoftObjectPtr<USoundBase> Concrete;
+
+	// SurfaceType5 Metal
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
+	TSoftObjectPtr<USoundBase> Metal;
+
+	// SurfaceType4 Wood（暂无无专用 wav 时回落到 Default）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
+	TSoftObjectPtr<USoundBase> Wood;
+
+	// SurfaceType3 Glass
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
+	TSoftObjectPtr<USoundBase> Glass;
 };
 
 UCLASS()
@@ -67,6 +96,9 @@ public:
 
 	// 控制器在改 MaxWalkSpeed 后调用，立刻刷新步态
 	void RefreshLocomotionGait();
+
+	// 脚步：着地且速度够时按距离播；蹲/趴更轻更疏，冲刺更密更响。滑铲/腾空不播。
+	void UpdateFootsteps(float DeltaTime);
 
 	// 下蹲开始/结束时（服务器和本地客户端都会调用）刷新速度
 	virtual void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
@@ -210,6 +242,8 @@ public:
 	void AddVisualRecoil(const FVector& KickLocation, const FRotator& KickRotation);
 	UCombatComponent* GetCombatComponent() const { return Combat; }
 	float GetDefaultFieldOfView() const { return DefaultFOV; }
+	// 设置里的 FOV（只改本机镜头）
+	void SetDefaultFieldOfView(float InFOV);
 	float GetAimFOVInterpSpeed() const { return AimFOVInterpSpeed; }
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -487,6 +521,51 @@ protected:
 	void OnDeathView();
 
 	void StartDeathView();
+
+	// ---------- 脚步音效 ----------
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
+	FFootstepSurfaceSounds FootstepSounds;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
+	TSoftObjectPtr<USoundAttenuation> FootstepAttenuation;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
+	float FootstepMinSpeed = 20.f;
+
+	// 每一步累计的水平位移（厘米）。冲刺更短=更密，蹲趴更长=更疏。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "10"))
+	float FootstepDistanceRun = 155.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "10"))
+	float FootstepDistanceWalk = 120.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "10"))
+	float FootstepDistanceSprint = 175.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "10"))
+	float FootstepDistanceCrouch = 95.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "10"))
+	float FootstepDistanceProne = 70.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
+	float FootstepVolumeRun = 0.85f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
+	float FootstepVolumeWalk = 0.55f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
+	float FootstepVolumeSprint = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
+	float FootstepVolumeCrouch = 0.35f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
+	float FootstepVolumeProne = 0.22f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
+	bool bEnableFootsteps = true;
+
 private:
 
 	// CombatComponent 开镜状态变化时调用
@@ -494,6 +573,14 @@ private:
 	// 让控制器按 冲刺/静步/下蹲/开镜 重新算速度
 	void RefreshControllerMovementSpeed();
 	void UpdateLocomotionGait(bool bNotifyCombat);
+
+	EPhysicalSurface TraceFootstepSurface() const;
+	USoundBase* ResolveFootstepSound(EPhysicalSurface Surface) const;
+	void PlayFootstepAtFeet(USoundBase* Sound, float Volume);
+
+	float FootstepDistanceAccum = 0.f;
+	bool bFootstepLeft = false;
+
 
 	void Input_LeanLeft_Started();
 	void Input_LeanLeft_Completed();

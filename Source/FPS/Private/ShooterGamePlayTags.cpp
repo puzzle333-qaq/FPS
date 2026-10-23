@@ -12,7 +12,14 @@ namespace ShooterTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Smoke, "Weapon.type.smoke", "Smoke grenade");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Molotov, "Weapon.type.molotov", "Molotov / incendiary");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Flash, "Weapon.type.flash", "Flashbang");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_X24,"Weapon.type.x24","Pistol X24")
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_X24,"Weapon.type.x24","Pistol X24");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_AR10, "Weapon.type.ar10", "DEFINITIVE_FPS_KIT AR-10");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_MCX, "Weapon.type.mcx", "DEFINITIVE_FPS_KIT MCX-VIRTUS");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_HXR05, "Weapon.type.hxr05", "DEFINITIVE_FPS_KIT HXR-05");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Colt1911, "Weapon.type.colt1911", "DEFINITIVE_FPS_KIT Colt-1911");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Deagle, "Weapon.type.deagle", "DEFINITIVE_FPS_KIT Desert Eagle .50");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_DoubleBarrel, "Weapon.type.doublebarrel", "DEFINITIVE_FPS_KIT Double Barrel");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Winchester, "Weapon.type.winchester", "DEFINITIVE_FPS_KIT Winchester");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Barrel, "Attachment.Slot.Barrel", "Attachment slot: Barrel");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Handguard, "Attachment.Slot.Handguard", "Attachment slot: Handguard");

@@ -31,6 +31,12 @@
 #include "ShooterGameModeBase.h"
 #include "CombatComponent.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
+#include "Sound/SoundAttenuation.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
+#include "Engine/EngineTypes.h"
+#include "UObject/SoftObjectPath.h"
 
 namespace
 {
@@ -59,6 +65,12 @@ AShooterCharacter::AShooterCharacter()
 	PrimaryActorTick.bCanEverTick = true;
 	SlideAnim = TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(TEXT("/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L.anim_Slide_L")));
 
+	// 默认脚步 Cue（FPS_Controller）。BP 可覆盖；Wood/Glass 暂无 Default。
+	FootstepSounds.Default = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/FPS_Controller/Audio/Footsteps/SC_Footsteps_Generic_Stereo.SC_Footsteps_Generic_Stereo")));
+	FootstepSounds.Concrete = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/FPS_Controller/Audio/Footsteps/SC_Footsteps_Tile.SC_Footsteps_Tile")));
+	FootstepSounds.Metal = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/FPS_Controller/Audio/Footsteps/SC_Footsteps_Metal.SC_Footsteps_Metal")));
+	FootstepSounds.Wood = FootstepSounds.Default;
+	FootstepSounds.Glass = FootstepSounds.Default;
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(GetRootComponent());
@@ -200,6 +212,7 @@ void AShooterCharacter::Tick(float DeltaTime)
 		SpringArm->SetWorldRotation(GetFixedAimRotation());
 	}
 	UpdateLocomotionGait(true);
+	UpdateFootsteps(DeltaTime);
 
 	CalculateTurnInPlaceParameters(DeltaTime);
 	CalculateFABRIKSocket(DeltaTime);
@@ -258,6 +271,14 @@ void AShooterCharacter::CalculateTurnInPlaceParameters(float DeltaTime)
 	}
 	
 	AO_Yaw *= -1.f;
+
+	// Shotgun 1P: AO_Yaw feeds ABP AimOffset — zero it so arms stay on authored pose.
+	if (IsValid(Combat) && IsValid(Combat->CurrentWeapon)
+		&& Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun))
+	{
+		AO_Yaw = 0.f;
+		InterpAO_Yaw = 0.f;
+	}
 }
 
 
@@ -2118,3 +2139,174 @@ void AShooterCharacter::SetFirstPersonViewedLocally(bool bViewed)
 		}
 	}
 }
+
+void AShooterCharacter::SetDefaultFieldOfView(float InFOV)
+{
+	DefaultFOV = FMath::Clamp(InFOV, 60.f, 120.f);
+	if (IsValid(FirstPersonCamera) && !(IsValid(Combat) && Combat->bAiming))
+	{
+		FirstPersonCamera->SetFieldOfView(DefaultFOV);
+	}
+}
+
+// ===== 脚步 =====
+void AShooterCharacter::UpdateFootsteps(float DeltaTime)
+{
+	if (!bEnableFootsteps || DeltaTime <= 0.f)
+	{
+		return;
+	}
+	// 专用服务器不播；死亡不播
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	if (IsValid(Stats) && Stats->DeathState != EDeathState::NotDead)
+	{
+		FootstepDistanceAccum = 0.f;
+		return;
+	}
+
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(CMC) || !CMC->IsMovingOnGround() || CMC->IsFalling() || bIsSliding)
+	{
+		FootstepDistanceAccum = 0.f;
+		return;
+	}
+
+	const float Speed2D = GetVelocity().Size2D();
+	if (Speed2D < FootstepMinSpeed)
+	{
+		FootstepDistanceAccum = 0.f;
+		return;
+	}
+
+	bool bSprinting = false;
+	if (const AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
+	{
+		bSprinting = PC->IsSprinting();
+	}
+
+	float StepDist = FootstepDistanceRun;
+	float Volume = FootstepVolumeRun;
+	if (bIsProne)
+	{
+		StepDist = FootstepDistanceProne;
+		Volume = FootstepVolumeProne;
+	}
+	else if (bIsCrouched)
+	{
+		StepDist = FootstepDistanceCrouch;
+		Volume = FootstepVolumeCrouch;
+	}
+	else if (bSprinting)
+	{
+		StepDist = FootstepDistanceSprint;
+		Volume = FootstepVolumeSprint;
+	}
+	else if (bUseWalkGait)
+	{
+		StepDist = FootstepDistanceWalk;
+		Volume = FootstepVolumeWalk;
+	}
+
+	FootstepDistanceAccum += Speed2D * DeltaTime;
+	if (FootstepDistanceAccum < StepDist)
+	{
+		return;
+	}
+	FootstepDistanceAccum = 0.f;
+	bFootstepLeft = !bFootstepLeft;
+
+	const EPhysicalSurface Surface = TraceFootstepSurface();
+	USoundBase* Sound = ResolveFootstepSound(Surface);
+	PlayFootstepAtFeet(Sound, Volume);
+}
+
+EPhysicalSurface AShooterCharacter::TraceFootstepSurface() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return SurfaceType_Default;
+	}
+
+	const UCapsuleComponent* Cap = GetCapsuleComponent();
+	const float Half = IsValid(Cap) ? Cap->GetScaledCapsuleHalfHeight() : 90.f;
+	const FVector Start = GetActorLocation();
+	const FVector End = Start - FVector(0.f, 0.f, Half + 40.f);
+
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(FootstepSurface), false, this);
+	Params.bReturnPhysicalMaterial = true;
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	{
+		return SurfaceType_Default;
+	}
+	if (Hit.PhysMaterial.IsValid())
+	{
+		return Hit.PhysMaterial->SurfaceType.GetValue();
+	}
+	return SurfaceType_Default;
+}
+
+USoundBase* AShooterCharacter::ResolveFootstepSound(EPhysicalSurface Surface) const
+{
+	auto LoadSoft = [](const TSoftObjectPtr<USoundBase>& Soft) -> USoundBase*
+	{
+		if (Soft.IsNull()) return nullptr;
+		if (USoundBase* Loaded = Soft.Get()) return Loaded;
+		return Soft.LoadSynchronous();
+	};
+
+	USoundBase* Pick = nullptr;
+	switch (Surface)
+	{
+	case SurfaceType2: // Concrete
+		Pick = LoadSoft(FootstepSounds.Concrete);
+		break;
+	case SurfaceType3: // Glass
+		Pick = LoadSoft(FootstepSounds.Glass);
+		break;
+	case SurfaceType4: // Wood
+		Pick = LoadSoft(FootstepSounds.Wood);
+		break;
+	case SurfaceType5: // Metal
+		Pick = LoadSoft(FootstepSounds.Metal);
+		break;
+	default:
+		break;
+	}
+	if (!Pick)
+	{
+		Pick = LoadSoft(FootstepSounds.Default);
+	}
+	return Pick;
+}
+
+void AShooterCharacter::PlayFootstepAtFeet(USoundBase* Sound, float Volume)
+{
+	if (!IsValid(Sound) || Volume <= 0.f)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	const UCapsuleComponent* Cap = GetCapsuleComponent();
+	const float Half = IsValid(Cap) ? Cap->GetScaledCapsuleHalfHeight() : 90.f;
+	// 左右脚轻微侧移，避免所有脚步叠在一点
+	const float Side = bFootstepLeft ? -12.f : 12.f;
+	const FVector Loc = GetActorLocation() + GetActorRightVector() * Side - FVector(0.f, 0.f, Half - 2.f);
+
+	USoundAttenuation* Atten = nullptr;
+	if (!FootstepAttenuation.IsNull())
+	{
+		Atten = FootstepAttenuation.Get();
+		if (!Atten) Atten = FootstepAttenuation.LoadSynchronous();
+	}
+
+	UGameplayStatics::PlaySoundAtLocation(World, Sound, Loc, Volume, 1.f, 0.f, Atten);
+}
+

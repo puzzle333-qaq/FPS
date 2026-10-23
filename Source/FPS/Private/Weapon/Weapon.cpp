@@ -1,4 +1,4 @@
-
+﻿
 
 
 #include "Weapon/Weapon.h"
@@ -21,6 +21,8 @@
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimSingleNodeInstance.h"
+#include "Animation/AnimMontage.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "ShooterCharacter.h"
@@ -99,6 +101,23 @@ namespace
 		}
 		if (IsValid(Visual.Mesh3P)) return Visual.Mesh3P.Get();
 		return Visual.SkelMesh3P.Get();
+	}
+
+	// PCC 一类：枪身骨骼上有 Muzzle_Barrel_Long/Regular/Short 三个枪口，按当前枪管选。
+	FName ResolveBarrelVariantSocket(const USkeletalMeshComponent* WeaponMesh, const UAttachmentData* Barrel, FName SocketName)
+	{
+		const FString Base = SocketName.ToString();
+		static const FString Prefix = TEXT("Muzzle_Barrel_");
+		if (!IsValid(WeaponMesh) || !Base.StartsWith(Prefix)) return SocketName;
+		FString Variant = TEXT("Regular");
+		if (IsValid(Barrel))
+		{
+			const FString Key = Barrel->GetName() + TEXT("|") + GetNameSafe(Barrel->Mesh.Get());
+			if (Key.Contains(TEXT("Long"))) Variant = TEXT("Long");
+			else if (Key.Contains(TEXT("Short"))) Variant = TEXT("Short");
+		}
+		const FName Candidate(*(Prefix + Variant));
+		return WeaponMesh->DoesSocketExist(Candidate) ? Candidate : SocketName;
 	}
 
 	// 槽位 Socket 先挂枪。枪上没有时，挂到已经生成、并且自己带这个 Socket 的配件上。
@@ -238,12 +257,19 @@ bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 			IsValid(Optic->Mesh1P)
 			? static_cast<USceneComponent*>(Optic->Mesh1P.Get())
 			: static_cast<USceneComponent*>(Optic->SkelMesh1P.Get());
-		if (IsValid(OpticComp) && IsValid(Optic->Data)
-			&& !Optic->Data->SightSocketName.IsNone()
-			&& OpticComp->DoesSocketExist(Optic->Data->SightSocketName))
+		if (IsValid(OpticComp) && IsValid(Optic->Data))
 		{
-			OutLocation = OpticComp->GetSocketLocation(Optic->Data->SightSocketName);
-			return true;
+			// DA 填的名字优先；模型上没有时试常见命名（PCC 红点只有 Sight_ZeroPoint_*，SOP 有 Camera_sckt）
+			const FName SightCandidates[] = { Optic->Data->SightSocketName, TEXT("SightSocket"), TEXT("Camera_sckt"),
+				TEXT("Sight_ZeroPoint_Near"), TEXT("Sight_ZeroPoint_Mid"), TEXT("Sight_ZeroPoint_Far") };
+			for (const FName& Candidate : SightCandidates)
+			{
+				if (!Candidate.IsNone() && OpticComp->DoesSocketExist(Candidate))
+				{
+					OutLocation = OpticComp->GetSocketLocation(Candidate);
+					return true;
+				}
+			}
 		}
 	}
 
@@ -332,13 +358,33 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 		}
 	}
 
-	if (!ComponentHasSocket(WeaponMesh, TEXT("FABRIK")))
+	if (ComponentHasSocket(WeaponMesh, TEXT("FABRIK")))
 	{
-		return false;
+		OutWorld = WeaponMesh->GetSocketTransform(TEXT("FABRIK"), RTS_World);
+		return true;
 	}
 
-	OutWorld = WeaponMesh->GetSocketTransform(TEXT("FABRIK"), RTS_World);
-	return true;
+	// Double-barrel mesh has no authored FABRIK socket — approximate forend from Barrel / Root→Muzzle.
+	if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun) && IsValid(WeaponMesh))
+	{
+		if (ComponentHasSocket(WeaponMesh, TEXT("Barrel")))
+		{
+			OutWorld = WeaponMesh->GetSocketTransform(TEXT("Barrel"), RTS_World);
+			// Push toward muzzle (+Y in mesh) and slightly up so the palm sits on the forend.
+			OutWorld.AddToTranslation(OutWorld.GetRotation().RotateVector(FVector(0.f, 18.f, 5.f)));
+			return true;
+		}
+		if (ComponentHasSocket(WeaponMesh, TEXT("Muzzle")) && ComponentHasSocket(WeaponMesh, TEXT("Root")))
+		{
+			const FTransform RootXf = WeaponMesh->GetSocketTransform(TEXT("Root"), RTS_World);
+			const FTransform MuzzleXf = WeaponMesh->GetSocketTransform(TEXT("Muzzle"), RTS_World);
+			OutWorld.SetLocation(FMath::Lerp(RootXf.GetLocation(), MuzzleXf.GetLocation(), 0.45f));
+			OutWorld.SetRotation(MuzzleXf.GetRotation());
+			OutWorld.SetScale3D(FVector::OneVector);
+			return true;
+		}
+	}
+	return false;
 }
 
 FName AWeapon::GetFallbackMuzzleSocketName() const
@@ -348,7 +394,7 @@ FName AWeapon::GetFallbackMuzzleSocketName() const
 		const FName AuthoredName = Property->GetPropertyValue_InContainer(this);
 		if (!AuthoredName.IsNone())
 		{
-			return AuthoredName;
+			return ResolveBarrelVariantSocket(Mesh1P, GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Barrel), AuthoredName);
 		}
 	}
 
@@ -384,8 +430,25 @@ bool AWeapon::GetMuzzleAttachPoint(bool bFirstPerson, USceneComponent*& OutCompo
 	OutSocketName = NAME_None;
 
 	// 消音器在枪管前面，所以枪口配件优先于枪管。
-	if (TryAttachmentMuzzle(ShooterTags::Tag_Attachment_Slot_Muzzle, bFirstPerson, OutComponent, OutSocketName)
-		|| TryAttachmentMuzzle(ShooterTags::Tag_Attachment_Slot_Barrel, bFirstPerson, OutComponent, OutSocketName))
+	if (TryAttachmentMuzzle(ShooterTags::Tag_Attachment_Slot_Muzzle, bFirstPerson, OutComponent, OutSocketName))
+	{
+		return true;
+	}
+
+	// 枪身自带按枪管区分的枪口（PCC 的 Muzzle_Barrel_Long/Regular/Short）时，优先用它，不用枪管模型上的 Muzzle。
+	{
+		USkeletalMeshComponent* BodyMesh = bFirstPerson ? Mesh1P : Mesh3P;
+		const FName Variant = ResolveBarrelVariantSocket(BodyMesh,
+			GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Barrel), GetFallbackMuzzleSocketName());
+		if (Variant.ToString().StartsWith(TEXT("Muzzle_Barrel_")) && ComponentHasSocket(BodyMesh, Variant))
+		{
+			OutComponent = BodyMesh;
+			OutSocketName = Variant;
+			return true;
+		}
+	}
+
+	if (TryAttachmentMuzzle(ShooterTags::Tag_Attachment_Slot_Barrel, bFirstPerson, OutComponent, OutSocketName))
 	{
 		return true;
 	}
@@ -773,7 +836,7 @@ void AWeapon::ComputeThrowLaunch(bool bHighThrow, FVector& OutLocation, FVector&
 	OutSpeed = bHighThrow ? HighThrowSpeed : LowThrowSpeed;
 }
 
-void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson)
+void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson, bool bConsumeAmmo)
 {
 	if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_X24))
 	{
@@ -784,7 +847,8 @@ void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal
 
 	// Predicted mag decrement happens only on the owning first-person fire path.
 	// Third-person multicast is FX only; otherwise listen-server ammo is deducted twice.
-	if (!bIsFirstPerson) return;
+	// Shotgun pellets: only the first pellet should consume ammo (bConsumeAmmo=false for the rest).
+	if (!bIsFirstPerson || !bConsumeAmmo) return;
 
 	APawn* InstigatorPawn = GetInstigator();
 	if (IsValid(InstigatorPawn) && InstigatorPawn->IsLocallyControlled() && UsesAmmo())
@@ -1009,23 +1073,30 @@ void AWeapon::OnChamberShellNotify(FName NotifyName, const FBranchingPointNotify
 
 void AWeapon::BindChamberShellNotifies()
 {
-	if (bChamberShellNotifyBound || !bChamberShellsReady) return;
+	if (!bChamberShellsReady) return;
+	if (bChamberShellNotifyBound) return;
 
 	APawn* Pawn = GetInstigator();
 	if (!IsValid(Pawn) || !Pawn->Implements<UPlayerInterface>()) return;
 
-	auto BindMesh = [this](USkeletalMeshComponent* Mesh)
+	bool bBoundAny = false;
+	auto BindMesh = [this, &bBoundAny](USkeletalMeshComponent* Mesh)
 	{
 		if (!IsValid(Mesh)) return;
 		if (UAnimInstance* Anim = Mesh->GetAnimInstance())
 		{
 			Anim->OnPlayMontageNotifyBegin.AddUniqueDynamic(this, &AWeapon::OnChamberShellNotify);
+			bBoundAny = true;
 		}
 	};
 
 	BindMesh(IPlayerInterface::Execute_GetMesh1P(Pawn));
 	BindMesh(IPlayerInterface::Execute_GetMesh3P(Pawn));
-	bChamberShellNotifyBound = true;
+	// Only latch once an AnimInstance existed — BeginPlay often runs before arms ABP is ready.
+	if (bBoundAny)
+	{
+		bChamberShellNotifyBound = true;
+	}
 }
 
 void AWeapon::BeginPlay()
@@ -1090,8 +1161,8 @@ bool AWeapon::EquipAttachment(UAttachmentData* Attachment)
 	// 服务器校验：枪上有这个槽 且 配件在白名单里。客户端发来的请求不可信，必须在这里检查
 	if (!CanEquipAttachment(Attachment))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s rejected %s: no slot '%s' or not in AllowedAttachments."),
-			*GetName(), *GetNameSafe(Attachment), *Attachment->SlotTag.ToString());
+		UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s rejected %s: no slot '%s', not in AllowedAttachments, or slot locked by %s."),
+			*GetName(), *GetNameSafe(Attachment), *Attachment->SlotTag.ToString(), *GetNameSafe(GetSlotBlocker(Attachment->SlotTag)));
 		return false;
 	}
 
@@ -1101,6 +1172,14 @@ bool AWeapon::EquipAttachment(UAttachmentData* Attachment)
 	{
 		return !IsValid(Existing) || Existing->SlotTag == NewSlot;
 	});
+	// 新配件锁住的槽：已装的卸下（例：换短护木自动卸握把）
+	if (!Attachment->BlockedSlots.IsEmpty())
+	{
+		EquippedAttachments.RemoveAll([Attachment](const UAttachmentData* Existing)
+		{
+			return IsValid(Existing) && Attachment->BlockedSlots.HasTagExact(Existing->SlotTag);
+		});
+	}
 	EquippedAttachments.Add(Attachment);
 
 	if (!HasFlashlight())
@@ -1191,7 +1270,8 @@ FName AWeapon::ResolveAttachmentSocket(const UAttachmentData* Data) const
 		return Data->MountSocketName;
 	}
 	const FWeaponAttachmentSlot* Slot = FindSlot(Data->SlotTag);
-	return Slot ? Slot->SocketName : NAME_None;
+	const FName SlotSocket = Slot ? Slot->SocketName : NAME_None;
+	return ResolveBarrelVariantSocket(Mesh1P, GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Barrel), SlotSocket);
 }
 
 UStaticMesh* AWeapon::ResolveAttachmentVisualMesh(const UAttachmentData* Data) const
@@ -1255,7 +1335,31 @@ bool AWeapon::CanEquipAttachment(const UAttachmentData* Attachment) const
 	if (!Slot) return false;   // 这把枪没有这种槽位
 
 	// 白名单里有它才行
-	return Slot->AllowedAttachments.Contains(Attachment);
+	if (!Slot->AllowedAttachments.Contains(Attachment)) return false;
+
+	// 槽被别的已装配件锁住（例：短护木锁握把）
+	if (GetSlotBlocker(Attachment->SlotTag)) return false;
+
+	// 自己会锁住必选槽的配件不能装
+	for (const FGameplayTag& Blocked : Attachment->BlockedSlots)
+	{
+		const FWeaponAttachmentSlot* BlockedSlot = FindSlot(Blocked);
+		if (BlockedSlot && BlockedSlot->bRequired) return false;
+	}
+	return true;
+}
+
+UAttachmentData* AWeapon::GetSlotBlocker(FGameplayTag SlotTag) const
+{
+	if (!SlotTag.IsValid()) return nullptr;
+	for (UAttachmentData* Equipped : EquippedAttachments)
+	{
+		if (IsValid(Equipped) && !Equipped->SlotTag.MatchesTagExact(SlotTag) && Equipped->BlockedSlots.HasTagExact(SlotTag))
+		{
+			return Equipped;
+		}
+	}
+	return nullptr;
 }
 
 
@@ -2138,3 +2242,103 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
 	ApplyChamberShellVisibility();
 }
 
+
+namespace
+{
+	// B_WeaponImpacts / B_WeaponDecals 用数组参数（Impact Positions / Normals / Surface Types）。按名字反射填充，不依赖蓝图变量的确切拼写。
+	void FillImpactArrays(AActor* Actor, const TArray<FVector>& Points, const TArray<FVector>& Normals, const TArray<uint8>& Surfaces)
+	{
+		for (TFieldIterator<FProperty> It(Actor->GetClass()); It; ++It)
+		{
+			const FString Name = It->GetName();
+			if (Name.Contains(TEXT("Sorted")) || Name.Contains(TEXT("Previous")) || Name.Contains(TEXT("Current"))) continue;
+
+			if (FArrayProperty* Arr = CastField<FArrayProperty>(*It))
+			{
+				FScriptArrayHelper Helper(Arr, Arr->ContainerPtrToValuePtr<void>(Actor));
+				if (FStructProperty* SP = CastField<FStructProperty>(Arr->Inner))
+				{
+					if (SP->Struct != TBaseStructure<FVector>::Get()) continue;
+					const TArray<FVector>* Src = nullptr;
+					if (Name.Contains(TEXT("Normal"))) Src = &Normals;
+					else if (Name.Contains(TEXT("Position")) || Name.Contains(TEXT("Point")) || Name.Contains(TEXT("Location"))) Src = &Points;
+					if (!Src) continue;
+					Helper.Resize(Src->Num());
+					for (int32 i = 0; i < Src->Num(); ++i) *reinterpret_cast<FVector*>(Helper.GetRawPtr(i)) = (*Src)[i];
+				}
+				else if (Name.Contains(TEXT("Surface")))
+				{
+					if (CastField<FByteProperty>(Arr->Inner))
+					{
+						Helper.Resize(Surfaces.Num());
+						for (int32 i = 0; i < Surfaces.Num(); ++i) *Helper.GetRawPtr(i) = Surfaces[i];
+					}
+					else if (FEnumProperty* EP = CastField<FEnumProperty>(Arr->Inner))
+					{
+						Helper.Resize(Surfaces.Num());
+						for (int32 i = 0; i < Surfaces.Num(); ++i) EP->GetUnderlyingProperty()->SetIntPropertyValue(Helper.GetRawPtr(i), (int64)Surfaces[i]);
+					}
+				}
+			}
+			else if (FIntProperty* IP = CastField<FIntProperty>(*It))
+			{
+				if (Name.Contains(TEXT("Number")) && (Name.Contains(TEXT("Hit")) || Name.Contains(TEXT("Impact"))))
+				{
+					IP->SetPropertyValue_InContainer(Actor, Points.Num());
+				}
+			}
+		}
+	}
+}
+
+void AWeapon::SpawnPelletImpacts(const TArray<FHitResult>& Hits)
+{
+	UWorld* World = GetWorld();
+	if (!World || GetNetMode() == NM_DedicatedServer) return;
+
+	TArray<FVector> Points, Normals;
+	TArray<uint8> Surfaces;
+	for (const FHitResult& Hit : Hits)
+	{
+		if (!Hit.bBlockingHit) continue;
+		Points.Add(Hit.ImpactPoint);
+		Normals.Add(Hit.ImpactNormal);
+		Surfaces.Add(Hit.PhysMaterial.IsValid(false) ? (uint8)Hit.PhysMaterial->SurfaceType.GetValue() : (uint8)SurfaceType2);
+	}
+	if (Points.Num() == 0) return;
+
+	const FTransform SpawnXform(Normals[0].Rotation(), Points[0]);
+	for (const TSoftClassPtr<AActor>& Soft : { PelletImpactClass, PelletDecalClass })
+	{
+		UClass* Cls = Soft.LoadSynchronous();
+		if (!Cls) continue;
+		AActor* Actor = World->SpawnActorDeferred<AActor>(Cls, SpawnXform, this, GetInstigator(), ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Actor) continue;
+		FillImpactArrays(Actor, Points, Normals, Surfaces);
+		Actor->FinishSpawning(SpawnXform);
+		if (Actor->InitialLifeSpan <= 0.f) Actor->SetLifeSpan(5.f);
+	}
+}
+
+void AWeapon::PlayWeaponMontageOrSequence(USkeletalMeshComponent* WeaponMesh, UAnimMontage* Montage)
+{
+	if (!IsValid(WeaponMesh) || !IsValid(Montage)) return;
+	UAnimInstance* Anim = WeaponMesh->GetAnimInstance();
+	if (IsValid(Anim) && !Anim->IsA<UAnimSingleNodeInstance>())
+	{
+		Anim->Montage_Play(Montage);
+		return;
+	}
+	// 没有 AnimBP：取蒙太奇第一段序列直接播（资源包蒙太奇常把 semi/auto 两段串在一起，只要第一段）。
+	for (const FSlotAnimationTrack& Track : Montage->SlotAnimTracks)
+	{
+		if (Track.AnimTrack.AnimSegments.Num() == 0) continue;
+		const FAnimSegment& Seg = Track.AnimTrack.AnimSegments[0];
+		if (UAnimSequenceBase* Seq = Seg.GetAnimReference())
+		{
+			WeaponMesh->PlayAnimation(Seq, false);
+			WeaponMesh->SetPlayRate(Seg.AnimPlayRate * Montage->RateScale);
+			return;
+		}
+	}
+}
