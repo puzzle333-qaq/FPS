@@ -53,5 +53,9 @@ void UPauseMenuScreen::ReturnToLobby()
 
 void UPauseMenuScreen::HandleSettings()
 {
+	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
+	{
+		PC->ShowSettings();
+	}
 	OnSettingsRequested();
 }
