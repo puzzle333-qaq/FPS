@@ -29,6 +29,8 @@
 #include "Interface/Interactable.h"
 #include "Ui/ScoreboardScreen.h"
 #include "EngineUtils.h"
+#include "Ui/SettingsScreen.h"
+#include "Settings/ShooterGameUserSettings.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/PlayerState.h"
@@ -56,6 +58,11 @@ void AShooterPlayerController::BeginPlay()
 		bShowMouseCursor = false;
 		SetInputMode(FInputModeGameOnly());
 		EnsureMatchHUD();
+		if (GetNetMode() == NM_Client)
+		{
+			RequestServerTimeSync();
+			GetWorldTimerManager().SetTimer(TimeSyncTimer, this, &ThisClass::RequestServerTimeSync, 2.f, true);
+		}
 		EnsureSpectateInput();
 	}
 
@@ -432,8 +439,18 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& InputActionVa
 	if (!bPawnAlive)return;
 	const FVector2D InputAxisVector = InputActionValue.Get<FVector2D>();
 
-	AddYawInput(InputAxisVector.X);
-	AddPitchInput(InputAxisVector.Y);
+	// 操作设置：灵敏度 / 开镜灵敏度 / 反转 Y
+	float Scale = 1.f;
+	bool bInvertY = false;
+	if (const UShooterGameUserSettings* SS = UShooterGameUserSettings::GetShooterSettings())
+	{
+		Scale = SS->MouseSensitivity;
+		bInvertY = SS->bInvertY;
+		const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
+		if (Combat && Combat->bAiming) Scale *= SS->ADSSensitivityMultiplier;
+	}
+	AddYawInput(InputAxisVector.X * Scale);
+	AddPitchInput(InputAxisVector.Y * Scale * (bInvertY ? -1.f : 1.f));
 }
 
 void AShooterPlayerController::UpdateMovementSpeed()
@@ -711,6 +728,7 @@ void AShooterPlayerController::OnPossess(APawn* InPawn)
 	{
 		bPawnAlive = true;
 	}
+	ApplyControlSettings();
 }
 
 void AShooterPlayerController::AcknowledgePossession(APawn* P)
@@ -722,6 +740,7 @@ void AShooterPlayerController::AcknowledgePossession(APawn* P)
 		PlayerCameraManager->StopCameraFade();
 		PlayerCameraManager->SetManualCameraFade(0.f, FLinearColor::Black, false);
 	}
+	ApplyControlSettings();
 	// 客户端收到新角色（复活）时恢复可操作
 	if (!bMatchOver)
 	{
@@ -1424,4 +1443,102 @@ void AShooterPlayerController::SyncSpectatedCharacter()
 	if (AShooterCharacter* Old = Viewed1PCharacter.Get()) Old->SetFirstPersonViewedLocally(false);
 	Viewed1PCharacter = Want;
 	if (Want) Want->SetFirstPersonViewedLocally(true);
+}
+
+// ================= 客户端校时 =================
+
+void AShooterPlayerController::RequestServerTimeSync()
+{
+	if (GetWorld()) Server_RequestServerTime(GetWorld()->GetTimeSeconds());
+}
+
+void AShooterPlayerController::Server_RequestServerTime_Implementation(double ClientSendTime)
+{
+	if (GetWorld()) Client_ReportServerTime(ClientSendTime, GetWorld()->GetTimeSeconds());
+}
+
+void AShooterPlayerController::Client_ReportServerTime_Implementation(double ClientSendTime, double ServerTime)
+{
+	UWorld* World = GetWorld();
+	AShooterGameState* GS = World ? World->GetGameState<AShooterGameState>() : nullptr;
+	if (!GS) return;
+	const double Now = World->GetTimeSeconds();
+	const double RTT = FMath::Max(0.0, Now - ClientSendTime);
+	const double NewOffset = ServerTime + RTT * 0.5 - Now;
+
+	// 慢包（RTT 明显比最好的大）估计误差大，少信它；偏差过大直接跳过去
+	if (BestTimeSyncRTT < 0.0 || RTT < BestTimeSyncRTT) BestTimeSyncRTT = RTT;
+	else BestTimeSyncRTT = FMath::Lerp(BestTimeSyncRTT, RTT, 0.1); // 网络变化时慢慢跟上
+	if (!GS->HasSyncedServerTime() || FMath::Abs(NewOffset - GS->GetSyncedServerTimeOffset()) > 1.0)
+	{
+		GS->SetSyncedServerTimeOffset(NewOffset);
+		return;
+	}
+	const double Weight = RTT <= BestTimeSyncRTT * 1.5 ? 0.3 : 0.05;
+	GS->SetSyncedServerTimeOffset(FMath::Lerp(GS->GetSyncedServerTimeOffset(), NewOffset, Weight));
+}
+
+// ================= 设置（局内） =================
+
+void AShooterPlayerController::ShowSettings()
+{
+	if (!IsLocalController()) return;
+	if (!SettingsWidgetClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Menu] SettingsWidgetClass is not set on %s"), *GetClass()->GetName());
+		return;
+	}
+	if (!IsValid(SettingsScreen)) SettingsScreen = CreateWidget<USettingsScreen>(this, SettingsWidgetClass);
+	if (!IsValid(SettingsScreen)) return;
+	// 局内只能改操作设置
+	SettingsScreen->SetGraphicsLocked(true);
+	// 盖在暂停菜单（Z=50）上面，并把暂停菜单先藏起来
+	if (!SettingsScreen->IsInViewport()) SettingsScreen->AddToViewport(60);
+	if (IsValid(PauseMenu) && PauseMenu->IsInViewport() && PauseMenu->GetVisibility() != ESlateVisibility::Collapsed)
+	{
+		PauseMenu->SetVisibility(ESlateVisibility::Collapsed);
+		bPauseHiddenForSettings = true;
+	}
+	SettingsScreen->RefreshFromCurrent();
+	FInputModeUIOnly Mode;
+	Mode.SetWidgetToFocus(SettingsScreen->TakeWidget());
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(Mode);
+	SetShowMouseCursor(true);
+}
+
+void AShooterPlayerController::HideSettings()
+{
+	if (IsValid(SettingsScreen) && SettingsScreen->IsInViewport()) SettingsScreen->RemoveFromParent();
+	if (!IsLocalController()) return;
+	if (bPauseHiddenForSettings && IsValid(PauseMenu))
+	{
+		PauseMenu->SetVisibility(ESlateVisibility::Visible);
+		bPauseHiddenForSettings = false;
+	}
+	if (IsPauseMenuOpen())
+	{
+		// 回到暂停菜单
+		FInputModeGameAndUI Mode;
+		Mode.SetWidgetToFocus(PauseMenu->TakeWidget());
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(Mode);
+		SetShowMouseCursor(true);
+	}
+	else
+	{
+		SetInputMode(FInputModeGameOnly());
+		SetShowMouseCursor(false);
+	}
+}
+
+void AShooterPlayerController::ApplyControlSettings()
+{
+	if (!IsLocalController()) return;
+	const UShooterGameUserSettings* SS = UShooterGameUserSettings::GetShooterSettings();
+	if (!SS) return;
+	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetPawn()))
+	{
+		Shooter->SetDefaultFieldOfView(SS->FieldOfView);
+	}
 }

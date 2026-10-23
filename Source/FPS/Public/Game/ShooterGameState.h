@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
@@ -28,6 +28,18 @@ class FPS_API AShooterGameState : public AGameStateBase
 
 public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	// 客户端：用 PlayerController 的 RTT 校时结果算服务器时间（倒计时不漂）
+	virtual double GetServerWorldTimeSeconds() const override;
+	void SetSyncedServerTimeOffset(double Offset) { SyncedServerTimeOffset = Offset; bHasSyncedServerTime = true; }
+	bool HasSyncedServerTime() const { return bHasSyncedServerTime; }
+	double GetSyncedServerTimeOffset() const { return SyncedServerTimeOffset; }
+
+private:
+	double SyncedServerTimeOffset = 0.0;
+	bool bHasSyncedServerTime = false;
+
+public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	EShooterMatchState GetMatchState() const { return ShooterMatchState; }

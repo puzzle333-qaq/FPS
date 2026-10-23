@@ -1,4 +1,4 @@
-﻿#include "Game/ShooterGameState.h"
+#include "Game/ShooterGameState.h"
 
 #include "Net/UnrealNetwork.h"
 
@@ -86,4 +86,14 @@ void AShooterGameState::OnRep_TeamScores()
 void AShooterGameState::Multicast_KillFeed_Implementation(const FString& KillerName, uint8 KillerTeam, const FString& VictimName, uint8 VictimTeam, UTexture2D* WeaponIcon)
 {
 	OnKillFeed.Broadcast(KillerName, KillerTeam, VictimName, VictimTeam, WeaponIcon);
+}
+
+double AShooterGameState::GetServerWorldTimeSeconds() const
+{
+	const UWorld* World = GetWorld();
+	if (World && bHasSyncedServerTime && GetNetMode() == NM_Client)
+	{
+		return World->GetTimeSeconds() + SyncedServerTimeOffset;
+	}
+	return Super::GetServerWorldTimeSeconds();
 }

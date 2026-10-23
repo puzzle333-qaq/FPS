@@ -7,6 +7,7 @@
 #include "SearchDestroyGameMode.generated.h"
 
 class ABombActor;
+class UTexture2D;
 class ABombSite;
 class ASearchDestroyGameState;
 
@@ -90,6 +91,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD")
 	TSubclassOf<ABombActor> BombClass;
+
+	// 炸弹爆炸致死时击杀播报的图标（C4）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD")
+	TObjectPtr<UTexture2D> BombKillIcon;
 
 	virtual void InitGameState() override;
 	virtual void StartPlay() override;

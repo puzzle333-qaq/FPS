@@ -792,7 +792,9 @@ void ASearchDestroyGameMode::ExplodeBomb()
 			if (FVector::DistSquared(It->GetActorLocation(), Origin) > FMath::Square(ExplosionRadius)) continue;
 			if (It->Implements<UPlayerInterface>())
 			{
+				SetPendingDamageIcon(BombKillIcon);
 				IPlayerInterface::Execute_DoDamage(*It, ExplosionDamage, IsValid(Bomb) ? Bomb : static_cast<AActor*>(*It));
+				ClearPendingDamageIcon();
 			}
 		}
 	}

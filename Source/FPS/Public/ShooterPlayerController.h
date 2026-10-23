@@ -20,6 +20,7 @@ class AGameStateBase;
 class AWeaponPickup;
 class UScoreboardScreen;
 class AShooterCharacter;
+class USettingsScreen;
 struct FInputActionValue;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterSpectateChanged, bool, bIsSpectating, APlayerState*, Target);
 /**
@@ -60,6 +61,24 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
 	void ClosePauseMenu();
+
+	// ---- 设置（暂停菜单里的“设置”按钮调用） ----
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Settings")
+	TSubclassOf<USettingsScreen> SettingsWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings")
+	void ShowSettings();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings")
+	void HideSettings();
+
+	// 把保存的操作设置（FOV 等）套到当前角色上
+	void ApplyControlSettings();
+
+	bool bPauseHiddenForSettings = false;
+
+	UPROPERTY()
+	TObjectPtr<USettingsScreen> SettingsScreen;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|PauseMenu")
 	bool IsPauseMenuOpen() const;
@@ -335,6 +354,14 @@ private:
 	void Input_SpectateNext();
 	void ApplySpectateLocal();
 	FTimerHandle SpectateFadeTimer;
+	// ---- 客户端校时（RTT/2 补偿） ----
+	UFUNCTION(Server, Unreliable)
+	void Server_RequestServerTime(double ClientSendTime);
+	UFUNCTION(Client, Unreliable)
+	void Client_ReportServerTime(double ClientSendTime, double ServerTime);
+	void RequestServerTimeSync();
+	FTimerHandle TimeSyncTimer;
+	double BestTimeSyncRTT = -1.0;
 	TWeakObjectPtr<AShooterCharacter> Viewed1PCharacter;
 	void SyncSpectatedCharacter();
 	bool bSpectateBound = false;
