@@ -41,8 +41,11 @@
 27. [Menus, out-of-match loadouts, rooms, pause, Team Deathmatch and death camera (2026-10 revision)](#27-menus-out-of-match-loadouts-rooms-pause-team-deathmatch-and-death-camera-2026-10-revision)
 28. [In-match HUD, warmup clock, Search & Destroy, throwables and burst/shotgun weapon work (2026-10 revision 2)](#28-in-match-hud-warmup-clock-search--destroy-throwables-and-burstshotgun-weapon-work-2026-10-revision-2)
 29. [Match HUD widgets — `UMatchHUD`, headers and kill feed](#29-match-hud-widgets--umatchhud-headers-and-kill-feed)
+30. [Room lobby, session subsystem, BDM mode & economy, first-person spectator camera, weapon pickups and scoreboard (2026-10 revision 3)](#30-room-lobby-session-subsystem-bdm-mode--economy-first-person-spectator-camera-weapon-pickups-and-scoreboard-2026-10-revision-3)
 
-> **Latest revision (2026-10 revision 2):** new top-level sections `28` and `29` cover the **in-match HUD** (`UMatchHUD`, `UMatchHeaderWidget` / `UTDMHeaderWidget` / `USDHeaderWidget`, `UKillFeedWidget` / `UKillFeedEntry`), the **warmup clock**, **`PlayerN` names**, **sprint vs. reload**, the whole **Search & Destroy** round mode (`ASearchDestroyGameMode`, `ASearchDestroyGameState`, `ABombActor`, `ABombSite`, `ABombWeapon`), the **throwable pipeline** (`AThrownProjectile`, high/low throw, projectile damage), **`EFireType::Burst`**, the **double-barrel shotgun** chamber shells and the **gunsmith "equip as primary"** flow plus the **X24 attachment set**. Where it disagrees with §4.1, §4.2, §4.4, §13, §17.1, §17.3, §22, §24.3, §27 or §3.4, §28 / §29 win.
+> **Latest revision (2026-10 revision 3):** new top-level section `30` covers the **Online Subsystem session manager** (`UShooterSessionSubsystem`, `FRoomBrowserEntry`, `URoomBrowserScreen`), the **room lobby** (`ALobbyGameMode`, `ALobbyGameState`, `ALobbyPlayerController`, `ULobbyScreen`), **seamless travel team migration** (`AShooterPlayerState::CopyProperties`), the **BDM mode & economy buy shop** (`ABDMGameMode`, `ABDMGameState`, `UBuyShopScreen`, `FBuyShopItem`), the **authentic first-person teammate spectator camera** (`SetFirstPersonViewedLocally`, 1P spectate montages), **world interaction & weapon pickups** (`IInteractable`, `AWeaponPickup`, ground terrain snapping), and the **real-time Tab scoreboard with damage assists** (`UScoreboardScreen`, `NotifyDamage`, `AssistWindow`). Where it disagrees with earlier sections, §30 wins.
+>
+> **Previous revision (2026-10 revision 2):** new top-level sections `28` and `29` cover the **in-match HUD** (`UMatchHUD`, `UMatchHeaderWidget` / `UTDMHeaderWidget` / `USDHeaderWidget`, `UKillFeedWidget` / `UKillFeedEntry`), the **warmup clock**, **`PlayerN` names**, **sprint vs. reload**, the whole **Search & Destroy** round mode (`ASearchDestroyGameMode`, `ASearchDestroyGameState`, `ABombActor`, `ABombSite`, `ABombWeapon`), the **throwable pipeline** (`AThrownProjectile`, high/low throw, projectile damage), **`EFireType::Burst`**, the **double-barrel shotgun** chamber shells and the **gunsmith "equip as primary"** flow plus the **X24 attachment set**. Where it disagrees with §4.1, §4.2, §4.4, §13, §17.1, §17.3, §22, §24.3, §27 or §3.4, §28 / §29 win.
 >
 > **Latest revision (since Step 14):** new top-level section `26` covers **prone / crawl**, the **slide**, the **Ctrl-hold + C-toggle crouch** input rework, the **GripHoldStyle (Cradle / Grab)** system, **skeletal-mesh magazine attachments** (`SkeletalMesh`, `MagReloadAnim`, `bHideSpareMagazineBone`), the **melee sweep** (`WeaponMeleeHit`), the **AK weapon tag and 3P attach-point fallbacks**, the **spreading crosshair** and the **hip-fire spread cone** (`HipFireSpread` × `HipFireSpreadMultiplier`, rolled in `WeaponTrace`). Where it disagrees with §4.8, §4.9, §6.3, §6.7, §7.4, §7.5, §7.6, §8.2, §12, §14 or §23.3, §26 wins.
 >
@@ -2390,3 +2393,147 @@ Design notes and caveats:
 | Events | `OnEntryReady(KillerName, KillerTeam, VictimName, VictimTeam, bSuicide)` for per-entry animation |
 
 **Networking**: the kill feed is a `NetMulticast, Reliable` on the GameState, so every client builds the same rows; the icon is a `UTexture2D*` asset reference, which is replicated as part of the RPC payload.
+
+---
+
+## 30. Room lobby, session subsystem, BDM mode & economy, first-person spectator camera, weapon pickups and scoreboard (2026-10 revision 3)
+
+### 30.1 `UShooterSessionSubsystem` & `FRoomBrowserEntry`
+
+An engine-agnostic GameInstanceSubsystem wrapping `OnlineSubsystem` (currently `OnlineSubsystemNull` for LAN, ready for Steam or EOS by changing `DefaultPlatformService` in [DefaultEngine.ini](<Config/DefaultEngine.ini>) + plugins).
+
+#### 30.1.1 `FRoomBrowserEntry`
+| Property | Type | Description |
+| --- | --- | --- |
+| `ResultIndex` | `int32` | Index into internal `FOnlineSessionSearch` results for `JoinRoom` |
+| `RoomCode` | `FString` | 6-character room identifier |
+| `Mode` | `EShooterGameMode` | Game mode (TDM / SearchDestroy) |
+| `Players` / `MaxPlayers` | `int32` | Current active players / capacity |
+| `PingMs` | `int32` | Round-trip latency in milliseconds |
+| `HostName` | `FString` | Player name of room creator/host |
+| `bInGame` | `bool` | True if the room has transitioned into live match |
+| `bDedicated` | `bool` | Whether session is hosted on dedicated server |
+
+#### 30.1.2 Subsystem API
+| Method | Description |
+| --- | --- |
+| `AdvertiseRoom(...)` | (Server) Creates or updates session advertisement with metadata keys (`KeyRoomCode`, `KeyMode`, `KeyPlayers`, `KeyHost`, `KeyInGame`) |
+| `DestroyRoomSession()` | (Server/Client) Destroys the active session on departure |
+| `FindRooms(Mode, bAnyMode)` | (Client) Initiates asynchronous LAN search; broadcasts `OnRoomsFound(bSuccess, Rooms)` |
+| `JoinRoom(ResultIndex)` | (Client) Resolves connect string from search result index and executes `ClientTravel` |
+| `JoinByCode(RoomCode)` | (Client) Searches sessions and joins the matching room code automatically |
+| `GetOnlineServiceName()` | Returns the active OSS name (`NULL`, `Steam`, etc.) |
+
+---
+
+### 30.2 Room Lobby Architecture
+
+A staging GameMode that runs before a match starts (`Lvl_RoomLobby`).
+
+| Class | Base | Key Responsibilities |
+| --- | --- | --- |
+| `ALobbyGameMode` | `AGameModeBase` | Server-authoritative lobby logic. Manages `MaxPlayersPerTeam` (5), `MaxTeamDifference` (2), `AllowedModes`, host succession via `JoinOrder`, and starts match travel via `RequestStart`. Periodically refreshes session advertisement |
+| `ALobbyGameState` | `AGameStateBase` | Replicates `RoomCode`, `RoomMode`, `HostPlayerState`, `bStarting`, and rules (`OnRep_Lobby` triggers `OnLobbyStateChanged`) |
+| `ALobbyPlayerController` | `APlayerController` | Displays `LobbyWidgetClass` (`ULobbyScreen`), sends Server RPCs (`Server_RequestTeam`, `Server_ToggleReady`, `Server_SetRoomMode`, `Server_StartGame`), and receives `Client_LobbyRejected(Reason)` |
+| `ULobbyScreen` | `UUserWidget` | WBP base for `WBP_RoomLobby`. Binds buttons (`Button_TeamA`, `Button_TeamB`, `Button_Ready`, `Button_Start`, `Button_Leave`) and delegates; evaluates local `CanStart(OutReason)` preview |
+| `ULobbyPlayerRowWidget` | `UUserWidget` | WBP base for `WBP_LobbyPlayerRow`. Displays player name, host crown, ready indicator, and team tag |
+
+---
+
+### 30.3 Seamless Travel, Player Preservation & Forfeit Handling
+
+1. **Seamless Travel**: `AShooterGameModeBase::bUseSeamlessTravel = true` and `net.AllowPIESeamlessTravel=1` keep network sockets open during `ServerTravel`.
+2. **PlayerState Migration**: `AShooterPlayerState::CopyProperties` transfers `TeamId`, `JoinOrder` and room status to the newly spawned PlayerState instance on the destination map.
+3. **Expected Players Handshake**: When the host starts the game, `UShooterGameInstance::Room.ExpectedPlayerKeys` stores all staging player identifiers. Upon map load, `AShooterGameModeBase::AreExpectedPlayersPresent` holds match progression until all players arrive.
+4. **Disconnect / Forfeit**: `AShooterGameModeBase::CheckTeamsAfterLogout` runs 0.2 s after any player departure:
+   - If an entire team disconnects during an active match, `HandleTeamForfeit` awards victory to the remaining team.
+   - If all players disconnect, `ReturnToRoomLobby` travels the server back to `Lvl_RoomLobby`.
+5. **Post-Match Return**: Matches wait `PostMatchDelay` (8 s) before calling `ReturnToRoomLobby()`; if no room is active, players return to `MainMenuMap`.
+
+---
+
+### 30.4 Bomb Defusal Match (BDM) & CS-Style Economy
+
+An extension of Search & Destroy introducing a round buy shop and dynamic weapon economics (`BP_BDMGameMode`, map `Lvl_BombDefuceMatch`).
+
+#### 30.4.1 Round Flow
+```
+WaitingForPlayers (waits for min players, 120s timeout)
+       ↓
+    Warmup (3s)
+       ↓
+Freeze / Buy Phase (BuyTime: 20s, movement locked, B shop accessible)
+       ↓
+     Live (115s, plant/defuse, combat)
+       ↓
+   PostRound (5s, movement unlocked)
+```
+
+#### 30.4.2 Economy & Buy Shop
+- **Shop Input**: Key **B** triggers `IA_BuyShop_Runtime` (`IMC_BuyShop_Runtime`, priority 1), opening `UBuyShopScreen` (`WBP_BuyShop`) during `Warmup` or `Freeze`. Automatically closes when `Live` begins.
+- **Economy Parameters**:
+  - `StartMoney`: $800
+  - `MaxMoney`: $16000
+  - `KillReward`: $300
+  - `RoundWinReward`: $3250
+  - `RoundLossReward`: $1400
+- **Spawning Rules**:
+  - BDM spawns players with **no default primary weapons**; only the default sidearm (first pistol in `BuyCatalog` with `Price == 0`, e.g. Glock18) and knife are granted.
+  - Purchasing any primary weapon immediately equips it into the long-gun slot (`Auth_ApplyBoughtWeapon`).
+
+---
+
+### 30.5 Authentic First-Person Teammate Spectator Camera
+
+When an eliminated player dies (after `DeathCamMoveTime` + `SpectateDelay` 3 s) or joins mid-round in S&D / BDM:
+
+1. **State Replication**: The server calls `Auth_StartSpectating()` → `bSpectating = true`, `SpectateTarget` replicates to the owner (`OnRep_Spectate`).
+2. **Local Viewport Attachment**: `AShooterPlayerController::SyncSpectatedCharacter()` detects the watched `AShooterCharacter` and calls `SetFirstPersonViewedLocally(true)`:
+   - Detaches spring arm rotation (`SpringArm->bUsePawnControlRotation = false`) and syncs to `GetFixedAimRotation()`.
+   - Forces `Mesh1P->VisibilityBasedAnimTickOption = AlwaysTickPoseAndRefreshBones`.
+   - Makes the watched player's 1P arms and 1P weapon meshes locally visible, while hiding their 3P body from the spectator camera.
+3. **1P Montage Mirroring**:
+   - Remote `Multicast_FireWeapon` triggers `UCombatComponent::PlaySpectated1PFire()`, executing the 1P weapon and arm firing montages.
+   - Remote `Multicast_ReloadWeapon` triggers `PlaySpectated1PReload(ReloadType)`.
+4. **Target Cycling**:
+   - `IA_SpectateNext_Runtime` (mapped to **Left Mouse Button**) sends `Server_SpectateNext()`.
+   - If the spectated player dies, the controller automatically cycles to the next surviving teammate (`Auth_SpectateNext(true)`).
+
+---
+
+### 30.6 World Interaction (`IInteractable`) and Weapon Pickups (`AWeaponPickup`)
+
+#### 30.6.1 `IInteractable` Interface
+| Method | Description |
+| --- | --- |
+| `CanInteract(Pawn)` | Returns true if the pawn can currently interact with this actor |
+| `GetInteractPrompt(Pawn)` | Prompt text shown in the HUD (e.g. "Press F to pick up AK-47") |
+| `Interact(Pawn)` | Server execution of the interaction |
+
+`AShooterPlayerController::TraceInteractable()` fires a 250 cm camera forward raycast every frame. If an interactable actor is found, the prompt appears; pressing **F** sends `Server_Interact(Target)`. If no interactable is hit, F acts as the bomb plant/defuse hold.
+
+#### 30.6.2 `AWeaponPickup`
+- Spawns dynamically on player death in BDM (`Auth_DropWeaponsOnDeath`) for primary and secondary weapons.
+- Replicates `WeaponClass` and `Attachments` array; spawns 3P visual mesh with equipped attachments.
+- **Ground Snapping**: `SnapToGround()` traces downward against `ECC_WorldStatic` and aligns the pickup box smoothly to the floor terrain (also applied to `ABombActor`).
+- **Pickup Swap**: Interacting with a pickup swaps the player's weapon in the matching slot, dropping the player's old weapon as a new pickup in the world.
+
+---
+
+### 30.7 Real-Time Tab Scoreboard & Damage Assists
+
+#### 30.7.1 `UScoreboardScreen` / `UScoreboardRowWidget`
+- **Input**: Holding **Tab** invokes `IA_Scoreboard_Runtime` (`IMC_Scoreboard_Runtime`, priority 1), adding `WBP_Scoreboard` to the viewport; releasing Tab removes it.
+- **Auto-Refresh**: Timer updates every 0.25 s (`RefreshInterval`), calling `CollectRows()` sorted by Kills desc, then Deaths asc.
+- **Row Columns**: Player Name, Kills, Deaths, Assists, Ping, with local player row highlight.
+
+#### 30.7.2 Assist Tracking
+- `AShooterGameModeBase::NotifyDamage` records every damager timestamp per victim in `RecentDamage`.
+- Upon `OnPlayerKilled`, all non-killing damagers within `AssistWindow` receive an assist via `AShooterPlayerState::AddAssist()`.
+- `RecentDamage` records for the victim are cleared immediately upon death.
+
+---
+
+### 30.8 Stamina Balancing
+- `UStatsComponent::StaminaDrainRate` is set to `10.f` (reduced by 50% from the previous 20.f).
+- `UStatsComponent::JumpStaminaCost` is set to `8.f` (reduced from 15.f).

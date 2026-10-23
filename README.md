@@ -6,7 +6,7 @@
 
 A first-person shooter gameplay framework built with **Unreal Engine 5.8 + C++**: character movement and look, walk/sprint movement modes with stamina, **Ctrl-hold / C-toggle crouch, a speed-based slide and prone crawling**, weapons (long gun / **double-barrel shotgun** / AK / pistol / melee / **throwables** / the **bomb**) with equipping, slot selection and auto-un-aim, firing with hit detection (including a **blade sweep for melee**), **recoil patterns with view-kick recovery**, reloading, aiming down sights (ADS), a sniper scope, **a data-driven weapon attachment system** (barrel / handguard / muzzle / optic / grip / stock / tactical / magazine) with an in-game attachment menu and a Tab loadout screen, **picture-in-picture magnified optics**, a flashlight, health with healing, per-body-part damage, hit reactions, and full multiplayer replication.
 
-Three match modes share one `AShooterGameModeBase` / `AShooterGameState` base: **Team Deathmatch**, **Search & Destroy** (rounds, a plantable C4 and two bomb sites) and the free-play range. On top of that sits an **in-match HUD** — a mode-aware score header (TDM / SD), a kill feed with weapon icons, a respawn countdown — and a menu-driven gunsmith/loadout flow that also equips the primary weapon.
+Four match modes share one `AShooterGameModeBase` / `AShooterGameState` base: **Team Deathmatch**, **Search & Destroy**, **Bomb Defusal Match (BDM)** (CS-style buy shop on B, round economy, default sidearm/knife spawn, world weapon drops/pickups, first-person teammate spectating) and the free-play range. Room matchmaking and pre-game staging are handled by a dedicated **Room Lobby** and **LAN Session Browser** (`OnlineSubsystemNull` with seamless travel, team preservation and player-arrival waiting), complemented by an in-match **Tab Scoreboard** (K/D/A, team scores) and weapon drop/interact system on **F**.
 
 > This document was written by reading the source code. **No code file was modified.**
 > For the function-by-function, component-by-component deep dive (signatures, behaviour, call chains, effects), see [DOCUMENTATION.md](<DOCUMENTATION.md>).
@@ -22,17 +22,17 @@ Three match modes share one `AShooterGameModeBase` / `AShooterGameState` base: *
 | Primary module | `FPS`, type Runtime ([FPS.Build.cs](<Source/FPS/FPS.Build.cs>)) |
 | Language | C++ — most entry points are exposed to Blueprints via `BlueprintCallable` / `BlueprintImplementableEvent` |
 | Input | Enhanced Input (`UEnhancedInputComponent` + `UInputMappingContext`) |
-| Default map | `/Game/FPS/Level/MainMenu/MainMenu` — the menu level; each mode travels to its own map (see §10.4 and §10.5) |
+| Default map | `/Game/FPS/Level/MainMenu/Lvl_MainMenu` (or legacy `MainMenu`) — the menu level; modes travel via Lobby or direct listen (see §10.4–§10.6) |
 | Default GameMode | `/Script/FPS.ShooterGameModeBase` (see [DefaultEngine.ini](<Config/DefaultEngine.ini>)) |
-| Custom collision channel | `Weapon` = `ECC_GameTraceChannel2` (trace type) |
+| Custom collision channel | `Weapon` = `ECC_GameTraceChannel2` (trace type), `Projectile` = `ECC_GameTraceChannel1` (object type) |
 | Build targets | `FPS` (Game), `FPSEditor` (Editor), `BuildSettingsVersion.V7` |
 
 Module dependencies ([FPS.Build.cs](<Source/FPS/FPS.Build.cs>)):
 
 - Public: `Core`, `CoreUObject`, `Engine`, `InputCore`, `EnhancedInput`, `GameplayTags`, `PhysicsCore`, `UMG`, `Niagara`
-- Private: `Slate`, `SlateCore`
+- Private: `Slate`, `SlateCore`, `CoreOnline`, `OnlineSubsystem`, `OnlineSubsystemUtils`
 
-Enabled plugins ([FPS.uproject](<FPS.uproject>)): `ModelingToolsEditorMode` (editor only), `GameplayStateTree`, `AnimationWarping`, `ModelContextProtocol`, `AllToolsets`.
+Enabled plugins ([FPS.uproject](<FPS.uproject>)): `ModelingToolsEditorMode` (editor only), `GameplayStateTree`, `AnimationWarping`, `ModelContextProtocol`, `AllToolsets`, `OnlineSubsystem`, `OnlineSubsystemNull`, `OnlineSubsystemUtils`.
 
 ---
 
@@ -46,14 +46,19 @@ Enabled plugins ([FPS.uproject](<FPS.uproject>)): `ModelingToolsEditorMode` (edi
 | Crouch modes | **Left Ctrl held** to crouch (stand on release, delayed by the ceiling), **C** to toggle; both are runtime Enhanced Input actions at priority 2, so the legacy `IA_Crouch` mapping is shadowed | [ShooterPlayerController.cpp](<Source/FPS/Private/ShooterPlayerController.cpp>) |
 | Slide | Pressing a crouch key above `SlideMinSpeed` (600) slides instead of crouching: crouched capsule, `+150` cm/s boost, friction 0 with linear `BrakingDecelerationWalking`, movement input ignored, ends after 0.9 s / below 200 cm/s / when leaving the ground; ends crouched (C / Ctrl held) or standing (Ctrl released); jump cancels it; server-validated at 75 % speed with a `Client_SlideRejected` rollback | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [ShooterPlayerController.cpp](<Source/FPS/Private/ShooterPlayerController.cpp>) |
 | Prone / crawl | **Z** toggles prone (runtime input when unassigned). Prone reuses CMC crouch with `CrouchedHalfHeight` 34, drops the camera, crawls at `RunSpeed × 0.25`, blocks jump / lean / sprint, refuses to stand up under a low ceiling, and is server-authoritative with `Client_ProneRejected`. `bProneCrawling` (prone **and** moving) lets the ABP play a full-body crawl when moving and a gun-hold upper body when stopped | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [ShooterPlayerController.cpp](<Source/FPS/Private/ShooterPlayerController.cpp>) |
-| Stamina | Server-authoritative drain/regen, jump cost, `OnStaminaDepleted`, stamina bar HUD | [StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
+| Stamina | Server-authoritative drain/regen, jump cost (drain rate halved to 10/s, jump cost halved to 8), `OnStaminaDepleted`, stamina bar HUD | [StatsComponent.cpp](<Source/FPS/Private/Stats/StatsComponent.cpp>) |
 | Locomotion feel | `GroundSpeed`, walk-gait BlendSpace swap (`Strafe_Walking`), per-frame locomotion play rate pushed into the AnimBPs (prone uses `ProneAnimReferenceSpeed` 100) | [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>) |
 | Weapons | Five kinds (long gun / pistol / melee / throwable / bomb) across six slots (main / secondary / pistol / melee / throwable / bomb) selected by the number keys, equip montages (with optional random variant pools), interruptible equip/reload (see §10.2), auto un-aim when switching. `UsesAmmo()` / `CanAimWeapon()` are kind-driven, so the knife and the bomb never aim and throwables do not auto-reload (see §10.5) | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 | Fire modes | `EFireType` = single / automatic / **burst**. `AllowedFireModes` decides what a weapon may use (default: pistol = single + burst, `bCanSwitchFireMode` rifle = single + automatic), `BurstCount` 3 and `BurstShotInterval` shape the burst; the burst loop runs in `FireTimerFinished` and the server rate limit uses the same interval (see §10.5) | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 | Double-barrel shotgun | Uses the normal fire path; the two shells in the breech are real static meshes on `Bullet1Socket` / `Bullet2Socket` toggled by `Bullet1Spawn` / `Bullet1Delete` / `Bullet2Spawn` / `Bullet2Delete` / `DeleteAllBullets` notifies, and the shell sockets are forced always-animated so they do not freeze in bind pose (see §10.5) | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>) |
 | Throwables | Frag / smoke / molotov / flash share `AThrownProjectile`. Fire starts a pin-pull, the release throws high (left button) or low (right button) and is driven by `ThrowReleaseTime` or the `Notify_ThrowWeapon` anim notify; frag does radial damage with line-of-sight, the other effects override `OnDetonate` in Blueprint (see §10.5) | [ThrownProjectile.cpp](<Source/FPS/Private/Weapon/ThrownProjectile.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
-| Game modes | `AShooterGameModeBase` (players, kills, kill feed, respawn) → `ATDMGameMode` (team deathmatch), `ASearchDestroyGameMode` (rounds + bomb) and the range. `UShooterGameInstance` holds the mode table (`GameModeClass` + `Map` + `bImplemented`) and opens rooms / joins by IP (see §10.4, §10.5) | [ShooterGameModeBase.cpp](<Source/FPS/Private/ShooterGameModeBase.cpp>), [SearchDestroyGameMode.cpp](<Source/FPS/Private/Game/SearchDestroyGameMode.cpp>), [ShooterGameInstance.cpp](<Source/FPS/Private/ShooterGameInstance.cpp>) |
-| Search & Destroy | Two teams, attackers plant a C4 at one of two bomb sites, defenders defuse. Round phases warmup / freeze / live / post-round, movement and actions locked outside live, no respawn inside a round, first to 6 rounds with a side swap (see §10.5) | [SearchDestroyGameMode.cpp](<Source/FPS/Private/Game/SearchDestroyGameMode.cpp>), [BombActor.cpp](<Source/FPS/Private/Game/BombActor.cpp>), [BombSite.cpp](<Source/FPS/Private/Game/BombSite.cpp>) |
+| Game modes | `AShooterGameModeBase` (players, kills, assists, kill feed, respawn) → `ATDMGameMode` (team deathmatch), `ASearchDestroyGameMode` (rounds + bomb), `ABDMGameMode` (CS-style bomb + economy/shop) and the range. `UShooterGameInstance` manages room state, lobby travel and online session matchmaking (see §10.4–§10.6) | [ShooterGameModeBase.cpp](<Source/FPS/Private/ShooterGameModeBase.cpp>), [SearchDestroyGameMode.cpp](<Source/FPS/Private/Game/SearchDestroyGameMode.cpp>), [BDMGameMode.cpp](<Source/FPS/Private/Game/BDMGameMode.cpp>), [ShooterGameInstance.cpp](<Source/FPS/Private/ShooterGameInstance.cpp>) |
+| Search & Destroy | Two teams, attackers plant a C4 at one of two bomb sites, defenders defuse. Round phases WaitingForPlayers / Warmup / Freeze / Live / PostRound, movement and actions locked outside live, no respawn inside a round, first to 6 rounds with side swap (see §10.5) | [SearchDestroyGameMode.cpp](<Source/FPS/Private/Game/SearchDestroyGameMode.cpp>), [BombActor.cpp](<Source/FPS/Private/Game/BombActor.cpp>), [BombSite.cpp](<Source/FPS/Private/Game/BombSite.cpp>) |
+| BDM (Bomb Defuse Match) | Extends Search & Destroy with CS-style buy economy: **B** key shop during freeze (`UBuyShopScreen`), default sidearm (Glock18) + knife spawn, dynamic weapon drop on death (`AWeaponPickup`), and movement allowed during round end (see §10.6) | [BDMGameMode.cpp](<Source/FPS/Private/Game/BDMGameMode.cpp>), [BuyShopScreen.cpp](<Source/FPS/Private/Ui/BuyShopScreen.cpp>), [WeaponPickup.cpp](<Source/FPS/Private/Game/WeaponPickup.cpp>) |
+| Room Lobby & Sessions | Pre-game room staging (`ALobbyGameMode`, `WBP_RoomLobby`) with team select, ready status, host controls and seamless travel carry-over (`net.AllowPIESeamlessTravel=1`). `UShooterSessionSubsystem` powers LAN/Online room discovery and joining (`WBP_RoomBrowser`) via `OnlineSubsystemNull` | [LobbyGameMode.cpp](<Source/FPS/Private/Lobby/LobbyGameMode.cpp>), [ShooterSessionSubsystem.cpp](<Source/FPS/Private/Online/ShooterSessionSubsystem.cpp>), [RoomBrowserScreen.cpp](<Source/FPS/Private/Ui/RoomBrowserScreen.cpp>), [LobbyScreen.cpp](<Source/FPS/Private/Ui/LobbyScreen.cpp>) |
+| Spectator (First-Person) | Dead / late-joining players in round modes spectate living teammates in **authentic first-person** (`SetFirstPersonViewedLocally` replicates arms, equipped weapon, aim pitch/yaw and 1P fire/reload montages). Left click cycles next alive teammate | [ShooterPlayerController.cpp](<Source/FPS/Private/ShooterPlayerController.cpp>), [ShooterCharacter.cpp](<Source/FPS/Private/ShooterCharacter.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
+| World Interaction & Pickups | `IInteractable` camera raycast (250 cm) for world interaction. Dropped weapons (`AWeaponPickup`) retain attachments/class with ground snapping; pressing **F** equips/swaps the pickup with the current slot. Dropped/planted bombs also snap to terrain | [Interactable.h](<Source/FPS/Public/Interface/Interactable.h>), [WeaponPickup.cpp](<Source/FPS/Private/Game/WeaponPickup.cpp>), [BombActor.cpp](<Source/FPS/Private/Game/BombActor.cpp>) |
+| Scoreboard & Assists | Hold **Tab** to display `WBP_Scoreboard` (`UScoreboardScreen`), auto-refreshed at 0.25 s interval, sorted by Kills desc / Deaths asc. Tracks Kills, Deaths, Assists (awarded for damage dealt within `AssistWindow` of elimination) and team scores | [ScoreboardScreen.cpp](<Source/FPS/Private/Ui/ScoreboardScreen.cpp>), [ShooterPlayerState.cpp](<Source/FPS/Private/Game/ShooterPlayerState.cpp>), [ShooterGameModeBase.cpp](<Source/FPS/Private/ShooterGameModeBase.cpp>) |
 | Match HUD | `UMatchHUD` hosts a per-mode score header (`UTDMHeaderWidget` / `USDHeaderWidget`) and the kill feed; the header shows scores, warmup / match / bomb timer, and the SD version adds round, bomb state, prompt and an action progress bar. `UKillFeedWidget` draws team-coloured killer → weapon icon → victim rows that expire (see §10.5) | [MatchHUD.cpp](<Source/FPS/Private/Ui/MatchHUD.cpp>), [MatchHeaderWidget.cpp](<Source/FPS/Private/Ui/MatchHeaderWidget.cpp>), [KillFeedWidget.cpp](<Source/FPS/Private/Ui/KillFeedWidget.cpp>) |
 | Melee | `EWeaponKind::Melee` never aims, never consumes ammo (`UsesAmmo()`), never auto-reloads, turns both FABRIK alphas off, and hits with a **sphere sweep along the blade** (`MeleeSocketName`, `MeleeHitRadius` 40, `MeleeHitReach` 120) plus a full-body 3P swing montage | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>) |
 | Shooting | Sphere-sweep hit detection with a **hip-fire spread cone** (randomised by `HipFireSpread` × attachment multipliers, 0 while aiming), single / automatic fire with a per-weapon **fire-mode toggle** (`bCanSwitchFireMode`, replicated `FireType`), bolt-action cycling (`BoltCycling` state), **recoil pattern with recovery and attachment modifiers**, server-side rate limiting, blueprint-driven muzzle and impact FX, magazine and reserve ammo | [Weapon.cpp](<Source/FPS/Private/Weapon/Weapon.cpp>), [CombatComponent.cpp](<Source/FPS/Private/CombatComponent.cpp>), [RecoilModifierInterface.h](<Source/FPS/Public/Interface/RecoilModifierInterface.h>) |
@@ -97,32 +102,54 @@ FPS/
       ├─ Public/
       │  ├─ FPSTraceChannels.h            # Weapon trace channel constant
       │  ├─ ShooterGamePlayTags.h         # Native gameplay tag declarations
-      │  ├─ ShooterCharacter.h            # Player character
-      │  ├─ ShooterPlayerController.h     # Player controller (move / look / jump / crouch / sprint / walk)
-      │  ├─ ShooterGameModeBase.h         # GameMode (empty shell for blueprint subclassing)
-      │  ├─ CombatComponent.h             # Core combat component (inventory, fire, reload, aim, recoil)
+      │  ├─ ShooterCharacter.h            # Player character (+ 1P spectate sync)
+      │  ├─ ShooterPlayerController.h     # Player controller (move / look / jump / crouch / spectate / shop / scoreboard)
+      │  ├─ ShooterGameModeBase.h         # GameMode base (scoring / kill feed / assists / seamless travel)
+      │  ├─ ShooterGameInstance.h         # GameInstance (modes, room state, loadouts, travel)
+      │  ├─ CombatComponent.h             # Core combat component (inventory, fire, reload, aim, recoil, spectate 1P)
       │  ├─ WeaponData.h                  # Weapon data asset + FPlayerAnim / FMontageData
       │  ├─ AnimNotify/
-      │  │  └─ AnimNotify_WeaponGrip.h    # C++ anim notify: re-attach the weapon to a hand socket
+      │  │  ├─ AnimNotify_WeaponGrip.h    # C++ anim notify: re-attach the weapon to a hand socket
+      │  │  └─ AnimNotify_ThrowProjectile.h # C++ anim notify: release throwable projectile
+      │  ├─ Game/
+      │  │  ├─ TDMGameMode.h / BDMGameMode.h / SearchDestroyGameMode.h # Match GameModes
+      │  │  ├─ ShooterGameState.h / BDMGameState.h / SearchDestroyGameState.h # Replicated GameStates
+      │  │  ├─ ShooterPlayerState.h       # Team, K/D/A, money, ready status
+      │  │  ├─ WeaponPickup.h             # Replicated dropped weapon pickup (snaps to ground)
+      │  │  ├─ BombActor.h / BombSite.h / BombWeapon.h # S&D objective actors
+      │  │  └─ SearchDestroyTypes.h       # Phase and round outcome enums
+      │  ├─ Lobby/
+      │  │  ├─ LobbyGameMode.h            # Room lobby rules, team limits, host authority
+      │  │  ├─ LobbyGameState.h           # Replicated room code, mode, host player state
+      │  │  └─ LobbyPlayerController.h    # Room lobby player controller & RPC dispatch
+      │  ├─ Online/
+      │  │  └─ ShooterSessionSubsystem.h  # Session discovery & matchmaking wrapper (OnlineSubsystem)
       │  ├─ Interface/
       │  │  ├─ PlayerInterface.h          # Character capability interface
-      │  │  └─ RecoilModifierInterface.h  # IRecoilModifier + FRecoilScale (attachment recoil hooks)
+      │  │  ├─ RecoilModifierInterface.h  # IRecoilModifier + FRecoilScale (attachment recoil hooks)
+      │  │  └─ Interactable.h             # IInteractable: F raycast world interaction interface
       │  ├─ Animation/FirstPersonAnimInstance.h   # C++ base for ABP_FirstPerson: 1P hand FABRIK + grip hold style
-      │  ├─ Ui/AttachmentMenu.h                   # Attachment menu (one row per slot)
-      │  ├─ Ui/AttachmentSlotRow.h                # Slot row + attachment option buttons
-      │  ├─ Ui/AttachmentOptionEntry.h            # One attachment button / the "remove" button
-      │  ├─ Ui/LoadoutScreen.h                    # Tab loadout screen + draggable attachment window
-      │  ├─ Ui/LoadoutPreviewRig.h                # SceneCapture rig for the three-weapon preview
-      │  ├─ Ui/LoadoutWeaponCard.h                # One weapon card in the loadout screen
-      │  ├─ Weapon/AttachmentData.h               # Attachment data asset (+ EOpticType, EGripHoldStyle)
-      │  ├─ Weapon/OpticScopeComponent.h          # Picture-in-picture magnified optic
+      │  ├─ Ui/
+      │  │  ├─ MatchHUD.h / MatchHeaderWidget.h / TDMHudWidget.h # In-match HUD & score headers
+      │  │  ├─ KillFeedWidget.h           # Kill feed list & entry rows
+      │  │  ├─ ScoreboardScreen.h         # Real-time Tab scoreboard widget & rows
+      │  │  ├─ BuyShopScreen.h / BuyShopTypes.h # BDM economy buy shop screen & items
+      │  │  ├─ RoomBrowserScreen.h        # Session browser list & entry rows
+      │  │  ├─ LobbyScreen.h              # Room lobby widget & player list
+      │  │  ├─ GunsmithScreen.h           # Menu weapon customisation screen
+      │  │  ├─ AttachmentMenu.h / AttachmentSlotRow.h / AttachmentOptionEntry.h # In-match attachment menu
+      │  │  ├─ LoadoutScreen.h / LoadoutPreviewRig.h / LoadoutWeaponCard.h # Loadout preview rig
+      │  │  ├─ ShooterReticle.h           # Dynamic reticle widget + hit feedback
+      │  │  ├─ ReserveAmmo.h              # Ammo HUD widget
+      │  │  └─ PauseMenuScreen.h          # In-match pause menu
+      │  ├─ Weapon/
+      │  │  ├─ Weapon.h                   # Weapon actor (+ FRecoilStep, attachment hooks)
+      │  │  ├─ AttachmentData.h           # Attachment data asset (+ EOpticType, EGripHoldStyle)
+      │  │  ├─ OpticScopeComponent.h      # Picture-in-picture magnified optic
+      │  │  ├─ SniperScopeComponent.h     # Sniper scope component + overlay widget
+      │  │  └─ ThrownProjectile.h         # Throwable projectile actor (frag / smoke / molotov / flash)
       │  ├─ Stats/StatsComponent.h        # Health + stamina component
-      │  ├─ ShooterType/ShooterType.h     # Hit zone / damage multiplier helpers
-      │  ├─ Ui/ShooterReticle.h           # Dynamic reticle widget
-      │  ├─ Ui/ReserveAmmo.h              # Ammo HUD widget
-      │  └─ Weapon/
-      │     ├─ Weapon.h                   # Weapon actor (+ FRecoilStep)
-      │     └─ SniperScopeComponent.h     # Sniper scope component + full-screen overlay widget
+      │  └─ ShooterType/ShooterType.h     # Hit zone / damage multiplier helpers
       └─ Private/                        # Implementations, one per public header
 ```
 
@@ -219,7 +246,11 @@ Input is dispatched through Enhanced Input: movement and movement modes live on 
 | Pistol (**4**) | `IA_EquipPistol` | Character | `Started` | `Initiate_Hotkey(4)` → pistol in Extraction, **throwable** in arena modes |
 | Bomb (**5**, Search & Destroy) | `IA_Heal` (shared key) | Character | `Started` | `Initiate_Hotkey(5)` returns `false` outside Search & Destroy, so the same key falls through to the heal; in SD it equips the bomb (see §10.5) |
 | Switch fire mode | your IA asset → `SwitchFireModeAction` | Character | `Started` | Cycles `AllowedFireModes` (single / automatic / **burst**); blocked while reloading or bolting; server RPC + `OnFireModeChanged` |
-| Interact (plant / defuse / pick up the bomb) | runtime `IA_Interact_Runtime` (**F**) when `InteractAction` is empty | Controller, registered at runtime | `Started` / `Completed` | Fires `Server_BeginBombInteract` / `Server_EndBombInteract`; only Search & Destroy acts on it |
+| Scoreboard (Tab) | runtime `IA_Scoreboard_Runtime` (**Tab**) | Controller, registered at runtime | `Started` / `Completed` | Hold to show real-time team scoreboard (`UScoreboardScreen`), release to hide |
+| Buy shop (B, BDM) | runtime `IA_BuyShop_Runtime` (**B**) | Controller, registered at runtime | `Started` | Toggles CS-style buy shop (`UBuyShopScreen`) during freeze/buy window in BDM |
+| Attachment menu (B, arena) | `IA_AttachmentMenu` (**B**) | Controller → `ToggleAttachmentMenuAction` | `Started` | Toggles in-game attachment menu outside BDM or when buy shop is inactive |
+| Interact / Pick up / Bomb | runtime `IA_Interact_Runtime` (**F**) | Controller, registered at runtime | `Started` / `Completed` | Aiming at an `IInteractable` (weapon pickup / door) triggers `Server_Interact` on click; in S&D/BDM bomb sites it holds to plant/defuse |
+| Cycle spectate | `IA_SpectateNext_Runtime` (**LMB**) | Controller, registered at runtime | `Started` | While dead and spectating in S&D/BDM, cycles first-person view to the next living teammate |
 | Switch zoom | your IA asset → `SwitchZoomAction` | Character | `Started` | While aiming a `Variable` optic, cycles `ZoomLevelsFOV`; `OnZoomLevelChanged` for UI |
 
 > Note: `IMC_Shooter` contains `LeftMouseButton`, `RightMouseButton`, `SpaceBar`, `LeftControl`, `LeftShift`, `LeftAlt`, `One`–`Five`, `R`, `Q`, `E` and gamepad triggers. Slots 1–5 are interpreted per mode by `UCombatComponent::Initiate_Hotkey()` (see the table, and §10.5 for the exact mapping), and the bomb interact key **F** is a runtime action — no asset needed. The mapping in the table above reflects the common configuration — **`IMC_Shooter` inside the editor is the source of truth**.
@@ -236,11 +267,16 @@ Input is dispatched through Enhanced Input: movement and movement modes live on 
 | `Character/ABP_FirstPerson` / `ABP_ThirdPerson` | 1P / 3P animation blueprints; consume `AO_Yaw`, `MovementOffsetYaw`, `TurningStatus`, `FABRIK_SocketTransform`, `CurrenrAnim` / `CurrentAnim`, and (3P) `bUseWalkGait` / `LocomotionPlayRate` / `GroundSpeed` |
 | `Player/BP_ShooterPlayerController` | Input mapping context, move/look bindings, sprint/walk actions, speed and multiplier tuning |
 | `Game/BP_ShooterGameMode` | GameMode that sets the default Pawn and Controller |
-| `Game/BP_TDMGameMode`, `Game/BP_SearchDestroyGameMode` | The two match GameModes (team deathmatch, rounds + bomb); the SD one also references `BP_Bomb` through `BombClass` |
-| `Game/BP_ShooterGameInstance` | `UShooterGameInstance`: the mode table (`Modes`: `GameModeClass` + `Map` + `bImplemented`), `RangeMap` / `RangeGameMode`, `MainMenuMap`, and the saved loadout (`Loadout` save slot) |
-| `Game/BP_MainMenuPC`, `Menu/BP_MainMenuGameMode`, `UI/WBP_MainMenu`, `UI/WBP_Lobby` | Menu level: UI-only input, mode buttons (`HostRoom`), IP join (`JoinByIP`) |
-| `Level/Lvl_TeamDeathMatch`, `Level/Lvl_BombDefuceMatch`, `Level/Lvl_Range` | Playable maps of the three modes |
-| `Blueprint/BP_Bomb`, `Blueprint/BP_BombSite` | Search & Destroy C4 (`ABombActor`) and plant volume (`ABombSite`) |
+| `Game/BP_TDMGameMode`, `Game/BP_SearchDestroyGameMode`, `Game/BP_BDMGameMode` | Match GameModes (TDM, S&D, BDM with buy economy); reference bomb, buy catalog and mode HUD classes |
+| `Game/BP_LobbyGameMode`, `Game/BP_LobbyPlayerController` | Room lobby GameMode and PlayerController for staging, team selection and ready check before match start |
+| `Game/BP_ShooterGameInstance` | `UShooterGameInstance`: the mode table (`Modes`), `RangeMap` / `RangeGameMode`, `MainMenuMap`, `RoomLobbyMap`, server room state and loadout save |
+| `Game/BP_MainMenuPC`, `Menu/BP_MainMenuGameMode`, `UI/WBP_MainMenu`, `UI/WBP_Lobby` | Menu level: mode browser entry, host room, direct IP join |
+| `UI/WBP_RoomBrowser`, `UI/WBP_RoomBrowserRow` | LAN & Online session room browser (`URoomBrowserScreen`) showing room code, host, ping, player count |
+| `UI/WBP_RoomLobby`, `UI/WBP_LobbyPlayerRow` | Room staging lobby widget (`ULobbyScreen`): team assignment (Team A / Team B), ready toggle, host start button |
+| `UI/WBP_BuyShop`, `UI/WBP_BuyItem` | CS-style BDM buy shop screen (`UBuyShopScreen`) opened via **B** key with money feedback and category items |
+| `UI/WBP_Scoreboard`, `UI/WBP_ScoreboardRow` | Real-time Tab scoreboard widget (`UScoreboardScreen`) displaying team scores, Kills, Deaths, Assists |
+| `Level/Lvl_TeamDeathMatch`, `Level/Lvl_BombDefuceMatch`, `Level/Lvl_RoomLobby`, `Level/MainMenu/Lvl_MainMenu` | Playable match maps, room lobby map and main menu map |
+| `Blueprint/BP_Bomb`, `Blueprint/BP_BombSite` | Search & Destroy C4 (`ABombActor`) with terrain snapping and plant volume (`ABombSite`) |
 | `Weapon/BP_DSShotGun`, `Weapon/ABP_ShotGun`, `Weapon/BP_BulletShell` | Double-barrel shotgun, its weapon anim BP and the chamber shell mesh |
 | `Weapon/Throwable/BP_Weapon_Grenade`, `BP_ThrownFrag`, `AM_TPP_Grenade_Start` | Throwable weapon (pin pull + throw montages via `DA_WeaponData`), the thrown projectile actor and the 3P throw montage |
 | `UI/WBP_MatchHUD`, `WBP_TDMHeader`, `WBP_SDHeader`, `WBP_KillFeed`, `WBP_KillFeedEntry` | In-match HUD: root widget, per-mode score headers (`HeaderHost`), kill feed list (`FeedList`) and one feed row (`Image_Weapon`) |
@@ -303,6 +339,12 @@ graph TD
 - **Bomb interaction**: the client only sends `Server_BeginBombInteract` / `Server_EndBombInteract`; the game mode owns the carrier, the plant / defuse timers, the explosion and the round result. The bomb actor replicates `Carrier` / `bPlanted` and mirrors each transition with a `Multicast_*` Blueprint event.
 - **Throwables**: `Server_BeginThrow` / `ReleaseThrow` / `CommitThrow` are reliable server RPCs, the 3P pin-pull / throw montages go out through `Multicast_BeginThrow` / `Multicast_ReleaseThrow`, the projectile actor replicates movement, and the ammo is predicted locally then reconciled by `Client_ThrowAmmo` → `AWeapon::Rep_Fire`.
 - **Burst fire** adds no new network state: `FireType` was already replicated, and the server rate limit uses the burst interval so a client cannot fire a burst faster than `BurstShotInterval`.
+- **Sessions and Lobby**: `UShooterSessionSubsystem` coordinates session creation, search, and join callbacks over `OnlineSubsystemNull` (LAN/Listen). Room info (`RoomCode`, `Mode`, `Players`, `HostName`, `bInGame`) is advertised and discovered via `FOnlineSessionSettings`.
+- **Seamless Travel and Team Migration**: `bUseSeamlessTravel = true` (with `net.AllowPIESeamlessTravel=1` in config) preserves player connections across map travel. `AShooterPlayerState::CopyProperties` transfers `TeamId`, `JoinOrder` and room status into the new world's PlayerState instance without disconnection.
+- **Expected Players Handshake**: When the room host starts a match, `ExpectedPlayerKeys` are captured in `UShooterGameInstance`. The game mode holds the match clock until `AreExpectedPlayersPresent` confirms all staging players have completed travel.
+- **First-Person Teammate Spectating**: `bSpectating` and `SpectateTarget` replicate to the client (`OnRep_Spectate`). On the local client, `SyncSpectatedCharacter` sets `SetFirstPersonViewedLocally(true)` on the watched character: the spring arm is fixed to aim rotation, the 1P mesh becomes visible and animates, and `Multicast_FireWeapon` / `Multicast_ReloadWeapon` trigger `PlaySpectated1PFire` / `PlaySpectated1PReload` locally.
+- **Dropped Weapon Pickups**: `AWeaponPickup` is spawned and authoritative on the server (`SpawnDropped`), replicating `WeaponClass` and `Attachments`. Interacting via `Server_Interact` validates range, updates the inventory, and drops the player's old weapon in place.
+- **Assists and Damage Tracking**: The server records damage events per victim within `AssistWindow` (in `AShooterGameModeBase::NotifyDamage`). On death, qualifying non-killing damagers are credited with `AddAssist()` on their `AShooterPlayerState`.
 
 ---
 
@@ -522,6 +564,48 @@ Change history in Chinese: `Saved/武器逻辑改动记录.md`; reports: `Saved/
 - `BP_ShooterCharacter`: `Combat → DefaultWeaponClass` should contain the shotgun / throwable; `Combat → BombWeaponClass` optional.
 - `BP_ShooterGameInstance → Modes`: add the SearchDestroy row (`GameModeClass = BP_SearchDestroyGameMode`, `Map = Lvl_BombDefuceMatch`, `bImplemented` ticked).
 - `WBP_MatchHUD`: name the header container `HeaderHost` and the kill feed `KillFeed`; `WBP_KillFeed` needs a `FeedList` panel; `WBP_KillFeedEntry` needs `Text_Killer` / `Text_Victim` / `Image_Weapon`.
+
+### 10.6 Room Lobby, Online Sessions, BDM Economy, First-Person Spectator, Weapon Drops and Tab Scoreboard (2026-10 revision 3)
+
+> Where this section conflicts with earlier sections, this section wins.
+
+**Room Lobby and Online Sessions**
+- `UShooterSessionSubsystem` (`GameInstanceSubsystem`): engine-agnostic session wrapper over `OnlineSubsystem` (currently `Null` for LAN, ready for Steam/EOS). Exposes `AdvertiseRoom`, `FindRooms`, `JoinRoom`, `JoinByCode`, and `DestroyRoomSession`.
+- `URoomBrowserScreen` (WBP_RoomBrowser, rows `URoomBrowserRowWidget` / WBP_RoomBrowserRow): lists sessions with `RoomCode`, `Mode`, `Players`/`MaxPlayers`, `PingMs`, `HostName`. Supports search refresh, direct code/IP join (`JoinByCodeOrIP`), and room hosting (`CreateRoom`).
+- `ALobbyGameMode` / `ALobbyGameState` / `ALobbyPlayerController` (map `Lvl_RoomLobby`, widget `WBP_RoomLobby` / `ULobbyScreen`):
+  - Pre-match staging room with team selection (Team A / Team B / unassigned), ready toggling, and host start/mode controls.
+  - Team balance enforced by `MaxPlayersPerTeam` (5) and `MaxTeamDifference` (2). Host role migrates by `JoinOrder` if the host disconnects.
+  - Seamless travel enabled (`bUseSeamlessTravel = true`, config `net.AllowPIESeamlessTravel=1`): transitions staging players into the match map without disconnects.
+  - `AShooterPlayerState::CopyProperties` migrates team assignment (`TeamId`), `JoinOrder` and ready state across map travels.
+  - Expected players handshake: host start captures `ExpectedPlayerKeys`; match modes wait for all expected players before starting warmup.
+  - Match return & forfeit: match modes travel back to the lobby after `PostMatchDelay` (8 s). If a team fully leaves mid-match, `CheckTeamsAfterLogout` awards a forfeit win to the remaining team or returns everyone to the lobby.
+
+**Bomb Defusal Match (BDM) and Economy**
+- `ABDMGameMode` / `ABDMGameState` (`BP_BDMGameMode`, map `Lvl_BombDefuceMatch`): extends Search & Destroy with CS-style buy economy.
+- Round phase flow: `WaitingForPlayers` (waits for minimum players per team, timeout `WaitForPlayersTimeout` 120 s) → `Warmup` → `Freeze` (or `BuyTime`, default 20 s) → `Live` → `PostRound`. Movement is allowed during `PostRound`.
+- Buy shop: **B** key toggles `UBuyShopScreen` (WBP_BuyShop) during the freeze/buy window; registered at runtime as `IA_BuyShop_Runtime` (`IMC_BuyShop_Runtime`).
+- Economy values: `StartMoney` 800, `MaxMoney` 16000, `KillReward` 300, `RoundWinReward` 3250, `RoundLossReward` 1400.
+- Spawning: players spawn with default sidearm (first pistol in `BuyCatalog` with `Price == 0`, e.g. Glock18) and a melee knife. Purchased primary weapons automatically equip on buy.
+
+**First-Person Teammate Spectating**
+- Eliminated players in round modes (after `SpectateDelay` 3 s) or late-joining players enter first-person teammate spectating (`bSpectating = true`).
+- Authentic first-person view: `SetFirstPersonViewedLocally(true)` locks spring arm rotation, unhides the spectated pawn's 1P mesh and equipped weapon for the local spectator, and mirrors 1P fire and reload montages locally via `PlaySpectated1PFire` / `PlaySpectated1PReload`.
+- Left click (`IA_SpectateNext_Runtime`) cycles to the next living teammate. Spectator automatically cycles when the current target dies.
+
+**Weapon Drops, Ground Snapping and World Interaction**
+- `IInteractable` interface: camera raycast within `InteractDistance` (250 cm). Targeted objects expose `CanInteract`, `GetInteractPrompt`, and `Interact`.
+- World weapon pickups (`AWeaponPickup`): dead players drop equipped primary/secondary weapons on death (`Auth_DropWeaponsOnDeath`). Pickups retain attachment configurations and automatically trace/snap to the terrain (`SnapToGround`).
+- Pressing **F** interacts with targeted pickups (swapping and dropping the currently equipped slot weapon) or doors. If no interactable actor is hit, F falls back to the bomb plant/defuse hold.
+- Dropped and planted C4 bombs (`ABombActor`) also snap to ground surfaces to prevent floating.
+
+**Scoreboard and Damage Assists**
+- Hold **Tab** to display `UScoreboardScreen` (WBP_Scoreboard) via `IA_Scoreboard_Runtime`; release to hide.
+- Displays team scores and player rows (`UScoreboardRowWidget` / WBP_ScoreboardRow) sorted by Kills desc / Deaths asc, auto-refreshed every 0.25 s.
+- Damage assist tracking: `AShooterGameModeBase::NotifyDamage` records attackers within `AssistWindow`. On kill, qualifying non-killing attackers receive an assist (`AddAssist()`) on their `AShooterPlayerState`.
+
+**Stamina Balance Adjustments**
+- `StaminaDrainRate` halved from 20 to 10/s.
+- `JumpStaminaCost` halved from 15 to 8.
 
 ---
 

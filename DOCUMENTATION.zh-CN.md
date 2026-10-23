@@ -41,8 +41,11 @@
 27. [菜单、局外改枪、房间、暂停、团队竞技与死亡视角（2026-10 修订）](#27-菜单局外改枪房间暂停团队竞技与死亡视角2026-10-修订)
 28. [局内 HUD、暖身倒计时、Search & Destroy、投掷物与连发/霰弹枪相关改动（2026-10 修订 2）](#28-局内-hud暖身倒计时search--destroy投掷物与连发霰弹枪相关改动2026-10-修订-2)
 29. [对局 HUD 控件 —— `UMatchHUD`、比分头与击杀播报](#29-对局-hud-控件--umatchhud比分头与击杀播报)
+30. [房间大厅、在线会话、BDM 赏金经济、第一人称观战、武器掉落拾取与 Tab 计分板（2026-10 修订 3）](#30-房间大厅在线会话bdm-赏金经济第一人称观战武器掉落拾取与-tab-计分板2026-10-修订-3)
 
-> **最新修订（2026-10 修订 2）：** 新增顶层章节 `28` 与 `29`，说明**局内 HUD**（`UMatchHUD`、`UMatchHeaderWidget` / `UTDMHeaderWidget` / `USDHeaderWidget`、`UKillFeedWidget` / `UKillFeedEntry`）、**暖身倒计时**、**`PlayerN` 名字**、**冲刺 vs. 换弹**、整套 **Search & Destroy** 回合模式（`ASearchDestroyGameMode`、`ASearchDestroyGameState`、`ABombActor`、`ABombSite`、`ABombWeapon`）、**投掷物管线**（`AThrownProjectile`、高抛 / 低抛、投掷物伤害）、**`EFireType::Burst`**、**双管霰弹枪**的弹膛弹壳，以及**枪匠"装备为主武器"**流程和 **X24 配件集**。与 §4.1、§4.2、§4.4、§13、§17.1、§17.3、§22、§24.3、§27 或 §3.4 冲突时以 §28 / §29 为准。
+> **最新修订（2026-10 修订 3）：** 新增顶层章节 `30`，说明 **Online Subsystem 在线会话管理器**（`UShooterSessionSubsystem`、`FRoomBrowserEntry`、`URoomBrowserScreen`）、**房间集结大厅**（`ALobbyGameMode`、`ALobbyGameState`、`ALobbyPlayerController`、`ULobbyScreen`）、**无缝漫游队伍与顺位继承**（`AShooterPlayerState::CopyProperties`）、**经典爆破对决 BDM 与 CS 风格购枪经济**（`ABDMGameMode`、`ABDMGameState`、`UBuyShopScreen`、`FBuyShopItem`）、**真第一人称队友观战系统**（`SetFirstPersonViewedLocally`、1P 观战动画）、**世界物体交互与地面武器掉落/贴地吸附**（`IInteractable`、`AWeaponPickup`、C4 贴地），以及**按住 Tab 实时战绩计分板与助攻伤害判定**（`UScoreboardScreen`、`NotifyDamage`、`AssistWindow`）。与前面各节冲突时以 §30 为准。
+>
+> **上一次修订（2026-10 修订 2）：** 新增顶层章节 `28` 与 `29`，说明**局内 HUD**（`UMatchHUD`、`UMatchHeaderWidget` / `UTDMHeaderWidget` / `USDHeaderWidget`、`UKillFeedWidget` / `UKillFeedEntry`）、**暖身倒计时**、**`PlayerN` 名字**、**冲刺 vs. 换弹**、整套 **Search & Destroy** 回合模式（`ASearchDestroyGameMode`、`ASearchDestroyGameState`、`ABombActor`、`ABombSite`、`ABombWeapon`）、**投掷物管线**（`AThrownProjectile`、高抛 / 低抛、投掷物伤害）、**`EFireType::Burst`**、**双管霰弹枪**的弹膛弹壳，以及**枪匠"装备为主武器"**流程和 **X24 配件集**。与 §4.1、§4.2、§4.4、§13、§17.1、§17.3、§22、§24.3、§27 或 §3.4 冲突时以 §28 / §29 为准。
 >
 > **最新修订（第 14 步之后）：** 新增顶层章节 `26`，说明**趴下 / 趴行**、**滑铲**、**Ctrl 按住 + C 切换的蹲伏**输入改造、**GripHoldStyle（Cradle / Grab）握把持姿**系统、**骨骼网格弹匣配件**（`SkeletalMesh`、`MagReloadAnim`、`bHideSpareMagazineBone`）、**近战扫掠**（`WeaponMeleeHit`）、**AK 武器 Tag 与 3P 挂点回退**、**扩散准星**以及**腰射散布锥角**（`HipFireSpread` × `HipFireSpreadMultiplier`，在 `WeaponTrace` 里掷骰）。与 §4.8、§4.9、§6.3、§6.7、§7.4、§7.5、§7.6、§8.2、§12、§14 或 §23.3 冲突时以 §26 为准。
 >
@@ -2388,3 +2391,147 @@ AK 弹匣是一个**骨骼**网格，它的骨骼（弹匣本体，以及备用�
 | 事件 | `OnEntryReady(KillerName, KillerTeam, VictimName, VictimTeam, bSuicide)`，用于逐条动画 |
 
 **网络**：击杀播报是 GameState 上的 `NetMulticast, Reliable`，所以每个客户端构建同样的行；图标是 `UTexture2D*` 资源引用，作为 RPC 载荷的一部分复制。
+
+---
+
+## 30. 房间大厅、在线会话、BDM 赏金经济、第一人称观战、武器掉落拾取与 Tab 计分板（2026-10 修订 3）
+
+### 30.1 `UShooterSessionSubsystem` 与 `FRoomBrowserEntry`
+
+脱离具体引擎平台的 `GameInstanceSubsystem`，封装对 `OnlineSubsystem`（当前配置为局域网 `OnlineSubsystemNull`，仅需在 [DefaultEngine.ini](<Config/DefaultEngine.ini>) 调整 `DefaultPlatformService` 与开启插件即可平滑切换 Steam / EOS）。
+
+#### 30.1.1 `FRoomBrowserEntry`
+| 属性 | 类型 | 说明 |
+| --- | --- | --- |
+| `ResultIndex` | `int32` | 内部搜索结果下标，给 `JoinRoom` 使用 |
+| `RoomCode` | `FString` | 6 位房间代号 |
+| `Mode` | `EShooterGameMode` | 玩法模式（TDM / SearchDestroy） |
+| `Players` / `MaxPlayers` | `int32` | 当前在线人数 / 最大容纳人数 |
+| `PingMs` | `int32` | 毫秒延迟 |
+| `HostName` | `FString` | 房主昵称 |
+| `bInGame` | `bool` | 房间是否已经开局（对局中） |
+| `bDedicated` | `bool` | 是否为专用服务器房间 |
+
+#### 30.1.2 子系统核心接口
+| 方法 | 说明 |
+| --- | --- |
+| `AdvertiseRoom(...)` | （服务器）发布或刷新当前房间的元数据字典（`KeyRoomCode`、`KeyMode`、`KeyPlayers`、`KeyHost`、`KeyInGame`） |
+| `DestroyRoomSession()` | （服务器/客户端）销毁活跃会话 |
+| `FindRooms(Mode, bAnyMode)` | （客户端）异步搜索局域网房间，广播 `OnRoomsFound(bSuccess, Rooms)` |
+| `JoinRoom(ResultIndex)` | （客户端）解析指定搜索条目的连接串并执行 `ClientTravel` |
+| `JoinByCode(RoomCode)` | （客户端）自动查找房间码并执行加入 |
+| `GetOnlineServiceName()` | 获取当前生效的 OSS 名称（`NULL`、`Steam` 等） |
+
+---
+
+### 30.2 房间大厅架构
+
+在正式进入对局关卡前的准备集结模式（地图 `Lvl_RoomLobby`）。
+
+| 类 | 基类 | 职责说明 |
+| --- | --- | --- |
+| `ALobbyGameMode` | `AGameModeBase` | 服务器权威管理大厅逻辑。负责双方队伍人数上限 `MaxPlayersPerTeam` (5)、队伍分差上限 `MaxTeamDifference` (2)、允许切换的模式列表 `AllowedModes`、按加入顺位 `JoinOrder` 自动移交房主，并在点击开始后触发对局漫游 |
+| `ALobbyGameState` | `AGameStateBase` | 复制 `RoomCode`、`RoomMode`、`HostPlayerState`、`bStarting` 以及各项规则（`OnRep_Lobby` 触发 `OnLobbyStateChanged` 广播） |
+| `ALobbyPlayerController` | `APlayerController` | 创建并显示 `LobbyWidgetClass`（`ULobbyScreen`），向服务器发送操作 RPC（`Server_RequestTeam`、`Server_ToggleReady`、`Server_SetRoomMode`、`Server_StartGame`），并接收拒绝提示 `Client_LobbyRejected(Reason)` |
+| `ULobbyScreen` | `UUserWidget` | `WBP_RoomLobby` 的 C++ 父类。按名称绑定 `Button_TeamA`、`Button_TeamB`、`Button_Ready`、`Button_Start`、`Button_Leave`；在客户端本地预评估 `CanStart(OutReason)` |
+| `ULobbyPlayerRowWidget` | `UUserWidget` | `WBP_LobbyPlayerRow` 的 C++ 父类。展示单行玩家昵称、房主皇冠、准备状态及队伍归属 |
+
+---
+
+### 30.3 无缝漫游、队伍继承与弃权判定
+
+1. **无缝漫游（Seamless Travel）**：`AShooterGameModeBase::bUseSeamlessTravel = true` 并配合 ini 配置 `net.AllowPIESeamlessTravel=1`，跨关卡切图时网络连接不断开。
+2. **PlayerState 状态继承**：`AShooterPlayerState::CopyProperties` 将玩家所属队伍 `TeamId`、进房顺位 `JoinOrder` 与状态带入新地图的 PlayerState 实例。
+3. **到场等待机制（Expected Players）**：房主点击开局时，`UShooterGameInstance::Room.ExpectedPlayerKeys` 记录大厅全员名单；比赛地图加载后，`AShooterGameModeBase::AreExpectedPlayersPresent` 持续等待全员进入后方可开始暖身倒计时。
+4. **中途断线与弃权判定**：`AShooterGameModeBase::CheckTeamsAfterLogout` 在玩家断线后 0.2 秒执行：
+   - 某一方全员断线退出时，调用 `HandleTeamForfeit` 判另一方直接获胜；
+   - 若全员离开，则通过 `ReturnToRoomLobby` 自动将服务器切回 `Lvl_RoomLobby`。
+5. **赛后自动返场**：比赛结束后在 `PostMatchDelay` (8 秒) 自动漫游回大厅；若无活跃房间则返回 `MainMenuMap`。
+
+---
+
+### 30.4 经典爆破对决 (BDM) 与 CS 风格经济系统
+
+继承自 Search & Destroy，并引入局内赏金经济与商店（`BP_BDMGameMode`，地图 `Lvl_BombDefuceMatch`）。
+
+#### 30.4.1 回合阶段流转
+```
+WaitingForPlayers（等待双方最低人数，超时 120 秒关房）
+       ↓
+    Warmup（暖身 3 秒）
+       ↓
+Freeze / 购买阶段（BuyTime：20 秒，禁止移动，可按 B 购枪）
+       ↓
+     Live（回合实战 115 秒，下包/拆包/对抗）
+       ↓
+   PostRound（回合结束 5 秒，允许自由移动）
+```
+
+#### 30.4.2 购枪经济与商店
+- **商店按键**：按 **B** 键触发 `IA_BuyShop_Runtime`（`IMC_BuyShop_Runtime`，优先级 1），呼出 `UBuyShopScreen`（`WBP_BuyShop`）。仅在 `Warmup` 与 `Freeze`（购买阶段）开放，`Live` 战斗打响时自动关闭。
+- **经济参数**：
+  - `StartMoney`：$800
+  - `MaxMoney`：$16000
+  - `KillReward`：$300
+  - `RoundWinReward`：$3250
+  - `RoundLossReward`：$1400
+- **出生配装规则**：
+  - BDM 模式开局不带预设长枪，仅发放默认副手手枪（`BuyCatalog` 中 `Price == 0` 的手枪，如 Glock18）与小刀。
+  - 购买任何长枪后，服务器立即自动将其装配至手上（`Auth_ApplyBoughtWeapon`）。
+
+---
+
+### 30.5 真第一人称队友观战系统
+
+在爆破与 BDM 模式中，阵亡玩家（在死亡镜头播完及 `SpectateDelay` 3 秒后）或中途加入的玩家自动进入第一人称队友观战（`bSpectating = true`）：
+
+1. **状态同步**：服务器调用 `Auth_StartSpectating()`，`bSpectating` 与 `SpectateTarget` 复制到拥有者端（`OnRep_Spectate`）。
+2. **本地视角与模型呈现**：`AShooterPlayerController::SyncSpectatedCharacter()` 检测当前被观察的角色，调用 `SetFirstPersonViewedLocally(true)`：
+   - 解除弹簧臂控制旋转跟随（`SpringArm->bUsePawnControlRotation = false`），将其锁定至角色的 `GetFixedAimRotation()`；
+   - 强制将被观察角色的 1P 骨骼网格体设为 `AlwaysTickPoseAndRefreshBones`；
+   - 本地呈现被观战角色的 1P 手臂与武器模型，并对本地观战者隐藏其 3P 身体网格。
+3. **第一人称动画镜像**：
+   - 远端广播 `Multicast_FireWeapon` 时，`UCombatComponent::PlaySpectated1PFire()` 驱动本地被观战角色的 1P 武器与手臂开火蒙太奇；
+   - 远端广播 `Multicast_ReloadWeapon` 时，本地驱动 `PlaySpectated1PReload(ReloadType)`。
+4. **切人操作**：
+   - 按**鼠标左键**（`IA_SpectateNext_Runtime`）触发 `Server_SpectateNext()` 顺位切换下一位存活队友。
+   - 当正在观战的目标阵亡时，系统自动切换至下一个存活队友。
+
+---
+
+### 30.6 世界交互接口 (`IInteractable`) 与地面武器拾取 (`AWeaponPickup`)
+
+#### 30.6.1 `IInteractable` 接口
+| 方法 | 说明 |
+| --- | --- |
+| `CanInteract(Pawn)` | 当前 Pawn 是否满足交互条件 |
+| `GetInteractPrompt(Pawn)` | 显示在 HUD 准星上的交互提示文字（例如“按 F 拾取武器”） |
+| `Interact(Pawn)` | 在服务器上执行具体交互逻辑 |
+
+`AShooterPlayerController::TraceInteractable()` 每帧从相机发射一条 250 cm 的射线。命中实现接口的对象时显示提示；按下 **F** 键发送 `Server_Interact(Target)`。若未命中任何目标，在包点内长按 F 依然执行下包与拆包。
+
+#### 30.6.2 `AWeaponPickup` 武器掉落物
+- 玩家在 BDM 中阵亡时，服务器自动把主枪与手枪作为 `AWeaponPickup` 丢弃在地面（`Auth_DropWeaponsOnDeath`）。
+- 复制 `WeaponClass` 与 `Attachments` 配件数组；生成附带配件的 3P 网格体模型。
+- **地面吸附（SnapToGround）**：利用对 `ECC_WorldStatic` 的向下射线检测，自动将掉落武器贴紧地面（此机制同样修复了 C4 炸弹 `ABombActor` 悬空的问题）。
+- **拾取置换**：按 F 捡起掉落物时，玩家对应槽位原有的枪支会被换下并丢弃在地面上。
+
+---
+
+### 30.7 实时 Tab 计分板与助攻统计
+
+#### 30.7.1 `UScoreboardScreen` / `UScoreboardRowWidget`
+- **操作方式**：按住 **Tab** 键触发 `IA_Scoreboard_Runtime`（优先级 1），将 `WBP_Scoreboard` 贴到视口；松开 Tab 键自动销毁/隐藏。
+- **定时刷新**：每 0.25 秒（`RefreshInterval`）自动更新列表，按照击杀数降序、死亡数升序排序展示。
+- **行数据显示**：包含玩家昵称、击杀数、死亡数、助攻数与延迟，并对本地玩家高亮显示。
+
+#### 30.7.2 助攻统计机制
+- `AShooterGameModeBase::NotifyDamage` 在 `RecentDamage` 中记录攻击者对受害者的伤害时间戳。
+- 触发 `OnPlayerKilled` 时，所有在 `AssistWindow` 窗口期内对受害者造成过伤害且非击杀者、非自残的玩家，均通过 `AShooterPlayerState::AddAssist()` 计入助攻。
+- 受害者阵亡后，其伤害记录立即被清空。
+
+---
+
+### 30.8 耐力系统参数调优
+- `UStatsComponent::StaminaDrainRate` 调整为 `10.f`（相比原始的 20.f 消耗率降低 50%）。
+- `UStatsComponent::JumpStaminaCost` 调整为 `8.f`（相比原始的 15.f 降低近半）。
