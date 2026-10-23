@@ -10,11 +10,11 @@ public class FPS : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "PhysicsCore", "UMG", "Niagara" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "CoreOnline", "OnlineSubsystem", "OnlineSubsystemUtils" });
-		
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
-
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"Slate", "SlateCore", "CoreOnline",
+			"OnlineSubsystem", "OnlineSubsystemUtils",
+			"OnlineSubsystemEOS", "EOSShared", "EOSSDK"
+			// EOS：用 IOnlineSubsystemEOS 拿平台句柄做 DeviceId（Plugins/OnlineSubsystemEOS 是项目覆盖版，开了 ADD_USER_LOGIN_INFO）
+		});
 	}
 }

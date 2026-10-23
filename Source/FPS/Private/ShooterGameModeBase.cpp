@@ -66,7 +66,12 @@ void AShooterGameModeBase::OnPlayerKilled(AController* KillerController, AContro
 	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
 	{
 		UTexture2D* WeaponIcon = nullptr;
-		if (APawn* KillerPawn = IsValid(KillerController) ? KillerController->GetPawn() : nullptr)
+		// 优先用真正的伤害来源（子弹/刀/手雷/炸弹），没有才退回手里拿的枪
+		if (bHasPendingDamageIcon)
+		{
+			WeaponIcon = PendingDamageIcon;
+		}
+		else if (APawn* KillerPawn = IsValid(KillerController) ? KillerController->GetPawn() : nullptr)
 		{
 			if (const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(KillerPawn))
 			{

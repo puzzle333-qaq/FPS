@@ -11,6 +11,8 @@ class UModeHudWidget;
 class AShooterPlayerState;
 
 // 所有局内模式的父类：击杀记录、击杀播报、定时复活。靶场/死斗直接用它，团队竞技用 ATDMGameMode，爆破用 ASearchDestroyGameMode
+class UTexture2D;
+
 UCLASS()
 class FPS_API AShooterGameModeBase : public AGameModeBase
 {
@@ -38,6 +40,10 @@ public:
 
 	// 由角色在服务器上调用：记录谁打过谁（算助攻）
 	void NotifyDamage(AController* InstigatorController, AController* VictimController);
+
+	// 击杀播报用的伤害来源图标：调用 DoDamage 之前 Set，之后 Clear（同步调用，期间致死就用它）
+	void SetPendingDamageIcon(UTexture2D* Icon) { PendingDamageIcon = Icon; bHasPendingDamageIcon = true; }
+	void ClearPendingDamageIcon() { PendingDamageIcon = nullptr; bHasPendingDamageIcon = false; }
 
 	// 死前多少秒内造成过伤害算助攻
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Match")
@@ -78,4 +84,8 @@ protected:
 	TMap<TWeakObjectPtr<AController>, TMap<TWeakObjectPtr<AController>, float>> RecentDamage;
 	void ClearRespawnTimers();
 	void AssignShortPlayerName(APlayerController* NewPlayer);
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> PendingDamageIcon;
+	bool bHasPendingDamageIcon = false;
 };

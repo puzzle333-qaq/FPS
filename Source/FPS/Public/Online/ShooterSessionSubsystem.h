@@ -28,6 +28,7 @@ struct FRoomBrowserEntry
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRoomsFound, bool, bSuccess, const TArray<FRoomBrowserEntry>&, Rooms);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRoomJoinFailed, const FText&, Reason);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnOnlineLoginChanged, bool, bLoggedIn, const FString&, Status);
 
 // 房间会话（与在线服务无关的封装）。现在走 OnlineSubsystem Null（局域网），
 // 以后换 Steam/EOS：改 ini 的 DefaultPlatformService + 插件，这里的接口不变。
@@ -38,8 +39,33 @@ class FPS_API UShooterSessionSubsystem : public UGameInstanceSubsystem
 	GENERATED_BODY()
 
 public:
-	// ---- 服务器 ----
-	// 发布/更新房间信息（没有会话就创建）
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+	// ---- 在线登录（EOS Connect）----
+	// 已登录 EOS（或 fps.OnlineUseNull=1 时总是 true）
+	UFUNCTION(BlueprintPure, Category = "FPS|Online")
+	bool IsOnlineReady() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Online")
+	bool IsOnlineLoggingIn() const { return bLoggingIn; }
+
+	// 当前状态文字（正在连接… / 登录失败: xxx / 已登录）
+	UFUNCTION(BlueprintPure, Category = "FPS|Online")
+	FString GetOnlineStatus() const { return OnlineStatus; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Online")
+	FString GetProductUserId() const { return ProductUserId; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Online")
+	void RetryOnlineLogin();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Online")
+	static bool IsUsingNullSessions();
+
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Online")
+	FOnOnlineLoginChanged OnOnlineLoginChanged;
+
+	// ---- 服务器 ----	// 发布/更新房间信息（没有会话就创建）
 	void AdvertiseRoom(const FString& RoomCode, EShooterGameMode Mode, int32 Players, int32 MaxPlayers, const FString& HostName, bool bInGame);
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Session")
@@ -92,6 +118,29 @@ private:
 	void DoJoin(int32 ResultIndex);
 	void FailJoin(const FText& Reason);
 
+	// 登录
+	void StartOnlineLogin();
+	void LoginWithType(const FString& Type);
+	void EnsureDeviceIdThenLogin(bool bFresh);
+	void HandleLoginComplete(int32 LocalUserNum, bool bOk, const FUniqueNetId& UserId, const FString& Error);
+	void SetOnlineState(bool bReady, const FString& Status);
+	FString GetLoginDisplayName() const;
+	void ApplyNetDriverForMode();
+	static void OnUseNullChanged(IConsoleVariable* Var);
+
+public:
+	// 设备 ID 回调（EOS SDK 静态回调里调用）
+	void OnDeviceIdReady(bool bOk, const FString& Info);
+	void OnDeviceIdDeleted();
+
+private:
+	bool bOnlineReady = false;
+	bool bLoggingIn = false;
+	bool bFreshDeviceDone = false;
+	FString OnlineStatus;
+	FString ProductUserId;
+	FDelegateHandle LoginHandle;
+
 	TSharedPtr<FOnlineSessionSearch> Search;
 	TArray<FRoomBrowserEntry> LastRooms;
 	EShooterGameMode SearchMode = EShooterGameMode::TDM;
@@ -100,6 +149,15 @@ private:
 	bool bCreating = false;
 	FString PendingJoinCode;
 	int32 PendingJoinIndex = INDEX_NONE;
+
+	// 最近一次 Advertise 参数（Create 完成时补 Update，避免丢 ROOMMODE/人数）
+	bool bHasLastAdvertise = false;
+	FString LastAdvCode;
+	EShooterGameMode LastAdvMode = EShooterGameMode::TDM;
+	int32 LastAdvPlayers = 1;
+	int32 LastAdvMaxPlayers = 10;
+	FString LastAdvHost;
+	bool LastAdvInGame = false;
 
 	FDelegateHandle CreateHandle, FindHandle, JoinHandle, DestroyHandle;
 };

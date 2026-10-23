@@ -203,6 +203,7 @@ void ALobbyGameMode::UpdateSessionAdvertisement(bool bInGame)
 			if (PS && !PS->IsInactive()) ++Players;
 		}
 	}
+	Players = FMath::Max(Players, GetNumPlayers());
 	if (const ALobbyGameState* GS = GetLobbyState())
 	{
 		if (const APlayerState* Host = GS->GetHostPlayerState()) HostName = Host->GetPlayerName();

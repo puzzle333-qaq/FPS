@@ -40,7 +40,7 @@ void URoomBrowserRowWidget::Setup(const FRoomBrowserEntry& InEntry, URoomBrowser
 	if (Text_Players) Text_Players->SetText(FText::Format(NSLOCTEXT("Browser", "Players", "{0}/{1}"), FText::AsNumber(Entry.Players), FText::AsNumber(Entry.MaxPlayers)));
 	if (Text_Ping) Text_Ping->SetText(FText::Format(NSLOCTEXT("Browser", "Ping", "{0} ms"), FText::AsNumber(Entry.PingMs)));
 	if (Text_Host) Text_Host->SetText(FText::FromString(Entry.HostName));
-	if (Button_Join) Button_Join->SetIsEnabled(!Entry.bInGame && (Entry.MaxPlayers <= 0 || Entry.Players < Entry.MaxPlayers));
+	if (Button_Join) Button_Join->SetIsEnabled(!Entry.bInGame && (Entry.MaxPlayers <= 0 || Entry.Players < Entry.MaxPlayers)); // 满员才禁用；人数显示错成 Max 时会误灰
 	OnEntrySet(Entry);
 }
 
@@ -69,7 +69,9 @@ void URoomBrowserScreen::NativeConstruct()
 	{
 		S->OnRoomsFound.AddUniqueDynamic(this, &ThisClass::HandleRoomsFound);
 		S->OnJoinFailed.AddUniqueDynamic(this, &ThisClass::HandleJoinFailed);
+		S->OnOnlineLoginChanged.AddUniqueDynamic(this, &ThisClass::HandleOnlineLoginChanged);
 	}
+	if (Button_RetryLogin) Button_RetryLogin->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRetryLogin);
 	if (const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>())
 	{
 		Mode = GI->SelectedMode;
@@ -83,6 +85,7 @@ void URoomBrowserScreen::NativeDestruct()
 	{
 		S->OnRoomsFound.RemoveDynamic(this, &ThisClass::HandleRoomsFound);
 		S->OnJoinFailed.RemoveDynamic(this, &ThisClass::HandleJoinFailed);
+		S->OnOnlineLoginChanged.RemoveDynamic(this, &ThisClass::HandleOnlineLoginChanged);
 	}
 	Super::NativeDestruct();
 }
@@ -92,7 +95,46 @@ void URoomBrowserScreen::SetMode(EShooterGameMode InMode)
 	Mode = InMode;
 	if (UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>()) GI->SelectMode(Mode);
 	if (Text_Mode) Text_Mode->SetText(FPS_ModeName(GetGameInstance(), Mode));
-	RefreshRooms();
+	UpdateOnlineUI();
+	if (bLastOnlineReady) RefreshRooms();
+	// 上次断线 / 开房失败的原因（回到主菜单后显示一次）
+	if (UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>())
+	{
+		if (!GI->GetLastOnlineError().IsEmpty())
+		{
+			SetStatus(FText::FromString(GI->GetLastOnlineError()));
+			GI->ClearLastOnlineError();
+		}
+	}
+}
+
+void URoomBrowserScreen::UpdateOnlineUI()
+{
+	UShooterSessionSubsystem* S = GetSessions();
+	const bool bReady = S && S->IsOnlineReady();
+	bLastOnlineReady = bReady;
+	if (Button_Create) Button_Create->SetIsEnabled(bReady);
+	if (Button_Refresh) Button_Refresh->SetIsEnabled(bReady);
+	if (Button_JoinCode) Button_JoinCode->SetIsEnabled(bReady);
+	const bool bFailed = S && !bReady && !S->IsOnlineLoggingIn();
+	if (Button_RetryLogin) Button_RetryLogin->SetVisibility(bFailed ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (!bReady)
+	{
+		const FString St = S ? S->GetOnlineStatus() : FString();
+		SetStatus(FText::FromString(St.IsEmpty() ? TEXT("正在连接在线服务…") : St));
+	}
+}
+
+void URoomBrowserScreen::HandleOnlineLoginChanged(bool bLoggedIn, const FString& Status)
+{
+	const bool bWasReady = bLastOnlineReady;
+	UpdateOnlineUI();
+	if (bLoggedIn && !bWasReady) RefreshRooms(); // 登录成功后自动刷新
+}
+
+void URoomBrowserScreen::HandleRetryLogin()
+{
+	if (UShooterSessionSubsystem* S = GetSessions()) S->RetryOnlineLogin();
 }
 
 void URoomBrowserScreen::SetStatus(const FText& InText)
@@ -104,6 +146,7 @@ void URoomBrowserScreen::RefreshRooms()
 {
 	UShooterSessionSubsystem* S = GetSessions();
 	if (!S) return;
+	if (!S->IsOnlineReady()) { UpdateOnlineUI(); return; }
 	SetStatus(NSLOCTEXT("Browser", "Searching", "正在搜索房间…"));
 	S->FindRooms(Mode, false);
 }
@@ -140,7 +183,9 @@ void URoomBrowserScreen::CreateRoom()
 	SetStatus(NSLOCTEXT("Browser", "Creating", "正在创建房间…"));
 	if (!GI->CreateRoom(Mode))
 	{
-		SetStatus(NSLOCTEXT("Browser", "CreateFail", "创建失败：GameInstance 没填 RoomLobbyMap"));
+		const FString Err = GI->GetLastOnlineError();
+		SetStatus(Err.IsEmpty() ? NSLOCTEXT("Browser", "CreateFail", "创建失败：GameInstance 没填 RoomLobbyMap") : FText::FromString(Err));
+		GI->ClearLastOnlineError();
 	}
 }
 

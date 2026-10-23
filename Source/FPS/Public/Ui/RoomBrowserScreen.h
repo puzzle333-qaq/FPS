@@ -98,6 +98,8 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Back;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Status;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Mode;
+	// 可选：登录失败时显示的「重试」按钮
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_RetryLogin;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Session")
 	TSubclassOf<URoomBrowserRowWidget> RowWidgetClass;
@@ -112,6 +114,10 @@ private:
 	UFUNCTION() void HandleBack();
 	UFUNCTION() void HandleRoomsFound(bool bSuccess, const TArray<FRoomBrowserEntry>& Rooms);
 	UFUNCTION() void HandleJoinFailed(const FText& Reason);
+	UFUNCTION() void HandleOnlineLoginChanged(bool bLoggedIn, const FString& Status);
+	UFUNCTION() void HandleRetryLogin();
+	void UpdateOnlineUI();
+	bool bLastOnlineReady = false;
 
 	UShooterSessionSubsystem* GetSessions() const;
 	FString GetCodeInput() const;
