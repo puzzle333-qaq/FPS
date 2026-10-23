@@ -387,3 +387,9 @@ Content/__ExternalObjects__/
 
 # Third-party animation assets (not redistributable)
 Content/FPS/Animation/
+
+# EOS / online secrets (never commit)
+Config/EOSClientSecret.ini
+Config/*Secret*
+Config/*secret*
+**/EOS_Secret.local
