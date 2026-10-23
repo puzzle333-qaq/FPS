@@ -41,6 +41,17 @@ class FPS_API UShooterGameInstance : public UGameInstance
 public:
 	UShooterGameInstance();
 	virtual void Init() override;
+	virtual void Shutdown() override;
+
+	// ---------- 在线/网络错误（断线、Listen 失败等，回主菜单后显示）----------
+	UFUNCTION(BlueprintPure, Category = "FPS|Online")
+	FString GetLastOnlineError() const { return LastOnlineError; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Online")
+	void ClearLastOnlineError() { LastOnlineError.Reset(); }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Online")
+	void SetLastOnlineError(const FString& Error);
 
 	// ---------- 模式表 ----------
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Mode")
@@ -151,6 +162,11 @@ public:
 private:
 	UPROPERTY()
 	FLoadoutPreset CurrentLoadout;
+
+	FString LastOnlineError;
+	FDelegateHandle NetFailHandle, TravelFailHandle;
+	void HandleNetworkFailure(UWorld* World, class UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString);
+	void HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& ErrorString);
 
 	bool TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, bool bListen, const TArray<FString>& ExtraOptions = TArray<FString>());
 };

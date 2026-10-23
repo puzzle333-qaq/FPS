@@ -9,6 +9,7 @@ class UUserWidget;
 class UGunsmithComponent;
 class URoomBrowserScreen;
 class UWidgetSwitcher;
+class USettingsScreen;
 
 // 主菜单控制器：开局创建 MainMenuWidgetClass，切成纯 UI 输入并显示鼠标。改枪台逻辑在 Gunsmith 组件上
 UCLASS()
@@ -40,6 +41,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Menu")
 	bool IsRoomBrowserEmbedded() const;
 
+	// ---- 设置页 ----
+	// 填 WBP_Settings（父类 SettingsScreen）。WBP_MainMenu 的 Switcher 里有名为 SettingsPage 的页时优先切页
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Menu")
+	TSubclassOf<USettingsScreen> SettingsWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
+	void ShowSettings();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
+	void HideSettings();
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Menu")
 	URoomBrowserScreen* GetRoomBrowser() const { return RoomBrowser; }
 
@@ -61,4 +73,9 @@ private:
 
 	TWeakObjectPtr<UWidgetSwitcher> EmbeddedSwitcher;
 	int32 PreviousSwitcherIndex = 0;
+
+	UPROPERTY()
+	TObjectPtr<USettingsScreen> SettingsScreen;
+	TWeakObjectPtr<UWidgetSwitcher> SettingsSwitcher;
+	int32 SettingsPrevIndex = 0;
 };

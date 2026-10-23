@@ -36,6 +36,9 @@ ALoadoutPreviewRig::ALoadoutPreviewRig()
 	// 没有天空时按勒克斯打光会全黑，整备预览用无光照，保证模型看得到。
 	CaptureComponent->ShowFlags.SetLighting(false);
 
+	Pivot = CreateDefaultSubobject<USceneComponent>(TEXT("Pivot"));
+	Pivot->SetupAttachment(Root);
+
 	KeyLight = CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("KeyLight"));
 	KeyLight->SetupAttachment(Root);
 	KeyLight->SetMobility(EComponentMobility::Movable);
@@ -77,6 +80,8 @@ void ALoadoutPreviewRig::ClearPreviews()
 		}
 	}
 	PreviewComponents.Reset();
+	SlotComponents.Reset();
+	MountComponents.Reset();
 }
 
 void ALoadoutPreviewRig::ShowWeapons(const TArray<AWeapon*>& Weapons)
@@ -117,13 +122,14 @@ void ALoadoutPreviewRig::SpawnPreview(AWeapon* Weapon, int32 Index)
 
 	// 原点偏在枪托一侧，往 -Y 挪一点让枪身落在格子中间。上中下各隔 90。
 	const float Height = (1 - Index) * RowSpacing;
-	Mesh->SetupAttachment(GetRootComponent());
+	Mesh->SetupAttachment(IsValid(Pivot) ? Pivot.Get() : GetRootComponent());
 	// Per-weapon preview transform (AWeapon::PreviewRotationOffset / PreviewLocationOffset / PreviewScale).
 	Mesh->SetRelativeLocation(Weapon->PreviewLocationOffset + FVector(0.f, 0.f, Height));
 	Mesh->SetRelativeRotation(Weapon->PreviewRotationOffset);
 	Mesh->SetRelativeScale3D(FVector(FMath::Max(Weapon->PreviewScale, 0.01f)));
 	Mesh->RegisterComponent();
 	PreviewComponents.Add(Mesh);
+	MountComponents.Add(Mesh);
 
 	struct FPreviewPiece
 	{
@@ -174,6 +180,8 @@ void ALoadoutPreviewRig::SpawnPreview(AWeapon* Weapon, int32 Index)
 		AttachmentMesh->RegisterComponent();
 		PreviewComponents.Add(AttachmentMesh);
 		SpawnedAttachments.Add(AttachmentMesh);
+		MountComponents.Add(AttachmentMesh);
+		SlotComponents.Add(Piece.Data->SlotTag, AttachmentMesh);
 	};
 
 	// 和枪上的生成顺序一样：先挂枪，再挂护木这类已经生成的配件。
@@ -199,4 +207,91 @@ void ALoadoutPreviewRig::SpawnPreview(AWeapon* Weapon, int32 Index)
 	{
 		SpawnPiece(Piece, Mesh);
 	}
+}
+
+void ALoadoutPreviewRig::SetViewRotation(const FRotator& Rotation)
+{
+	if (!IsValid(Pivot)) return;
+	FRotator R = Rotation;
+	R.Pitch = FMath::Clamp(R.Pitch, -60.f, 60.f);
+	R.Roll = 0.f;
+	Pivot->SetRelativeRotation(R);
+	Capture();
+}
+
+FRotator ALoadoutPreviewRig::GetViewRotation() const
+{
+	return IsValid(Pivot) ? Pivot->GetRelativeRotation() : FRotator::ZeroRotator;
+}
+
+void ALoadoutPreviewRig::SetViewOrthoWidth(float Width)
+{
+	if (!IsValid(CaptureComponent)) return;
+	CaptureComponent->OrthoWidth = FMath::Max(Width, 5.f);
+	Capture();
+}
+
+float ALoadoutPreviewRig::GetViewOrthoWidth() const
+{
+	return IsValid(CaptureComponent) ? CaptureComponent->OrthoWidth : OrthoWidth;
+}
+
+void ALoadoutPreviewRig::SetViewPan(const FVector2D& PanYZ)
+{
+	if (!IsValid(CaptureComponent)) return;
+	CaptureComponent->SetRelativeLocation(FVector(400.f, PanYZ.X, PanYZ.Y));
+	Capture();
+}
+
+FVector2D ALoadoutPreviewRig::GetViewPan() const
+{
+	if (!IsValid(CaptureComponent)) return FVector2D::ZeroVector;
+	const FVector L = CaptureComponent->GetRelativeLocation();
+	return FVector2D(L.Y, L.Z);
+}
+
+FVector2D ALoadoutPreviewRig::WorldToPan(const FVector& World) const
+{
+	const FVector Local = GetActorTransform().InverseTransformPosition(World);
+	return FVector2D(Local.Y, Local.Z);
+}
+
+bool ALoadoutPreviewRig::ProjectWorldToUV(const FVector& World, FVector2D& OutUV) const
+{
+	if (!IsValid(CaptureComponent)) return false;
+	// 正交相机：相机空间 X 朝前，Y 朝右，Z 朝上
+	const FVector Cam = CaptureComponent->GetComponentTransform().InverseTransformPosition(World);
+	const float W = FMath::Max(CaptureComponent->OrthoWidth, 1.f);
+	const float Aspect = RenderTargetHeight > 0 ? float(RenderTargetWidth) / float(RenderTargetHeight) : 1.f;
+	const float H = W / FMath::Max(Aspect, 0.01f);
+	OutUV = FVector2D(0.5f + Cam.Y / W, 0.5f - Cam.Z / H);
+	return OutUV.X >= 0.f && OutUV.X <= 1.f && OutUV.Y >= 0.f && OutUV.Y <= 1.f;
+}
+
+bool ALoadoutPreviewRig::GetSlotWorldLocation(const AWeapon* Weapon, const FGameplayTag& SlotTag, FVector& OutWorld) const
+{
+	if (const TObjectPtr<USceneComponent>* Found = SlotComponents.Find(SlotTag))
+	{
+		if (IsValid(*Found))
+		{
+			OutWorld = (*Found)->Bounds.Origin;
+			return true;
+		}
+	}
+	if (!IsValid(Weapon)) return false;
+	FName SocketName = NAME_None;
+	for (const FWeaponAttachmentSlot& Slot : Weapon->GetAttachmentSlots())
+	{
+		if (Slot.SlotTag.MatchesTagExact(SlotTag)) { SocketName = Slot.SocketName; break; }
+	}
+	if (SocketName.IsNone()) return false;
+	for (const TObjectPtr<USceneComponent>& Comp : MountComponents)
+	{
+		if (IsValid(Comp) && Comp->DoesSocketExist(SocketName))
+		{
+			OutWorld = Comp->GetSocketLocation(SocketName);
+			return true;
+		}
+	}
+	return false;
 }

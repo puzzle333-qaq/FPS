@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "GameplayTagContainer.h"
 #include "LoadoutPreviewRig.generated.h"
 
 class USceneCaptureComponent2D;
@@ -24,6 +25,21 @@ public:
 	// Weapons 按界面从上到下的顺序，最多三把。空位不生成模型。
 	void ShowWeapons(const TArray<AWeapon*>& Weapons);
 	void Capture();
+
+	// ---- 改枪台视角：拖拽旋转 / 缩放 / 对准某个槽位 ----
+	void SetViewRotation(const FRotator& Rotation);
+	FRotator GetViewRotation() const;
+	void SetViewOrthoWidth(float Width);
+	float GetViewOrthoWidth() const;
+	// 相机平移到 Rig 局部 (Y,Z)。ResetView 回到正中。
+	void SetViewPan(const FVector2D& PanYZ);
+	FVector2D GetViewPan() const;
+	// 世界坐标 -> 预览贴图 UV（0~1，左上为 0）。在画面外返回 false。
+	bool ProjectWorldToUV(const FVector& World, FVector2D& OutUV) const;
+	// 世界坐标 -> Rig 局部 (Y,Z)，给 SetViewPan 用
+	FVector2D WorldToPan(const FVector& World) const;
+	// 槽位在预览里的世界位置：装了配件取配件包围盒中心，否则取槽位 Socket。
+	bool GetSlotWorldLocation(const AWeapon* Weapon, const FGameplayTag& SlotTag, FVector& OutWorld) const;
 
 	// 渲染贴图尺寸（像素）。整备界面 PreviewImage 的笔刷尺寸跟着它
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Loadout", meta = (ClampMin = "16"))
@@ -49,6 +65,15 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<USceneCaptureComponent2D> CaptureComponent;
+
+	UPROPERTY()
+	TObjectPtr<USceneComponent> Pivot;
+
+	UPROPERTY()
+	TMap<FGameplayTag, TObjectPtr<USceneComponent>> SlotComponents;
+
+	UPROPERTY()
+	TArray<TObjectPtr<USceneComponent>> MountComponents;
 
 	UPROPERTY()
 	TObjectPtr<UDirectionalLightComponent> KeyLight;

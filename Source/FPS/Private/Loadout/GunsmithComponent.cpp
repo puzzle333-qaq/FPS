@@ -181,3 +181,114 @@ void UGunsmithComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	Super::EndPlay(EndPlayReason);
 }
+void UGunsmithComponent::RotatePreview(float DeltaYaw, float DeltaPitch)
+{
+	if (!IsValid(PreviewRig)) return;
+	FRotator R = PreviewRig->GetViewRotation();
+	R.Yaw += DeltaYaw;
+	R.Pitch += DeltaPitch;
+	PreviewRig->SetViewRotation(R);
+}
+
+void UGunsmithComponent::ZoomPreview(float Delta)
+{
+	if (!IsValid(PreviewRig) || FMath::IsNearlyZero(Delta)) return;
+	const float Width = PreviewRig->GetViewOrthoWidth() * FMath::Pow(0.9f, Delta);
+	PreviewRig->SetViewOrthoWidth(FMath::Clamp(Width, MinOrthoWidth, FMath::Max(MaxOrthoWidth, MinOrthoWidth)));
+}
+
+bool UGunsmithComponent::FocusSlot(FGameplayTag SlotTag)
+{
+	FVector World;
+	if (!IsValid(PreviewRig) || !PreviewRig->GetSlotWorldLocation(PreviewWeapon, SlotTag, World)) return false;
+	PreviewRig->SetViewPan(PreviewRig->WorldToPan(World));
+	PreviewRig->SetViewOrthoWidth(FocusOrthoWidth);
+	return true;
+}
+
+void UGunsmithComponent::ResetPreviewView()
+{
+	if (!IsValid(PreviewRig)) return;
+	PreviewRig->SetViewRotation(FRotator::ZeroRotator);
+	PreviewRig->SetViewPan(FVector2D::ZeroVector);
+	PreviewRig->SetViewOrthoWidth(PreviewOrthoWidth);
+}
+
+bool UGunsmithComponent::GetSlotScreenUV(FGameplayTag SlotTag, FVector2D& OutUV) const
+{
+	FVector World;
+	return IsValid(PreviewRig)
+		&& PreviewRig->GetSlotWorldLocation(PreviewWeapon, SlotTag, World)
+		&& PreviewRig->ProjectWorldToUV(World, OutUV);
+}
+
+void UGunsmithComponent::ComputeStats(const TArray<UAttachmentData*>& Attachments, TArray<FGunsmithStatLine>& Out) const
+{
+	Out.Reset();
+	if (!IsValid(PreviewWeapon)) return;
+
+	float Damage = PreviewWeapon->Damage * FMath::Max(PreviewWeapon->PelletsPerShot, 1);
+	float Accuracy = 50.f, Control = 50.f, Range = 50.f, Mobility = 50.f;
+	int32 Mag = PreviewWeapon->AuthoredMagCapacity > 0 ? PreviewWeapon->AuthoredMagCapacity : PreviewWeapon->MagCapacity;
+	for (const UAttachmentData* A : Attachments)
+	{
+		if (!IsValid(A)) continue;
+		Damage += A->StatDamage;
+		Accuracy += A->StatAccuracy + (1.f - A->HipFireSpreadMultiplier) * 100.f;
+		Control += A->StatControl + (1.f - A->RecoilMultiplier) * 100.f;
+		Range += A->StatRange;
+		Mobility += A->StatMobility;
+		if (A->MagazineCapacity > 0) Mag = A->MagazineCapacity;
+	}
+
+	auto Add = [&Out](const TCHAR* Id, const FText& Label, float Value, float Max)
+	{
+		FGunsmithStatLine Line;
+		Line.StatId = Id;
+		Line.Label = Label;
+		Line.Current = Line.Preview = Value;
+		Line.Max = Max;
+		Out.Add(Line);
+	};
+	Add(TEXT("Damage"), NSLOCTEXT("Gunsmith", "Damage", "伤害"), FMath::Max(Damage, 0.f), StatMaxDamage);
+	Add(TEXT("Accuracy"), NSLOCTEXT("Gunsmith", "Accuracy", "精准"), FMath::Clamp(Accuracy, 0.f, 100.f), 100.f);
+	Add(TEXT("Control"), NSLOCTEXT("Gunsmith", "Control", "操控"), FMath::Clamp(Control, 0.f, 100.f), 100.f);
+	Add(TEXT("Range"), NSLOCTEXT("Gunsmith", "Range", "射程"), FMath::Clamp(Range, 0.f, 100.f), 100.f);
+	Add(TEXT("Mobility"), NSLOCTEXT("Gunsmith", "Mobility", "机动"), FMath::Clamp(Mobility, 0.f, 100.f), 100.f);
+	Add(TEXT("Magazine"), NSLOCTEXT("Gunsmith", "Magazine", "弹匣"), float(Mag), FMath::Max(100.f, float(Mag)));
+}
+
+TArray<FGunsmithStatLine> UGunsmithComponent::GetCurrentStats() const
+{
+	TArray<FGunsmithStatLine> Lines;
+	if (IsValid(PreviewWeapon)) ComputeStats(PreviewWeapon->GetEquippedAttachments(), Lines);
+	return Lines;
+}
+
+TArray<FGunsmithStatLine> UGunsmithComponent::GetStatPreview(FGameplayTag SlotTag, UAttachmentData* Candidate) const
+{
+	TArray<FGunsmithStatLine> Lines;
+	if (!IsValid(PreviewWeapon)) return Lines;
+	const TArray<UAttachmentData*> Current = PreviewWeapon->GetEquippedAttachments();
+	ComputeStats(Current, Lines);
+
+	const FGameplayTag Slot = IsValid(Candidate) ? Candidate->SlotTag : SlotTag;
+	TArray<UAttachmentData*> Next;
+	for (UAttachmentData* A : Current)
+	{
+		if (!IsValid(A) || A->SlotTag.MatchesTagExact(Slot)) continue;
+		// 候选配件会锁住的槽（短护木 -> 握把）在对比里也去掉
+		if (IsValid(Candidate) && Candidate->BlockedSlots.HasTagExact(A->SlotTag)) continue;
+		Next.Add(A);
+	}
+	if (IsValid(Candidate)) Next.Add(Candidate);
+
+	TArray<FGunsmithStatLine> After;
+	ComputeStats(Next, After);
+	for (int32 i = 0; i < Lines.Num() && i < After.Num(); ++i)
+	{
+		Lines[i].Preview = After[i].Current;
+		Lines[i].Max = FMath::Max(Lines[i].Max, After[i].Max);
+	}
+	return Lines;
+}

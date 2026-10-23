@@ -1,4 +1,10 @@
 #include "ShooterGameInstance.h"
+#include "OnlineSubsystem.h"
+#include "OnlineSubsystemNames.h"
+#include "Interfaces/OnlineIdentityInterface.h"
+#include "Engine/Engine.h"
+
+extern bool GFPS_SessionJoinInProgress;
 
 #include "Loadout/ShooterLoadoutSave.h"
 #include "Weapon/Weapon.h"
@@ -29,6 +35,30 @@ void UShooterGameInstance::Init()
 {
 	Super::Init();
 	LoadLoadout();
+
+	if (GEngine)
+	{
+		NetFailHandle = GEngine->OnNetworkFailure().AddUObject(this, &ThisClass::HandleNetworkFailure);
+		TravelFailHandle = GEngine->OnTravelFailure().AddUObject(this, &ThisClass::HandleTravelFailure);
+	}
+	// Phase1/2 smoke: Steam/EOS plugin presence (Steam often fails in PIE — use Standalone)
+	IOnlineSubsystem* DefaultOSS = IOnlineSubsystem::Get();
+	IOnlineSubsystem* SteamOSS = IOnlineSubsystem::Get(STEAM_SUBSYSTEM);
+	IOnlineSubsystem* EOSS = IOnlineSubsystem::Get(EOS_SUBSYSTEM);
+	IOnlineSubsystem* NullOSS = IOnlineSubsystem::Get(NULL_SUBSYSTEM);
+	UE_LOG(LogTemp, Log, TEXT("[Online] Default=%s Steam=%s EOS=%s Null=%s"),
+		DefaultOSS ? *DefaultOSS->GetSubsystemName().ToString() : TEXT("None"),
+		SteamOSS ? TEXT("ok") : TEXT("missing"),
+		EOSS ? TEXT("ok") : TEXT("missing"),
+		NullOSS ? TEXT("ok") : TEXT("missing"));
+	if (SteamOSS)
+	{
+		if (IOnlineIdentityPtr Id = SteamOSS->GetIdentityInterface())
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Online] Steam nick=%s login=%d"),
+				*Id->GetPlayerNickname(0), (int32)Id->GetLoginStatus(0));
+		}
+	}
 }
 
 bool UShooterGameInstance::GetModeInfo(EShooterGameMode Mode, FShooterModeInfo& OutInfo) const
@@ -290,8 +320,59 @@ FString UShooterGameInstance::GetNameOption() const
 	return FString::Printf(TEXT("?Name=%s"), *Name.Left(20));
 }
 
+void UShooterGameInstance::Shutdown()
+{
+	if (GEngine)
+	{
+		GEngine->OnNetworkFailure().Remove(NetFailHandle);
+		GEngine->OnTravelFailure().Remove(TravelFailHandle);
+	}
+	Super::Shutdown();
+}
+
+void UShooterGameInstance::SetLastOnlineError(const FString& Error)
+{
+	LastOnlineError = Error;
+	UE_LOG(LogTemp, Warning, TEXT("[Online] LastError: %s"), *Error);
+}
+
+void UShooterGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString)
+{
+	SetLastOnlineError(FString::Printf(TEXT("网络错误（%s）：%s"), ENetworkFailure::ToString(FailureType), *ErrorString));
+}
+
+void UShooterGameInstance::HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& ErrorString)
+{
+	SetLastOnlineError(FString::Printf(TEXT("跳转失败（%s）：%s"), ETravelFailure::ToString(FailureType), *ErrorString));
+}
+
 bool UShooterGameInstance::CreateRoom(EShooterGameMode Mode)
 {
+	// EOS NetDriver 需要已登录的本地用户才能 Listen；没登录就别跳图
+	if (UShooterSessionSubsystem* Sessions = GetSubsystem<UShooterSessionSubsystem>())
+	{
+		if (!Sessions->IsOnlineReady())
+		{
+			SetLastOnlineError(Sessions->GetOnlineStatus().IsEmpty() ? TEXT("在线服务未登录，暂时不能创建房间") : Sessions->GetOnlineStatus());
+			return false;
+		}
+	}
+	if (GFPS_SessionJoinInProgress)
+	{
+		SetLastOnlineError(TEXT("正在加入房间，不能同时创建房间"));
+		return false;
+	}
+	if (GEngine)
+	{
+		for (const FWorldContext& Ctx : GEngine->GetWorldContexts())
+		{
+			if (Ctx.OwningGameInstance == this && Ctx.PendingNetGame)
+			{
+				SetLastOnlineError(TEXT("正在连接房间，请稍候再创建"));
+				return false;
+			}
+		}
+	}
 	if (RoomLobbyMap.IsNull())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Room] CreateRoom failed: RoomLobbyMap not set in BP_ShooterGameInstance"));
