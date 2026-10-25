@@ -4,6 +4,7 @@
 #include "CombatComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "ShooterCharacter.h"
@@ -70,7 +71,29 @@ void UOpticScopeComponent::UpdateView()
 
 	// 每帧更新：倍率可能在编辑器里改，隐藏列表要跟着当前武器
 	// 拍摄 FOV 来自瞄具（可变倍率 = 当前档）。切档时平滑过去，刚开镜时直接对齐
-	const float TargetFOV = ComputeCaptureFOV(Optic);
+	// COD 式真实倍率：镜片在屏幕上占的角度 / 倍率，才是镜片里该拍的 FOV。
+	// 否则按 90 度换算的 FOV 远大于镜片张角，镜里的东西反而比镜外还小。
+	float TargetFOV = ComputeCaptureFOV(Optic);
+	{
+		const UCameraComponent* Cam = Character->GetFirstPersonCamera();
+		const FName LensName = OpticMesh->DoesSocketExist(Optic->LensSocketName) ? Optic->LensSocketName : Optic->SightSocketName;
+		if (IsValid(Cam) && IsValid(OpticMesh->GetStaticMesh()))
+		{
+			const FVector Ext = OpticMesh->GetStaticMesh()->GetBounds().BoxExtent * OpticMesh->GetComponentScale().GetAbs();
+			const float LensRadius = FMath::Min3(Ext.X, Ext.Y, Ext.Z) * 0.85f;
+			const float Dist = FVector::Dist(Cam->GetComponentLocation(), OpticMesh->GetSocketLocation(LensName));
+			if (LensRadius > 0.1f && Dist > 0.1f)
+			{
+				const float Base = Optic->BaseFOVForMagnification > 0.f ? Optic->BaseFOVForMagnification : Character->GetDefaultFieldOfView();
+				const float Mag = FMath::Max(1.f, Optic->Magnification);
+				const float TanLens = LensRadius / Dist;
+				const float TanBase = FMath::Tan(FMath::DegreesToRadians(Base * 0.5f));
+				const float TanMain = FMath::Tan(FMath::DegreesToRadians(FMath::Max(5.f, Cam->FieldOfView) * 0.5f));
+				const float Half = FMath::Atan(TanLens * TanBase / (TanMain * Mag));
+				TargetFOV = FMath::Clamp(FMath::RadiansToDegrees(2.f * Half), 1.f, TargetFOV);
+			}
+		}
+	}
 	if (!bActive || SmoothedCaptureFOV <= 0.f)
 	{
 		SmoothedCaptureFOV = TargetFOV;
@@ -101,6 +124,7 @@ void UOpticScopeComponent::UpdateView()
 		{
 			OpticMesh->SetMaterial(BoundMaterialIndex, LensMID);
 		}
+		HideGlassSlots(OpticMesh);
 	}
 }
 
@@ -115,6 +139,7 @@ bool UOpticScopeComponent::BindToOptic(UStaticMeshComponent* OpticMesh, const UA
 	// 换了倍镜：先把旧的还原
 	Deactivate();
 	RestoreLensMaterial();
+	RestoreGlassSlots();
 
 	const bool bHasLensSocket = !Optic->LensSocketName.IsNone() && OpticMesh->DoesSocketExist(Optic->LensSocketName);
 	const bool bHasSightSocket = !Optic->SightSocketName.IsNone() && OpticMesh->DoesSocketExist(Optic->SightSocketName);
@@ -190,16 +215,60 @@ bool UOpticScopeComponent::BindToOptic(UStaticMeshComponent* OpticMesh, const UA
 
 	// 只替换画面槽。准心槽保持模型上原来的材质。
 	LensMID = UMaterialInstanceDynamic::Create(PictureMaterial, this);
-	LensMID->SetTextureParameterValue(Optic->LensTextureParameterName, RenderTarget);
-	UTexture* AppliedTexture = nullptr;
-	if (!LensMID->GetTextureParameterValue(FHashedMaterialParameterInfo(Optic->LensTextureParameterName), AppliedTexture))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[OpticScope] %s 的画面材质没有贴图参数 '%s'，放大画面塞不进去"),
-			*GetNameSafe(Optic), *Optic->LensTextureParameterName.ToString());
-	}
+	// Texture param applied below after BoundMaterialIndex is chosen (multi-name probe).
 
+	// Prefer RenderTarget slot index; fall back to DA index / Lense slot.
 	BoundMaterialIndex = Optic->LensMaterialIndex;
+	// 先找靠眼睛的目镜槽 RenderTargetRear（COD 画面在目镜上），没有再找挂着 M_RenderTarget 的槽
+	{
+		const TArray<FName> MeshSlotNames = OpticMesh->GetMaterialSlotNames();
+		int32 RearIdx = INDEX_NONE, RtIdx = INDEX_NONE;
+		for (int32 i = 0; i < OpticMesh->GetNumMaterials(); ++i)
+		{
+			const FString SName = MeshSlotNames.IsValidIndex(i) ? MeshSlotNames[i].ToString() : FString();
+			const FString MName = GetNameSafe(OpticMesh->GetMaterial(i));
+			if (RearIdx == INDEX_NONE && SName.Contains(TEXT("Rear"), ESearchCase::IgnoreCase)) RearIdx = i;
+			if (RtIdx == INDEX_NONE && MName.Contains(TEXT("RenderTarget")) && !MName.Contains(TEXT("Placeholder"))) RtIdx = i;
+		}
+		if (RearIdx != INDEX_NONE) BoundMaterialIndex = RearIdx;
+		else if (RtIdx != INDEX_NONE) BoundMaterialIndex = RtIdx;
+	}
+	if (BoundMaterialIndex < 0 || BoundMaterialIndex >= OpticMesh->GetNumMaterials())
+	{
+		BoundMaterialIndex = 0;
+	}
 	OriginalLensMaterial = OpticMesh->GetMaterial(BoundMaterialIndex);
+
+	// Pack M_RenderTarget uses "RenderTarget"; project M_SniperScope uses "ScopeView".
+	if (IsValid(LensMID) && IsValid(RenderTarget))
+	{
+		TArray<FName, TInlineAllocator<5>> CandidateParams;
+		CandidateParams.Add(Optic->LensTextureParameterName);
+		CandidateParams.Add(FName(TEXT("RenderTarget")));
+		CandidateParams.Add(FName(TEXT("ScopeView")));
+		CandidateParams.Add(FName(TEXT("Texture")));
+		CandidateParams.Add(FName(TEXT("RT")));
+		FName Chosen = NAME_None;
+		for (const FName& Cand : CandidateParams)
+		{
+			if (Cand.IsNone()) continue;
+			LensMID->SetTextureParameterValue(Cand, RenderTarget);
+			UTexture* AppliedTexture = nullptr;
+			if (LensMID->GetTextureParameterValue(FHashedMaterialParameterInfo(Cand), AppliedTexture)
+				&& AppliedTexture == RenderTarget)
+			{
+				Chosen = Cand;
+				break;
+			}
+		}
+		if (Chosen.IsNone())
+		{
+			// Still set DA name so MID at least has something if param exists under another path.
+			LensMID->SetTextureParameterValue(Optic->LensTextureParameterName, RenderTarget);
+			UE_LOG(LogTemp, Warning, TEXT("[OpticScope] %s: lens texture param probe inconclusive"),
+				*GetNameSafe(Optic));
+		}
+	}
 
 	BoundMesh = OpticMesh;
 	BoundData = Optic;
@@ -294,10 +363,58 @@ void UOpticScopeComponent::PlaceCapture(const UCameraComponent* Camera)
 
 UMaterialInterface* UOpticScopeComponent::ResolvePictureMaterial(const UStaticMeshComponent* OpticMesh, const UAttachmentData* Optic) const
 {
+	// PSR_OPTIC_PIP_FIX: pack MI_*_Lense uses MF_FadeByCameraDistance (invisible in ADS).
+	// Prefer slot that already has M_RenderTarget, else load pack PiP material / project scope mat.
 	if (!IsValid(OpticMesh) || !IsValid(Optic))
 	{
 		return nullptr;
 	}
+
+	auto IsFadeGlass = [](const UMaterialInterface* Mat) -> bool
+	{
+		if (!IsValid(Mat)) return false;
+		const FString N = Mat->GetName();
+		return N.Contains(TEXT("Lense"), ESearchCase::IgnoreCase)
+			|| N.Contains(TEXT("BaseOptical"), ESearchCase::IgnoreCase);
+	};
+
+	auto IsPipMat = [](const UMaterialInterface* Mat) -> bool
+	{
+		if (!IsValid(Mat)) return false;
+		const FString N = Mat->GetName();
+		return N.Contains(TEXT("RenderTarget")) && !N.Contains(TEXT("Placeholder"));
+	};
+
+	// DA 里填了画面材质（例如开了准心的 MI_PSR_ScopePiP）优先
+	if (IsValid(Optic->LensMaterial) && !IsFadeGlass(Optic->LensMaterial))
+	{
+		return Optic->LensMaterial;
+	}
+	// Prefer an existing RenderTarget slot on the mesh (SM_OpticalSight_L slot 1).
+	for (int32 i = 0; i < OpticMesh->GetNumMaterials(); ++i)
+	{
+		if (IsPipMat(OpticMesh->GetMaterial(i)))
+		{
+			return OpticMesh->GetMaterial(i);
+		}
+	}
+
+	if (IsValid(Optic->LensMaterial) && !IsFadeGlass(Optic->LensMaterial))
+	{
+		return Optic->LensMaterial;
+	}
+
+	static const TCHAR* PsrPipPath = TEXT("/Game/PrecisionSniperRifle/Weapons/OpticalSight_L/Materials/M_RenderTarget.M_RenderTarget");
+	static const TCHAR* ProjectPipPath = TEXT("/Game/FPS/UI/M_SniperScope.M_SniperScope");
+	if (UMaterialInterface* PsrPip = LoadObject<UMaterialInterface>(nullptr, PsrPipPath))
+	{
+		return PsrPip;
+	}
+	if (UMaterialInterface* ProjectPip = LoadObject<UMaterialInterface>(nullptr, ProjectPipPath))
+	{
+		return ProjectPip;
+	}
+
 	if (IsValid(Optic->LensMaterial))
 	{
 		return Optic->LensMaterial;
@@ -329,6 +446,7 @@ void UOpticScopeComponent::Deactivate()
 		HideCaptureDecoration(Capture);
 	}
 	RestoreLensMaterial();
+	RestoreGlassSlots();
 }
 
 void UOpticScopeComponent::RestoreLensMaterial()
@@ -351,10 +469,65 @@ float UOpticScopeComponent::ComputeCaptureFOV(const UAttachmentData* /*Optic*/) 
 	return IsValid(Weapon) ? Weapon->GetPiPCaptureFOV(BaseFOV) : BaseFOV;
 }
 
+void UOpticScopeComponent::HideGlassSlots(UStaticMeshComponent* OpticMesh)
+{
+	RestoreGlassSlots();
+	if (!IsValid(OpticMesh))
+	{
+		return;
+	}
+	static const TCHAR* InvisiblePath = TEXT("/Game/cgARMod/Weapons/Materials/M_Invisible.M_Invisible");
+	UMaterialInterface* Invisible = LoadObject<UMaterialInterface>(nullptr, InvisiblePath);
+	if (!IsValid(Invisible))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OpticScope] M_Invisible not found, lens glass stays visible"));
+		return;
+	}
+	const TArray<FName> SlotNames = OpticMesh->GetMaterialSlotNames();
+	for (int32 i = 0; i < OpticMesh->GetNumMaterials(); ++i)
+	{
+		if (i == BoundMaterialIndex)
+		{
+			continue;   // 画中画画面槽
+		}
+		UMaterialInterface* Mat = OpticMesh->GetMaterial(i);
+		const FString MatName = GetNameSafe(Mat);
+		const FString SlotName = SlotNames.IsValidIndex(i) ? SlotNames[i].ToString() : FString();
+		if (Mat == LensMID || (MatName.Contains(TEXT("RenderTarget")) && !SlotName.Contains(TEXT("RenderTarget"), ESearchCase::IgnoreCase)))
+		{
+			continue;
+		}
+		const bool bOtherPipFace = SlotName.Contains(TEXT("RenderTarget"), ESearchCase::IgnoreCase);   // 物镜那面，开镜时藏掉
+		if (!bOtherPipFace && !SlotName.Contains(TEXT("Lens"), ESearchCase::IgnoreCase)
+			&& !MatName.Contains(TEXT("Lens"), ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+		HiddenGlassIndices.Add(i);
+		HiddenGlassOriginals.Add(Mat);
+		OpticMesh->SetMaterial(i, Invisible);
+	}
+	GlassMesh = OpticMesh;
+}
+
+void UOpticScopeComponent::RestoreGlassSlots()
+{
+	if (UStaticMeshComponent* Mesh = GlassMesh.Get())
+	{
+		for (int32 k = 0; k < HiddenGlassIndices.Num(); ++k)
+		{
+			Mesh->SetMaterial(HiddenGlassIndices[k], HiddenGlassOriginals[k].Get());
+		}
+	}
+	HiddenGlassIndices.Reset();
+	HiddenGlassOriginals.Reset();
+	GlassMesh = nullptr;
+}
 void UOpticScopeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Deactivate();
 	RestoreLensMaterial();
+	RestoreGlassSlots();
 	if (IsValid(Capture))
 	{
 		Capture->DestroyComponent();

@@ -37,6 +37,9 @@ private:
 	// 画中画曝光：Histogram 自动曝光（与主视角自动曝光无关）+ 可选 Lumen/AA
 	void ApplyCaptureExposure(const UAttachmentData* Optic);
 	void RestoreLensMaterial();
+	// COD 式：开镜时把镜片反光玻璃槽（名字含 Lens，非 RenderTarget）换成 M_Invisible，关镜还原
+	void HideGlassSlots(UStaticMeshComponent* OpticMesh);
+	void RestoreGlassSlots();
 	float ComputeCaptureFOV(const UAttachmentData* Optic) const;
 	UMaterialInterface* ResolvePictureMaterial(const UStaticMeshComponent* OpticMesh, const UAttachmentData* Optic) const;
 
@@ -54,6 +57,10 @@ private:
 	TWeakObjectPtr<const UAttachmentData> BoundData;
 	TWeakObjectPtr<UMaterialInterface> OriginalLensMaterial;
 	int32 BoundMaterialIndex = INDEX_NONE;
+
+	TWeakObjectPtr<UStaticMeshComponent> GlassMesh;
+	TArray<int32> HiddenGlassIndices;
+	TArray<TWeakObjectPtr<UMaterialInterface>> HiddenGlassOriginals;
 
 	bool bActive = false;
 	float SmoothedCaptureFOV = 0.f;
