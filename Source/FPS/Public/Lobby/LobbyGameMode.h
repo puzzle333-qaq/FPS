@@ -44,6 +44,8 @@ public:
 	void ToggleReady(ALobbyPlayerController* PC);
 	void RequestSetMode(ALobbyPlayerController* PC, EShooterGameMode Mode);
 	void RequestStart(ALobbyPlayerController* PC);
+	void RequestAddBot(ALobbyPlayerController* PC, int32 TeamId);
+	void RequestRemoveBot(ALobbyPlayerController* PC);
 
 	// 共用规则（UI 也按这个算 CanStart）
 	static bool CheckCanStart(const UWorld* World, FText& OutReason);
@@ -62,6 +64,9 @@ private:
 	FTimerHandle AdvertiseTimer;
 
 	int32 NextJoinOrder = 1;
+	int32 BotSerial = 0;
+	bool bDiscardingBots = false;
+	bool SpawnLobbyBot(uint8 TeamId);
 	// InitNewPlayer 解析到的 ?Host=1 / ?Mode=
 	TSet<TWeakObjectPtr<APlayerController>> HostClaimers;
 	TMap<TWeakObjectPtr<APlayerController>, int32> RequestedModes;

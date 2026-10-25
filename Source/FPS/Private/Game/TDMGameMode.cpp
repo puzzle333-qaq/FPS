@@ -235,6 +235,7 @@ void ATDMGameMode::TickWaitingForPlayers()
 		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
 		return;
 	}
+	SpawnRoomBots();
 	int32 Arrived = 0, Expected = 0;
 	const bool bAllHere = AreExpectedPlayersPresent(Arrived, Expected);
 	// 没有房间（直接开图测试）：照旧立刻开始

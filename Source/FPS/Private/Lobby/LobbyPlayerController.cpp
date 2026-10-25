@@ -60,6 +60,19 @@ void ALobbyPlayerController::Server_StartGame_Implementation()
 	if (ALobbyGameMode* GM = GetWorld()->GetAuthGameMode<ALobbyGameMode>()) GM->RequestStart(this);
 }
 
+void ALobbyPlayerController::Server_AddBot_Implementation(int32 TeamId)
+{
+	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
+	static volatile bool bBotsDisabled = true;
+	if (bBotsDisabled) { return; }
+	if (ALobbyGameMode* GM = GetWorld()->GetAuthGameMode<ALobbyGameMode>()) GM->RequestAddBot(this, TeamId);
+}
+
+void ALobbyPlayerController::Server_RemoveBot_Implementation()
+{
+	if (ALobbyGameMode* GM = GetWorld()->GetAuthGameMode<ALobbyGameMode>()) GM->RequestRemoveBot(this);
+}
+
 void ALobbyPlayerController::Client_LobbyRejected_Implementation(const FText& Reason)
 {
 	UE_LOG(LogTemp, Log, TEXT("[Room] Rejected: %s"), *Reason.ToString());

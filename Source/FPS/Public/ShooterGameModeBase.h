@@ -9,6 +9,7 @@
 class UModeHudWidget;
 
 class AShooterPlayerState;
+class AShooterBotController;
 
 // 所有局内模式的父类：击杀记录、击杀播报、定时复活。靶场/死斗直接用它，团队竞技用 ATDMGameMode，爆破用 ASearchDestroyGameMode
 class UTexture2D;
@@ -73,6 +74,11 @@ protected:
 	virtual void ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerState* VictimPS) {}
 	virtual bool CanRespawn(AController* Controller) const { return true; }
 
+	// 房间里点开始时记下的 BOT。直接开图（没有房间）不会走这里。
+	void SpawnRoomBots();
+	bool SpawnMatchBot(uint8 TeamId);
+	virtual void ConfigureMatchBot(AShooterBotController* Bot, AShooterPlayerState* PS);
+
 	// 比赛中某队全部掉线：WinningTeam 是还有人的那队。子类结束比赛
 	virtual void HandleTeamForfeit(uint8 WinningTeam) {}
 	void CheckTeamsAfterLogout();
@@ -88,4 +94,7 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> PendingDamageIcon;
 	bool bHasPendingDamageIcon = false;
+
+	int32 BotSerial = 0;
+	bool bRoomBotsSpawned = false;
 };

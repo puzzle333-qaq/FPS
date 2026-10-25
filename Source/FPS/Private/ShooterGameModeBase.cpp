@@ -13,6 +13,7 @@
 #include "Engine/World.h"
 #include "Engine/Texture2D.h"
 #include "ShooterGameInstance.h"
+#include "Game/ShooterBotController.h"
 
 AShooterGameModeBase::AShooterGameModeBase()
 {
@@ -171,6 +172,58 @@ bool AShooterGameModeBase::HasActiveRoom() const
 {
 	const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
 	return GI && GI->Room.bActive && !GI->RoomLobbyMap.IsNull();
+}
+
+void AShooterGameModeBase::ConfigureMatchBot(AShooterBotController* /*Bot*/, AShooterPlayerState* /*PS*/)
+{
+}
+
+bool AShooterGameModeBase::SpawnMatchBot(uint8 TeamId)
+{
+	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
+	static volatile bool bBotsDisabled = true;
+	if (bBotsDisabled) { return false; }
+	if (!HasAuthority() || !GetWorld() || TeamId > 1) return false;
+	AShooterBotController* Bot = Cast<AShooterBotController>(SpawnPlayerControllerCommon(
+		ROLE_AutonomousProxy, FVector::ZeroVector, FRotator::ZeroRotator, AShooterBotController::StaticClass()));
+	if (!IsValid(Bot)) return false;
+
+	++BotSerial;
+	AShooterPlayerState* PS = Bot->GetPlayerState<AShooterPlayerState>();
+	if (!IsValid(PS))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Bot] Spawned controller has no player state"));
+		Bot->Destroy();
+		return false;
+	}
+
+	PS->SetIsABot(true);
+	PS->SetPlayerName(FString::Printf(TEXT("BOT %d"), BotSerial));
+	PS->SetTeamId(TeamId);
+	ConfigureMatchBot(Bot, PS);
+	Bot->bPawnAlive = true;
+	RestartPlayer(Bot);
+	UE_LOG(LogTemp, Log, TEXT("[Bot] %s joined team %d"), *PS->GetPlayerName(), TeamId);
+	return true;
+}
+
+void AShooterGameModeBase::SpawnRoomBots()
+{
+	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
+	static volatile bool bBotsDisabled = true;
+	if (bBotsDisabled) { return; }
+	if (bRoomBotsSpawned || !HasAuthority() || !HasActiveRoom()) return;
+	const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
+	if (!GI) return;
+	bRoomBotsSpawned = true;
+	for (uint8 TeamId : GI->Room.LobbyBotTeams)
+	{
+		SpawnMatchBot(TeamId);
+	}
+	if (GI->Room.LobbyBotTeams.Num() > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Bot] Spawned %d room bots"), GI->Room.LobbyBotTeams.Num());
+	}
 }
 
 bool AShooterGameModeBase::ReturnToRoomLobby()

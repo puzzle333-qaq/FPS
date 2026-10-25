@@ -35,6 +35,13 @@ public:
 	UFUNCTION(Server, Reliable)
 	void Server_StartGame();
 
+	// 房主：往某一队加一个已准备的 BOT，或移除最后加入的 BOT
+	UFUNCTION(Server, Reliable)
+	void Server_AddBot(int32 TeamId);
+
+	UFUNCTION(Server, Reliable)
+	void Server_RemoveBot();
+
 	// 服务器拒绝（选边/开始/切模式）时告诉客户端原因
 	UFUNCTION(Client, Reliable)
 	void Client_LobbyRejected(const FText& Reason);

@@ -26,9 +26,13 @@ struct FShooterRoomState
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
 	FString HostKey;
 
-	// 点开始时房间里的人（对局里等这些人到齐）
+	// 点开始时房间里的人（对局里等这些人到齐）。BOT 不会无缝旅行，不放这里。
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
 	TArray<FString> ExpectedPlayerKeys;
+
+	// 点开始时每个 BOT 的队伍（0 / 1）。对局按这个名单生成。
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
+	TArray<uint8> LobbyBotTeams;
 };
 
 // 局外数据：当前配装、选中的模式，以及开房/加入/去靶场/回主菜单。

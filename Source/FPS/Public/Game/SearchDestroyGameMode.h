@@ -112,7 +112,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD", meta = (ClampMin = "1"))
 	int32 MaxPlayersPerTeam = 5;
 
-
 	void BeginBombInteract(AController* Controller);
 	void EndBombInteract(AController* Controller);
 	void NotifyBombOverlap(ABombActor* OverlappedBomb, AActor* OtherActor);
@@ -154,6 +153,7 @@ protected:
 
 	virtual void ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerState* VictimPS) override;
 	virtual bool CanRespawn(AController* Controller) const override;
+	virtual void ConfigureMatchBot(class AShooterBotController* Bot, AShooterPlayerState* PS) override;
 
 private:
 	void ApplyMatchRules();
@@ -207,6 +207,7 @@ private:
 	float WaitForPlayersStartTime = 0.f;
 	void BeginWaitingForPlayers();
 	void TickWaitingForPlayers();
+	void EnsureBots();
 	int32 CountPlayersOnTeam(uint8 TeamId) const;
 	void CloseRoomToMainMenu();
 	FTimerHandle FreezeTimer;

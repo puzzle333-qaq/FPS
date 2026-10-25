@@ -1,6 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-using UnrealBuildTool;
+﻿using UnrealBuildTool;
 
 public class FPS : ModuleRules
 {
@@ -8,10 +6,14 @@ public class FPS : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "PhysicsCore", "UMG", "Niagara" });
+		PublicDependencyModuleNames.AddRange(new string[] {
+			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
+			"GameplayTags", "PhysicsCore", "UMG", "Niagara", "AnimGraphRuntime",
+			"AIModule", "NavigationSystem"
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
-			"Slate", "SlateCore", "CoreOnline",
+			"Slate", "SlateCore", "CoreOnline", "NavigationSystem",
 			"OnlineSubsystem", "OnlineSubsystemUtils",
 			"OnlineSubsystemEOS", "EOSShared", "EOSSDK"
 			// EOS：用 IOnlineSubsystemEOS 拿平台句柄做 DeviceId（Plugins/OnlineSubsystemEOS 是项目覆盖版，开了 ADD_USER_LOGIN_INFO）

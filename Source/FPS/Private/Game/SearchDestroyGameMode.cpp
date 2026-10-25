@@ -9,6 +9,7 @@
 #include "Weapon/AttachmentData.h"
 #include "Loadout/LoadoutTypes.h"
 #include "ShooterPlayerController.h"
+#include "Game/ShooterBotController.h"
 #include "ShooterGameInstance.h"
 #include "Stats/StatsComponent.h"
 #include "Interface/PlayerInterface.h"
@@ -73,6 +74,34 @@ void ASearchDestroyGameMode::ApplyMatchRules()
 	}
 }
 
+void ASearchDestroyGameMode::ConfigureMatchBot(AShooterBotController* Bot, AShooterPlayerState* PS)
+{
+	if (PS && PS->GetMoney() <= 0)
+	{
+		PS->SetMoney(StartMoney);
+	}
+	if (Bot)
+	{
+		Bot->SetPreferredSite((BotSerial % 2) == 0 ? EBombSiteId::A : EBombSiteId::B);
+	}
+}
+
+void ASearchDestroyGameMode::EnsureBots()
+{
+	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
+	static volatile bool bBotsDisabled = true;
+	if (bBotsDisabled) { return; }
+	if (!HasAuthority() || !GetWorld() || bMatchClockStarted) return;
+	const ASearchDestroyGameState* GS = GetSDState();
+	if (!GS || GS->GetMatchState() == EShooterMatchState::PostMatch) return;
+
+	// 只生成房间里手动添加的 BOT。直接开图不再自动补人。
+	if (HasActiveRoom())
+	{
+		SpawnRoomBots();
+	}
+}
+
 int32 ASearchDestroyGameMode::CountPlayersOnTeam(uint8 TeamId) const
 {
 	int32 Count = 0;
@@ -104,6 +133,7 @@ void ASearchDestroyGameMode::TickWaitingForPlayers()
 		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
 		return;
 	}
+	EnsureBots();
 	const int32 A = CountPlayersOnTeam(0);
 	const int32 B = CountPlayersOnTeam(1);
 	int32 Arrived = 0, Expected = 0;

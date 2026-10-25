@@ -2,6 +2,7 @@
 
 #include "Lobby/LobbyGameState.h"
 #include "Lobby/LobbyPlayerController.h"
+#include "Game/ShooterBotController.h"
 #include "Game/ShooterPlayerState.h"
 #include "ShooterGameInstance.h"
 #include "GameFramework/PlayerState.h"
@@ -41,6 +42,7 @@ void ALobbyGameMode::InitGame(const FString& MapName, const FString& Options, FS
 	if (GI)
 	{
 		GI->Room.ExpectedPlayerKeys.Reset(); // 回到大厅：等待列表清空
+		GI->Room.LobbyBotTeams.Reset();
 	}
 }
 
@@ -155,19 +157,38 @@ void ALobbyGameMode::OnPlayerEnteredRoom(APlayerController* PC)
 void ALobbyGameMode::Logout(AController* Exiting)
 {
 	APlayerState* Leaving = Exiting ? Exiting->PlayerState.Get() : nullptr;
+	const bool bLeavingBot = Leaving && Leaving->IsABot();
 	Super::Logout(Exiting);
+	// 移除 BOT 也会进到这里。不要因此换房主或把房间清掉。
+	if (bLeavingBot) return;
 	RefreshHost(Leaving);
 	// 专用服务器上最后一个人走了：房间作废，下一个人进来是新房间
 	int32 Remaining = 0;
+	TArray<APlayerController*> LeftoverBots;
 	if (GameState)
 	{
-		for (const APlayerState* PS : GameState->PlayerArray)
+		for (APlayerState* PS : GameState->PlayerArray)
 		{
-			if (PS && PS != Leaving && !PS->IsInactive()) ++Remaining;
+			if (!PS || PS == Leaving || PS->IsInactive()) continue;
+			if (PS->IsABot())
+			{
+				if (APlayerController* BotPC = PS->GetPlayerController()) LeftoverBots.Add(BotPC);
+				continue;
+			}
+			++Remaining;
 		}
 	}
 	if (Remaining == 0)
 	{
+		if (!bDiscardingBots)
+		{
+			bDiscardingBots = true;
+			for (APlayerController* BotPC : LeftoverBots)
+			{
+				if (IsValid(BotPC)) BotPC->Destroy();
+			}
+			bDiscardingBots = false;
+		}
 		if (UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>())
 		{
 			GI->ResetRoom(AllowedModes.Num() > 0 ? AllowedModes[0] : EShooterGameMode::TDM);
@@ -222,7 +243,7 @@ void ALobbyGameMode::RefreshHost(APlayerState* Leaving)
 	for (APlayerState* PS : GameState->PlayerArray)
 	{
 		AShooterPlayerState* SPS = Cast<AShooterPlayerState>(PS);
-		if (!SPS || SPS == Leaving || SPS->IsInactive()) continue;
+		if (!SPS || SPS == Leaving || SPS->IsInactive() || SPS->IsABot()) continue;
 		if (!Best || SPS->GetJoinOrder() < Best->GetJoinOrder()) Best = SPS;
 	}
 	GS->SetHostPlayerState(Best);
@@ -372,11 +393,19 @@ void ALobbyGameMode::RequestStart(ALobbyPlayerController* PC)
 		Reject(PC, NSLOCTEXT("Lobby", "NoMap", "该模式没有设置地图"));
 		return;
 	}
-	// 记录期望玩家
+	// 真人等无缝旅行到齐。BOT 不会跟着旅行，只记下队伍，进对局再生成。
 	GI->Room.ExpectedPlayerKeys.Reset();
+	GI->Room.LobbyBotTeams.Reset();
 	for (const APlayerState* PS : GameState->PlayerArray)
 	{
-		if (PS && !PS->IsInactive()) GI->Room.ExpectedPlayerKeys.Add(UShooterGameInstance::GetRoomKey(PS));
+		if (!PS || PS->IsInactive()) continue;
+		if (PS->IsABot())
+		{
+			const AShooterPlayerState* SPS = Cast<AShooterPlayerState>(PS);
+			if (SPS && SPS->GetTeamId() <= 1) GI->Room.LobbyBotTeams.Add(SPS->GetTeamId());
+			continue;
+		}
+		GI->Room.ExpectedPlayerKeys.Add(UShooterGameInstance::GetRoomKey(PS));
 	}
 	FString URL = Info.Map.ToSoftObjectPath().GetLongPackageName();
 	if (!Info.GameModeClass.IsNull())
@@ -386,6 +415,93 @@ void ALobbyGameMode::RequestStart(ALobbyPlayerController* PC)
 	GS->SetStarting(true);
 	GetWorldTimerManager().ClearTimer(AdvertiseTimer);
 	UpdateSessionAdvertisement(true);
-	UE_LOG(LogTemp, Log, TEXT("[Room] Start %s with %d players -> %s"), *GI->Room.RoomCode, GI->Room.ExpectedPlayerKeys.Num(), *URL);
+	UE_LOG(LogTemp, Log, TEXT("[Room] Start %s with %d players + %d bots -> %s"), *GI->Room.RoomCode, GI->Room.ExpectedPlayerKeys.Num(), GI->Room.LobbyBotTeams.Num(), *URL);
 	GetWorld()->ServerTravel(URL);
+}
+
+bool ALobbyGameMode::SpawnLobbyBot(uint8 TeamId)
+{
+	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
+	static volatile bool bBotsDisabled = true;
+	if (bBotsDisabled) { return false; }
+	// 大厅不生成角色。只放一个带队伍、已准备的 PlayerState，开局检查才能算进这一队。
+	AShooterBotController* Bot = Cast<AShooterBotController>(SpawnPlayerControllerCommon(
+		ROLE_AutonomousProxy, FVector::ZeroVector, FRotator::ZeroRotator, AShooterBotController::StaticClass()));
+	if (!IsValid(Bot)) return false;
+
+	AShooterPlayerState* PS = Bot->GetPlayerState<AShooterPlayerState>();
+	if (!IsValid(PS))
+	{
+		Bot->Destroy();
+		return false;
+	}
+
+	++BotSerial;
+	PS->SetIsABot(true);
+	PS->SetPlayerName(FString::Printf(TEXT("BOT %d"), BotSerial));
+	PS->SetTeamId(TeamId);
+	PS->SetReady(true);
+	PS->SetJoinOrder(NextJoinOrder++);
+	Bot->bPawnAlive = false;
+	Bot->SetActorTickEnabled(false);
+	PS->ForceNetUpdate();
+	UE_LOG(LogTemp, Log, TEXT("[Room] %s added on team %d"), *PS->GetPlayerName(), TeamId);
+	return true;
+}
+
+void ALobbyGameMode::RequestAddBot(ALobbyPlayerController* PC, int32 TeamId)
+{
+	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
+	static volatile bool bBotsDisabled = true;
+	if (bBotsDisabled) { return; }
+	const ALobbyGameState* GS = GetLobbyState();
+	if (!GS) return;
+	if (!IsHost(PC)) { Reject(PC, NSLOCTEXT("Lobby", "NotHost", "只有房主可以操作")); return; }
+	if (GS->IsStarting()) { Reject(PC, NSLOCTEXT("Lobby", "Starting", "游戏正在开始")); return; }
+	if (TeamId != 0 && TeamId != 1) { Reject(PC, NSLOCTEXT("Lobby", "BadTeam", "无效的队伍")); return; }
+
+	int32 A = 0, B = 0;
+	CountTeams(A, B, nullptr);
+	const int32 Target = TeamId == 0 ? A : B;
+	if (Target >= MaxPlayersPerTeam)
+	{
+		Reject(PC, FText::Format(NSLOCTEXT("Lobby", "TeamFull", "该队已满（{0} 人）"), FText::AsNumber(MaxPlayersPerTeam)));
+		return;
+	}
+	if (TeamId == 0) ++A; else ++B;
+	if (FMath::Abs(A - B) > MaxTeamDifference)
+	{
+		Reject(PC, FText::Format(NSLOCTEXT("Lobby", "TeamDiff", "两队人数差不能超过 {0}"), FText::AsNumber(MaxTeamDifference)));
+		return;
+	}
+	if (!SpawnLobbyBot((uint8)TeamId))
+	{
+		Reject(PC, NSLOCTEXT("Lobby", "BotFail", "添加 BOT 失败"));
+	}
+}
+
+void ALobbyGameMode::RequestRemoveBot(ALobbyPlayerController* PC)
+{
+	const ALobbyGameState* GS = GetLobbyState();
+	if (!GS || !GameState) return;
+	if (!IsHost(PC)) { Reject(PC, NSLOCTEXT("Lobby", "NotHost", "只有房主可以操作")); return; }
+	if (GS->IsStarting()) return;
+
+	AShooterPlayerState* Newest = nullptr;
+	for (APlayerState* PS : GameState->PlayerArray)
+	{
+		AShooterPlayerState* SPS = Cast<AShooterPlayerState>(PS);
+		if (!SPS || !SPS->IsABot() || SPS->IsInactive()) continue;
+		if (!Newest || SPS->GetJoinOrder() >= Newest->GetJoinOrder()) Newest = SPS;
+	}
+	if (!Newest)
+	{
+		Reject(PC, NSLOCTEXT("Lobby", "NoBot", "没有可以移除的 BOT"));
+		return;
+	}
+	if (APlayerController* BotPC = Newest->GetPlayerController())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Room] Remove %s"), *Newest->GetPlayerName());
+		BotPC->Destroy();
+	}
 }
