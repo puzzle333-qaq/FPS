@@ -62,11 +62,47 @@ public:
 	FLinearColor HitMarkerColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|HitMarker", meta = (ClampMin = "0.01"))
-	float HitMarkerDuration = 0.25f;
+	float HitMarkerDuration = 0.15f;
 
 	// Optional 2D sound when a hit is confirmed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|HitMarker")
 	TObjectPtr<USoundBase> HitMarkerSound;
+
+	// HitMarkerSound 没填时用这个（默认 Infima 的 hitmarker 音）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|HitMarker")
+	TSoftObjectPtr<USoundBase> HitMarkerSoundFallback = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/InfimaGames/ArtCore/Audio/_Common/SC_IG_WEP_Hitmarker.SC_IG_WEP_Hitmarker")));
+
+	// 霰弹多颗弹丸同时命中时，命中音最短间隔（秒）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|HitMarker", meta = (ClampMin = "0"))
+	float HitMarkerSoundMinInterval = 0.05f;
+
+	// 爆头命中音（非致死）。空 = 用普通命中音
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|HitMarker")
+	TSoftObjectPtr<USoundBase> HeadshotSound;
+
+	// ---------- Kill marker (shooter) ----------
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|KillMarker")
+	FLinearColor KillMarkerColor = FLinearColor(1.f, 0.5f, 0.f, 1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|KillMarker", meta = (ClampMin = "0.01"))
+	float KillMarkerDuration = 0.3f;
+
+	// 相对命中 X 的放大倍数（长度、内偏移）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|KillMarker", meta = (ClampMin = "0.1"))
+	float KillMarkerScale = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|KillMarker", meta = (ClampMin = "0.5"))
+	float KillMarkerThickness = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|KillMarker")
+	TSoftObjectPtr<USoundBase> KillSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Enemys/Sound/Kill/Kill_Enemy.Kill_Enemy")));
+
+	// 爆头击杀音。空 = 用 KillSound
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback|KillMarker")
+	TSoftObjectPtr<USoundBase> HeadshotKillSound;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|HitFeedback")
+	void ShowKillMarker(bool bHeadshot);
 
 	// Call these from Blueprint to test without a second player.
 	UFUNCTION(BlueprintCallable, Category = "FPS|HitFeedback")
@@ -110,6 +146,10 @@ private:
 	// 0 = top (front), 1 = right, 2 = bottom (back), 3 = left
 	float ArcIntensity[4] = { 0.f, 0.f, 0.f, 0.f };
 	float HitMarkerRemaining = 0.f;
+	float KillMarkerRemaining = 0.f;
+	double LastHitSoundTime = -1.0;
+
+	void PlayFeedbackSound(USoundBase* Sound);
 	float CrosshairSpread = 0.f;
 
 	UImage* ResolveReticleImage();
@@ -127,7 +167,7 @@ private:
 	void HandleDamageIndicator(FVector InstigatorLocation);
 
 	UFUNCTION()
-	void HandleHitConfirmed();
+	void HandleHitConfirmed(bool bHeadshot, bool bKilled);
 
 	UFUNCTION()
 	void HandleWeaponFired();

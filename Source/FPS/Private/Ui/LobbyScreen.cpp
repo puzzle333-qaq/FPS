@@ -8,6 +8,13 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/PanelWidget.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Blueprint/WidgetTree.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -22,7 +29,9 @@ void ULobbyPlayerRowWidget::SetRow(const FLobbyPlayerRow& InRow)
 	}
 	if (Text_Status)
 	{
-		Text_Status->SetText(InRow.bReady ? NSLOCTEXT("Lobby", "Ready", "已准备") : NSLOCTEXT("Lobby", "NotReadyShort", "未准备"));
+		Text_Status->SetText(InRow.bIsBot
+			? NSLOCTEXT("Lobby", "BotStatus", "BOT")
+			: (InRow.bReady ? NSLOCTEXT("Lobby", "Ready", "已准备") : NSLOCTEXT("Lobby", "NotReadyShort", "未准备")));
 	}
 	OnRowUpdated(InRow);
 }
@@ -34,6 +43,10 @@ void ULobbyScreen::NativeConstruct()
 	if (Button_JoinB) Button_JoinB->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleJoinB);
 	if (Button_Ready) Button_Ready->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleReady);
 	if (Button_Start) Button_Start->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStart);
+	EnsureBotButtons();
+	if (Button_AddBotA) Button_AddBotA->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAddBotA);
+	if (Button_AddBotB) Button_AddBotB->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAddBotB);
+	if (Button_RemoveBot) Button_RemoveBot->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRemoveBot);
 	if (Button_Leave) Button_Leave->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLeave);
 	if (Button_ModeTDM) Button_ModeTDM->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleModeTDM);
 	if (Button_ModeBDM) Button_ModeBDM->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleModeBDM);
@@ -59,6 +72,19 @@ void ULobbyScreen::JoinTeam(int32 TeamId) { if (ALobbyPlayerController* PC = Get
 void ULobbyScreen::ToggleReady() { if (ALobbyPlayerController* PC = GetLobbyPC()) PC->Server_ToggleReady(); }
 void ULobbyScreen::SetRoomMode(EShooterGameMode Mode) { if (ALobbyPlayerController* PC = GetLobbyPC()) PC->Server_SetRoomMode(Mode); }
 
+void ULobbyScreen::AddBot(int32 TeamId)
+{
+	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
+	static volatile bool bBotsDisabled = true;
+	if (bBotsDisabled) { return; }
+	if (ALobbyPlayerController* PC = GetLobbyPC()) PC->Server_AddBot(TeamId);
+}
+
+void ULobbyScreen::RemoveBot()
+{
+	if (ALobbyPlayerController* PC = GetLobbyPC()) PC->Server_RemoveBot();
+}
+
 void ULobbyScreen::StartGame()
 {
 	FText Reason;
@@ -82,6 +108,9 @@ void ULobbyScreen::HandleJoinA() { JoinTeam(0); }
 void ULobbyScreen::HandleJoinB() { JoinTeam(1); }
 void ULobbyScreen::HandleReady() { ToggleReady(); }
 void ULobbyScreen::HandleStart() { StartGame(); }
+void ULobbyScreen::HandleAddBotA() { AddBot(0); }
+void ULobbyScreen::HandleAddBotB() { AddBot(1); }
+void ULobbyScreen::HandleRemoveBot() { RemoveBot(); }
 void ULobbyScreen::HandleLeave() { LeaveRoom(); }
 void ULobbyScreen::HandleModeTDM() { SetRoomMode(EShooterGameMode::TDM); }
 void ULobbyScreen::HandleModeBDM() { SetRoomMode(EShooterGameMode::SearchDestroy); }
@@ -132,6 +161,7 @@ TArray<FLobbyPlayerRow> ULobbyScreen::GetTeamPlayers(int32 TeamId) const
 		R.bReady = SPS->IsReady();
 		R.bIsHost = GS->GetHostPlayerState() == SPS;
 		R.bIsLocalPlayer = SPS == LocalPS;
+		R.bIsBot = SPS->IsABot();
 		R.TeamId = SPS->GetTeamId();
 		Rows.Add(R);
 	}
@@ -183,6 +213,98 @@ void ULobbyScreen::FillList(UPanelWidget* List, const TArray<FLobbyPlayerRow>& R
 	}
 }
 
+UButton* ULobbyScreen::MakeBotButton(const FText& Label)
+{
+	if (!WidgetTree) return nullptr;
+	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
+	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	if (!Button || !Text) return Button;
+	Text->SetText(Label);
+	Text->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
+	FSlateFontInfo Font = Text->GetFont();
+	Font.Size = 14;
+	Text->SetFont(Font);
+	Button->SetContent(Text);
+	return Button;
+}
+
+void ULobbyScreen::EnsureBotButtons()
+{
+	// 蓝图里已经放了同名按钮就用蓝图的。没有的话，排在开始按钮旁边。
+	if (Button_AddBotA && Button_AddBotB && Button_RemoveBot) return;
+	if (!WidgetTree) return;
+
+	BotButtonBar = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("BotButtonBar"));
+	if (!BotButtonBar) return;
+
+	auto Place = [&](TObjectPtr<UButton>& SlotButton, const FText& Label)
+	{
+		if (SlotButton) return;
+		SlotButton = MakeBotButton(Label);
+		if (!SlotButton) return;
+		if (UHorizontalBoxSlot* BoxSlot = BotButtonBar->AddChildToHorizontalBox(SlotButton))
+		{
+			BoxSlot->SetPadding(FMargin(6.f, 0.f));
+			BoxSlot->SetVerticalAlignment(VAlign_Center);
+		}
+	};
+	Place(Button_AddBotA, NSLOCTEXT("Lobby", "AddBotA", "左边加BOT"));
+	Place(Button_AddBotB, NSLOCTEXT("Lobby", "AddBotB", "右边加BOT"));
+	Place(Button_RemoveBot, NSLOCTEXT("Lobby", "RemoveBot", "移除BOT"));
+
+	UPanelWidget* Parent = Button_Start ? Button_Start->GetParent() : nullptr;
+	if (!Parent) Parent = Cast<UPanelWidget>(WidgetTree->RootWidget);
+	if (UVerticalBox* VBox = Cast<UVerticalBox>(Parent))
+	{
+		if (UVerticalBoxSlot* VSlot = VBox->AddChildToVerticalBox(BotButtonBar))
+		{
+			VSlot->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+			VSlot->SetHorizontalAlignment(HAlign_Center);
+		}
+		return;
+	}
+	if (UCanvasPanel* Canvas = Cast<UCanvasPanel>(Parent))
+	{
+		if (UCanvasPanelSlot* CanvasSlot = Canvas->AddChildToCanvas(BotButtonBar))
+		{
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetZOrder(20);
+			if (UCanvasPanelSlot* StartSlot = Button_Start ? Cast<UCanvasPanelSlot>(Button_Start->Slot) : nullptr)
+			{
+				CanvasSlot->SetAnchors(StartSlot->GetAnchors());
+				CanvasSlot->SetAlignment(StartSlot->GetAlignment());
+				FVector2D Pos = StartSlot->GetPosition();
+				Pos.Y += FMath::Max(StartSlot->GetSize().Y, 36.f) + 8.f;
+				CanvasSlot->SetPosition(Pos);
+				CanvasSlot->SetZOrder(StartSlot->GetZOrder() + 1);
+			}
+			else
+			{
+				CanvasSlot->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f));
+				CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+				CanvasSlot->SetPosition(FVector2D(0.f, -16.f));
+			}
+		}
+		return;
+	}
+	if (UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget))
+	{
+		if (UCanvasPanelSlot* CanvasSlot = RootCanvas->AddChildToCanvas(BotButtonBar))
+		{
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f));
+			CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+			CanvasSlot->SetPosition(FVector2D(0.f, -16.f));
+			CanvasSlot->SetZOrder(50);
+		}
+		return;
+	}
+	if (Parent)
+	{
+		Parent->AddChild(BotButtonBar);
+	}
+}
+
 void ULobbyScreen::Refresh()
 {
 	const TArray<FLobbyPlayerRow> A = GetTeamPlayers(0);
@@ -211,6 +333,11 @@ void ULobbyScreen::Refresh()
 	}
 	if (Button_ModeTDM) Button_ModeTDM->SetIsEnabled(bHost);
 	if (Button_ModeBDM) Button_ModeBDM->SetIsEnabled(bHost);
+	const ESlateVisibility BotVis = bHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+	if (BotButtonBar) BotButtonBar->SetVisibility(BotVis);
+	if (Button_AddBotA) Button_AddBotA->SetVisibility(BotVis);
+	if (Button_AddBotB) Button_AddBotB->SetVisibility(BotVis);
+	if (Button_RemoveBot) Button_RemoveBot->SetVisibility(BotVis);
 
 	if (Sig != LastSignature)
 	{

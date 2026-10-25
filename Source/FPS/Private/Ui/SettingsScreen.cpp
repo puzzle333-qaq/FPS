@@ -1,4 +1,4 @@
-#include "Ui/SettingsScreen.h"
+﻿#include "Ui/SettingsScreen.h"
 
 #include "Components/ComboBoxString.h"
 #include "Components/Button.h"
@@ -22,8 +22,8 @@ namespace FPSSettings
 		return N;
 	}
 	static const FString Custom = TEXT("自定义");
-	static const FString On = TEXT("开");
-	static const FString Off = TEXT("关");
+	static const FString OnLabel = TEXT("开");
+	static const FString OffLabel = TEXT("关");
 	static const TArray<int32> FrameRates = { 30, 60, 120, 144, 165, 240, 0 };
 	static const TArray<int32> Scales = { 50, 60, 67, 75, 80, 90, 100 };
 	static const TArray<FString>& DLSSNames()
@@ -173,12 +173,12 @@ void USettingsScreen::BuildOptions()
 	TArray<FString> Fps;
 	for (int32 F : FrameRates) Fps.Add(FrameName(F));
 	Fill(Combo_FrameRate, Fps);
-	Fill(Combo_VSync, { On, Off });
+	Fill(Combo_VSync, { OnLabel, OffLabel });
 	TArray<FString> Overall = QualityNames();
 	Overall.Add(Custom);
 	Fill(Combo_OverallQuality, Overall);
 	for (UComboBoxString* C : GetQualityCombos()) Fill(C, QualityNames());
-	Fill(Combo_RayTracing, { On, Off });
+	Fill(Combo_RayTracing, { OnLabel, OffLabel });
 	TArray<FString> ScaleNames;
 	for (int32 S : Scales) ScaleNames.Add(FString::Printf(TEXT("%d%%"), S));
 	Fill(Combo_ResolutionScale, ScaleNames);
@@ -193,7 +193,7 @@ void USettingsScreen::BuildOptions()
 	FillSteps(Combo_Sensitivity, SensSteps);
 	FillSteps(Combo_ADSSensitivity, ADSSteps);
 	FillSteps(Combo_FOV, FOVSteps);
-	Fill(Combo_InvertY, { On, Off });
+	Fill(Combo_InvertY, { OnLabel, OffLabel });
 }
 
 void USettingsScreen::RefreshFromCurrent()
@@ -207,7 +207,7 @@ void USettingsScreen::RefreshFromCurrent()
 	Select(Combo_WindowMode, WindowModeName(S->GetFullscreenMode()));
 	const int32 Fps = FMath::RoundToInt(S->GetFrameRateLimit());
 	Select(Combo_FrameRate, FrameName(Fps));
-	Select(Combo_VSync, S->IsVSyncEnabled() ? On : Off);
+	Select(Combo_VSync, S->IsVSyncEnabled() ? OnLabel : OffLabel);
 
 	SelectQuality(Combo_Shadows, S->GetShadowQuality());
 	SelectQuality(Combo_AntiAliasing, S->GetAntiAliasingQuality());
@@ -221,7 +221,7 @@ void USettingsScreen::RefreshFromCurrent()
 	SelectQuality(Combo_Reflections, S->GetReflectionQuality());
 	UpdateOverallFromIndividual();
 
-	Select(Combo_RayTracing, GetSavedBool(TEXT("bRayTracing"), false) ? On : Off);
+	Select(Combo_RayTracing, GetSavedBool(TEXT("bRayTracing"), false) ? OnLabel : OffLabel);
 
 	float Normalized = 0.f, Current = 100.f, Min = 50.f, Max = 100.f;
 	S->GetResolutionScaleInformationEx(Normalized, Current, Min, Max);
@@ -237,7 +237,7 @@ void USettingsScreen::RefreshFromCurrent()
 		Select(Combo_Sensitivity, NumName(SensSteps[Nearest(SensSteps, SS->MouseSensitivity)]));
 		Select(Combo_ADSSensitivity, NumName(ADSSteps[Nearest(ADSSteps, SS->ADSSensitivityMultiplier)]));
 		Select(Combo_FOV, NumName(FOVSteps[Nearest(FOVSteps, SS->FieldOfView)]));
-		Select(Combo_InvertY, SS->bInvertY ? On : Off);
+		Select(Combo_InvertY, SS->bInvertY ? OnLabel : OffLabel);
 	}
 	ApplyGraphicsLockVisibility();
 }
@@ -307,7 +307,7 @@ void USettingsScreen::ApplySettings()
 		const int32 I = Combo_FrameRate->GetSelectedIndex();
 		if (FrameRates.IsValidIndex(I)) S->SetFrameRateLimit(float(FrameRates[I]));
 	}
-	if (Combo_VSync) S->SetVSyncEnabled(Combo_VSync->GetSelectedOption() == On);
+	if (Combo_VSync) S->SetVSyncEnabled(Combo_VSync->GetSelectedOption() == OnLabel);
 
 	S->SetShadowQuality(ReadQuality(Combo_Shadows, S->GetShadowQuality()));
 	S->SetAntiAliasingQuality(ReadQuality(Combo_AntiAliasing, S->GetAntiAliasingQuality()));
@@ -331,7 +331,7 @@ void USettingsScreen::ApplySettings()
 
 	if (Combo_RayTracing)
 	{
-		const bool bOn = Combo_RayTracing->GetSelectedOption() == On;
+		const bool bOn = Combo_RayTracing->GetSelectedOption() == OnLabel;
 		ApplyRayTracing(bOn);
 		if (GConfig) GConfig->SetBool(Section, TEXT("bRayTracing"), bOn, GGameUserSettingsIni);
 	}
@@ -357,7 +357,7 @@ void USettingsScreen::ResetToDefaults(bool bBenchmark)
 	}
 	RefreshFromCurrent();
 	TGuardValue<bool> Guard(bUpdating, true);
-	Select(Combo_RayTracing, Off);
+	Select(Combo_RayTracing, OffLabel);
 	Select(Combo_DLSS, DLSSNames()[0]);
 }
 
@@ -448,10 +448,11 @@ void USettingsScreen::ApplyControls()
 	SS->MouseSensitivity = Read(Combo_Sensitivity, SensSteps, SS->MouseSensitivity);
 	SS->ADSSensitivityMultiplier = Read(Combo_ADSSensitivity, ADSSteps, SS->ADSSensitivityMultiplier);
 	SS->FieldOfView = Read(Combo_FOV, FOVSteps, SS->FieldOfView);
-	if (Combo_InvertY) SS->bInvertY = Combo_InvertY->GetSelectedOption() == On;
+	if (Combo_InvertY) SS->bInvertY = Combo_InvertY->GetSelectedOption() == OnLabel;
 	SS->SaveSettings();
 	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
 	{
 		PC->ApplyControlSettings();
 	}
 }
+

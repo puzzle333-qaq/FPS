@@ -8,6 +8,7 @@
 class UTextBlock;
 class UButton;
 class UPanelWidget;
+class UHorizontalBox;
 class ALobbyPlayerController;
 
 USTRUCT(BlueprintType)
@@ -29,6 +30,9 @@ struct FLobbyPlayerRow
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
 	uint8 TeamId = 255;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
+	bool bIsBot = false;
 };
 
 // 一行玩家：WBP_LobbyPlayerRow，父类 LobbyPlayerRowWidget；放 Text_Name / Text_Status（可选）
@@ -68,6 +72,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
 	void StartGame();
+
+	// 房主：0 = 左边，1 = 右边
+	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
+	void AddBot(int32 TeamId);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
+	void RemoveBot();
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
 	void SetRoomMode(EShooterGameMode Mode);
@@ -123,6 +134,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Ready;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ReadyLabel;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Start;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_AddBotA;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_AddBotB;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_RemoveBot;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Leave;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ModeTDM;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ModeBDM;
@@ -135,12 +149,20 @@ private:
 	UFUNCTION() void HandleJoinB();
 	UFUNCTION() void HandleReady();
 	UFUNCTION() void HandleStart();
+	UFUNCTION() void HandleAddBotA();
+	UFUNCTION() void HandleAddBotB();
+	UFUNCTION() void HandleRemoveBot();
 	UFUNCTION() void HandleLeave();
 	UFUNCTION() void HandleModeTDM();
 	UFUNCTION() void HandleModeBDM();
 
 	ALobbyPlayerController* GetLobbyPC() const;
 	void Refresh();
+	void EnsureBotButtons();
+	UButton* MakeBotButton(const FText& Label);
+
+	UPROPERTY()
+	TObjectPtr<UHorizontalBox> BotButtonBar;
 	void FillList(UPanelWidget* List, const TArray<FLobbyPlayerRow>& Rows);
 	FString LastSignature;
 	FTimerHandle RefreshTimer;

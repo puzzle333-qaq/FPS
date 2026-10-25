@@ -71,6 +71,7 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		Intensity = FMath::Max(0.f, Intensity - ArcDecay);
 	}
 	HitMarkerRemaining = FMath::Max(0.f, HitMarkerRemaining - InDeltaTime);
+	KillMarkerRemaining = FMath::Max(0.f, KillMarkerRemaining - InDeltaTime);
 	CrosshairSpread = FMath::Max(0.f, CrosshairSpread - CrosshairSpreadRecovery * InDeltaTime);
 
 	UImage* ReticleImage = ResolveReticleImage();
@@ -126,21 +127,32 @@ int32 UShooterReticle::NativePaint(const FPaintArgs& Args, const FGeometry& Allo
 		bDrew = true;
 	}
 
-	// Hit marker: four short lines at 45, 135, -135, -45 degrees.
-	if (HitMarkerRemaining > 0.f)
+	// Hit marker: four short lines at 45, 135, -135, -45 degrees. Kill marker = bigger red X (wins over hit).
+	const bool bKillMark = KillMarkerRemaining > 0.f;
+	if (bKillMark || HitMarkerRemaining > 0.f)
 	{
-		FLinearColor Color = HitMarkerColor;
-		Color.A *= HitMarkerRemaining / FMath::Max(HitMarkerDuration, 0.01f);
+		FLinearColor Color = bKillMark ? KillMarkerColor : HitMarkerColor;
+		const float Remaining = bKillMark ? KillMarkerRemaining : HitMarkerRemaining;
+		const float Duration = HitMarkerDuration;
+		// 前 60% 保持实色，后面淡出（COD 式“啪”一下）
+		const float T = Remaining / FMath::Max(Duration, 0.01f);
+		Color.A *= FMath::Clamp(T / 0.4f, 0.f, 1.f);
+		const float Scale = 1.f;
+		// 刚命中时略大一点再缩回
+		const float Pop = 1.f + 0.25f * FMath::Clamp((T - 0.75f) / 0.25f, 0.f, 1.f);
+		const float Inner = HitMarkerInnerOffset * Scale * Pop;
+		const float Len = HitMarkerLength * Scale * Pop;
+		const float Thick = HitMarkerThickness;
 		static const FVector2D Diagonals[4] = {
 			FVector2D(1.f, -1.f), FVector2D(1.f, 1.f), FVector2D(-1.f, 1.f), FVector2D(-1.f, -1.f) };
 		for (const FVector2D& D : Diagonals)
 		{
 			const FVector2D Dir = D.GetSafeNormal();
 			TArray<FVector2D> Points;
-			Points.Add(Center + Dir * HitMarkerInnerOffset);
-			Points.Add(Center + Dir * (HitMarkerInnerOffset + HitMarkerLength));
+			Points.Add(Center + Dir * Inner);
+			Points.Add(Center + Dir * (Inner + Len));
 			FSlateDrawElement::MakeLines(OutDrawElements, DrawLayer, AllottedGeometry.ToPaintGeometry(), Points,
-				ESlateDrawEffect::None, Color * InWidgetStyle.GetColorAndOpacityTint(), true, HitMarkerThickness);
+				ESlateDrawEffect::None, Color * InWidgetStyle.GetColorAndOpacityTint(), true, Thick);
 		}
 		bDrew = true;
 	}
@@ -208,12 +220,37 @@ void UShooterReticle::HandleWeaponFired()
 	NotifyWeaponFired();
 }
 
+void UShooterReticle::PlayFeedbackSound(USoundBase* Sound)
+{
+	if (!Sound) return;
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetRealTimeSeconds() : 0.0;
+	if (LastHitSoundTime >= 0.0 && Now - LastHitSoundTime < HitMarkerSoundMinInterval) return;
+	LastHitSoundTime = Now;
+	UGameplayStatics::PlaySound2D(this, Sound);
+}
+
 void UShooterReticle::ShowHitMarker()
 {
 	HitMarkerRemaining = HitMarkerDuration;
-	if (HitMarkerSound)
+	USoundBase* Sound = HitMarkerSound ? HitMarkerSound.Get() : HitMarkerSoundFallback.LoadSynchronous();
+	PlayFeedbackSound(Sound);
+}
+
+void UShooterReticle::ShowKillMarker(bool bHeadshot)
+{
+	// 击杀：与普通命中标记同尺寸/同时长，仅颜色改为 KillMarkerColor（橙色）
+	KillMarkerRemaining = HitMarkerDuration;
+	HitMarkerRemaining = 0.f;
+	USoundBase* Sound = nullptr;
+	if (bHeadshot) Sound = HeadshotKillSound.LoadSynchronous();
+	if (!Sound) Sound = KillSound.LoadSynchronous();
+	if (!Sound) Sound = HitMarkerSound ? HitMarkerSound.Get() : HitMarkerSoundFallback.LoadSynchronous();
+	// 击杀音不受命中音间隔限制（它会和最后一发命中同时到）
+	if (Sound)
 	{
-		UGameplayStatics::PlaySound2D(this, HitMarkerSound);
+		LastHitSoundTime = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+		UGameplayStatics::PlaySound2D(this, Sound);
 	}
 }
 
@@ -222,8 +259,22 @@ void UShooterReticle::HandleDamageIndicator(FVector InstigatorLocation)
 	ShowDamageFrom(InstigatorLocation);
 }
 
-void UShooterReticle::HandleHitConfirmed()
+void UShooterReticle::HandleHitConfirmed(bool bHeadshot, bool bKilled)
 {
+	if (bKilled)
+	{
+		ShowKillMarker(bHeadshot);
+		return;
+	}
+	if (bHeadshot)
+	{
+		if (USoundBase* HS = HeadshotSound.LoadSynchronous())
+		{
+			HitMarkerRemaining = HitMarkerDuration;
+			PlayFeedbackSound(HS);
+			return;
+		}
+	}
 	ShowHitMarker();
 }
 
@@ -239,13 +290,13 @@ void UShooterReticle::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 	if (AShooterCharacter* OldShooter = Cast<AShooterCharacter>(BoundPawn.Get()))
 	{
 		OldShooter->OnDamageIndicator.RemoveDynamic(this, &ThisClass::HandleDamageIndicator);
-		OldShooter->OnHitConfirmed.RemoveDynamic(this, &ThisClass::HandleHitConfirmed);
+		OldShooter->OnHitConfirmedDetailed.RemoveDynamic(this, &ThisClass::HandleHitConfirmed);
 	}
 	BoundPawn = nullptr;
 	if (AShooterCharacter* NewShooter = Cast<AShooterCharacter>(NewPawn))
 	{
 		NewShooter->OnDamageIndicator.AddUniqueDynamic(this, &ThisClass::HandleDamageIndicator);
-		NewShooter->OnHitConfirmed.AddUniqueDynamic(this, &ThisClass::HandleHitConfirmed);
+		NewShooter->OnHitConfirmedDetailed.AddUniqueDynamic(this, &ThisClass::HandleHitConfirmed);
 		BoundPawn = NewShooter;
 	}
 
