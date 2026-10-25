@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
@@ -22,6 +22,7 @@
 #include "FPSTraceChannels.h"
 #include "UObject/UnrealType.h"
 #include "ShooterPlayerController.h"
+#include "Game/ShooterBotController.h"
 #include "ShooterGamePlayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "InputAction.h"
@@ -75,8 +76,25 @@ AShooterCharacter::AShooterCharacter()
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(GetRootComponent());
 	SpringArm->TargetArmLength = 0.f;
-	SpringArm->bEnableCameraLag = true;
+	SpringArm->bEnableCameraLag = false;   // 第一人称位置延迟会让高速移动/滑铲时手臂和镜头"拖在身后"
 	SpringArm->CameraLagSpeed = 15.f;
+
+	SlideDuration = 0.75f;
+	SlideSpeedBoost = 200.f;
+	SlideEndSpeed = 350.f;
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+	{
+		CMC->AirControl = 0.4f;
+		CMC->JumpZVelocity = 420.f;
+		CMC->GravityScale = 1.5f;
+		CMC->BrakingDecelerationFalling = 200.f;
+		CMC->MaxAcceleration = 3000.f;
+		CMC->BrakingDecelerationWalking = 1800.f;
+		CMC->GroundFriction = 8.f;
+		CMC->bUseSeparateBrakingFriction = true;
+		CMC->BrakingFriction = 6.f;
+		CMC->FallingLateralFriction = 0.f;
+	}
 	SpringArm->bUsePawnControlRotation = true;
 
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
@@ -142,6 +160,7 @@ void AShooterCharacter::BeginPlay()
 
 	if (IsValid(SpringArm))
 	{
+		SpringArm->bEnableCameraLag = false;   // 蓝图里勾了也强制关（蹲起高度改由 CrouchCameraOffsetZ 平滑）
 		SpringArmBaseLocation = SpringArm->GetRelativeLocation();
 		bSpringArmBaseCaptured = true;
 	}
@@ -219,10 +238,12 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateAimAlpha(DeltaTime);             // 开镜进度先推进，下面对准和 FOV 都用它
 	RemoveVisualRecoilFromMesh();          // 开镜对准要按没有后坐的位置算
 	UpdateAimSocketAlignment(DeltaTime);
+	UpdateWeaponSway(DeltaTime);           // 转视角拖拽 / 走路晃 / 落地下沉（和枪身后坐一起写进 Mesh1P）
 	ApplyVisualRecoilToMesh(DeltaTime);    // 算完再把枪身后坐叠回去
 	UpdateAimFieldOfView(DeltaTime);
 	UpdateLean(DeltaTime);
 	UpdateSlide(DeltaTime);
+	UpdateMomentumCarry(DeltaTime);
 	UpdateProne(DeltaTime);
 
 	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
@@ -416,7 +437,11 @@ void AShooterCharacter::UpdateAimAlpha(float DeltaTime)
 	}
 
 	// 开镜和关镜都用同一个时间；时间为 0 就瞬间到位
-	const float AdsTime = IsValid(Weapon) ? Weapon->GetEffectiveAdsTime() : 0.2f;
+	float AdsTime = IsValid(Weapon) ? Weapon->GetEffectiveAdsTime() : 0.2f;
+	// 用 bIsSliding 作目标，平滑追过去——不要跟 SlideAlpha 绑死（滑铲结束/开镜中途倍率突变会让枪卡一下）
+	const float DesiredAdsScale = bIsSliding ? SlideAdsTimeMultiplier : 1.f;
+	AdsTimeScaleCurrent = FMath::FInterpTo(AdsTimeScaleCurrent, DesiredAdsScale, DeltaTime, 6.f);
+	AdsTime *= AdsTimeScaleCurrent;
 	if (AdsTime <= KINDA_SMALL_NUMBER)
 	{
 		AimAlpha = Target;
@@ -425,8 +450,8 @@ void AShooterCharacter::UpdateAimAlpha(float DeltaTime)
 	{
 		AimAlpha = FMath::FInterpConstantTo(AimAlpha, Target, DeltaTime, 1.f / AdsTime);
 	}
-	// 给手臂和 FOV 用的是缓入缓出后的值，看起来不生硬
-	AimAlignAlpha = FMath::InterpEaseInOut(0.f, 1.f, AimAlpha, 2.f);
+	// 给手臂和 FOV 用的是先快后慢（EaseOut）的值：开镜前段更跟手，到位时不生硬
+	AimAlignAlpha = FMath::InterpEaseOut(0.f, 1.f, AimAlpha, 2.f);
 }
 
 void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
@@ -511,42 +536,50 @@ void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 {
 	if (!IsLocallyControlled() || !IsValid(Mesh1P) || !IsValid(FirstPersonCamera)) return;
 
-	// 关掉时清空残留偏移（上一帧的偏移已在 RemoveVisualRecoilFromMesh 撤掉），之后不再碰 Mesh1P
+	// 关掉时清空残留偏移（上一帧的偏移已在 RemoveVisualRecoilFromMesh 撤掉）
 	if (!bEnableVisualRecoil)
 	{
 		VisualRecoilLocTarget = FVector::ZeroVector;
 		VisualRecoilRotTarget = FRotator::ZeroRotator;
 		VisualRecoilLocCurrent = FVector::ZeroVector;
 		VisualRecoilRotCurrent = FRotator::ZeroRotator;
-		return;
+	}
+	else
+	{
+		const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+		const float KickSpeed = IsValid(Weapon) ? Weapon->VisualRecoilKickSpeed : 50.f;
+		const float RecoverySpeed = IsValid(Weapon) ? Weapon->VisualRecoilRecoverySpeed : 16.f;
+
+		// 两段弹簧：目标慢慢回 0，当前值快速追目标 → 开枪瞬间“踢一下”，然后平滑回位
+		VisualRecoilLocTarget = FMath::VInterpTo(VisualRecoilLocTarget, FVector::ZeroVector, DeltaTime, RecoverySpeed);
+		VisualRecoilRotTarget = FMath::RInterpTo(VisualRecoilRotTarget, FRotator::ZeroRotator, DeltaTime, RecoverySpeed);
+		VisualRecoilLocCurrent = FMath::VInterpTo(VisualRecoilLocCurrent, VisualRecoilLocTarget, DeltaTime, KickSpeed);
+		VisualRecoilRotCurrent = FMath::RInterpTo(VisualRecoilRotCurrent, VisualRecoilRotTarget, DeltaTime, KickSpeed);
+
+		if (VisualRecoilLocCurrent.IsNearlyZero(0.001f) && VisualRecoilRotCurrent.IsNearlyZero(0.001f)
+			&& VisualRecoilLocTarget.IsNearlyZero(0.001f) && VisualRecoilRotTarget.IsNearlyZero(0.001f))
+		{
+			VisualRecoilLocCurrent = FVector::ZeroVector;
+			VisualRecoilRotCurrent = FRotator::ZeroRotator;
+		}
 	}
 
-	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
-	const float KickSpeed = IsValid(Weapon) ? Weapon->VisualRecoilKickSpeed : 30.f;
-	const float RecoverySpeed = IsValid(Weapon) ? Weapon->VisualRecoilRecoverySpeed : 10.f;
-
-	// 两段弹簧：目标慢慢回 0，当前值快速追目标 → 开枪瞬间“踢一下”，然后平滑回位
-	VisualRecoilLocTarget = FMath::VInterpTo(VisualRecoilLocTarget, FVector::ZeroVector, DeltaTime, RecoverySpeed);
-	VisualRecoilRotTarget = FMath::RInterpTo(VisualRecoilRotTarget, FRotator::ZeroRotator, DeltaTime, RecoverySpeed);
-	VisualRecoilLocCurrent = FMath::VInterpTo(VisualRecoilLocCurrent, VisualRecoilLocTarget, DeltaTime, KickSpeed);
-	VisualRecoilRotCurrent = FMath::RInterpTo(VisualRecoilRotCurrent, VisualRecoilRotTarget, DeltaTime, KickSpeed);
-
-	if (VisualRecoilLocCurrent.IsNearlyZero(0.001f) && VisualRecoilRotCurrent.IsNearlyZero(0.001f)
-		&& VisualRecoilLocTarget.IsNearlyZero(0.001f) && VisualRecoilRotTarget.IsNearlyZero(0.001f))
+	// 后坐 + 晃动合在一起（都是镜头空间）
+	const FVector TotalLoc = VisualRecoilLocCurrent + SwayLocCurrent + FVector(0.f, 0.f, SwayDipZ);
+	const FRotator TotalRot = VisualRecoilRotCurrent + SwayRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f);
+	if (TotalLoc.IsNearlyZero(0.001f) && TotalRot.IsNearlyZero(0.001f))
 	{
-		VisualRecoilLocCurrent = FVector::ZeroVector;
-		VisualRecoilRotCurrent = FRotator::ZeroRotator;
-		return;   // 没有后坐就不碰 Mesh1P
+		return;   // 没有偏移就不碰 Mesh1P
 	}
 
 	// 偏移是按镜头空间定义的（X 前、Z 上），换算到 Mesh1P 父组件的空间
 	USceneComponent* Parent = Mesh1P->GetAttachParent();
-	FVector LocParent = VisualRecoilLocCurrent;
-	FQuat RotParent = VisualRecoilRotCurrent.Quaternion();
+	FVector LocParent = TotalLoc;
+	FQuat RotParent = TotalRot.Quaternion();
 	if (IsValid(Parent) && Parent != FirstPersonCamera)
 	{
 		const FTransform CameraToParent = FirstPersonCamera->GetComponentTransform().GetRelativeTransform(Parent->GetComponentTransform());
-		LocParent = CameraToParent.TransformVectorNoScale(VisualRecoilLocCurrent);
+		LocParent = CameraToParent.TransformVectorNoScale(TotalLoc);
 		const FQuat CamQ = CameraToParent.GetRotation();
 		RotParent = CamQ * RotParent * CamQ.Inverse();
 	}
@@ -560,6 +593,81 @@ void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 	LastWrittenMeshLoc = Mesh1P->GetRelativeLocation();
 	LastWrittenMeshQuat = Mesh1P->GetRelativeRotation().Quaternion();
 	bVisualRecoilWritten = true;
+}
+
+void AShooterCharacter::UpdateWeaponSway(float DeltaTime)
+{
+	if (!IsLocallyControlled() || DeltaTime <= KINDA_SMALL_NUMBER) return;
+
+	const UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (IsValid(CMC) && CMC->IsFalling())
+	{
+		LastFallingVelocityZ = GetVelocity().Z;
+	}
+
+	const bool bDead = IsValid(Stats) && Stats->DeathState != EDeathState::NotDead;
+	if (!bEnableWeaponSway || bDead || bCantedAim)
+	{
+		SwayLocCurrent = FVector::ZeroVector;
+		SwayRotCurrent = FRotator::ZeroRotator;
+		bHasLastSwayControlRot = false;
+		LandingDipTarget = LandingDipCurrent = 0.f;
+		SwayDipZ = 0.f;
+		return;
+	}
+
+	// 开镜时晃动减小
+	const float AimScale = FMath::Lerp(1.f, SwayAimMultiplier, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
+
+	// 1) 转视角拖拽：视角角速度（度/秒）→ 枪反向偏一点
+	const FRotator ControlRot = GetControlRotation();
+	float YawRate = 0.f, PitchRate = 0.f;
+	if (bHasLastSwayControlRot)
+	{
+		const FRotator Delta = (ControlRot - LastSwayControlRot).GetNormalized();
+		YawRate = Delta.Yaw / DeltaTime;
+		PitchRate = Delta.Pitch / DeltaTime;
+	}
+	LastSwayControlRot = ControlRot;
+	bHasLastSwayControlRot = true;
+
+	FRotator TargetRot;
+	TargetRot.Yaw = FMath::Clamp(-YawRate * SwayLookRotationScale, -SwayMaxRotation, SwayMaxRotation);
+	TargetRot.Pitch = FMath::Clamp(-PitchRate * SwayLookRotationScale, -SwayMaxRotation, SwayMaxRotation);
+	TargetRot.Roll = FMath::Clamp(-YawRate * SwayLookRotationScale * 0.6f, -SwayMaxRotation, SwayMaxRotation);
+	FVector TargetLoc(0.f,
+		FMath::Clamp(-YawRate * SwayLookLocationScale, -SwayMaxLocation, SwayMaxLocation),
+		FMath::Clamp(-PitchRate * SwayLookLocationScale, -SwayMaxLocation, SwayMaxLocation));
+
+	// 2) 走路晃动：地面移动时按速度推进相位，竖直走 2 倍频（左右各一步）
+	const bool bGrounded = IsValid(CMC) && CMC->IsMovingOnGround() && !bIsSliding;
+	const float SpeedRatio = bGrounded ? FMath::Clamp(GetVelocity().Size2D() / FMath::Max(1.f, BobReferenceSpeed), 0.f, 1.8f) : 0.f;
+	BobWeight = FMath::FInterpTo(BobWeight, SpeedRatio, DeltaTime, 6.f);
+	BobPhase = FMath::Fmod(BobPhase + DeltaTime * BobFrequency * FMath::Max(0.6f, SpeedRatio), 2.f * PI);
+	TargetLoc.Y += FMath::Sin(BobPhase) * BobHorizontalAmount * BobWeight;
+	TargetLoc.Z += FMath::Sin(BobPhase * 2.f) * BobVerticalAmount * BobWeight;
+	TargetRot.Roll += FMath::Sin(BobPhase) * 0.4f * BobWeight;
+
+	// 3) 落地下沉：目标慢慢回 0，当前值快速追目标
+	LandingDipTarget = FMath::FInterpTo(LandingDipTarget, 0.f, DeltaTime, LandingDipRecoverySpeed);
+	LandingDipCurrent = FMath::FInterpTo(LandingDipCurrent, LandingDipTarget, DeltaTime, 25.f);
+
+	TargetLoc *= AimScale;
+	TargetRot *= AimScale;
+	SwayLocCurrent = FMath::VInterpTo(SwayLocCurrent, TargetLoc, DeltaTime, SwaySmoothSpeed);
+	SwayRotCurrent = FMath::RInterpTo(SwayRotCurrent, TargetRot, DeltaTime, SwaySmoothSpeed);
+	// 下沉不走上面的平滑（自己有两段弹簧），在 ApplyVisualRecoilToMesh 里单独叠加；开镜时减到 40%
+	SwayDipZ = LandingDipCurrent * FMath::Lerp(1.f, 0.4f, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
+}
+
+void AShooterCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+	if (!IsLocallyControlled()) return;
+	const float FallSpeed = FMath::Max(FMath::Abs(LastFallingVelocityZ), FMath::Abs(GetVelocity().Z));
+	LastFallingVelocityZ = 0.f;
+	if (FallSpeed < 200.f) return;   // 小台阶不下沉
+	LandingDipTarget = -FMath::Min(FallSpeed / 1000.f * LandingDipAmount, LandingDipMax);
 }
 
 float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
@@ -744,6 +852,17 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 	}
 }
 
+bool AShooterCharacter::IsLocallyControlled() const
+{
+	// 傀儡的控制器在服务器上算本地玩家，这样 Pawn 才会按模拟代理复制移动。
+	// 枪械显隐、预测扣弹、换弹必须走远程路径，否则主机上看不见他们的身体。
+	if (GetController() && GetController()->IsA(AShooterBotController::StaticClass()))
+	{
+		return false;
+	}
+	return Super::IsLocallyControlled();
+}
+
 void AShooterCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
@@ -854,12 +973,20 @@ bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* Damag
 		{
 			Client_ShowDamageIndicator(DamageInstigator->GetActorLocation());
 		}
-		// Shooter: hit confirm marks
+		// Shooter: hit confirm marks（致死 = 红色击杀 X + 击杀音；爆头单独标记）
 		if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(DamageInstigator))
 		{
 			if (Shooter->IsPlayerControlled())
 			{
-				Shooter->Client_ConfirmHit();
+				const bool bHeadshot = Shooter->bPendingHeadshotHit;
+				if (Stats->DeathState != EDeathState::NotDead)
+				{
+					Shooter->Client_ConfirmKill(bHeadshot);
+				}
+				else
+				{
+					Shooter->Client_ConfirmHit(bHeadshot);
+				}
 			}
 		}
 	}
@@ -904,9 +1031,16 @@ void AShooterCharacter::Client_ShowDamageIndicator_Implementation(FVector_NetQua
 	OnDamageIndicator.Broadcast(InstigatorLocation);
 }
 
-void AShooterCharacter::Client_ConfirmHit_Implementation()
+void AShooterCharacter::Client_ConfirmHit_Implementation(bool bHeadshot)
 {
 	OnHitConfirmed.Broadcast();
+	OnHitConfirmedDetailed.Broadcast(bHeadshot, false);
+}
+
+void AShooterCharacter::Client_ConfirmKill_Implementation(bool bHeadshot)
+{
+	OnHitConfirmed.Broadcast();
+	OnHitConfirmedDetailed.Broadcast(bHeadshot, true);
 }
 
 void AShooterCharacter::Multicast_HitReact_Implementation(EHitReactDirection Direction, int32 MontageIndex)
@@ -1136,7 +1270,11 @@ void AShooterCharacter::UpdateProne(float DeltaTime)
 
 	if (IsLocallyControlled() && bSpringArmBaseCaptured && IsValid(SpringArm))
 	{
-		const FVector Desired = SpringArmBaseLocation + FVector(0.f, 0.f, ProneCameraZOffset * ProneAlpha + SlideCameraZOffset * SlideAlpha);
+		CrouchCameraOffsetZ = CrouchCameraInterpSpeed > 0.f ? FMath::FInterpTo(CrouchCameraOffsetZ, 0.f, DeltaTime, CrouchCameraInterpSpeed) : 0.f;
+		if (FMath::Abs(CrouchCameraOffsetZ) < 0.01f) CrouchCameraOffsetZ = 0.f;
+		// 滑铲镜头下沉会把挂在相机上的 Mesh1P 一起带下来，开镜时手臂更容易挡视野；开镜进度起来淡出下沉
+		const float SlideDip = SlideCameraZOffset * SlideAlpha * (1.f - FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
+		const FVector Desired = SpringArmBaseLocation + FVector(0.f, 0.f, ProneCameraZOffset * ProneAlpha + SlideDip + CrouchCameraOffsetZ);
 		if (!SpringArm->GetRelativeLocation().Equals(Desired, 0.01f))
 		{
 			SpringArm->SetRelativeLocation(Desired);
@@ -1219,6 +1357,16 @@ void AShooterCharacter::OnRep_IsSliding(bool bOldSliding)
 	}
 }
 
+
+float AShooterCharacter::GetSlideAdsSettleRemaining() const
+{
+	if (!bSlideAdsDelayEnabled || !bIsSliding) return 0.f;
+	const float Delay = (SlideToAdsDelay > KINDA_SMALL_NUMBER)
+		? SlideToAdsDelay
+		: (0.5f * FMath::Max(0.1f, SlideDuration));
+	return FMath::Max(0.f, Delay - SlideElapsed);
+}
+
 void AShooterCharacter::ApplySlideState(bool bNewSliding)
 {
 	UCharacterMovementComponent* CMC = GetCharacterMovement();
@@ -1238,8 +1386,13 @@ void AShooterCharacter::ApplySlideState(bool bNewSliding)
 			bSlideSavedMovement = true;
 		}
 		// No input acceleration while sliding (controller skips move input) -> CMC brakes linearly by this.
+		FrictionRecoverElapsed = -1.f;
+		CarriedSpeed = 0.f;
 		CMC->GroundFriction = 0.f;
-		CMC->BrakingDecelerationWalking = SlideDeceleration;
+		// 滑铲无移动输入时 CMC 走刹车分支；开了 bUseSeparateBrakingFriction 会用 BrakingFriction 而不是 GroundFriction。
+		// 若不置 0，BrakingFriction=6 会一帧刹停，速度立刻 < SlideEndSpeed，滑铲当场结束。
+		CMC->BrakingFriction = 0.f;
+		CMC->BrakingDecelerationWalking = SlideDecelEarly;
 		CMC->bWantsToCrouch = true;   // low capsule = normal crouch height
 		if (bSimulates)
 		{
@@ -1253,9 +1406,11 @@ void AShooterCharacter::ApplySlideState(bool bNewSliding)
 	}
 	else if (bSlideSavedMovement)
 	{
-		CMC->GroundFriction = SavedGroundFriction;
+		// 摩擦力不瞬间恢复：UpdateMomentumCarry 里 SlideFrictionRecoverTime 秒内插值回去
 		CMC->BrakingDecelerationWalking = SavedBrakingDecelWalking;
-		bSlideSavedMovement = false;
+		FrictionRecoverElapsed = 0.f;
+		// 保留滑铲出口速度（站起/滑铲跳不掉速），落地后再衰减
+		CarriedSpeed = CMC->Velocity.Size2D();
 	}
 
 	PlaySlideAnim(bNewSliding);
@@ -1304,6 +1459,44 @@ void AShooterCharacter::PlaySlideAnim(bool bPlay)
 	}
 }
 
+void AShooterCharacter::UpdateMomentumCarry(float DeltaTime)
+{
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(CMC)) return;
+
+	if (FrictionRecoverElapsed >= 0.f && bSlideSavedMovement && !bIsSliding)
+	{
+		FrictionRecoverElapsed += DeltaTime;
+		const float A = SlideFrictionRecoverTime > 0.f ? FMath::Clamp(FrictionRecoverElapsed / SlideFrictionRecoverTime, 0.f, 1.f) : 1.f;
+		CMC->GroundFriction = FMath::Lerp(0.f, SavedGroundFriction, A);
+		// 与 GroundFriction 同步恢复（COD 默认 BrakingFriction=6）
+		CMC->BrakingFriction = FMath::Lerp(0.f, 6.f, A);
+		if (A >= 1.f)
+		{
+			CMC->GroundFriction = SavedGroundFriction;
+			CMC->BrakingFriction = 6.f;
+			bSlideSavedMovement = false;
+			FrictionRecoverElapsed = -1.f;
+		}
+	}
+
+	if (CarriedSpeed <= 0.f) return;
+	if (bIsSliding) { CarriedSpeed = 0.f; return; }
+	// 空中保持；落地后按 MomentumCarryDecayTime 线性衰减到当前速度上限以下
+	if (!CMC->IsFalling())
+	{
+		const float Rate = FMath::Max(100.f, CarriedSpeed / FMath::Max(0.05f, MomentumCarryDecayTime));
+		CarriedSpeed = FMath::Max(0.f, CarriedSpeed - Rate * DeltaTime);
+	}
+	RefreshControllerMovementSpeed();
+}
+
+void AShooterCharacter::OnStartCrouchCameraFix(float ScaledHalfHeightAdjust)
+{
+	// 胶囊体变矮整体下移 → 镜头会瞬间掉一截。先反向补回，再在 UpdateProne 里平滑回 0
+	if (IsLocallyControlled()) CrouchCameraOffsetZ += ScaledHalfHeightAdjust;
+}
+
 void AShooterCharacter::UpdateSlide(float DeltaTime)
 {
 	const float Target = bIsSliding ? 1.f : 0.f;
@@ -1313,7 +1506,28 @@ void AShooterCharacter::UpdateSlide(float DeltaTime)
 	if (!bIsSliding) return;
 	SlideElapsed += DeltaTime;
 
-	const UCharacterMovementComponent* CMC = GetCharacterMovement();
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (IsValid(CMC) && (IsLocallyControlled() || HasAuthority()))
+	{
+		CMC->BrakingDecelerationWalking = SlideElapsed < SlideDecelSwitchTime ? SlideDecelEarly : SlideDecelLate;
+		// 视角转向：速度方向向视角 Yaw 靠拢（限角速度，且只在 100° 以内转）
+		if (SlideSteerRate > 0.f && CMC->IsMovingOnGround())
+		{
+			FVector V = CMC->Velocity; const float Z = V.Z; V.Z = 0.f;
+			const float Speed = V.Size();
+			if (Speed > 1.f)
+			{
+				const float VelYaw = V.Rotation().Yaw;
+				const float Delta = FMath::FindDeltaAngleDegrees(VelYaw, GetControlRotation().Yaw);
+				if (FMath::Abs(Delta) < 100.f)
+				{
+					const float Step = FMath::Clamp(Delta, -SlideSteerRate * DeltaTime, SlideSteerRate * DeltaTime);
+					const FVector NewDir = FRotator(0.f, VelYaw + Step, 0.f).Vector();
+					CMC->Velocity = NewDir * Speed + FVector(0.f, 0.f, Z);
+				}
+			}
+		}
+	}
 	const bool bDone = SlideElapsed >= SlideDuration
 		|| GetVelocity().Size2D() < SlideEndSpeed
 		|| (IsValid(CMC) && !CMC->IsMovingOnGround());
@@ -1450,7 +1664,9 @@ void AShooterCharacter::UpdateLean(float DeltaTime)
 	}
 
 	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * OffsetScale, 0.f));
-	FirstPersonCamera->SetRelativeRotation(CameraBaseRotation + FRotator(0.f, 0.f, LeanAlpha * LeanRollDegrees));
+	// 侧倾手感保留：开镜时收到 SlideCameraRollAds，不整段清零
+	const float SlideRoll = SlideAlpha * FMath::Lerp(SlideCameraRoll, SlideCameraRollAds, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
+	FirstPersonCamera->SetRelativeRotation(CameraBaseRotation + FRotator(0.f, 0.f, LeanAlpha * LeanRollDegrees + SlideRoll));
 }
 
 void AShooterCharacter::Input_SwitchZoom()
@@ -1902,6 +2118,7 @@ void AShooterCharacter::RefreshControllerMovementSpeed()
 void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
 	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+	OnStartCrouchCameraFix(ScaledHalfHeightAdjust);
 	RefreshControllerMovementSpeed();   // 下蹲会打断冲刺
 	RefreshLocomotionGait();
 }
@@ -1909,6 +2126,7 @@ void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHe
 void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
 	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+	OnStartCrouchCameraFix(-ScaledHalfHeightAdjust);
 	RefreshControllerMovementSpeed();
 	RefreshLocomotionGait();
 }

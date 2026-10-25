@@ -1,4 +1,4 @@
-﻿
+
 
 
 #include "Weapon/Weapon.h"
@@ -178,32 +178,32 @@ AWeapon::AWeapon()
 	AimSocketName = TEXT("AimSocket");
 	TraceRadius = 5.f;
 	FireTime = 0.1f;
-	// Sample spray: climb, drift right, then swing left, then back toward center.
+	// COD 式：以垂直为主，前几发稍重，左右很小（约 ±0.1）
 	RecoilPattern = {
-		FRecoilStep(0.48f,  0.00f),
-		FRecoilStep(0.55f,  0.10f),
-		FRecoilStep(0.52f,  0.22f),
-		FRecoilStep(0.46f,  0.30f),
-		FRecoilStep(0.40f,  0.16f),
-		FRecoilStep(0.38f, -0.08f),
-		FRecoilStep(0.36f, -0.26f),
-		FRecoilStep(0.34f, -0.34f),
-		FRecoilStep(0.32f, -0.12f),
-		FRecoilStep(0.30f,  0.14f),
-		FRecoilStep(0.28f,  0.22f),
-		FRecoilStep(0.26f,  0.06f)
+		FRecoilStep(0.50f,  0.00f),
+		FRecoilStep(0.48f,  0.04f),
+		FRecoilStep(0.45f,  0.08f),
+		FRecoilStep(0.42f,  0.05f),
+		FRecoilStep(0.38f, -0.03f),
+		FRecoilStep(0.36f, -0.08f),
+		FRecoilStep(0.34f, -0.10f),
+		FRecoilStep(0.33f, -0.04f),
+		FRecoilStep(0.32f,  0.04f),
+		FRecoilStep(0.31f,  0.09f),
+		FRecoilStep(0.30f,  0.06f),
+		FRecoilStep(0.30f,  0.00f)
 	};
 	RecoilPitchScale = 1.f;
 	RecoilYawScale = 1.f;
 	AimRecoilMultiplier = 0.65f;
-	RecoilRecoverySpeed = 18.f;
-	RecoilRecoveryDelay = 0.12f;
+	RecoilRecoverySpeed = 30.f;
+	RecoilRecoveryDelay = 0.06f;
 	RecoilResetTime = 0.4f;
-	VisualRecoilLocation = FVector(1.5f, 0.2f, 0.3f);
-	VisualRecoilRotation = FRotator(3.f, 2.f, 1.5f);   // FRotator(Pitch, Yaw, Roll)
+	VisualRecoilLocation = FVector(2.5f, 0.15f, 0.4f);   // 后坐 2.5cm
+	VisualRecoilRotation = FRotator(3.f, 0.8f, 1.5f);   // FRotator(Pitch, Yaw, Roll)
 	VisualRecoilAimMultiplier = 0.4f;
-	VisualRecoilKickSpeed = 30.f;
-	VisualRecoilRecoverySpeed = 10.f;
+	VisualRecoilKickSpeed = 50.f;
+	VisualRecoilRecoverySpeed = 16.f;
 	Damage = 15.f;
 	HeadshotMultiplier = 2.f;
 	LimbMultiplier = 0.75f;
@@ -489,9 +489,46 @@ void AWeapon::CaptureAuthoredMeshRelative()
 {
 	if (bCapturedAuthoredRelative) return;
 
-	AuthoredMesh1PRelative = Mesh1P->GetRelativeTransform();
-	AuthoredMesh3PRelative = Mesh3P->GetRelativeTransform();
+	// Mesh1P is RootComponent: unattached RelativeTransform is actor spawn world pose,
+	// not a socket-local authored offset. Always identity loc/rot; keep mesh scale only.
+	if (IsValid(Mesh1P))
+	{
+		AuthoredMesh1PRelative = FTransform(FQuat::Identity, FVector::ZeroVector, Mesh1P->GetRelativeScale3D());
+	}
+
+	if (IsValid(Mesh3P) && Mesh3P->GetAttachParent() == Mesh1P)
+	{
+		AuthoredMesh3PRelative = Mesh3P->GetRelativeTransform();
+	}
+	else if (IsValid(Mesh3P))
+	{
+		AuthoredMesh3PRelative = FTransform(FQuat::Identity, FVector::ZeroVector, Mesh3P->GetRelativeScale3D());
+	}
+
 	bCapturedAuthoredRelative = true;
+}
+
+void AWeapon::ApplyMeshAttachRelative(USkeletalMeshComponent* WeaponMesh, bool bFirstPerson)
+{
+	if (!IsValid(WeaponMesh)) return;
+
+	if (!bCapturedAuthoredRelative)
+	{
+		CaptureAuthoredMeshRelative();
+	}
+
+	const FTransform& Authored = bFirstPerson ? AuthoredMesh1PRelative : AuthoredMesh3PRelative;
+	FVector Loc = Authored.GetLocation();
+	FQuat Rot = Authored.GetRotation();
+	if (bUseMeshAttachRelativeRotation)
+	{
+		const FRotator RotOffset = bFirstPerson ? Mesh1PAttachRelativeRotation : Mesh3PAttachRelativeRotation;
+		const FVector LocOffset = bFirstPerson ? Mesh1PAttachRelativeLocation : Mesh3PAttachRelativeLocation;
+		Loc = Authored.GetLocation() + LocOffset;
+		Rot = RotOffset.Quaternion();
+	}
+	WeaponMesh->SetRelativeLocationAndRotation(Loc, Rot);
+	WeaponMesh->SetRelativeScale3D(Authored.GetScale3D());
 }
 
 
@@ -576,13 +613,15 @@ void AWeapon::AttachToOwingPawn()
 		Attach3P = ResolveAttachPoint(PawnMesh3P, AttachPoint);
 	}
 
-	const FAttachmentTransformRules SnapRules = FAttachmentTransformRules::SnapToTargetNotIncludingScale;
+	const FAttachmentTransformRules SnapRules = FAttachmentTransformRules::SnapToTargetIncludingScale;
 	Mesh1P->AttachToComponent(PawnMesh1P, SnapRules, Attach1P);
-	Mesh1P->SetRelativeTransform(AuthoredMesh1PRelative);
+	ApplyMeshAttachRelative(Mesh1P, true);
 
 	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 	Mesh3P->AttachToComponent(PawnMesh3P, SnapRules, Attach3P);
-	Mesh3P->SetRelativeTransform(AuthoredMesh3PRelative);
+	ApplyMeshAttachRelative(Mesh3P, false);
+
+
 	Mesh3P->RefreshBoneTransforms();
 
 	UE_LOG(LogTemp, Log,
@@ -634,9 +673,12 @@ void AWeapon::AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketN
 		return;
 	}
 
-	// Keep the gun where it already is on this frame, then follow the new hand.
-	const FAttachmentTransformRules KeepWorld(EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, false);
-	WeaponMesh->AttachToComponent(PawnMesh, KeepWorld, SocketName);
+	// Full Snap + authored offsets every grip (melee re-equip safe).
+	// Never KeepWorld — it left socket-relative rotation dirty after unequip.
+	const FAttachmentTransformRules SnapRules = FAttachmentTransformRules::SnapToTargetIncludingScale;
+	WeaponMesh->AttachToComponent(PawnMesh, SnapRules, SocketName);
+	const bool bFirstPerson = (PawnMesh == IPlayerInterface::Execute_GetMesh1P(OwningPawn));
+	ApplyMeshAttachRelative(WeaponMesh, bFirstPerson);
 }
 
 void AWeapon::SetHiddenForHeal(bool bHideWeapon)
@@ -662,6 +704,11 @@ void AWeapon::SetHiddenForHeal(bool bHideWeapon)
 
 void AWeapon::DetachFromPawn()
 {
+	if (!bCapturedAuthoredRelative)
+	{
+		CaptureAuthoredMeshRelative();
+	}
+
 	if (IsValid(Mesh3P))
 	{
 		Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
@@ -669,11 +716,16 @@ void AWeapon::DetachFromPawn()
 		{
 			Mesh3P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
 		}
+		Mesh3P->SetRelativeTransform(AuthoredMesh3PRelative);
 	}
 
 	if (IsValid(Mesh1P) && Mesh1P->GetAttachParent())
 	{
 		Mesh1P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+	}
+	if (IsValid(Mesh1P))
+	{
+		Mesh1P->SetRelativeTransform(AuthoredMesh1PRelative);
 	}
 }
 
@@ -1424,14 +1476,19 @@ float AWeapon::GetRecoilMultiplier() const
 	return Multiplier;
 }
 
+
 float AWeapon::GetHipFireSpread() const
 {
 	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetInstigator());
-	if (IsValid(Combat) && Combat->bAiming) return 0.f;
 	float Spread = FMath::Max(0.f, HipFireSpread);
 	for (const UAttachmentData* Attachment : EquippedAttachments)
 	{
 		if (IsValid(Attachment)) Spread *= FMath::Max(0.f, Attachment->HipFireSpreadMultiplier);
+	}
+	// ADS: single bullet -> zero cone; multi-pellet (shotgun) keeps a tighter cone so pellets still fan.
+	if (IsValid(Combat) && Combat->bAiming)
+	{
+		return (PelletsPerShot > 1) ? Spread * 0.35f : 0.f;
 	}
 	return Spread;
 }
@@ -2318,6 +2375,26 @@ void AWeapon::SpawnPelletImpacts(const TArray<FHitResult>& Hits)
 		Actor->FinishSpawning(SpawnXform);
 		if (Actor->InitialLifeSpan <= 0.f) Actor->SetLifeSpan(5.f);
 	}
+}
+
+
+
+UAnimMontage* AWeapon::PlaySequenceAsDynamicMontage(UAnimInstance* Anim, UAnimSequenceBase* Sequence, FName SlotName, float BlendIn, float BlendOut)
+{
+	if (!IsValid(Anim) || !IsValid(Sequence)) return nullptr;
+	return Anim->PlaySlotAnimationAsDynamicMontage(Sequence, SlotName, BlendIn, BlendOut, 1.f, 1);
+}
+
+void AWeapon::PlayWeaponSequence(USkeletalMeshComponent* WeaponMesh, UAnimSequence* Sequence)
+{
+	if (!IsValid(WeaponMesh) || !IsValid(Sequence)) return;
+	UAnimInstance* Anim = WeaponMesh->GetAnimInstance();
+	if (IsValid(Anim) && !Anim->IsA<UAnimSingleNodeInstance>())
+	{
+		PlaySequenceAsDynamicMontage(Anim, Sequence);
+		return;
+	}
+	WeaponMesh->PlayAnimation(Sequence, false);
 }
 
 void AWeapon::PlayWeaponMontageOrSequence(USkeletalMeshComponent* WeaponMesh, UAnimMontage* Montage)

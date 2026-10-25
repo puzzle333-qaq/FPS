@@ -1,4 +1,4 @@
-#include "ShooterPlayerController.h"
+﻿#include "ShooterPlayerController.h"
 #include "ShooterCharacter.h"
 
 #include "EnhancedInputSubsystems.h"
@@ -42,9 +42,68 @@ AShooterPlayerController::AShooterPlayerController()
 	bPawnAlive = true;
 }
 
+void AShooterPlayerController::NoteSprintEnded()
+{
+	if (const UWorld* World = GetWorld())
+	{
+		SprintEndedAt = World->GetTimeSeconds();
+	}
+}
+
+bool AShooterPlayerController::CanStartAds() const
+{
+	return GetAdsSettleRemaining() <= KINDA_SMALL_NUMBER;
+}
+
+float AShooterPlayerController::GetAdsSettleRemaining() const
+{
+	float Remain = 0.f;
+	if (bIsSprinting)
+	{
+		Remain = FMath::Max(0.f, SprintToAdsDelay);
+	}
+	else
+	{
+		const UWorld* World = GetWorld();
+		if (World && SprintToAdsDelay > KINDA_SMALL_NUMBER)
+		{
+			const float Elapsed = static_cast<float>(World->GetTimeSeconds() - SprintEndedAt);
+			Remain = FMath::Max(0.f, SprintToAdsDelay - Elapsed);
+		}
+	}
+	// Option A：滑铲前半段开镜门控（与冲刺后摇取较大值；Combat 预输入缓冲复用此接口）
+	if (const AShooterCharacter* Char = Cast<AShooterCharacter>(GetCharacter()))
+	{
+		Remain = FMath::Max(Remain, Char->GetSlideAdsSettleRemaining());
+	}
+	return Remain;
+}
+
 void AShooterPlayerController::StopSprinting()
 {
+	if (bIsSprinting) NoteSprintEnded();
 	bIsSprinting = false;
+	UpdateMovementSpeed();
+}
+
+void AShooterPlayerController::StartTacticalSprint()
+{
+	if (const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
+	{
+		if (Combat->IsReloading()) return;   // 换弹期间禁止战术冲刺
+	}
+	bIsTacticalSprinting = true;
+	GetWorldTimerManager().SetTimer(TacticalSprintTimer, this, &ThisClass::EndTacticalSprint, FMath::Max(0.1f, TacticalSprintDuration), false);
+	UpdateMovementSpeed();
+}
+
+void AShooterPlayerController::EndTacticalSprint()
+{
+	if (!bIsTacticalSprinting) return;
+	// 时间到：退回普通冲刺（还在冲刺的话）。ApplyMovementSpeed 里会记冷却
+	bIsTacticalSprinting = false;
+	GetWorldTimerManager().ClearTimer(TacticalSprintTimer);
+	if (const UWorld* World = GetWorld()) TacticalSprintReadyTime = World->GetTimeSeconds() + TacticalSprintCooldown;
 	UpdateMovementSpeed();
 }
 
@@ -349,10 +408,16 @@ void AShooterPlayerController::Input_Jump()
 	UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();
 	if (!IsValid(CMC)) return;
 
-	// 滑铲中按跳 = 取消滑铲并站起
+	// 滑铲中按跳 = 取消滑铲并直接起跳（COD 式滑铲取消）
 	if (AShooterCharacter* SlideShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(SlideShooter) && SlideShooter->IsSliding())
 	{
 		SlideShooter->CancelSlideToStand();
+		CMC->bWantsToCrouch = false;
+		if (SlideShooter->bIsCrouched)
+		{
+			CMC->UnCrouch(false);   // 立即站起（头顶有东西会保持蹲），这样同一帧能起跳
+		}
+		SlideShooter->Jump();
 		return;
 	}
 
@@ -363,14 +428,13 @@ void AShooterPlayerController::Input_Jump()
 		return;
 	}
 
-	if (CMC->bWantsToCrouch)
+	// COD：蹲着按跳 = 直接站起并起跳（头顶被挡时只会保持蹲）
+	if (CMC->bWantsToCrouch || GetCharacter()->bIsCrouched)
 	{
 		CMC->bWantsToCrouch = false;
+		if (GetCharacter()->bIsCrouched) CMC->UnCrouch(false);
 	}
-	else
-	{
-		GetCharacter()->Jump();
-	}
+	GetCharacter()->Jump();
 }
 
 void AShooterPlayerController::Input_Sprint()
@@ -378,9 +442,43 @@ void AShooterPlayerController::Input_Sprint()
 	if (!bPawnAlive)return;
 	if (IsMovementLocked()) return;
 
-	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	const double SincePrevPress = Now - LastSprintPressTime;
+	LastSprintPressTime = Now;
+
+	// 滑铲中按冲刺 = 取消滑铲，站起来接着冲刺
+	if (AShooterCharacter* SlideShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(SlideShooter) && SlideShooter->IsSliding())
+	{
+		SlideShooter->CancelSlideToStand();
+		if (UCharacterMovementComponent* SlideCMC = SlideShooter->GetCharacterMovement())
+		{
+			SlideCMC->bWantsToCrouch = false;
+			if (SlideShooter->bIsCrouched) SlideCMC->UnCrouch(false);
+		}
+		// 换弹中只取消滑铲，不进入冲刺
+		if (const UCombatComponent* SlideCombat = UCombatComponent::FindCombatComponent(GetPawn()); IsValid(SlideCombat) && SlideCombat->IsReloading())
+		{
+			UpdateMovementSpeed();
+			return;
+		}
+		bIsSprinting = true;
+		bIsWalking = false;
+		UpdateMovementSpeed();
+		return;
+	}
+
+	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
 	if (!bIsSprinting && IsValid(Combat) && Combat->IsReloading())
 	{
+		// 换弹优先：换弹期间禁止开始冲刺/战术冲刺，也不打断换弹
+		return;
+	}
+
+	// 冲刺中快速再按一次 = 战术冲刺（冷却好了才行）
+	if (bIsSprinting && bEnableTacticalSprint && !bIsTacticalSprinting
+		&& SincePrevPress <= SprintDoubleTapWindow && Now >= TacticalSprintReadyTime)
+	{
+		StartTacticalSprint();
 		return;
 	}
 
@@ -467,7 +565,7 @@ void AShooterPlayerController::UpdateMovementSpeed()
 	// 客户端改的速度会被服务器纠正回去，所以必须让服务器也改
 	if (!HasAuthority())
 	{
-		Server_SetMovementState(bIsSprinting, bIsWalking);
+		Server_SetMovementState(bIsSprinting, bIsWalking, bIsTacticalSprinting);
 	}
 }
 
@@ -486,27 +584,44 @@ void AShooterPlayerController::ApplyMovementSpeed()
 	const AShooterCharacter* ProneChar = Cast<AShooterCharacter>(MyCharacter);
 	const bool bProne = IsValid(ProneChar) && ProneChar->IsProne();
 	const bool bSliding = IsValid(ProneChar) && ProneChar->IsSliding();
-	if (bSliding) bIsSprinting = false;
+	if (bSliding && bIsSprinting)
+	{
+		NoteSprintEnded();   // 滑铲取消冲刺：同样进入开镜后摇
+		bIsSprinting = false;
+	}
 
 	// 下蹲、趴下、开镜或换弹时不能冲刺
 	if (bIsSprinting && (bAiming || bCrouched || bProne || bReloading))
 	{
+		NoteSprintEnded();
 		bIsSprinting = false;
+	}
+	// 不冲刺了，战术冲刺也结束并开始冷却
+	if (!bIsSprinting && bIsTacticalSprinting)
+	{
+		bIsTacticalSprinting = false;
+		GetWorldTimerManager().ClearTimer(TacticalSprintTimer);
+		if (const UWorld* World = GetWorld()) TacticalSprintReadyTime = World->GetTimeSeconds() + TacticalSprintCooldown;
 	}
 
 	// 基础速度：冲刺或正常跑；静步/开镜作为倍率乘上去
-	float Speed = bIsSprinting ? SprintSpeed : RunSpeed;
+	float Speed = bIsSprinting ? (bIsTacticalSprinting ? TacticalSprintSpeed : SprintSpeed) : RunSpeed;
 	if (bIsWalking) Speed *= WalkSpeedMultiplier;
 	if (bAiming)    Speed *= AimSpeedMultiplier;
 
 	// 站立时角色用 MaxWalkSpeed，蹲下时用 MaxWalkSpeedCrouched，两个都设好
+	// 滑铲出口惯性：上限不低于保留速度，避免超速被刹车
+	if (const AShooterCharacter* CarryChar = Cast<AShooterCharacter>(MyCharacter))
+	{
+		Speed = FMath::Max(Speed, CarryChar->GetCarriedSpeed());
+	}
 	CMC->MaxWalkSpeed = Speed;
 	// 趴下复用 CMC 的蹲伏（更矮的胶囊），所以趴行速度也写在 MaxWalkSpeedCrouched
 	CMC->MaxWalkSpeedCrouched = bProne ? Speed * ProneSpeedMultiplier : Speed * CrouchSpeedMultiplier;
 	if (bSliding)
 	{
 		// 滑铲时速度高于蹲走上限：放宽上限，减速交给 BrakingDecelerationWalking
-		CMC->MaxWalkSpeedCrouched = SprintSpeed * 1.5f;
+		CMC->MaxWalkSpeedCrouched = FMath::Max(SprintSpeed, TacticalSprintSpeed) * 1.5f;
 	}
 
 	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyCharacter))
@@ -547,21 +662,24 @@ void AShooterPlayerController::HandleStaminaDepleted()
 	}
 }
 
-void AShooterPlayerController::Server_SetMovementState_Implementation(bool bNewSprinting, bool bNewWalking)
+void AShooterPlayerController::Server_SetMovementState_Implementation(bool bNewSprinting, bool bNewWalking, bool bNewTactical)
 {
-	const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
+	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
 	if (bNewSprinting && IsValid(Combat) && Combat->IsReloading())
 	{
+		// 换弹优先：服务器拒绝冲刺，不取消换弹
 		bNewSprinting = false;
 	}
 	bIsSprinting = bNewSprinting;
 	bIsWalking = bNewWalking;
+	bIsTacticalSprinting = bNewSprinting && bNewTactical && bEnableTacticalSprint;
 	UpdateMovementSpeed();   // 在服务器上 HasAuthority 为 true，不会再发 RPC
 }
 
 void AShooterPlayerController::Client_StopSprint_Implementation()
 {
 	bIsSprinting = false;
+	bIsTacticalSprinting = false;
 	ApplyMovementSpeed();
 }
 void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadoutPreset& Loadout)

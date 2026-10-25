@@ -1,4 +1,4 @@
-﻿
+
 
 #pragma once
 
@@ -20,6 +20,10 @@ enum class EReloadType : uint8;
 class USpotLightComponent;
 class UDecalComponent;
 class UAnimMontage;
+class UAnimSequence;
+class UAnimSequenceBase;
+class UAnimInstance;
+class USkeletalMesh;
 
 // 一个已装配件在本地生成的模型（1P/3P 各一个）。只在本地存在，不同步
 USTRUCT()
@@ -311,6 +315,69 @@ public:
 	// 开镜所需时间（秒），不装配件时。配件的 AdsTimeMultiplier 会乘上去
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Aiming", meta = (ClampMin = "0"))
 	float AimDownSightTime;
+
+	// ---------- First-person arms override (different skeleton kits, e.g. Precision Sniper) ----------
+	// CombatComponent swaps Mesh1P skeletal mesh + AnimBP while equipped. NEVER changes Mesh1P relative transform.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Arms")
+	TObjectPtr<USkeletalMesh> OverrideArmsMesh1P;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Arms")
+	TSubclassOf<UAnimInstance> OverrideArmsAnimClass;
+
+	/** Mesh1P is RootComponent - BP RelativeRotation on root unreliable after AttachToComponent.
+	 *  When true, apply Mesh*AttachRelativeRotation/Location after attach (keeps Authored scale). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+	bool bUseMeshAttachRelativeRotation = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach", meta = (EditCondition = "bUseMeshAttachRelativeRotation"))
+	FRotator Mesh1PAttachRelativeRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach", meta = (EditCondition = "bUseMeshAttachRelativeRotation"))
+	FRotator Mesh3PAttachRelativeRotation = FRotator::ZeroRotator;
+
+	/** Added to AuthoredMesh*Relative translation after attach (cm, socket space). Neg X often pulls weapon toward camera. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach", meta = (EditCondition = "bUseMeshAttachRelativeRotation"))
+	FVector Mesh1PAttachRelativeLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach", meta = (EditCondition = "bUseMeshAttachRelativeRotation"))
+	FVector Mesh3PAttachRelativeLocation = FVector::ZeroVector;
+
+	/** Re-apply authored + Mesh*AttachRelative* after AttachToComponent (Mesh1P is root). */
+	void ApplyMeshAttachRelative(USkeletalMeshComponent* WeaponMesh, bool bFirstPerson);
+
+	// Sequence fallbacks when DA montages are empty (PlaySlotAnimationAsDynamicMontage / PlayAnimation).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+	TObjectPtr<UAnimSequence> ArmsFireSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+	TObjectPtr<UAnimSequence> ArmsFireAimSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+	TObjectPtr<UAnimSequence> ArmsReloadEmptySequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+	TObjectPtr<UAnimSequence> ArmsReloadTacticalSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+	TObjectPtr<UAnimSequence> ArmsEquipSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sequences")
+	TObjectPtr<UAnimSequence> WeaponFireSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sequences")
+	TObjectPtr<UAnimSequence> WeaponReloadEmptySequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sequences")
+	TObjectPtr<UAnimSequence> WeaponReloadTacticalSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sequences")
+	TObjectPtr<UAnimSequence> WeaponEquipSequence;
+
+	/** Play sequence as a dynamic montage on DefaultSlot (or SlotName). Returns the transient montage or null. */
+	static UAnimMontage* PlaySequenceAsDynamicMontage(UAnimInstance* Anim, UAnimSequenceBase* Sequence, FName SlotName = TEXT("DefaultSlot"), float BlendIn = 0.05f, float BlendOut = 0.05f);
+
+	/** Gun mesh without a real AnimBP: PlayAnimation. With AnimBP: dynamic montage. */
+	static void PlayWeaponSequence(USkeletalMeshComponent* WeaponMesh, UAnimSequence* Sequence);
 
 	// 第 8 步：腰射时手臂/枪的位置偏移（厘米，相对角色 Mesh1P 默认位置，在相机空间里）。
 	// X 负数 = 往后拉近镜头，Y = 左右，Z = 上下。开镜时会平滑过渡到瞄准位置，这个偏移只影响腰射。

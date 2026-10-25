@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -30,6 +30,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCantedSightChanged, bool, bCanted);
 // Hit feedback (local only): victim damage ring / shooter hit confirm
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FDamageIndicatorSignature, FVector, InstigatorLocation);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FHitConfirmedSignature);
+// COD 风格命中反馈：bHeadshot = 爆头，bKilled = 这一枪打死了
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FHitConfirmedDetailedSignature, bool, bHeadshot, bool, bKilled);
 
 UENUM(BlueprintType)
 enum class EHitReactDirection : uint8
@@ -78,7 +80,9 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
+	virtual bool IsLocallyControlled() const override;
 	virtual void OnRep_PlayerState() override;
+	virtual void Landed(const FHitResult& Hit) override;
 
 	// 跳跃耐力：耐力不够就不能跳；真正起跳时在服务器扣耐力
 	virtual bool CanJumpInternal_Implementation() const override;
@@ -213,7 +217,18 @@ public:
 	void Client_ShowDamageIndicator(FVector_NetQuantize InstigatorLocation);
 
 	UFUNCTION(Client, Unreliable)
-	void Client_ConfirmHit();
+	void Client_ConfirmHit(bool bHeadshot);
+
+	// 致死一枪：给开枪的人发（可靠，击杀提示不能丢）
+	UFUNCTION(Client, Reliable)
+	void Client_ConfirmKill(bool bHeadshot);
+
+	// 命中/击杀/爆头（准星和蓝图都可以绑）。击杀时 OnHitConfirmed 也会广播，兼容旧蓝图
+	UPROPERTY(BlueprintAssignable, Category = "FPS|HitFeedback")
+	FHitConfirmedDetailedSignature OnHitConfirmedDetailed;
+
+	// 服务器：CombatComponent 在 DoDamage 前设，受害者 DoDamage 里读（这一发是不是打头）
+	bool bPendingHeadshotHit = false;
 
 	EHitReactDirection ComputeHitReactDirection(const FVector& SourceLocation) const;
 	const TArray<TObjectPtr<UAnimMontage>>& GetHitReactPool(EHitReactDirection Direction) const;
@@ -236,7 +251,56 @@ public:
 
 	// 枪身视觉后坐总开关（第 4 步）。关掉时不加任何偏移，Mesh1P 完全不受影响，方便对比手感
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Recoil|Visual")
-	bool bEnableVisualRecoil = false;
+	bool bEnableVisualRecoil = true;
+
+	// ---------- 程序化武器晃动（转视角拖拽 / 走路晃 / 落地下沉），叠在视觉后坐同一条 Mesh1P 偏移上 ----------
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway")
+	bool bEnableWeaponSway = true;
+
+	// 转视角拖拽：每 1 度/秒 的视角速度给多少度反向偏转
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float SwayLookRotationScale = 0.006f;
+
+	// 转视角拖拽：每 1 度/秒 给多少厘米横向位移
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float SwayLookLocationScale = 0.0025f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float SwayMaxRotation = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float SwayMaxLocation = 1.5f;
+
+	// 越大越跟手（拖拽越短）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float SwaySmoothSpeed = 9.f;
+
+	// 走路晃动：竖直 / 水平幅度（厘米，按跑步速度 RunSpeed=1 计）和频率（弧度/秒）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float BobVerticalAmount = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float BobHorizontalAmount = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float BobFrequency = 9.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "1"))
+	float BobReferenceSpeed = 500.f;
+
+	// 落地下沉：每 1000 cm/s 落地速度下沉多少厘米，最多多少；回弹速度
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float LandingDipAmount = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float LandingDipMax = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0"))
+	float LandingDipRecoverySpeed = 7.f;
+
+	// 开镜时以上所有晃动乘这个
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Sway", meta = (ClampMin = "0", ClampMax = "1"))
+	float SwayAimMultiplier = 0.2f;
 
 	// 每发开火由 CombatComponent 调用：给第一人称手臂加一次视觉后坐（镜头空间的位移和旋转）
 	void AddVisualRecoil(const FVector& KickLocation, const FRotator& KickRotation);
@@ -380,6 +444,51 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
 	float SlideCameraZOffset = -15.f;
+
+	// COD 式两段减速：前 SlideDecelSwitchTime 秒用 Early（保速冲出去），之后用 Late（干脆收尾）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideDecelEarly = 300.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideDecelLate = 1200.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideDecelSwitchTime = 0.25f;
+	// 滑铲中速度方向朝视角转的最大角速度（度/秒），0 = 不能转向
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideSteerRate = 75.f;
+	// 滑铲中开镜时间倍率
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideAdsTimeMultiplier = 1.3f;
+
+	// Option A：滑铲前半段禁止立刻开镜（冲刺姿势还在混合）；按键预输入，到期自动开镜。默认开。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Slide|ADS")
+	bool bSlideAdsDelayEnabled = false;   // 默认关：用 ABP 混合缩短（方案 B）；需要时再开
+
+	// 滑铲开始后多久才能开镜。<=0 则用 0.5 * SlideDuration。默认 0.35。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Slide|ADS", meta = (ClampMin = "0", EditCondition = "bSlideAdsDelayEnabled"))
+	float SlideToAdsDelay = 0.35f;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Slide|ADS")
+	float GetSlideAdsSettleRemaining() const;
+	// 滑铲镜头侧倾（度），开镜时减到 SlideCameraRollAds
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideCameraRoll = -4.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideCameraRollAds = -1.5f;
+	// 滑铲结束后摩擦力恢复用时（秒）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float SlideFrictionRecoverTime = 0.2f;
+	// 滑铲结束/滑铲跳后保留的惯性，落地后在这么多秒内衰减回正常速度
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	float MomentumCarryDecayTime = 0.35f;
+	// 蹲下/站起时镜头高度平滑速度
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
+	float CrouchCameraInterpSpeed = 14.f;
+
+	// 控制器读：滑铲后保留的速度上限（0 = 没有）
+	float GetCarriedSpeed() const { return CarriedSpeed; }
+
+	// 开镜时间倍率（滑铲中慢慢靠到 SlideAdsTimeMultiplier，避免中途突变卡枪）
+	float AdsTimeScaleCurrent = 1.f;
 
 	// 3P full-body slide. Montage wins if set; else SlideAnim is played as a dynamic montage in SlideSlotName.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
@@ -634,6 +743,11 @@ private:
 	float SavedGroundFriction = 8.f;
 	float SavedBrakingDecelWalking = 2048.f;
 	bool bSlideSavedMovement = false;
+	float CarriedSpeed = 0.f;
+	float FrictionRecoverElapsed = -1.f;
+	float CrouchCameraOffsetZ = 0.f;
+	void UpdateMomentumCarry(float DeltaTime);
+	void OnStartCrouchCameraFix(float ScaledHalfHeightAdjust);
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> ActiveSlideMontage;
 
@@ -713,6 +827,18 @@ private:
 	// 先把上一帧加在 Mesh1P 上的偏移撤掉，让开镜对准按“没有后坐”的位置算，算完再加回去
 	void RemoveVisualRecoilFromMesh();
 	void ApplyVisualRecoilToMesh(float DeltaTime);
+	void UpdateWeaponSway(float DeltaTime);
+
+	FVector SwayLocCurrent = FVector::ZeroVector;
+	FRotator SwayRotCurrent = FRotator::ZeroRotator;
+	FRotator LastSwayControlRot = FRotator::ZeroRotator;
+	bool bHasLastSwayControlRot = false;
+	float BobPhase = 0.f;
+	float BobWeight = 0.f;
+	float LandingDipTarget = 0.f;
+	float LandingDipCurrent = 0.f;
+	float LastFallingVelocityZ = 0.f;
+	float SwayDipZ = 0.f;
 
 	FVector VisualRecoilLocTarget = FVector::ZeroVector;    // 被踢到的目标（会慢慢回 0）
 	FRotator VisualRecoilRotTarget = FRotator::ZeroRotator;

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -23,6 +23,8 @@ enum class EWeaponSlot : uint8
 
 class UAnimInstance;
 class UAnimMontage;
+class USkeletalMesh;
+class UAnimSequence;
 class UWeaponData;
 class AWeapon;
 
@@ -65,6 +67,17 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
 	bool IsReloading() const;
+
+	// 本机：打断换弹（弹匣还没插进去时）。开火/冲刺调用。成功返回 true
+	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
+	bool CancelReload();
+
+	// 服务器：直接打断换弹（冲刺状态 RPC 先到时用）
+	void Auth_CancelReload();
+
+	// 服务器：不经第一人称预测，直接走玩家那条开火/换弹权威逻辑。测试 BOT 用。
+	void Auth_FireWeapon(const TArray<FHitResult>& Hits);
+	void Auth_ReloadWeapon(EReloadType ReloadType);
 
 	// 射击模式切换：本地先改，再发服务器。按武器 AllowedFireModes 循环。
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
@@ -297,6 +310,7 @@ private:
 	float SecondsSinceRecoilShot = 0.f;
 	bool GetReloadMontage(bool bFirstPerson, EReloadType ReloadType, UAnimMontage*& OutMontage, UAnimInstance*& OutAnim) const;
 	bool PlayReloadMontage(bool bFirstPerson, EReloadType ReloadType);
+	bool PlayReloadSequences(bool bFirstPerson, EReloadType ReloadType);
 	// 观战：远端角色被本机第一人称观看时，额外在 1P 手臂/枪上播（不改弹药/状态）
 	bool IsViewedFirstPersonLocally() const;
 	void PlaySpectated1PFire();
@@ -325,6 +339,29 @@ private:
 	UFUNCTION(Server, Reliable)
 	void Server_ReloadNotify();
 
+	UFUNCTION(Server, Reliable)
+	void Server_CancelReload();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_CancelReload();
+
+	// 客户端 1P 换弹通知已发给服务器（弹匣算插进去了），之后不能再打断
+	bool bLocalReloadNotified = false;
+
+	// 冲刺中按开火：先停冲刺，缓冲一下再开第一枪
+	FTimerHandle SprintFireBufferTimer;
+	void OnSprintFireBufferElapsed();
+
+	// 冲刺/后摇期间按了开镜：记住意图，时间一到自动开镜
+	bool bAdsInputBuffered = false;
+	FTimerHandle AdsBufferTimer;
+	void ClearAdsBuffer();
+	void OnAdsBufferElapsed();
+	// 换弹期间按了开镜：换弹结束后再开（换弹中途绝不自动开镜）
+	bool bAdsPendingAfterReload = false;
+	void ClearAdsPendingAfterReload();
+	void TryConsumeAdsAfterReload();
+
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_ReloadWeapon(EReloadType ReloadType);
 
@@ -336,6 +373,12 @@ private:
 
 	void Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson);
 	void ApplyEquippedWeaponAnim(AWeapon* Weapon);
+	// Swap/restore Mesh1P mesh+AnimBP for kit weapons (PSR). Never touches Mesh1P relative transform.
+	void ApplyFirstPersonArmsForWeapon(AWeapon* Weapon);
+	void CacheDefaultFirstPersonArms();
+	bool bCachedDefaultArms = false;
+	TObjectPtr<USkeletalMesh> DefaultArmsMesh1P;
+	TSubclassOf<UAnimInstance> DefaultArmsAnimClass;
 	void PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson);
 	void OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted, TWeakObjectPtr<AWeapon> EquippingWeapon);
 	// 切枪打断：停掉上一把的拔枪 montage（1P/3P 各记一份）

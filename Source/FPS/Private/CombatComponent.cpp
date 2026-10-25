@@ -1,11 +1,15 @@
-﻿#include "CombatComponent.h"
+#include "CombatComponent.h"
 #include "Animation/FirstPersonAnimInstance.h"
+#include "Animation/PSRArmsAnimInstance.h"
 #include "ShooterCharacter.h"
 #include "ShooterGameModeBase.h"
 #include "ShooterGamePlayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/Weapon.h"
 #include "WeaponData.h"
+#include "Engine/SkeletalMesh.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Interface/PlayerInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -28,6 +32,7 @@
 #include "Game/SearchDestroyGameState.h"
 #include "Game/ShooterPlayerState.h"
 #include "Game/BombWeapon.h"
+#include "Range/TargetDummy.h"
 #include "Weapon/ThrownProjectile.h"
 #include "Loadout/LoadoutTypes.h"
 
@@ -164,6 +169,8 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 	CurrentWeapon = Weapon;
 	CurrentWeapon->SetActorHiddenInGame(false);
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+	// Arms override BEFORE attach so GripPoints/WeaponSocket resolve on the correct 1P skeleton.
+	ApplyFirstPersonArmsForWeapon(CurrentWeapon);
 	CurrentWeapon->AttachToOwingPawn();
 	StopActiveThrowMontages();
 	bThrowInProgress = false;
@@ -437,6 +444,7 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 	if (!IsValid(CurrentWeapon))return;
 
 	CurrentWeapon->SetActorHiddenInGame(false);
+	ApplyFirstPersonArmsForWeapon(CurrentWeapon);
 	CurrentWeapon->AttachToOwingPawn();
 	ApplyEquippedWeaponAnim(CurrentWeapon);
 	ResetRecoilPattern();
@@ -617,6 +625,61 @@ void UCombatComponent::Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson)
 	PlayEquipMontage(NextWeapon, bFirstPerson);
 }
 
+
+void UCombatComponent::CacheDefaultFirstPersonArms()
+{
+	if (bCachedDefaultArms) return;
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
+	USkeletalMeshComponent* Arms = IPlayerInterface::Execute_GetMesh1P(Owner);
+	if (!IsValid(Arms)) return;
+	DefaultArmsMesh1P = Arms->GetSkeletalMeshAsset();
+	DefaultArmsAnimClass = Arms->GetAnimClass();
+	bCachedDefaultArms = true;
+}
+
+void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
+{
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
+	USkeletalMeshComponent* Arms = IPlayerInterface::Execute_GetMesh1P(Owner);
+	if (!IsValid(Arms)) return;
+
+	CacheDefaultFirstPersonArms();
+	if (!bCachedDefaultArms) return;
+
+	// Only swap mesh / AnimBP when weapon sets OverrideArms*. Null = keep character Mesh1P (Ironbelly).
+	// Do NOT touch relative location or rotation (user requirement).
+	// Only PSR keeps pack OverrideArms; knife_viper / cg_pas always share default arms.
+	const FString WeaponTypeStr = IsValid(Weapon) ? Weapon->WeaponType.ToString() : FString();
+	const bool bForceDefaultArms =
+		WeaponTypeStr.Contains(TEXT("knife_viper"), ESearchCase::IgnoreCase)
+		|| WeaponTypeStr.Contains(TEXT("cg_pas"), ESearchCase::IgnoreCase);
+
+	USkeletalMesh* WantMesh = (!bForceDefaultArms && IsValid(Weapon) && IsValid(Weapon->OverrideArmsMesh1P))
+		? Weapon->OverrideArmsMesh1P.Get()
+		: DefaultArmsMesh1P.Get();
+	TSubclassOf<UAnimInstance> WantAnim = (!bForceDefaultArms && IsValid(Weapon) && Weapon->OverrideArmsAnimClass)
+		? Weapon->OverrideArmsAnimClass
+		: DefaultArmsAnimClass;
+
+	// Pack demo ABPs cast to pack Character/Weapon BPs -> Accessed None. Remap those only (PSR pack).
+	const FString WantAnimName = WantAnim ? WantAnim->GetName() : FString();
+	if (WantAnim && (WantAnimName.StartsWith(TEXT("BP_PSR_Arms_AnimBlueprint"))
+		|| WantAnimName.Contains(TEXT("AnimBP_Arms"))))
+	{
+		WantAnim = UPSRArmsAnimInstance::StaticClass();
+	}
+
+	if (Arms->GetSkeletalMeshAsset() != WantMesh)
+	{
+		Arms->SetSkeletalMesh(WantMesh);
+	}
+	if (Arms->GetAnimClass() != WantAnim)
+	{
+		Arms->SetAnimInstanceClass(WantAnim);
+	}
+}
 void UCombatComponent::ApplyEquippedWeaponAnim(AWeapon* Weapon)
 {
 	if (!IsValid(Weapon) || !IsValid(WeaponData)) return;
@@ -796,10 +859,34 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 	UAnimInstance* AnimInstance = IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr;
 	// Mesh1P is the arms skeleton. The assigned equip clips use the full-body mannequin
 	// skeleton. Montage_Play still runs that pair; rejecting it is what silenced 1P.
-	if (!IsValid(AnimInstance) || !IsValid(EquipMontage)) return;
+	UAnimMontage* PlayedEquip = EquipMontage;
+	bool bAlreadyPlaying = false;
+	if (!IsValid(EquipMontage) && bFirstPerson && IsValid(Weapon->ArmsEquipSequence) && IsValid(AnimInstance))
+	{
+		PlayedEquip = AWeapon::PlaySequenceAsDynamicMontage(AnimInstance, Weapon->ArmsEquipSequence);
+		bAlreadyPlaying = IsValid(PlayedEquip);
+	}
+	if (!IsValid(AnimInstance) || !IsValid(PlayedEquip))
+	{
+		// No equip anim: still allow Idle (sequence weapons may only have fire/reload).
+		Weapon->WeaponStatus = EWeaponStatus::Idle;
+		if (bFirstPerson && IsValid(Weapon->WeaponEquipSequence))
+		{
+			AWeapon::PlayWeaponSequence(Weapon->GetMesh1P(), Weapon->WeaponEquipSequence);
+		}
+		return;
+	}
 
-	const float PlayedLength = AnimInstance->Montage_Play(EquipMontage);
-	if (PlayedLength <= 0.f) return;
+	if (!bAlreadyPlaying)
+	{
+		const float PlayedLength = AnimInstance->Montage_Play(PlayedEquip);
+		if (PlayedLength <= 0.f)
+		{
+			Weapon->WeaponStatus = EWeaponStatus::Idle;
+			return;
+		}
+	}
+	EquipMontage = PlayedEquip;
 
 	// X24 枪身没有对得上的蒙太奇。拔枪时直接播套筒序列。
 	if (Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_X24))
@@ -816,6 +903,7 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 	// 第一人称拔枪时，枪身蒙太奇跟手臂一起播。手臂已经有 Equip 时，WeaponMontages 不会当替补，所以这里单独播。
 	if (bFirstPerson)
 	{
+		bool bPlayedWeaponEquip = false;
 		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(Weapon->WeaponType))
 		{
 			if (UAnimMontage* WeaponEquip = WeaponMontageData->ResolveEquipMontage())
@@ -825,9 +913,19 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 					if (UAnimInstance* WeaponAnim = WeaponMesh->GetAnimInstance())
 					{
 						WeaponAnim->Montage_Play(WeaponEquip);
+						bPlayedWeaponEquip = true;
+					}
+					else
+					{
+						AWeapon::PlayWeaponMontageOrSequence(WeaponMesh, WeaponEquip);
+						bPlayedWeaponEquip = true;
 					}
 				}
 			}
+		}
+		if (!bPlayedWeaponEquip && IsValid(Weapon->WeaponEquipSequence))
+		{
+			AWeapon::PlayWeaponSequence(Weapon->GetMesh1P(), Weapon->WeaponEquipSequence);
 		}
 	}
 
@@ -853,6 +951,11 @@ void UCombatComponent::OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrup
 	if (IsValid(Weapon) && Weapon == CurrentWeapon && Weapon->WeaponStatus == EWeaponStatus::Cycling)
 	{
 		Weapon->WeaponStatus = EWeaponStatus::Idle;
+	}
+	// Grip notifies during equip can leave a KeepWorld-relative offset; snap back to authored attach.
+	if (IsValid(Weapon) && Weapon == CurrentWeapon)
+	{
+		Weapon->AttachToOwingPawn();
 	}
 }
 
@@ -991,8 +1094,21 @@ void UCombatComponent::Initiate_FireWeapon_Pressed()
 		{
 			if (PC->IsSprinting())
 			{
+				// COD 式冲刺转开火：停冲刺，缓冲 SprintToFire 时间后如果扳机还按着就自动开第一枪
+				const float Buffer = PC->GetSprintToFireDelay();
 				PC->StopSprinting();
-				return;
+				if (!IsValid(CurrentWeapon)
+					|| CurrentWeapon->WeaponKind == EWeaponKind::Bomb
+					|| CurrentWeapon->WeaponKind == EWeaponKind::Throwable)
+				{
+					return;
+				}
+				bTriggerPressed = true;
+				if (Buffer > KINDA_SMALL_NUMBER)
+				{
+					GetWorld()->GetTimerManager().SetTimer(SprintFireBufferTimer, this, &ThisClass::OnSprintFireBufferElapsed, Buffer, false);
+					return;
+				}
 			}
 		}
 	}
@@ -1005,7 +1121,11 @@ void UCombatComponent::Initiate_FireWeapon_Pressed()
 		return;
 	}
 	bTriggerPressed = true;
-	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
+	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
+	{
+		// 开火打断换弹：弹匣里还有子弹、弹匣还没插进去时才打断（空匣继续换）
+		if (CurrentWeapon->Ammo <= 0 || !CancelReload()) return;
+	}
 	// The burst continues from FireTimerFinished while this timer is still the active callback.
 	// Gating Local_FireWeapon on IsTimerActive stops that next shot.
 	if (GetWorld()->GetTimerManager().IsTimerActive(FireTimer)) return;
@@ -1024,6 +1144,12 @@ void UCombatComponent::Initiate_FireWeapon_Pressed()
 	{
 		BurstShotsRemaining = 0;
 	}
+}
+
+void UCombatComponent::OnSprintFireBufferElapsed()
+{
+	if (!bTriggerPressed) return;
+	Initiate_FireWeapon_Pressed();
 }
 
 void UCombatComponent::Initiate_FireWeapon_Released()
@@ -1045,6 +1171,7 @@ void UCombatComponent::Local_FireWeapon()
 	if (CurrentWeapon->WeaponKind == EWeaponKind::Throwable) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 
+	bool bPlayedArmsFire = false;
 	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
 	{
 		UAnimMontage* Montage1P = MontageData->ResolveFireMontage();
@@ -1053,10 +1180,28 @@ void UCombatComponent::Local_FireWeapon()
 		if (IsValid(Montage1P) && IsValid(AnimInstance1P))
 		{
 			AnimInstance1P->Montage_Play(Montage1P);
+			bPlayedArmsFire = true;
+		}
+	}
+	// Sequence fallback (PSR bolt): dual-play arms + gun without mid-bolt reattach.
+	if (!bPlayedArmsFire)
+	{
+		UAnimSequence* ArmsFire = (bAiming && IsValid(CurrentWeapon->ArmsFireAimSequence))
+			? CurrentWeapon->ArmsFireAimSequence.Get()
+			: CurrentWeapon->ArmsFireSequence.Get();
+		if (IsValid(ArmsFire))
+		{
+			USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+			UAnimInstance* AnimInstance1P = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+			if (AWeapon::PlaySequenceAsDynamicMontage(AnimInstance1P, ArmsFire))
+			{
+				bPlayedArmsFire = true;
+			}
 		}
 	}
 
 	// 枪身开火（拉栓/抛壳）只播在自己的 Mesh1P。蒙太奇槽必须和枪的 AnimBP 一致。
+	bool bPlayedWeaponFire = false;
 	if (CurrentWeapon->WeaponKind != EWeaponKind::Melee)
 	{
 		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
@@ -1068,9 +1213,19 @@ void UCombatComponent::Local_FireWeapon()
 					if (UAnimInstance* WeaponAnim = WeaponMesh->GetAnimInstance())
 					{
 						WeaponAnim->Montage_Play(WeaponFire);
+						bPlayedWeaponFire = true;
+					}
+					else
+					{
+						AWeapon::PlayWeaponMontageOrSequence(WeaponMesh, WeaponFire);
+						bPlayedWeaponFire = true;
 					}
 				}
 			}
+		}
+		if (!bPlayedWeaponFire && IsValid(CurrentWeapon->WeaponFireSequence))
+		{
+			AWeapon::PlayWeaponSequence(CurrentWeapon->GetMesh1P(), CurrentWeapon->WeaponFireSequence);
 		}
 	}
 
@@ -1216,7 +1371,8 @@ void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>
 		const FHitResult& Hit = Hits[i];
 		if (IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>())
 		{
-			const FName Bone = ResolveDamageBone(Hit);
+			FName Bone = ResolveDamageBone(Hit);
+			if (const ATargetDummy* Dummy = Cast<ATargetDummy>(Hit.GetActor())) Bone = Dummy->ResolveHitBone(Hit, Bone);
 			const float Damage = ScaleDamageForBone(CurrentWeapon->Damage, Bone, CurrentWeapon->HeadshotMultiplier, CurrentWeapon->LimbMultiplier);
 			UE_LOG(LogTemp, Log, TEXT("Hit %s bone %s zone %s damage %.1f pellet %d"),
 				*GetNameSafe(Hit.GetActor()),
@@ -1226,7 +1382,10 @@ void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>
 				i);
 			AShooterGameModeBase* DamageGM = GetWorld() ? GetWorld()->GetAuthGameMode<AShooterGameModeBase>() : nullptr;
 			if (DamageGM) DamageGM->SetPendingDamageIcon(CurrentWeapon->WeaponIcon);
+			AShooterCharacter* ShooterSelf = Cast<AShooterCharacter>(GetOwner());
+			if (ShooterSelf) ShooterSelf->bPendingHeadshotHit = ResolveHitZone(Bone) == EHitZone::Head;
 			IPlayerInterface::Execute_DoDamage(Hit.GetActor(), Damage, GetOwner());
+			if (ShooterSelf) ShooterSelf->bPendingHeadshotHit = false;
 			if (DamageGM) DamageGM->ClearPendingDamageIcon();
 		}
 	}
@@ -1316,14 +1475,28 @@ void UCombatComponent::Initiate_ReloadWeapon()
 
 	UAnimMontage* ReloadMontage = nullptr;
 	UAnimInstance* AnimInstance = nullptr;
-	if (!GetReloadMontage(true, ReloadType, ReloadMontage, AnimInstance)) return;
+	const bool bHasMontage = GetReloadMontage(true, ReloadType, ReloadMontage, AnimInstance);
+	const bool bHasSeq = IsValid(CurrentWeapon->ArmsReloadEmptySequence) || IsValid(CurrentWeapon->ArmsReloadTacticalSequence);
+	if (!bHasMontage && !bHasSeq) return;
 
 	StopAimForWeaponSwitch();
+	ClearAdsPendingAfterReload();   // 换弹开始：必须换弹中再按才排队换弹后开镜
+	bLocalReloadNotified = false;
+	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(SprintFireBufferTimer);
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Reloading;
 	CurrentWeapon->bHasReloadedOnce = true;
 	ResetRecoilPattern();
 	Server_ReloadWeapon(ReloadType);
-	if (!PlayReloadMontage(true, ReloadType))
+	bool bPlayed = false;
+	if (bHasMontage)
+	{
+		bPlayed = PlayReloadMontage(true, ReloadType);
+	}
+	if (!bPlayed)
+	{
+		bPlayed = PlayReloadSequences(true, ReloadType);
+	}
+	if (!bPlayed)
 	{
 		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 		Server_EndReload(false);
@@ -1410,6 +1583,66 @@ bool UCombatComponent::GetReloadMontage(bool bFirstPerson, EReloadType ReloadTyp
 
 	OutMontage = Chosen;
 	OutAnim = AnimInstance;
+	return true;
+}
+
+bool UCombatComponent::PlayReloadSequences(bool bFirstPerson, EReloadType ReloadType)
+{
+	if (!IsValid(CurrentWeapon)) return false;
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return false;
+
+	EReloadType Resolved = ReloadType;
+	if (Resolved == EReloadType::First)
+	{
+		Resolved = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
+	}
+
+	UAnimSequence* ArmsSeq = (Resolved == EReloadType::Empty)
+		? CurrentWeapon->ArmsReloadEmptySequence.Get()
+		: CurrentWeapon->ArmsReloadTacticalSequence.Get();
+	if (!IsValid(ArmsSeq))
+	{
+		ArmsSeq = IsValid(CurrentWeapon->ArmsReloadEmptySequence)
+			? CurrentWeapon->ArmsReloadEmptySequence.Get()
+			: CurrentWeapon->ArmsReloadTacticalSequence.Get();
+	}
+	if (!IsValid(ArmsSeq)) return false;
+
+	USkeletalMeshComponent* Mesh = bFirstPerson
+		? IPlayerInterface::Execute_GetMesh1P(Owner)
+		: IPlayerInterface::Execute_GetMesh3P(Owner);
+	UAnimInstance* AnimInstance = IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr;
+	UAnimMontage* Dyn = AWeapon::PlaySequenceAsDynamicMontage(AnimInstance, ArmsSeq);
+	if (!IsValid(Dyn) || !IsValid(AnimInstance)) return false;
+
+	if (bFirstPerson)
+	{
+		UAnimSequence* WeaponSeq = (Resolved == EReloadType::Empty)
+			? CurrentWeapon->WeaponReloadEmptySequence.Get()
+			: CurrentWeapon->WeaponReloadTacticalSequence.Get();
+		if (!IsValid(WeaponSeq))
+		{
+			WeaponSeq = IsValid(CurrentWeapon->WeaponReloadEmptySequence)
+				? CurrentWeapon->WeaponReloadEmptySequence.Get()
+				: CurrentWeapon->WeaponReloadTacticalSequence.Get();
+		}
+		if (IsValid(WeaponSeq))
+		{
+			AWeapon::PlayWeaponSequence(CurrentWeapon->GetMesh1P(), WeaponSeq);
+		}
+	}
+
+	FOnMontageEnded EndDelegate;
+	if (bFirstPerson)
+	{
+		EndDelegate.BindUObject(this, &UCombatComponent::OnReloadMontageEnded);
+	}
+	else
+	{
+		EndDelegate.BindUObject(this, &UCombatComponent::OnObservedReloadMontageEnded);
+	}
+	AnimInstance->Montage_SetEndDelegate(EndDelegate, Dyn);
 	return true;
 }
 
@@ -1502,11 +1735,13 @@ void UCombatComponent::OnReloadMontageEnded(UAnimMontage* Montage, bool bInterru
 			return;
 		}
 		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+		ClearAdsPendingAfterReload();
 		Server_EndReload(false);
 		return;
 	}
 
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
+	ClearAdsPendingAfterReload();
 }
 
 
@@ -1527,6 +1762,8 @@ void UCombatComponent::Client_ReloadWeapon_Implementation(AWeapon* ReloadedWeapo
 	ReserveAmmo.Add(CurrentWeapon->WeaponType, NewCarryAmmo);
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 	NotifyAmmoChanged();
+
+	TryConsumeAdsAfterReload();
 
 	if (bTriggerPressed && CurrentWeapon->Ammo > 0)
 	{
@@ -1559,6 +1796,68 @@ void UCombatComponent::Server_ReloadNotify_Implementation()
 	Notify_ReloadWeapon();
 }
 
+bool UCombatComponent::CancelReload()
+{
+	if (!IsValid(CurrentWeapon) || CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return false;
+	ClearAdsBuffer();
+	ClearAdsPendingAfterReload();
+	const APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwningPawn) || !OwningPawn->IsLocallyControlled()) return false;
+	// 客户端：弹匣已经插进去（通知已发服务器），等服务器回传子弹即可，不再打断
+	if (GetOwnerRole() != ROLE_Authority && bLocalReloadNotified) return false;
+
+	StopReloadMontages(CurrentWeapon);   // 停 1P/3P/枪身换弹动画，状态回 Idle，不给子弹
+	if (GetOwnerRole() == ROLE_Authority)
+	{
+		Multicast_CancelReload();
+	}
+	else
+	{
+		Server_CancelReload();
+	}
+	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwningPawn->GetController()))
+	{
+		PC->RefreshMovementSpeed();
+	}
+	return true;
+}
+
+void UCombatComponent::Auth_FireWeapon(const TArray<FHitResult>& Hits)
+{
+	if (GetOwnerRole() != ROLE_Authority) return;
+	Server_FireWeapon_Implementation(Hits);
+}
+
+void UCombatComponent::Auth_ReloadWeapon(EReloadType ReloadType)
+{
+	if (GetOwnerRole() != ROLE_Authority) return;
+	Server_ReloadWeapon_Implementation(ReloadType);
+}
+
+void UCombatComponent::Auth_CancelReload()
+{
+	if (GetOwnerRole() != ROLE_Authority) return;
+	if (!IsValid(CurrentWeapon) || CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return;
+	ClearAdsBuffer();
+	ClearAdsPendingAfterReload();
+	StopReloadMontages(CurrentWeapon);
+	Multicast_CancelReload();
+}
+
+void UCombatComponent::Server_CancelReload_Implementation()
+{
+	Auth_CancelReload();
+}
+
+void UCombatComponent::Multicast_CancelReload_Implementation()
+{
+	// 服务器和本机操控者已经停过了；其他人停掉看到的 3P 换弹
+	if (GetOwnerRole() == ROLE_Authority) return;
+	const APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (IsValid(OwningPawn) && OwningPawn->IsLocallyControlled()) return;
+	if (IsValid(CurrentWeapon)) StopReloadMontages(CurrentWeapon);
+}
+
 void UCombatComponent::Server_EndReload_Implementation(bool bCompleted)
 {
 	if (!IsValid(CurrentWeapon)) return;
@@ -1581,7 +1880,10 @@ void UCombatComponent::Multicast_ReloadWeapon_Implementation(EReloadType ReloadT
 		return;
 	}
 
-	PlayReloadMontage(false, ReloadType);
+	if (!PlayReloadMontage(false, ReloadType))
+	{
+		PlayReloadSequences(false, ReloadType);
+	}
 	if (IsViewedFirstPersonLocally()) PlaySpectated1PReload(ReloadType);
 }
 
@@ -2071,6 +2373,85 @@ void UCombatComponent::Client_ThrowAmmo_Implementation(int32 AuthAmmo)
 	NotifyAmmoChanged();
 }
 
+void UCombatComponent::ClearAdsBuffer()
+{
+	bAdsInputBuffered = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(AdsBufferTimer);
+	}
+}
+
+void UCombatComponent::ClearAdsPendingAfterReload()
+{
+	bAdsPendingAfterReload = false;
+}
+
+void UCombatComponent::TryConsumeAdsAfterReload()
+{
+	if (!bAdsPendingAfterReload) return;
+	bAdsPendingAfterReload = false;
+	if (bAiming) return;
+	if (IsReloading()) return;
+	if (!IsValid(CurrentWeapon) || !CurrentWeapon->CanAimWeapon()) return;
+
+	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwnerPawn->GetController()))
+		{
+			if (PC->IsSprinting())
+			{
+				PC->StopSprinting();
+			}
+			const float Remain = PC->GetAdsSettleRemaining();
+			if (Remain > KINDA_SMALL_NUMBER)
+			{
+				bAdsInputBuffered = true;
+				GetWorld()->GetTimerManager().SetTimer(AdsBufferTimer, this, &ThisClass::OnAdsBufferElapsed, Remain, false);
+				return;
+			}
+		}
+	}
+	ClearAdsBuffer();
+	Local_Aim(true);
+	Server_Aim(true);
+}
+
+void UCombatComponent::OnAdsBufferElapsed()
+{
+	if (!bAdsInputBuffered) return;
+	bAdsInputBuffered = false;
+	if (bAiming) return;
+	if (IsReloading())
+	{
+		// 换弹中绝不自动开镜：改记到换弹结束后再开
+		bAdsPendingAfterReload = true;
+		return;
+	}
+	if (IsValid(CurrentWeapon) && !CurrentWeapon->CanAimWeapon()) return;
+
+	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwnerPawn->GetController()))
+		{
+			if (PC->IsSprinting())
+			{
+				PC->StopSprinting();
+			}
+			const float Remain = PC->GetAdsSettleRemaining();
+			if (Remain > KINDA_SMALL_NUMBER)
+			{
+				// 又进入冲刺/后摇：继续缓冲
+				bAdsInputBuffered = true;
+				GetWorld()->GetTimerManager().SetTimer(AdsBufferTimer, this, &ThisClass::OnAdsBufferElapsed, Remain, false);
+				return;
+			}
+		}
+	}
+	Local_Aim(true);
+	Server_Aim(true);
+}
+
 void UCombatComponent::Initiate_Aim_Pressed()
 {
 	CancelInspect();
@@ -2082,6 +2463,8 @@ void UCombatComponent::Initiate_Aim_Pressed()
 	// 近战 / 炸弹不能开镜
 	if (IsValid(CurrentWeapon) && !CurrentWeapon->CanAimWeapon())
 	{
+		ClearAdsBuffer();
+		ClearAdsPendingAfterReload();
 		if (bAiming)
 		{
 			Local_Aim(false);
@@ -2089,9 +2472,64 @@ void UCombatComponent::Initiate_Aim_Pressed()
 		}
 		return;
 	}
+
+	// 换弹期间不能开镜：清掉冲刺后摇预输入，按键记到换弹结束后再开；再按取消
+	if (IsReloading())
+	{
+		ClearAdsBuffer();
+		if (bAiming)
+		{
+			Local_Aim(false);
+			Server_Aim(false);
+		}
+		if (bAdsPendingAfterReload)
+		{
+			ClearAdsPendingAfterReload();
+			return;
+		}
+		bAdsPendingAfterReload = true;
+		return;
+	}
+
+	// 预输入等待中再按一次 = 取消预输入（等同取消开镜意图）
+	if (bAdsInputBuffered && !bAiming)
+	{
+		ClearAdsBuffer();
+		ClearAdsPendingAfterReload();
+		return;
+	}
+
 	const bool bNextAim = !bAiming;
-	Local_Aim(bNextAim);
-	Server_Aim(bNextAim);
+	if (!bNextAim)
+	{
+		ClearAdsBuffer();
+		ClearAdsPendingAfterReload();
+		Local_Aim(false);
+		Server_Aim(false);
+		return;
+	}
+
+	// 想开镜：冲刺中先停冲刺；若还在后摇则预输入，时间一到自动开（本身还有 AdsTime）
+	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwnerPawn->GetController()))
+		{
+			if (PC->IsSprinting())
+			{
+				PC->StopSprinting();
+			}
+			const float Remain = PC->GetAdsSettleRemaining();
+			if (Remain > KINDA_SMALL_NUMBER)
+			{
+				bAdsInputBuffered = true;
+				GetWorld()->GetTimerManager().SetTimer(AdsBufferTimer, this, &ThisClass::OnAdsBufferElapsed, Remain, false);
+				return;
+			}
+		}
+	}
+	ClearAdsBuffer();
+	Local_Aim(true);
+	Server_Aim(true);
 }
 
 void UCombatComponent::Initiate_Aim_Released()
@@ -2292,6 +2730,7 @@ void UCombatComponent::Initiate_VersionWeapon()
 	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
 	// 只有空闲时能检视：不在换弹、拉栓、切枪、开火、开镜
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Idle) return;
+	if (IsReloading()) return;   // 换弹期间禁止检视（与 Idle 检查双保险）
 	if (bAiming || bTriggerPressed) return;
 	if (IsInspecting()) return;   // 正在检视就不重新开始
 
@@ -2368,6 +2807,7 @@ void UCombatComponent::Notify_ReloadWeapon()
 		const APawn* OwningPawn = Cast<APawn>(GetOwner());
 		if (IsValid(OwningPawn) && OwningPawn->IsLocallyControlled() && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
 		{
+			bLocalReloadNotified = true;
 			Server_ReloadNotify();
 		}
 		return;
@@ -2402,6 +2842,27 @@ void UCombatComponent::Local_Aim(bool bPressed)
 	{
 		bPressed = false;
 	}
+	// 换弹中禁止开镜（关镜永远允许）；本地 + Server_Aim 都走这里
+	if (bPressed && IsReloading())
+	{
+		return;
+	}
+	// 服务器校验：冲刺后摇未结束不允许进入开镜（关镜永远允许）
+	if (bPressed)
+	{
+		if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwnerPawn->GetController()))
+			{
+				if (PC->IsSprinting())
+				{
+					PC->StopSprinting();
+					return;
+				}
+				if (!PC->CanStartAds()) return;
+			}
+		}
+	}
 	if (bAiming == bPressed) return;   // 状态没变就不广播，避免 listen server 上重复触发
 	bAiming = bPressed;
 	OnAimStateChanged.Broadcast(bAiming);
@@ -2409,6 +2870,8 @@ void UCombatComponent::Local_Aim(bool bPressed)
 
 void UCombatComponent::StopAimForWeaponSwitch()
 {
+	ClearAdsBuffer();
+	ClearAdsPendingAfterReload();
 	if (!bAiming) return;
 	Local_Aim(false);    // 本地立刻关镜，手感不延迟
 	Server_Aim(false);   // 通知服务器（Reliable RPC 按顺序到达）

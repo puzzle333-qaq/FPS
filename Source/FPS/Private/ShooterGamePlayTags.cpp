@@ -20,6 +20,7 @@ namespace ShooterTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Deagle, "Weapon.type.deagle", "DEFINITIVE_FPS_KIT Desert Eagle .50");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_DoubleBarrel, "Weapon.type.doublebarrel", "DEFINITIVE_FPS_KIT Double Barrel");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Winchester, "Weapon.type.winchester", "DEFINITIVE_FPS_KIT Winchester");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_PSR, "Weapon.type.psr", "Precision Sniper Rifle (bolt-action, pack arms)");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Barrel, "Attachment.Slot.Barrel", "Attachment slot: Barrel");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Handguard, "Attachment.Slot.Handguard", "Attachment slot: Handguard");

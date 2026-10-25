@@ -37,7 +37,22 @@ public:
 	// 只按当前状态重新算速度（不发 RPC），角色在开镜/下蹲变化时调用
 	void RefreshMovementSpeed() { ApplyMovementSpeed(); }
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement") bool IsSprinting() const { return bIsSprinting; }
-	
+	UFUNCTION(BlueprintPure, Category = "FPS|Movement") bool IsTacticalSprinting() const { return bIsSprinting && bIsTacticalSprinting; }
+
+	// 冲刺中按开火到第一枪的缓冲（战术冲刺更长）
+	float GetSprintToFireDelay() const { return IsTacticalSprinting() ? TacticalSprintToFireDelay : SprintToFireDelay; }
+
+	// 冲刺后摇 + Option A 滑铲前半段门控：要再等这么久才能开镜（Combat 预输入复用）
+	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
+	bool CanStartAds() const;
+
+	/** 距离可以开镜还剩多久（冲刺后摇与滑铲门控取较大值；都过了则为 0） */
+	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
+	float GetAdsSettleRemaining() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
+	float GetSprintToAdsDelay() const { return SprintToAdsDelay; }
+
 	UFUNCTION(BlueprintCallable)
 	void StopSprinting();
 
@@ -390,7 +405,44 @@ private:
 	float RunSpeed = 500.f;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement")
-	float SprintSpeed = 800.f;
+	float SprintSpeed = 700.f;
+
+	// ---------- 战术冲刺：冲刺中快速再按一次冲刺键（双击 Shift） ----------
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint")
+	bool bEnableTacticalSprint = true;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0"))
+	float TacticalSprintSpeed = 800.f;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0.1"))
+	float TacticalSprintDuration = 3.f;
+
+	// 战术冲刺结束后多久才能再用
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0"))
+	float TacticalSprintCooldown = 5.f;
+
+	// 两次按冲刺键间隔小于这个算双击
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0.05"))
+	float SprintDoubleTapWindow = 0.3f;
+
+	// 冲刺转开火缓冲（秒）
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0"))
+	float SprintToFireDelay = 0.12f;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0"))
+	float TacticalSprintToFireDelay = 0.22f;
+
+	// 松开冲刺（或滑铲取消冲刺）后，多久才能开镜
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0"))
+	float SprintToAdsDelay = 0.05f;
+
+
+	bool bIsTacticalSprinting = false;
+	double LastSprintPressTime = -10.0;
+	double TacticalSprintReadyTime = 0.0;
+	FTimerHandle TacticalSprintTimer;
+	void StartTacticalSprint();
+	void EndTacticalSprint();
 
 	// 下面三个倍率会相乘叠加，例如 下蹲+静步+开镜 = 500 * 0.6 * 0.5 * 0.7
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -407,6 +459,8 @@ private:
 	float AimSpeedMultiplier = 0.7f;
 
 	bool bIsSprinting = false;
+	double SprintEndedAt = -1000.0;
+	void NoteSprintEnded();
 	bool bIsWalking = false;
 
 	void UpdateMovementSpeed();
@@ -420,7 +474,7 @@ private:
 
 	// 客户端 -> 服务器：告诉服务器我现在的移动状态
 	UFUNCTION(Server, Reliable)
-	void Server_SetMovementState(bool bNewSprinting, bool bNewWalking);
+	void Server_SetMovementState(bool bNewSprinting, bool bNewWalking, bool bNewTactical);
 
 	// 服务器 -> 客户端：耐力耗尽，退出冲刺
 	UFUNCTION(Client, Reliable)
