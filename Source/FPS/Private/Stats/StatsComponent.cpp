@@ -17,9 +17,10 @@ UStatsComponent::UStatsComponent()
 	
 	Stamina = 100.f;
 	MaxStamina = 100.f;
-	// 体力消耗减半（原 20 / 15，头文件默认值仍是旧值，这里覆盖）
-	StaminaDrainRate = 10.f;
-	JumpStaminaCost = 8.f;
+	// TacticalTrim: stamina disabled — no drain, jump cost unused.
+	StaminaDrainRate = 0.f;
+	StaminaRegenRate = 0.f;
+	JumpStaminaCost = 0.f;
 
 }
 
@@ -41,18 +42,12 @@ void UStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner) || !Owner->HasAuthority()) return;
 
-	// 只看水平速度，站着不动或者只是在跳都不算在跑
-	const bool bIsMoving = Owner->GetVelocity().Size2D() > 10.f;
-	const bool bIsDraining = bIsSprinting && bIsMoving;
-
-	const float Amout = bIsDraining ? -StaminaDrainRate * DeltaTime : StaminaRegenRate * DeltaTime;
-	const bool bHasStamina = ChangeStaminaByAmout(Amout);
-
-	if (bIsDraining && !bHasStamina)
+	// TacticalTrim: stamina disabled — keep full, never deplete, never stop sprint.
+	if (!FMath::IsNearlyEqual(Stamina, MaxStamina))
 	{
-		bIsSprinting = false;
-		OnStaminaDepleted.Broadcast();
+		ChangeStaminaByAmout(MaxStamina - Stamina);
 	}
+	(void)DeltaTime;
 }
 
 bool UStatsComponent::ChangeHealthByAmout(float Amout, AActor* Instigator)

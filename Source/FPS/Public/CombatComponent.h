@@ -61,7 +61,15 @@ public:
 	//Cycle to the next weapon in the inventory
 	void Initiate_FireWeapon_Pressed();
 	void Initiate_FireWeapon_Released();
-	void Initiate_ReloadWeapon();
+	// bFastDrop=true: discard current mag (HOLD R). false: keep partial mag at back of queue (TAP R).
+	void Initiate_ReloadWeapon(bool bFastDrop = false);
+
+	/** After FactionLook swaps Mesh3P skeletal mesh, re-push idle/locomotion onto AnimBPs. */
+	void RefreshAnimsAfterMesh3PSwap();
+
+	/** After FactionLook swaps Mesh1P (Bandits arms), refresh cached default arms so OverrideArms restore keeps Bandits. */
+	void RecacheDefaultFirstPersonArms();
+	int32 GetSpareMagCount() const;
 	void Initiate_Aim_Pressed();
 	void Initiate_Aim_Released();
 
@@ -225,6 +233,13 @@ protected:
 private:	
 
 	TMap<FGameplayTag, int32> ReserveAmmo;
+	// Spare magazines per weapon type (FIFO). CurrentReserveAmmo = queue length for HUD.
+	TMap<FGameplayTag, TArray<int32>> MagQueues;
+	bool bPendingFastReloadDrop = false;
+	void EnsureMagQueueForWeapon(AWeapon* Weapon);
+	bool ConsumeMagFromQueue(AWeapon* Weapon, bool bFastDrop);
+	void PlayDryFireClick();
+	double LastDryFireTime = -10.0;
 	bool bTriggerPressed;
 	int32 BurstShotsRemaining = 0;
 	FTimerHandle FireTimer;
@@ -284,6 +299,8 @@ private:
 	void Local_Aim(bool bPressed);
 
 	void Local_FireWeapon();
+	/** Local owner Multicast skips 3P — play fire on Mesh3P so ToggleThirdPerson sees it. */
+	void PlayOwnerThirdPersonFireMontage();
 	void Initiate_Throw(bool bHighThrow);
 	void ReleaseThrow();
 	void TryBeginThrowRelease();
@@ -327,7 +344,7 @@ private:
 	void OnObservedReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 	UFUNCTION(Server, Reliable)
-	void Server_ReloadWeapon(EReloadType ReloadType);
+	void Server_ReloadWeapon(EReloadType ReloadType, bool bFastDrop);
 
 	UFUNCTION(Client,Reliable)
 	void Client_ReloadWeapon(AWeapon* ReloadedWeapon, int32 NewWeaponAmmo, int32 NewCarryAmmo);
@@ -397,6 +414,7 @@ private:
 	// Main and secondary resolve to the first and second long gun. Pistol and melee take the first match.
 	AWeapon* FindWeaponForSlot(EWeaponSlot Slot) const;
 	void Initiate_EquipSlot(EWeaponSlot Slot);
+
 
 	UFUNCTION(Server, Reliable)
 	void Server_EquipSlot(EWeaponSlot Slot);

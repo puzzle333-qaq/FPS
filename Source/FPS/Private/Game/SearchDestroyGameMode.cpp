@@ -48,6 +48,17 @@ void ASearchDestroyGameMode::StartPlay()
 {
 	Super::StartPlay();
 	ApplyMatchRules();
+	if (const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>())
+	{
+		if (GI->IsPracticeMode())
+		{
+			// 练习：缩短购买/回合，方便一个人测 HUD / 结算（真联机房间不受影响）
+			BuyTime = FMath::Min(BuyTime > 0.f ? BuyTime : FreezeTime, 8.f);
+			RoundTime = FMath::Min(RoundTime, 60.f);
+			WaitForPlayersTimeout = 0.f;
+			UE_LOG(LogTemp, Log, TEXT("[SD] Practice timings: buy=%.0fs round=%.0fs"), BuyTime, RoundTime);
+		}
+	}
 	BeginWaitingForPlayers();
 	GetWorldTimerManager().SetTimer(SpectateValidateTimer, this, &ThisClass::ValidateSpectators, 0.5f, true);
 }
@@ -138,10 +149,16 @@ void ASearchDestroyGameMode::TickWaitingForPlayers()
 	const int32 B = CountPlayersOnTeam(1);
 	int32 Arrived = 0, Expected = 0;
 	const bool bAllHere = AreExpectedPlayersPresent(Arrived, Expected);
-	if (bAllHere && A >= MinPlayersPerTeam && B >= MinPlayersPerTeam)
+	const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
+	// 练习 / 直接开图（无房间）：只要有 1 人就可以开，不要求两队都有人
+	const bool bPracticeOrSolo = (GI && GI->IsPracticeMode()) || !HasActiveRoom();
+	const bool bTeamsReady = bPracticeOrSolo
+		? ((A + B) >= 1)
+		: (A >= MinPlayersPerTeam && B >= MinPlayersPerTeam);
+	if (bAllHere && bTeamsReady)
 	{
 		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
-		UE_LOG(LogTemp, Log, TEXT("[SD] Teams ready (%d vs %d) -> warmup"), A, B);
+		UE_LOG(LogTemp, Log, TEXT("[SD] Teams ready (%d vs %d%s) -> warmup"), A, B, bPracticeOrSolo ? TEXT(", practice/solo") : TEXT(""));
 		GS->SetRoundPhase(EBombRoundPhase::Warmup);
 		const float Now = GS->GetServerWorldTimeSeconds();
 		GS->SetMatchStartServerTime(WarmupTime > 0.f ? Now + WarmupTime : Now);
@@ -151,6 +168,22 @@ void ASearchDestroyGameMode::TickWaitingForPlayers()
 	if (WaitForPlayersTimeout > 0.f && GetWorld()->GetTimeSeconds() - WaitForPlayersStartTime >= WaitForPlayersTimeout)
 	{
 		GetWorldTimerManager().ClearTimer(WaitForPlayersTimer);
+		if (bPracticeOrSolo)
+		{
+			// 练习模式超时也不关房：有人就开，没人继续等
+			if ((A + B) >= 1)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[SD] Practice wait timeout — starting with %d player(s)"), A + B);
+				GS->SetRoundPhase(EBombRoundPhase::Warmup);
+				StartWarmupOrMatch();
+			}
+			else
+			{
+				WaitForPlayersStartTime = GetWorld()->GetTimeSeconds();
+				GetWorldTimerManager().SetTimer(WaitForPlayersTimer, this, &ThisClass::TickWaitingForPlayers, 0.5f, true);
+			}
+			return;
+		}
 		UE_LOG(LogTemp, Warning, TEXT("[SD] Wait for players timed out (%d vs %d, %d/%d) -> back to room / close"), A, B, Arrived, Expected);
 		if (!ReturnToRoomLobby())
 		{
@@ -411,16 +444,21 @@ void ASearchDestroyGameMode::CheckElimination()
 	ASearchDestroyGameState* GS = GetSDState();
 	if (!GS || bRoundLocked || GS->GetRoundPhase() != EBombRoundPhase::Live) return;
 
+	GS->RefreshTeamAliveCounts();
+
 	const int32 AliveAtk = CountAliveOnTeam(GS->GetAttackerTeam());
 	const int32 AliveDef = CountAliveOnTeam(GS->GetDefenderTeam());
+	const int32 PlayersAtk = CountPlayersOnTeam(GS->GetAttackerTeam());
+	const int32 PlayersDef = CountPlayersOnTeam(GS->GetDefenderTeam());
 	const bool bBombDown = GS->IsBombDown();
 
-	if (AliveDef <= 0)
+	// 空队（练习单人 / 对面没人）不算歼灭，否则一 Live 就立刻结束回合
+	if (AliveDef <= 0 && PlayersDef > 0)
 	{
 		FinishRound(GS->GetAttackerTeam(), ERoundWinReason::Elimination);
 		return;
 	}
-	if (AliveAtk <= 0 && !bBombDown)
+	if (AliveAtk <= 0 && !bBombDown && PlayersAtk > 0)
 	{
 		FinishRound(GS->GetDefenderTeam(), ERoundWinReason::Elimination);
 	}
@@ -465,6 +503,7 @@ void ASearchDestroyGameMode::StartRound()
 	if (BuyWindow > 0.f)
 	{
 		GS->SetRoundPhase(EBombRoundPhase::Freeze);
+		GS->RefreshTeamAliveCounts();
 		GS->SetFreezeEndServerTime(Now + BuyWindow);
 		GS->SetMatchEndServerTime(0.f);
 		GetWorldTimerManager().SetTimer(FreezeTimer, this, &ThisClass::GoLive, BuyWindow, false);
@@ -481,6 +520,7 @@ void ASearchDestroyGameMode::GoLive()
 	ASearchDestroyGameState* GS = GetSDState();
 	if (!GS || bRoundLocked || GS->GetMatchState() != EShooterMatchState::InProgress) return;
 	GS->SetRoundPhase(EBombRoundPhase::Live);
+	GS->RefreshTeamAliveCounts();
 	GS->SetMatchEndServerTime(RoundTime > 0.f ? GS->GetServerWorldTimeSeconds() + RoundTime : 0.f);
 }
 
@@ -895,8 +935,7 @@ void ASearchDestroyGameMode::FinishRound(uint8 WinningTeam, ERoundWinReason Reas
 	PlantingSite.Reset();
 	GetWorldTimerManager().ClearTimer(FreezeTimer);
 
-	GS->SetLastWinReason(Reason);
-	GS->SetRoundWinningTeam(WinningTeam);
+	GS->SetRoundOutcome(WinningTeam, Reason);
 	if (WinningTeam < 2)
 	{
 		GS->AddTeamScore(WinningTeam, 1);

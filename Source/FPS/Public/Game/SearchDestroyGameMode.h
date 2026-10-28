@@ -63,7 +63,7 @@ public:
 	float PostMatchDelay = 8.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD")
-	bool bFriendlyFire = false;
+	bool bFriendlyFire = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|SD")
 	float PlantCancelSpeed = 120.f;

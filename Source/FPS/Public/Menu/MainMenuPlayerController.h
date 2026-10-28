@@ -37,6 +37,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
 	void HideRoomBrowser();
 
+	// 单人练习：直接进爆破/团战地图，不需要开房间
+	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
+	void StartPractice(EShooterGameMode Mode);
+
+	// 本机双人测试（无需 EOS）：listen 开靶场/团战/大厅
+	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
+	void HostLocalListenTest(FString Target);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
+	void JoinLocalhostTest(FString Address);
+
 	// 房间列表是否嵌在主菜单 WidgetSwitcher 里（RoomBrowserPage）
 	UFUNCTION(BlueprintPure, Category = "FPS|Menu")
 	bool IsRoomBrowserEmbedded() const;

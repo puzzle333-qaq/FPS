@@ -1,0 +1,15 @@
+﻿绊雷 / 汽油桶 PIE 测试
+
+控制台（靶场也可）：
+  SpawnTripwire  — 面前生成绊雷（忽略布置阶段，仍限每人 2 个）
+  SpawnGasCan    — 面前生成汽油桶（同上）
+  PlaceTripwire  — 仅匪徒布置阶段可放（非警匪模式则自由放）
+  PlaceGasCan    — 同上
+
+行为：
+  绊雷：踩线爆炸（DoDamage，不吃护甲）；警察按 F 拆除；布置阶段踩自己的不触发
+  汽油桶：开枪打爆；爆炸+短暂燃烧 DoDamage，不吃护甲
+
+警匪模式：
+  PickFaction 1 → 布置阶段 PlaceTripwire / PlaceGasCan
+  或任意时候用 Spawn* 测

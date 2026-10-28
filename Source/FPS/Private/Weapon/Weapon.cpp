@@ -16,6 +16,7 @@
 #include "Components/DecalComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
@@ -204,9 +205,11 @@ AWeapon::AWeapon()
 	VisualRecoilAimMultiplier = 0.4f;
 	VisualRecoilKickSpeed = 50.f;
 	VisualRecoilRecoverySpeed = 16.f;
-	Damage = 15.f;
-	HeadshotMultiplier = 2.f;
+	Damage = 40.f;              // short TTK: was 15 (body ~3 shots @100HP)
+	HeadshotMultiplier = 2.5f;  // was 2.0 -> head ~100
 	LimbMultiplier = 0.75f;
+	WeaponLength = 70.f;
+	BlockedHipFireExtra = 8.f;
 
 	MagCapacity = 10;
 	Ammo = 5;
@@ -589,6 +592,8 @@ void AWeapon::AttachToOwingPawn()
 {
 	APawn* OwningPawn = GetInstigator();
 	if (!IsValid(OwningPawn) || !OwningPawn->Implements<UPlayerInterface>()) return;
+
+	FinishMagazineReloadVisuals();
 
 	CaptureAuthoredMeshRelative();
 	SetMeshVisibility(OwningPawn);
@@ -1490,6 +1495,11 @@ float AWeapon::GetHipFireSpread() const
 	{
 		return (PelletsPerShot > 1) ? Spread * 0.35f : 0.f;
 	}
+	// Barrel jammed into wall/body: add inaccuracy (longer guns already block ADS more often).
+	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetInstigator()))
+	{
+		Spread += BlockedHipFireExtra * Shooter->GetWeaponBlockAlpha();
+	}
 	return Spread;
 }
 
@@ -2037,7 +2047,56 @@ void AWeapon::PlayMagazineReload(EReloadType ReloadType)
 		PlayX24BodySequence(Mesh3P, EmptyReload);
 	}
 
-	// 备用弹夹跟枪身换弹一起出现。结束时 SetMeshVisibility 会再把它藏起来。
+	// Infima dual-hand: SOCKET_Magazine (old, pulled) + SOCKET_Magazine_Reserve (new, held)
+	// are both on the GUN mesh; WEP reload moves them to the hands. Keep reserve visible
+	// for the whole reload — do NOT hide via Infima notify timers (that regressed to 1 mag).
+	bReloadReserveMagVisible = true;
+	ShowReserveMagazineForReload();
+
+	// Keep the chambered/main mag visible while the spare is out.
+	if (const FAttachmentVisual* MagVis = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine))
+	{
+		if (IsValid(MagVis->Mesh1P))
+		{
+			MagVis->Mesh1P->SetHiddenInGame(false);
+			MagVis->Mesh1P->SetVisibility(true);
+		}
+		if (IsValid(MagVis->SkelMesh1P))
+		{
+			MagVis->SkelMesh1P->SetHiddenInGame(false);
+			MagVis->SkelMesh1P->SetVisibility(true);
+		}
+	}
+
+	USkeletalMeshComponent* MagMesh = GetMagazineSkelMesh1P();
+	if (IsValid(MagMesh))
+	{
+		const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine);
+		if (Mag && IsValid(Mag->Data))
+		{
+			UAnimSequence* Seq = Mag->Data->MagReloadAnim;
+			if (ReloadType == EReloadType::Empty && Mag->Data->MagEmptyReloadAnim)
+			{
+				Seq = Mag->Data->MagEmptyReloadAnim;
+			}
+			else if (ReloadType == EReloadType::Tactical && Mag->Data->MagTacticalReloadAnim)
+			{
+				Seq = Mag->Data->MagTacticalReloadAnim;
+			}
+			else if (ReloadType == EReloadType::First && Mag->Data->MagEmptyReloadAnim)
+			{
+				Seq = Mag->Data->MagReloadAnim ? Mag->Data->MagReloadAnim.Get() : Mag->Data->MagEmptyReloadAnim.Get();
+			}
+			if (IsValid(Seq))
+			{
+				MagMesh->PlayAnimation(Seq, false);
+			}
+		}
+	}
+}
+
+void AWeapon::ShowReserveMagazineForReload()
+{
 	bool bHasReserve = false;
 	TArray<UStaticMeshComponent*> Meshes;
 	GetComponents<UStaticMeshComponent>(Meshes);
@@ -2049,7 +2108,6 @@ void AWeapon::PlayMagazineReload(EReloadType ReloadType)
 		bHasReserve = true;
 	}
 
-	// 枪已经生成过时，补一只挂到备用骨上，这次换弹就能看见装回去的弹夹。
 	if (!bHasReserve && IsValid(Mesh1P) && Mesh1P->DoesSocketExist(ReserveMagazineSocket))
 	{
 		if (const FAttachmentVisual* MagVisual = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine))
@@ -2067,35 +2125,25 @@ void AWeapon::PlayMagazineReload(EReloadType ReloadType)
 				Reserve->SetHiddenInGame(false);
 				Reserve->SetVisibility(true);
 				Reserve->RegisterComponent();
+				bHasReserve = true;
 			}
 		}
 	}
 
-	USkeletalMeshComponent* MagMesh = GetMagazineSkelMesh1P();
-	if (!IsValid(MagMesh)) return;
-
-	const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine);
-	if (!Mag || !IsValid(Mag->Data)) return;
-
-	UAnimSequence* Seq = Mag->Data->MagReloadAnim;
-	if (ReloadType == EReloadType::Empty && Mag->Data->MagEmptyReloadAnim)
+	const bool bSock = IsValid(Mesh1P) && Mesh1P->DoesSocketExist(ReserveMagazineSocket);
+	UE_LOG(LogTemp, Warning, TEXT("[RarMag] ShowReserve sock=%d hasReserve=%d weapon=%s"),
+		bSock ? 1 : 0, bHasReserve ? 1 : 0, *GetName());
+	if (!bHasReserve)
 	{
-		Seq = Mag->Data->MagEmptyReloadAnim;
+		UE_LOG(LogTemp, Warning, TEXT("[RarMag] no reserve mag — check DA magazine Mesh + SOCKET_Magazine_Reserve on Mesh1P"));
 	}
-	else if (ReloadType == EReloadType::Tactical && Mag->Data->MagTacticalReloadAnim)
-	{
-		Seq = Mag->Data->MagTacticalReloadAnim;
-	}
-	else if (ReloadType == EReloadType::First && Mag->Data->MagEmptyReloadAnim)
-	{
-		// First equip often shares empty-style mag motion; fall back to MagReloadAnim
-		Seq = Mag->Data->MagReloadAnim ? Mag->Data->MagReloadAnim.Get() : Mag->Data->MagEmptyReloadAnim.Get();
-	}
-	if (!IsValid(Seq)) return;
-
-	MagMesh->PlayAnimation(Seq, false);
 }
 
+void AWeapon::FinishMagazineReloadVisuals()
+{
+	bReloadReserveMagVisible = false;
+	HideReserveMagazines(this);
+}
 
 void AWeapon::RebuildAttachmentVisuals()
 {
@@ -2103,9 +2151,13 @@ void AWeapon::RebuildAttachmentVisuals()
 	if (GetNetMode() == NM_DedicatedServer) return;
 
 	// 手电挂在配件模型上。先拆下来，避免销毁模型时被带到枪根上并留下隐藏标记。
-	if (IsValid(Flashlight))
+	if (IsValid(Flashlight1P))
 	{
-		Flashlight->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+		Flashlight1P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+	}
+	if (IsValid(Flashlight3P))
+	{
+		Flashlight3P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
 	}
 
 	if (IsValid(LaserBeam))
@@ -2184,34 +2236,49 @@ void AWeapon::RebuildAttachmentVisuals()
 		}
 	}
 
-	// 3. 手电：有就创建，没有就销毁
+	// 3. Dual flashlights: 1P for local view, 3P so other clients see the beam.
 	if (HasFlashlight())
 	{
-		if (!IsValid(Flashlight))
+		if (!IsValid(Flashlight1P))
 		{
-			Flashlight = NewObject<USpotLightComponent>(this);
-			Flashlight->SetMobility(EComponentMobility::Movable);
-			Flashlight->SetupAttachment(Mesh1P);
-			Flashlight->RegisterComponent();
+			Flashlight1P = CreateFlashlightLight(Mesh1P);
+		}
+		if (!IsValid(Flashlight3P))
+		{
+			Flashlight3P = CreateFlashlightLight(Mesh3P);
 		}
 		for (const UAttachmentData* Attachment : EquippedAttachments)
 		{
 			if (IsValid(Attachment) && Attachment->bProvidesFlashlight)
 			{
-				Flashlight->SetIntensity(Attachment->LightIntensity);
-				Flashlight->SetLightColor(Attachment->LightColor);
-				Flashlight->SetAttenuationRadius(Attachment->LightAttenuationRadius);
-				Flashlight->SetInnerConeAngle(Attachment->LightInnerConeAngle);
-				Flashlight->SetOuterConeAngle(Attachment->LightOuterConeAngle);
+				auto ApplyParams = [Attachment](USpotLightComponent* Light)
+				{
+					if (!IsValid(Light)) return;
+					Light->SetIntensity(Attachment->LightIntensity);
+					Light->SetLightColor(Attachment->LightColor);
+					Light->SetAttenuationRadius(Attachment->LightAttenuationRadius);
+					Light->SetInnerConeAngle(Attachment->LightInnerConeAngle);
+					Light->SetOuterConeAngle(Attachment->LightOuterConeAngle);
+				};
+				ApplyParams(Flashlight1P);
+				ApplyParams(Flashlight3P);
 				break;
 			}
 		}
 		UpdateFlashlightAttachment();
 	}
-	else if (IsValid(Flashlight))
+	else
 	{
-		Flashlight->DestroyComponent();
-		Flashlight = nullptr;
+		if (IsValid(Flashlight1P))
+		{
+			Flashlight1P->DestroyComponent();
+			Flashlight1P = nullptr;
+		}
+		if (IsValid(Flashlight3P))
+		{
+			Flashlight3P->DestroyComponent();
+			Flashlight3P = nullptr;
+		}
 	}
 
 	// 第 13 步：配了侧瞄（或激光）但模型上没有侧瞄插槽时，提示一次
@@ -2242,41 +2309,80 @@ void AWeapon::RebuildAttachmentVisuals()
 	ApplyLaserState();
 }
 
+USpotLightComponent* AWeapon::CreateFlashlightLight(USceneComponent* AttachParent)
+{
+	USpotLightComponent* Light = NewObject<USpotLightComponent>(this);
+	Light->SetMobility(EComponentMobility::Movable);
+	Light->bUseInverseSquaredFalloff = true;
+	Light->SetCastShadows(true);
+	Light->SetVisibility(false);
+	Light->SetHiddenInGame(true);
+	if (IsValid(AttachParent))
+	{
+		Light->SetupAttachment(AttachParent);
+	}
+	Light->RegisterComponent();
+	return Light;
+}
+
 void AWeapon::UpdateFlashlightAttachment()
 {
-	if (!IsValid(Flashlight)) return;
-
 	const FAttachmentVisual* Visual = AttachmentVisuals.FindByPredicate([](const FAttachmentVisual& V)
 	{
 		return IsValid(V.Data) && V.Data->bProvidesFlashlight;
 	});
-	if (!Visual) return;
 
-	// 本地玩家看到的是 1P 模型，其他人看到的是 3P 模型，灯要跟着看得见的那个。骨骼配件没有静态网格。
-	const APawn* OwningPawn = GetInstigator();
-	const bool bLocal = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
-	USceneComponent* Parent = AttachmentViewComponent(*Visual, bLocal);
-	if (!IsValid(Parent))
+	auto AttachOne = [&](USpotLightComponent* Light, bool bFirstPerson)
 	{
-		Parent = bLocal ? Mesh1P.Get() : Mesh3P.Get();
-	}
+		if (!IsValid(Light)) return;
+		USceneComponent* Parent = nullptr;
+		FName Socket = NAME_None;
+		if (Visual)
+		{
+			Parent = AttachmentViewComponent(*Visual, bFirstPerson);
+			if (IsValid(Parent) && IsValid(Visual->Data))
+			{
+				Socket = Parent->DoesSocketExist(Visual->Data->LightSocketName) ? Visual->Data->LightSocketName : NAME_None;
+			}
+		}
+		if (!IsValid(Parent))
+		{
+			Parent = bFirstPerson ? Mesh1P.Get() : Mesh3P.Get();
+		}
+		if (!IsValid(Parent)) return;
+		Light->AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
+	};
 
-	const FName Socket = Parent->DoesSocketExist(Visual->Data->LightSocketName) ? Visual->Data->LightSocketName : NAME_None;
-	Flashlight->AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
-	// 从被隐藏的 3P 模型挪到 1P 后，父级传播留下的 bHiddenInGame 不会自己清掉
+	// Always keep both: local client uses 1P light; every client enables 3P light so others see the beam.
+	AttachOne(Flashlight1P, true);
+	AttachOne(Flashlight3P, false);
 	ApplyFlashlightState();
 	ApplyLaserState();
 }
 
 void AWeapon::ApplyFlashlightState()
 {
-	if (!IsValid(Flashlight)) return;
+	const APawn* OwningPawn = GetInstigator();
+	const AShooterCharacter* ShooterOwner = Cast<AShooterCharacter>(OwningPawn);
+	const bool bLocal = IsValid(OwningPawn) && (OwningPawn->IsLocallyControlled() || (ShooterOwner && ShooterOwner->IsFirstPersonViewedLocally()));
+	const bool bOn = bFlashlightOn && HasFlashlight();
 
-	Flashlight->SetHiddenInGame(!bFlashlightOn);
-	Flashlight->SetVisibility(bFlashlightOn);
+	auto SetLight = [](USpotLightComponent* Light, bool bEnable)
+	{
+		if (!IsValid(Light)) return;
+		Light->SetActive(bEnable);
+		Light->SetHiddenInGame(!bEnable);
+		Light->SetVisibility(bEnable);
+	};
+
+	// 1P light only for the local first-person viewer (Mesh1P hidden for everyone else).
+	SetLight(Flashlight1P, bOn && bLocal);
+	// 3P light for remote viewers (and local third-person debug). Owning local FP relies on 1P light.
+	const bool bUse3P = bOn && (!bLocal || (ShooterOwner && !ShooterOwner->IsFirstPersonViewedLocally()));
+	SetLight(Flashlight3P, bUse3P);
 }
 
-void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
+void AWeapon::SetMeshVisibility(APawn* OwningPawn)
 {
 	if (!IsValid(OwningPawn)) return;
 
@@ -2296,7 +2402,14 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn) const
 
 	// 父网格传播会把备用弹夹重新打开。平时只留枪里那一只。
 	HideReserveMagazines(this);
+	if (bReloadReserveMagVisible)
+	{
+		ShowReserveMagazineForReload();
+	}
 	ApplyChamberShellVisibility();
+	// Parent SetHiddenInGame(propagate) also stomps child lights — restore after.
+	ApplyFlashlightState();
+	ApplyLaserState();
 }
 
 
@@ -2419,3 +2532,5 @@ void AWeapon::PlayWeaponMontageOrSequence(USkeletalMeshComponent* WeaponMesh, UA
 		}
 	}
 }
+
+

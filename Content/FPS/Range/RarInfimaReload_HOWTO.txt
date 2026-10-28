@@ -1,0 +1,56 @@
+RAR Infima dual-hand mag (RarInfimaReload) — 2026-10-28
+=======================================================
+
+Goal
+----
+Tactical reload: hand already holds NEW mag, then pulls OLD off the gun —
+two mags visible in hands the whole time (Infima style).
+
+Why project AM alone was not enough
+-----------------------------------
+- DA FirstPerson still uses /Game/FPS/Animation/RAR/AM_RAR_Reload(_Empty)
+  (keeps Mannequin/SharedPose bone motion that already works).
+- Those copies only have PlaySound + camera shake — no Infima mag notifies.
+- Infima originals AM_RAR_FP_PCH_AssaultRifle_Reload(_Empty) have:
+    BP_IG_AN_Magazine_Reserve_Set_Visiblity  (bool Visibility)
+    BP_IG_AN_Magazine_Hidden_Visually_Character (bool Hidden)
+  but they call BPI_IG_Character / BPI_IG_Weapon which our FPS pawn does not implement.
+- Pointing DA at Infima PCH would also swap skeleton to SK_IG_FP_Mannequin and
+  risk breaking the restored mag bone motion.
+
+Fix (C++ only — no DefaultSlot / SetMeshVisibility reload hacks)
+----------------------------------------------------------------
+Weapon.cpp / Weapon.h:
+- ScheduleInfimaMagazineNotifies(ReloadType)
+  loads Infima PCH Reload / Reload_Empty, reads notify times + Visibility,
+  timers call SetReserveMagazineVisible on SOCKET_Magazine_Reserve.
+- PlayMagazineReload always calls Schedule (even when mag is StaticMesh —
+  RAR DA_RAR_Magazine has no MagMesh, old early-return skipped Schedule).
+- ClearMagazineNotifyTimers + restore mag on AttachToOwingPawn (reload end).
+- Did NOT change PlayWeaponMontageOrSequence / DefaultSlot / HideReserve-while-reloading.
+- Did NOT rewrite AM_RAR_Reload assets or DA_WeaponData arm paths.
+
+Backup
+------
+Saved\CodeBackup_20261028_063023_RarInfimaReload\
+
+Compile
+-------
+Changed .h — Live Coding may fail. Prefer close editor, then:
+  Build.bat FPSEditor Win64 Development -Project="...\FPS.uproject" -WaitMutex -MaxParallelActions=1
+Or open editor after freeing RAM and full compile.
+
+PIE
+---
+1. Cold-start editor (new DLL).
+2. Equip RAR, mag not empty: HOLD R (tactical).
+   Expect: spare mag appears on reserve socket when Infima Visibility=true fires;
+   gun mag stays visible while pulled — two mags in hands.
+3. Empty: TAP R — empty reload still moves mag bones; reserve follows Infima Empty notifies.
+4. Output Log: look for [RarMag] Scheduled N Infima mag notifies...
+
+Do not regress
+--------------
+- Do not re-apply RarMag DefaultSlot PlaySlotAnimationAsDynamicMontage.
+- Do not skip HideReserveMagazines inside SetMeshVisibility for all frames.
+- Keep project AM_RAR_Reload / _Empty as arms montages (bone motion).

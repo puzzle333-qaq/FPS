@@ -1,0 +1,35 @@
+Bandits Police Look (FactionLook 2)
+====================================
+Backup: Saved\CodeBackup_20261028_034942_BanditsPolice
+
+Presets (Content/Bandits/Mesh/Preset):
+- Criminal (FactionLook 1): SKM_Bandit_Preset_05 — crime balaclava, bomber, street pants
+- Police   (FactionLook 2): SKM_Bandit_Preset_02 — blue tactical jacket, vest bags, balaclava (SWAT-ish)
+  Alts if you dislike 02: Preset_01 (black Gorka+plate=SWAT), Preset_14 (blue beret), Preset_21 (green helmet)
+
+CharGen modular CT meshes are NOT deleted; code falls back to them only if PoliceMesh3P fails to load.
+
+Commands (PIE console):
+  FactionLook 0   — default Manny
+  FactionLook 1   — criminal Bandits Preset_05
+  FactionLook 2   — police Bandits Preset_02
+  Debug3P / ToggleThirdPerson — view own Mesh3P
+  PickFaction 0/1 — police/criminal (also sets look in PoliceCriminal GM)
+
+BP override: ShooterCharacter → FPS|Look → PoliceMesh3P soft path
+  e.g. /Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_01
+
+Compile: Ctrl+Alt+F11 Live Coding (or editor compile). Avoid full UBT if RAM low.
+
+Shotgun (CG_ShotgunPack) — recommendation: WAIT / do editor retarget, do NOT force now
+--------------------------------------------------------------------
+- Pack anims = UE4 Mannequin Arms (SK_Mannequin_Arms_Skeleton)
+- Project FP = Ironbelly SK_FPSArms (FirstPersonBPIronbelly)
+- Already have RTG_CGArms_to_MannArms + Anims_Mann/Montages_Mann (still Mann arms, NOT Ironbelly)
+- Knife has RTG_KnifeHands_to_FPSArms; shotgun has NO RTG → FPSArms
+- Sharing AK/RAR hold pose looked bad before — same risk until retargeted to FPSArms
+Next steps if convert:
+  1) Editor: IK Retargeter MannArms/CGArms → IK_FPSArms (mirror Knife retarget folder)
+  2) Batch export PAS Idle/Fire/Reload/Equip onto FPSArms
+  3) Wire BP_Weapon_CG_PAShotgun montages + hold pose; PIE alone before roster
+  4) Then add to PoliceArmoryWeapons (MP5 slot later)

@@ -1,4 +1,4 @@
-#include "Ui/LobbyScreen.h"
+﻿#include "Ui/LobbyScreen.h"
 
 #include "Lobby/LobbyGameState.h"
 #include "Lobby/LobbyGameMode.h"
@@ -17,9 +17,11 @@
 #include "Blueprint/WidgetTree.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "Ui/TacticalUIStyle.h"
 
 void ULobbyPlayerRowWidget::SetRow(const FLobbyPlayerRow& InRow)
 {
+	FTacticalUIStyle::ApplyToUserWidget(this);
 	if (Text_Name)
 	{
 		FString Name = InRow.PlayerName;
@@ -39,6 +41,7 @@ void ULobbyPlayerRowWidget::SetRow(const FLobbyPlayerRow& InRow)
 void ULobbyScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FTacticalUIStyle::ApplyToUserWidget(this);
 	if (Button_JoinA) Button_JoinA->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleJoinA);
 	if (Button_JoinB) Button_JoinB->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleJoinB);
 	if (Button_Ready) Button_Ready->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleReady);

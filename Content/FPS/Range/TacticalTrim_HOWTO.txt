@@ -1,0 +1,37 @@
+TacticalTrim — 准心 / 耐力 / 走路速率 / 跳跃 / Bandits手臂说明
+Backup: Saved/CodeBackup_20261028_070019_TacticalTrim
+
+【改动】
+1) 默认准心
+- ShooterReticle 强制 bShowReticleImage=false、bDrawSpreadingCrosshair=false，并 Collapsed Image_Reticle
+- 命中扇环仍可画；扩散准心/静态准心图不画
+- PIE 若仍见白点：检查 WBP 是否另有 Image，或激光点附件
+
+2) 耐力
+- StatsComponent：Drain/Regen=0，Tick 只保持满耐力，不再因耐力停冲刺
+- PlayerController：忽略 stamina<=0 与 HandleStaminaDepleted
+- HUD：WB_Health 耐力条若仍显示，需在蓝图里藏（C++ 未改 WBP）
+
+3) 走路动画播放速率
+- MaxLocomotionPlayRate 构造时=1.0，UpdateLocomotionGait 再 clamp 上限 1.0
+- 可减慢，不会加快
+
+4) 跳跃
+- Input_Jump 不再 Jump；趴/滑铲仍可用空格站起
+- CanJumpInternal 恒 false；JumpZVelocity=0
+- 攀爬/翻越未做
+
+5) Bandits 第一人称手臂（已接线、默认关闭）
+- 包内手臂：/Game/Bandits/Mesh/Arms/...（SKM_Arms、SKM_Arms_Gloves_*）
+- 骨架：SKM_Bandit_Skeleton
+- 当前 Mesh1P：Ironbelly SK_FPSArms / FPSArms_Skeleton
+- 二者不同骨架 → 直接换会打断现有 1P 枪械动画；ApplyFactionArms1P 里 bUseBanditsArms1P=false
+- 要开：把 ShooterCharacter.cpp ApplyFactionArms1P 的 constexpr 改为 true，并先做 FPSArms→Bandit 重定向（或换原生 Bandits FP 武器动画）
+- 匪默认手套黑 SKM_Arms_Gloves_Black；警绿 SKM_Arms_Gloves_Green（可再改）
+
+【编译】
+机器内存紧时用 -MaxParallelActions=1，或编辑器 Ctrl+Alt+F11。不要强杀 UE。
+
+【PIE】
+- 无默认白点准心；冲刺不被耐力打断；慢走动画可变慢、不会加速；空格不跳（趴下可起）
+- FactionLook 1/2 仍只换 3P；1P 手臂仍 Ironbelly，直到打开 bUseBanditsArms1P 并完成重定向

@@ -134,7 +134,11 @@ public:
 	float CrosshairSpreadRecovery = 40.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair|Spread")
-	bool bDrawSpreadingCrosshair = true;
+	bool bDrawSpreadingCrosshair = false; // tactical: no hip-fire crosshair
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|HitFeedback")
+	bool bShowHitKillMarkers = false; // hide hit/kill X markers
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Crosshair")
+	bool bShowReticleImage = false; // hide static reticle image
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Crosshair|Spread")
 	void NotifyWeaponFired();

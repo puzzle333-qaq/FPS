@@ -1,10 +1,11 @@
-#include "Menu/MainMenuPlayerController.h"
+﻿#include "Menu/MainMenuPlayerController.h"
 #include "Loadout/GunsmithComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "Ui/RoomBrowserScreen.h"
 #include "ShooterGameInstance.h"
 #include "Components/WidgetSwitcher.h"
 #include "Ui/SettingsScreen.h"
+#include "Ui/TacticalUIStyle.h"
 
 AMainMenuPlayerController::AMainMenuPlayerController()
 {
@@ -24,6 +25,7 @@ void AMainMenuPlayerController::BeginPlay()
 		if (IsValid(MainMenuWidget))
 		{
 			MainMenuWidget->AddToViewport();
+			FTacticalUIStyle::ApplyToUserWidget(MainMenuWidget);
 			FInputModeUIOnly Mode;
 			Mode.SetWidgetToFocus(MainMenuWidget->TakeWidget());
 			Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
@@ -150,4 +152,41 @@ void AMainMenuPlayerController::HideSettings()
 		return;
 	}
 	if (IsValid(SettingsScreen) && SettingsScreen->IsInViewport()) SettingsScreen->RemoveFromParent();
+}
+
+void AMainMenuPlayerController::StartPractice(EShooterGameMode Mode)
+{
+	if (!IsLocalController()) return;
+	if (UShooterGameInstance* GI = GetGameInstance() ? Cast<UShooterGameInstance>(GetGameInstance()) : nullptr)
+	{
+		if (!GI->StartPractice(Mode))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Menu] StartPractice failed for mode %d"), (int32)Mode);
+		}
+	}
+}
+
+
+void AMainMenuPlayerController::HostLocalListenTest(FString Target)
+{
+	if (!IsLocalController()) return;
+	if (UShooterGameInstance* GI = GetGameInstance() ? Cast<UShooterGameInstance>(GetGameInstance()) : nullptr)
+	{
+		if (!GI->HostLocalListen(Target))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] HostLocalListenTest failed: %s"), *GI->GetLastOnlineError());
+		}
+	}
+}
+
+void AMainMenuPlayerController::JoinLocalhostTest(FString Address)
+{
+	if (!IsLocalController()) return;
+	if (UShooterGameInstance* GI = GetGameInstance() ? Cast<UShooterGameInstance>(GetGameInstance()) : nullptr)
+	{
+		if (!GI->JoinLocalhost(Address))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] JoinLocalhostTest failed"));
+		}
+	}
 }

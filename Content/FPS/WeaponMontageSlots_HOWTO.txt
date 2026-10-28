@@ -1,0 +1,33 @@
+Weapon montage slots (slim) — 2026-10-28
+
+KEEP (edit these on DA / FMontageData):
+  EquipMontage          = 普通掏枪
+  FirstEquipMontage     = 第一次掏枪（新字段；空则用 EquipMontage）
+  FireMontage           = 开火
+  EmptyReloadMontage    = 短按 R
+  TacticalReloadMontage = 长按 R
+  InspectMontage1P      = 检视
+
+REMOVED FROM ACTIVE USE (property kept deprecated for asset compat):
+  ReloadMontage              -> 静默回退，勿再填
+  SecondaryFireMontage       -> 仅投掷物低抛仍可读；枪不要填
+  FirstReloadMontage         -> 删除用途；第一次掏枪改用 FirstEquipMontage
+  EmptyReloadMontage_Grab    -> 删除
+  TacticalReloadMontage_Grab -> 删除
+
+Input:
+  短按 R -> EmptyReloadMontage + 半匣入队尾（保留）
+  长按 R -> TacticalReloadMontage + 丢掉当前匣
+
+Old -> New mapping:
+  EquipMontage (unchanged)           -> EquipMontage
+  (new)                              -> FirstEquipMontage
+  ReloadMontage                      -> deprecated fallback only
+  EmptyReloadMontage                 -> short-press R (was ammo-empty auto)
+  TacticalReloadMontage              -> long-press R (was ammo-partial auto)
+  FirstReloadMontage                 -> REMOVED (use FirstEquipMontage for draw)
+  SecondaryFireMontage               -> guns unused
+  Empty/TacticalReloadMontage_Grab   -> REMOVED
+
+After Live Coding: open DA, fill FirstEquipMontage where you have a first-draw clip;
+confirm Empty vs Tactical on short/long R.

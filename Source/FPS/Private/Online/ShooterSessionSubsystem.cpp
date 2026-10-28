@@ -85,6 +85,35 @@ namespace
 		const FString Y = ExtractEosProductUserId(B);
 		return !X.IsEmpty() && !Y.IsEmpty() && X.Equals(Y, ESearchCase::IgnoreCase);
 	}
+
+	// 计分板 / 大厅用的昵称：优先 Steam，其次系统用户名。不带 PID（大厅 EnsureUniqueName 会处理重名）。
+	// 不覆盖 BP / 用户已填的 LocalPlayerName。
+	void ApplyLocalPlayerNameIfEmpty(UGameInstance* GIObj)
+	{
+		UShooterGameInstance* GI = Cast<UShooterGameInstance>(GIObj);
+		if (!GI) return;
+		if (!GI->LocalPlayerName.TrimStartAndEnd().IsEmpty()) return;
+
+		FString Name;
+		if (IOnlineSubsystem* Steam = IOnlineSubsystem::Get(STEAM_SUBSYSTEM))
+		{
+			if (IOnlineIdentityPtr Id = Steam->GetIdentityInterface())
+			{
+				if (Id->GetLoginStatus(0) == ELoginStatus::LoggedIn)
+				{
+					Name = Id->GetPlayerNickname(0);
+				}
+			}
+		}
+		if (Name.IsEmpty()) Name = FPlatformProcess::UserName();
+		if (Name.IsEmpty()) Name = FPlatformProcess::ComputerName();
+		if (Name.IsEmpty()) Name = TEXT("Player");
+		Name.ReplaceInline(TEXT("?"), TEXT(""));
+		Name.ReplaceInline(TEXT("="), TEXT(""));
+		Name.ReplaceInline(TEXT(" "), TEXT("_"));
+		GI->LocalPlayerName = Name.Left(20);
+		UE_LOG(LogTemp, Log, TEXT("[Online] LocalPlayerName -> %s"), *GI->LocalPlayerName);
+	}
 }
 
 
@@ -465,7 +494,27 @@ void UShooterSessionSubsystem::HandleJoinComplete(FName SessionName, EOnJoinSess
 	if (S.IsValid()) S->ClearOnJoinSessionCompleteDelegate_Handle(JoinHandle);
 	if (Result != EOnJoinSessionCompleteResult::Success || !S.IsValid())
 	{
-		FailJoin(FText::Format(NSLOCTEXT("Session", "JoinFail", "加入失败（{0}）"), FText::AsNumber((int32)Result)));
+		FText Why;
+		switch (Result)
+		{
+		case EOnJoinSessionCompleteResult::SessionIsFull:
+			Why = NSLOCTEXT("Session", "JoinFull", "加入失败：房间已满");
+			break;
+		case EOnJoinSessionCompleteResult::SessionDoesNotExist:
+			Why = NSLOCTEXT("Session", "JoinGone", "加入失败：房间不存在或已解散，请刷新");
+			break;
+		case EOnJoinSessionCompleteResult::CouldNotRetrieveAddress:
+			Why = NSLOCTEXT("Session", "JoinNoAddr", "加入失败：拿不到房间地址（检查 EOS/网络）");
+			break;
+		case EOnJoinSessionCompleteResult::AlreadyInSession:
+			Why = NSLOCTEXT("Session", "JoinAlready", "加入失败：已经在房间里");
+			break;
+		case EOnJoinSessionCompleteResult::UnknownError:
+		default:
+			Why = FText::Format(NSLOCTEXT("Session", "JoinFail", "加入失败（错误码 {0}）"), FText::AsNumber((int32)Result));
+			break;
+		}
+		FailJoin(Why);
 		return;
 	}
 	FString Connect;
@@ -535,6 +584,7 @@ void UShooterSessionSubsystem::HandleJoinComplete(FName SessionName, EOnJoinSess
 	{
 		TravelURL += FString::Printf(TEXT("?Mode=%d"), ModeInt);
 	}
+	ApplyLocalPlayerNameIfEmpty(GI);
 	TravelURL += GI->GetNameOption(); // 空，或 ?Name=xxx
 
 	UE_LOG(LogTemp, Log, TEXT("[Session] Joined -> travel %s (connect was %s)"), *TravelURL, *Connect);
@@ -620,6 +670,10 @@ void UShooterSessionSubsystem::SetOnlineState(bool bReady, const FString& Status
 {
 	bOnlineReady = bReady;
 	OnlineStatus = Status;
+	if (bReady)
+	{
+		ApplyLocalPlayerNameIfEmpty(GetGameInstance());
+	}
 	OnOnlineLoginChanged.Broadcast(IsOnlineReady(), Status);
 }
 

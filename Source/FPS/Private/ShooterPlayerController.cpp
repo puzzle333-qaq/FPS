@@ -1,4 +1,8 @@
-﻿#include "ShooterPlayerController.h"
+#include "ShooterPlayerController.h"
+#include "Game/PoliceCriminalGameMode.h"
+#include "Game/PoliceCriminalGameState.h"
+#include "Game/HostageActor.h"
+#include "Game/ShooterPlayerState.h"
 #include "ShooterCharacter.h"
 
 #include "EnhancedInputSubsystems.h"
@@ -12,6 +16,7 @@
 #include "Ui/AttachmentMenu.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "InputTriggers.h"
 #include "InputCoreTypes.h"
 #include "ShooterGameInstance.h"
 #include "Ui/PauseMenuScreen.h"
@@ -27,7 +32,13 @@
 #include "Game/SearchDestroyGameMode.h"
 #include "Game/WeaponPickup.h"
 #include "Interface/Interactable.h"
+#include "World/BreakableDoor.h"
+#include "World/TripwireTrap.h"
+#include "World/GasCan.h"
 #include "Ui/ScoreboardScreen.h"
+#include "Ui/RadarWidget.h"
+#include "Engine/Engine.h"
+#include "GameFramework/HUD.h"
 #include "EngineUtils.h"
 #include "Ui/SettingsScreen.h"
 #include "Settings/ShooterGameUserSettings.h"
@@ -110,12 +121,23 @@ void AShooterPlayerController::EndTacticalSprint()
 void AShooterPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	// TacticalBatch1: force CQB speeds (override BP defaults if any)
+	RunSpeed = 220.f;
+	SprintSpeed = 320.f;
+	TacticalSprintSpeed = 380.f;
+	WalkSpeed = 120.f;
+	bEnableTacticalSprint = false;
 
 	// 从主菜单跳过来时 UI 输入和鼠标会跟着视口保留，进局恢复游戏输入
 	if (IsLocalController())
 	{
 		bShowMouseCursor = false;
 		SetInputMode(FInputModeGameOnly());
+		// TacticalTrim: hide default crosshair leftovers.
+		if (AHUD* Hud = GetHUD())
+		{
+			Hud->bShowHUD = true;
+		}
 		EnsureMatchHUD();
 		if (GetNetMode() == NM_Client)
 		{
@@ -146,6 +168,9 @@ void AShooterPlayerController::BeginPlay()
 	}
 	EnsureCrouchInput();
 	EnsurePauseInput();
+	EnsureFullMapInput();
+	EnsureNVGInput();
+	EnsureWatchInput();
 	EnsureModeHud();
 
 	// 把局外配装发给服务器（服务器校验后重新生成武器）
@@ -212,6 +237,18 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		ShooterInputComponent->BindAction(FlashlightAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFlashlight);
 	}
+
+	EnsureNVGInput();
+	EnsureWatchInput();
+	if (NVGAction && !bNVGBound)
+	{
+		ShooterInputComponent->BindAction(NVGAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleNVG);
+		bNVGBound = true;
+	}
+	if (WatchAction)
+	{
+		ShooterInputComponent->BindAction(WatchAction, ETriggerEvent::Started, this, &ThisClass::Input_CheckWatch);
+	}
 	EnsureSpectateInput();
 	EnsureInteractInput();
 	if (InteractAction)
@@ -225,6 +262,7 @@ void AShooterPlayerController::SetupInputComponent()
 		ShooterInputComponent->BindAction(ToggleAttachmentMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleAttachmentMenu);
 	}
 	EnsurePauseInput();
+	EnsureFullMapInput();
 	if (PauseMenuAction)
 	{
 		ShooterInputComponent->BindAction(PauseMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_TogglePauseMenu);
@@ -241,6 +279,42 @@ void AShooterPlayerController::Input_ToggleFlashlight()
 		Combat->Initiate_ToggleFlashlight();
 	}
 }
+
+void AShooterPlayerController::EnsureNVGInput()
+{
+	if (!IsLocalController()) return;
+	if (!NVGAction)
+	{
+		NVGAction = NewObject<UInputAction>(this, TEXT("IA_NVG_Runtime"));
+		NVGAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!NVGIMC)
+	{
+		NVGIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_NVG_Runtime"));
+		// Map K; Input_ToggleNVG requires Alt held (UE5.8 has no UInputModifierChordKey).
+		NVGIMC->MapKey(NVGAction, EKeys::K);
+	}
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+	if (IsValid(Subsystem) && NVGIMC && !Subsystem->HasMappingContext(NVGIMC))
+	{
+		Subsystem->AddMappingContext(NVGIMC, 2);
+	}
+}
+
+void AShooterPlayerController::Input_ToggleNVG()
+{
+	if (!bPawnAlive) return;
+	// Require Alt+K (mapping is K; gate on Alt here).
+	if (!IsInputKeyDown(EKeys::LeftAlt) && !IsInputKeyDown(EKeys::RightAlt))
+	{
+		return;
+	}
+	if (AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn()))
+	{
+		Char->ToggleNVG();
+	}
+}
+
 
 void AShooterPlayerController::Input_ToggleAttachmentMenu()
 {
@@ -317,10 +391,38 @@ void AShooterPlayerController::EnsureCrouchInput()
 	}
 }
 
+
+bool AShooterPlayerController::CanToggleCrouchNow() const
+{
+	const UWorld* World = GetWorld();
+	if (!World) return true;
+	return World->GetTimeSeconds() >= CrouchReadyTime;
+}
+
+void AShooterPlayerController::NoteCrouchToggle()
+{
+	const UWorld* World = GetWorld();
+	if (!World) return;
+	const double Now = World->GetTimeSeconds();
+	if (Now - LastCrouchToggleTime <= CrouchSpamWindow)
+	{
+		CrouchSpamCount++;
+	}
+	else
+	{
+		CrouchSpamCount = 0;
+	}
+	LastCrouchToggleTime = Now;
+	const float Cd = FMath::Min(CrouchSpamMaxCooldown, CrouchSpamBaseCooldown + CrouchSpamCount * CrouchSpamStep);
+	CrouchReadyTime = Now + Cd;
+}
+
 void AShooterPlayerController::Input_CrouchHold_Started()
 {
 	if (!bPawnAlive)return;
 	if (IsMovementLocked()) return;
+	if (!CanToggleCrouchNow()) return;
+	NoteCrouchToggle();
 	bCrouchHeld = true;
 	ACharacter* MyChar = GetCharacter();
 	if (!IsValid(MyChar)) return;
@@ -373,7 +475,9 @@ void AShooterPlayerController::Input_Crouch()
 {
 	if (!bPawnAlive)return;
 	if (IsMovementLocked()) return;
+	if (!CanToggleCrouchNow()) return;
 	if (!IsValid(GetCharacter())) return;
+	NoteCrouchToggle();
 	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(Shooter))
 	{
 		// 趴着按下蹲 = 起身到蹲姿
@@ -408,37 +512,32 @@ void AShooterPlayerController::Input_Jump()
 	UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();
 	if (!IsValid(CMC)) return;
 
-	// 滑铲中按跳 = 取消滑铲并直接起跳（COD 式滑铲取消）
+	// TacticalTrim: no jump (climb/vault later). Space still stands from prone/slide.
 	if (AShooterCharacter* SlideShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(SlideShooter) && SlideShooter->IsSliding())
 	{
 		SlideShooter->CancelSlideToStand();
 		CMC->bWantsToCrouch = false;
 		if (SlideShooter->bIsCrouched)
 		{
-			CMC->UnCrouch(false);   // 立即站起（头顶有东西会保持蹲），这样同一帧能起跳
+			CMC->UnCrouch(false);
 		}
-		SlideShooter->Jump();
 		return;
 	}
 
-	// 趴着按跳 = 站起来（不跳）
 	if (AShooterCharacter* ProneShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(ProneShooter) && ProneShooter->IsProne())
 	{
 		ProneShooter->RequestSetProne(false, false);
 		return;
 	}
-
-	// COD：蹲着按跳 = 直接站起并起跳（头顶被挡时只会保持蹲）
-	if (CMC->bWantsToCrouch || GetCharacter()->bIsCrouched)
-	{
-		CMC->bWantsToCrouch = false;
-		if (GetCharacter()->bIsCrouched) CMC->UnCrouch(false);
-	}
-	GetCharacter()->Jump();
 }
 
 void AShooterPlayerController::Input_Sprint()
 {
+	if (const AShooterCharacter* Inj = Cast<AShooterCharacter>(GetCharacter()))
+	{
+		if (Inj->IsLegInjured() || Inj->IsBandaging()) return;
+	}
+
 	if (!bPawnAlive)return;
 	if (IsMovementLocked()) return;
 
@@ -554,11 +653,8 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& InputActionVa
 void AShooterPlayerController::UpdateMovementSpeed()
 {
 	if (!bPawnAlive)return;
-	UStatsComponent* Stats = GetStats();
-	if (bIsSprinting && Stats && Stats->Stamina <= 0.f)
-	{
-		bIsSprinting = false;
-	}
+	// TacticalTrim: ignore stamina — sprint is never stopped by stamina.
+	(void)GetStats();
 
 	ApplyMovementSpeed();
 
@@ -615,6 +711,25 @@ void AShooterPlayerController::ApplyMovementSpeed()
 	{
 		Speed = FMath::Max(Speed, CarryChar->GetCarriedSpeed());
 	}
+	if (const AShooterCharacter* LandChar = Cast<AShooterCharacter>(MyCharacter))
+	{
+		Speed *= LandChar->GetLandingSpeedMultiplier();
+		Speed *= LandChar->GetInjurySpeedMultiplier();
+		Speed *= LandChar->GetBandageSpeedMultiplier();
+		Speed *= LandChar->GetArmorSpeedMultiplier();
+		if (LandChar->IsLegInjured() && bIsSprinting)
+		{
+			NoteSprintEnded();
+			bIsSprinting = false;
+			Speed = RunSpeed;
+			if (bIsWalking) Speed *= WalkSpeedMultiplier;
+			if (bAiming) Speed *= AimSpeedMultiplier;
+			Speed *= LandChar->GetLandingSpeedMultiplier();
+			Speed *= LandChar->GetInjurySpeedMultiplier();
+			Speed *= LandChar->GetBandageSpeedMultiplier();
+			Speed *= LandChar->GetArmorSpeedMultiplier();
+		}
+	}
 	CMC->MaxWalkSpeed = Speed;
 	// 趴下复用 CMC 的蹲伏（更矮的胶囊），所以趴行速度也写在 MaxWalkSpeedCrouched
 	CMC->MaxWalkSpeedCrouched = bProne ? Speed * ProneSpeedMultiplier : Speed * CrouchSpeedMultiplier;
@@ -651,15 +766,7 @@ UStatsComponent* AShooterPlayerController::GetStats()
 
 void AShooterPlayerController::HandleStaminaDepleted()
 {
-	// 这个函数在服务器上被调用
-	bIsSprinting = false;
-	ApplyMovementSpeed();
-
-	// 如果玩家是远程客户端，也要通知他退出冲刺
-	if (!IsLocalController())
-	{
-		Client_StopSprint();
-	}
+	// TacticalTrim: stamina depleted ignored — keep sprinting.
 }
 
 void AShooterPlayerController::Server_SetMovementState_Implementation(bool bNewSprinting, bool bNewWalking, bool bNewTactical)
@@ -790,6 +897,12 @@ bool AShooterPlayerController::IsPauseMenuOpen() const
 
 void AShooterPlayerController::TogglePauseMenu()
 {
+	// Esc: close full map before opening pause
+	if (IsFullMapOpen())
+	{
+		ShowFullMap(false);
+		return;
+	}
 	if (IsPauseMenuOpen()) ClosePauseMenu();
 	else OpenPauseMenu();
 }
@@ -797,6 +910,7 @@ void AShooterPlayerController::TogglePauseMenu()
 void AShooterPlayerController::OpenPauseMenu()
 {
 	if (!IsLocalController() || IsPauseMenuOpen()) return;
+	ShowFullMap(false);
 	if (!PauseMenuWidgetClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PauseMenu] PauseMenuWidgetClass is not set on %s."), *GetClass()->GetName());
@@ -870,7 +984,17 @@ bool AShooterPlayerController::IsMovementLocked() const
 {
 	const UWorld* World = GetWorld();
 	const AShooterGameState* GS = World ? World->GetGameState<AShooterGameState>() : nullptr;
-	return GS && GS->IsMovementLocked();
+	if (!GS) return false;
+	if (GS->IsMovementLocked()) return true;
+	if (const APoliceCriminalGameState* PCGS = Cast<APoliceCriminalGameState>(GS))
+	{
+		const AShooterPlayerState* PS = GetPlayerState<AShooterPlayerState>();
+		if (PS && PS->HasTeam() && PCGS->IsFactionLocked(PS->GetTeamId()))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 void AShooterPlayerController::EnsureInteractInput()
@@ -945,7 +1069,10 @@ void AShooterPlayerController::Client_GoToMainMenu_Implementation()
 {
 	if (UShooterGameInstance* GI = Cast<UShooterGameInstance>(GetGameInstance()))
 	{
-		GI->GoToMainMenu();
+		if (!GI->GoToMainMenu())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Match] Client_GoToMainMenu failed: MainMenuMap not set in BP_ShooterGameInstance"));
+		}
 	}
 }
 
@@ -1377,6 +1504,99 @@ void AShooterPlayerController::ShowScoreboard(bool bShow)
 	Scoreboard->RefreshScoreboard();
 }
 
+
+// ================= 战术大地图 (M) =================
+
+void AShooterPlayerController::EnsureFullMapInput()
+{
+	if (!IsLocalController()) return;
+	if (!FullMapAction)
+	{
+		FullMapAction = NewObject<UInputAction>(this, TEXT("IA_FullMap_Runtime"));
+		FullMapAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!FullMapIMC)
+	{
+		FullMapIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_FullMap_Runtime"));
+		FullMapIMC->MapKey(FullMapAction, EKeys::M);
+	}
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(FullMapIMC))
+	{
+		Subsystem->AddMappingContext(FullMapIMC, 1);
+	}
+	if (!bFullMapBound)
+	{
+		if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
+		{
+			EIC->BindAction(FullMapAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFullMap);
+			bFullMapBound = true;
+		}
+	}
+}
+
+void AShooterPlayerController::Input_ToggleFullMap()
+{
+	ToggleFullMap();
+}
+
+void AShooterPlayerController::ToggleFullMap()
+{
+	ShowFullMap(!IsFullMapOpen());
+}
+
+bool AShooterPlayerController::IsFullMapOpen() const
+{
+	return IsValid(FullMapWidget) && FullMapWidget->IsInViewport()
+		&& FullMapWidget->GetVisibility() != ESlateVisibility::Collapsed
+		&& FullMapWidget->GetVisibility() != ESlateVisibility::Hidden;
+}
+
+void AShooterPlayerController::ShowFullMap(bool bShow)
+{
+	if (!IsLocalController()) return;
+
+	if (!bShow)
+	{
+		if (IsValid(FullMapWidget))
+		{
+			FullMapWidget->SetVisibility(ESlateVisibility::Collapsed);
+			if (FullMapWidget->IsInViewport())
+			{
+				FullMapWidget->RemoveFromParent();
+			}
+		}
+		return;
+	}
+
+	// Don't stack over pause / buy / attachment UI
+	if (IsPauseMenuOpen()) return;
+	if (IsValid(BuyShop) && BuyShop->IsInViewport()) return;
+
+	if (!IsValid(FullMapWidget))
+	{
+		FullMapWidget = CreateWidget<URadarWidget>(this, URadarWidget::StaticClass());
+		if (!IsValid(FullMapWidget)) return;
+		FullMapWidget->SetDisplayMode(ERadarDisplayMode::FullMap);
+		FullMapWidget->FullMapPixelSize = 640.f;
+		FullMapWidget->bShowMapBackground = true;
+	}
+
+	if (!FullMapWidget->IsInViewport())
+	{
+		FullMapWidget->AddToViewport(18);
+	}
+	FullMapWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+	// Center on screen; keep GameOnly so move/shoot still work
+	FullMapWidget->SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
+	if (GEngine && GEngine->GameViewport)
+	{
+		FVector2D ViewSize(0.f, 0.f);
+		GEngine->GameViewport->GetViewportSize(ViewSize);
+		FullMapWidget->SetPositionInViewport(ViewSize * 0.5f, true);
+	}
+}
+
 // ================= 观战 =================
 
 void AShooterPlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -1660,3 +1880,477 @@ void AShooterPlayerController::ApplyControlSettings()
 		Shooter->SetDefaultFieldOfView(SS->FieldOfView);
 	}
 }
+
+
+void AShooterPlayerController::Armor(int32 Level)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Armor] No ShooterCharacter pawn"));
+		return;
+	}
+	EBodyArmorType Type = EBodyArmorType::None;
+	if (Level == 1) Type = EBodyArmorType::Light;
+	else if (Level >= 2) Type = EBodyArmorType::Heavy;
+	Char->SetBodyArmorLocal(Type);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan,
+			FString::Printf(TEXT("BodyArmor -> %d (0=None 1=Light 2=Heavy)"), static_cast<int32>(Type)));
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Armor] set to %d"), static_cast<int32>(Type));
+}
+
+void AShooterPlayerController::FactionLook(int32 Level)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Look] No ShooterCharacter pawn"));
+		return;
+	}
+	ECharacterLookFaction Type = ECharacterLookFaction::Default;
+	if (Level == 1) Type = ECharacterLookFaction::Criminal;
+	else if (Level >= 2) Type = ECharacterLookFaction::Police;
+	Char->SetFactionLookLocal(Type);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan,
+			FString::Printf(TEXT("FactionLook -> %d (0=Manny 1=Bandits05 2=Bandits02Police)"), static_cast<int32>(Type)));
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Look] set to %d"), static_cast<int32>(Type));
+}
+
+void AShooterPlayerController::ToggleThirdPerson()
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Debug3P] No ShooterCharacter pawn"));
+		return;
+	}
+	Char->ToggleDebugThirdPerson();
+}
+
+void AShooterPlayerController::ThirdPerson(int32 Enabled)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Debug3P] No ShooterCharacter pawn"));
+		return;
+	}
+	Char->SetDebugThirdPerson(Enabled != 0);
+}
+
+void AShooterPlayerController::Vision(int32 Mode)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Vision] No ShooterCharacter pawn"));
+		return;
+	}
+	ETacticalVisionMode Type = ETacticalVisionMode::Off;
+	if (Mode == 1) Type = ETacticalVisionMode::NVG;
+	else if (Mode >= 2) Type = ETacticalVisionMode::Thermal;
+	Char->SetTacticalVisionMode(Type);
+	UE_LOG(LogTemp, Log, TEXT("[Vision] set to %d"), static_cast<int32>(Type));
+}
+
+void AShooterPlayerController::CycleVision()
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Vision] No ShooterCharacter pawn"));
+		return;
+	}
+	Char->CycleTacticalVisionMode();
+}
+
+void AShooterPlayerController::RefillVision(float Amount)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Vision] No ShooterCharacter pawn"));
+		return;
+	}
+	Char->RefillVisionBattery(Amount);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Cyan,
+			FString::Printf(TEXT("Vision battery -> %.0f%%"), Char->GetVisionBatteryNormalized() * 100.f));
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Vision] refill amount=%.2f battery=%.0f%%"), Amount, Char->GetVisionBatteryNormalized() * 100.f);
+}
+
+void AShooterPlayerController::FlashWash(float Amount)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Vision] No ShooterCharacter pawn"));
+		return;
+	}
+	Char->AddVisionFlashWash(Amount);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Yellow,
+			FString::Printf(TEXT("FlashWash +%.1f"), Amount));
+	}
+}
+
+void AShooterPlayerController::SpawnTestDoor()
+{
+	if (HasAuthority())
+	{
+		Server_SpawnTestDoor_Implementation();
+	}
+	else
+	{
+		Server_SpawnTestDoor();
+	}
+}
+
+void AShooterPlayerController::Server_SpawnTestDoor_Implementation()
+{
+	APawn* MyPawn = GetPawn();
+	if (!IsValid(MyPawn))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Door] SpawnTestDoor: no pawn"));
+		return;
+	}
+	ABreakableDoor* Door = ABreakableDoor::SpawnInFrontOf(MyPawn, 180.f);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan,
+			Door ? TEXT("Spawned BreakableDoor ahead (F open/close, shoot to break)")
+			     : TEXT("Failed to spawn BreakableDoor"));
+	}
+}
+
+
+void AShooterPlayerController::SpawnTripwire()
+{
+	Server_SpawnTripwire(true);
+}
+
+void AShooterPlayerController::SpawnGasCan()
+{
+	Server_SpawnGasCan(true);
+}
+
+void AShooterPlayerController::PlaceTripwire()
+{
+	Server_SpawnTripwire(false);
+}
+
+void AShooterPlayerController::PlaceGasCan()
+{
+	Server_SpawnGasCan(false);
+}
+
+void AShooterPlayerController::Server_SpawnTripwire_Implementation(bool bIgnoreSetup)
+{
+	APawn* MyPawn = GetPawn();
+	if (!IsValid(MyPawn))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Trap] SpawnTripwire: no pawn"));
+		return;
+	}
+	FString Err;
+	ATripwireTrap* Trap = ATripwireTrap::Auth_TryPlace(MyPawn, bIgnoreSetup, &Err);
+	if (GEngine)
+	{
+		if (Trap)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Orange,
+				TEXT("绊雷已放置（踩线触发 / 警察按 F 拆除）"));
+		}
+		else
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
+				*(Err.IsEmpty() ? FString(TEXT("无法放置绊雷")) : Err));
+		}
+	}
+}
+
+void AShooterPlayerController::Server_SpawnGasCan_Implementation(bool bIgnoreSetup)
+{
+	APawn* MyPawn = GetPawn();
+	if (!IsValid(MyPawn))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Trap] SpawnGasCan: no pawn"));
+		return;
+	}
+	FString Err;
+	AGasCan* Can = AGasCan::Auth_TryPlace(MyPawn, bIgnoreSetup, &Err);
+	if (GEngine)
+	{
+		if (Can)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Orange,
+				TEXT("汽油桶已放置（开枪引爆，爆炸/燃烧不吃护甲）"));
+		}
+		else
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
+				*(Err.IsEmpty() ? FString(TEXT("无法放置汽油桶")) : Err));
+		}
+	}
+}
+
+
+// ===== 警匪战术 PIE / loadout helpers =====
+void AShooterPlayerController::Auth_SetSubmittedLoadout(const FLoadoutPreset& Loadout, bool bStripAttachments)
+{
+	if (!HasAuthority()) return;
+	FLoadoutPreset Clean = Loadout;
+	if (bStripAttachments)
+	{
+		for (FWeaponPreset& P : Clean.Weapons)
+		{
+			P.Attachments.Reset();
+		}
+	}
+	SubmittedLoadout = Clean;
+	bHasSubmittedLoadout = Clean.Weapons.Num() > 0;
+	UE_LOG(LogTemp, Log, TEXT("[PCMode] Auth loadout weapons=%d stripAtt=%d"), Clean.Weapons.Num(), bStripAttachments ? 1 : 0);
+	if (bHasSubmittedLoadout && IsValid(GetPawn()))
+	{
+		if (UCombatComponent* CombatComp = GetPawn()->FindComponentByClass<UCombatComponent>())
+		{
+			CombatComp->RebuildInventory();
+		}
+	}
+}
+
+void AShooterPlayerController::PickFaction(int32 Faction)
+{
+	Server_PickFaction(static_cast<uint8>(Faction <= 0 ? 0 : 1));
+}
+
+void AShooterPlayerController::Server_PickFaction_Implementation(uint8 FactionByte)
+{
+	APoliceCriminalGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<APoliceCriminalGameMode>() : nullptr;
+	if (!GM)
+	{
+		// Soft fallback: set team + look even outside mode (range PIE)
+		if (AShooterPlayerState* PS = GetPlayerState<AShooterPlayerState>())
+		{
+			PS->SetTeamId(FactionByte == 0 ? PoliceCriminalTeams::Police : PoliceCriminalTeams::Criminal);
+		}
+		if (AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn()))
+		{
+			Char->SetFactionLookLocal(FactionByte == 0 ? ECharacterLookFaction::Police : ECharacterLookFaction::Criminal);
+		}
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Yellow, TEXT("PickFaction: 当前不是警匪 GameMode，仅设置队伍/外观"));
+		}
+		return;
+	}
+	GM->Auth_AssignFaction(this, FactionByte == 0 ? EPoliceCriminalFaction::Police : EPoliceCriminalFaction::Criminal);
+}
+
+static TSubclassOf<AWeapon> FPS_ResolveNamedWeapon(const TArray<TSubclassOf<AWeapon>>& Catalog, const FString& Name)
+{
+	const FString Key = Name.TrimStartAndEnd().ToLower();
+	if (Key.IsEmpty()) return nullptr;
+	for (TSubclassOf<AWeapon> C : Catalog)
+	{
+		if (!C) continue;
+		const FString N = C->GetName().ToLower();
+		if (N.Contains(Key)) return C;
+	}
+	// aliases
+	auto MatchAlias = [&](const TCHAR* Alias, const TCHAR* Needle) -> TSubclassOf<AWeapon>
+	{
+		if (!Key.Equals(Alias) && !Key.Contains(Alias)) return nullptr;
+		for (TSubclassOf<AWeapon> C : Catalog)
+		{
+			if (C && C->GetName().ToLower().Contains(Needle)) return C;
+		}
+		return nullptr;
+	};
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("ak"), TEXT("ak"))) return W;
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("glock"), TEXT("pistol"))) return W;
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("pistol"), TEXT("pistol"))) return W;
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("deagle"), TEXT("deagle"))) return W;
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("uzi"), TEXT("pcc"))) return W;
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("pcc"), TEXT("pcc"))) return W;
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("rar"), TEXT("rar"))) return W;
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("x24"), TEXT("x24"))) return W;
+	if (TSubclassOf<AWeapon> W = MatchAlias(TEXT("knife"), TEXT("knife"))) return W;
+	return nullptr;
+}
+
+void AShooterPlayerController::VanPick(FString WeaponName)
+{
+	Server_VanPickByName(WeaponName);
+}
+
+void AShooterPlayerController::Server_VanPickByName_Implementation(const FString& WeaponName)
+{
+	APoliceCriminalGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<APoliceCriminalGameMode>() : nullptr;
+	if (!GM)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PCMode] VanPick needs PoliceCriminalGameMode"));
+		return;
+	}
+	TSubclassOf<AWeapon> W = FPS_ResolveNamedWeapon(GM->GetResolvedCriminalWeapons(), WeaponName);
+	if (!W)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PCMode] VanPick unknown '%s'"), *WeaponName);
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, FString::Printf(TEXT("VanPick 未知: %s (AK/Glock/Deagle/PCC)"), *WeaponName));
+		return;
+	}
+	GM->Auth_ApplyVanLoadout(this, W);
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("面包车选枪: %s（无改装）"), *W->GetName()));
+}
+
+void AShooterPlayerController::ArmoryPick(FString WeaponName)
+{
+	Server_ArmoryPickByName(WeaponName);
+}
+
+void AShooterPlayerController::Server_ArmoryPickByName_Implementation(const FString& WeaponName)
+{
+	APoliceCriminalGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<APoliceCriminalGameMode>() : nullptr;
+	if (!GM)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PCMode] ArmoryPick needs PoliceCriminalGameMode"));
+		return;
+	}
+	TSubclassOf<AWeapon> W = FPS_ResolveNamedWeapon(GM->GetResolvedPoliceWeapons(), WeaponName);
+	if (!W)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PCMode] ArmoryPick unknown '%s'"), *WeaponName);
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, FString::Printf(TEXT("ArmoryPick 未知: %s (RAR/X24)"), *WeaponName));
+		return;
+	}
+	GM->Auth_ApplyArmoryLoadout(this, W, true);
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, FString::Printf(TEXT("军械库选枪: %s（可带改枪台配件）"), *W->GetName()));
+}
+
+void AShooterPlayerController::SkipSetup()
+{
+	Server_SkipSetup();
+}
+
+void AShooterPlayerController::Server_SkipSetup_Implementation()
+{
+	if (APoliceCriminalGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<APoliceCriminalGameMode>() : nullptr)
+	{
+		GM->Auth_SkipSetup();
+	}
+}
+
+void AShooterPlayerController::SpawnTestHostage()
+{
+	if (HasAuthority()) Server_SpawnTestHostage_Implementation();
+	else Server_SpawnTestHostage();
+}
+
+void AShooterPlayerController::Server_SpawnTestHostage_Implementation()
+{
+	APawn* MyPawn = GetPawn();
+	if (!IsValid(MyPawn) || !GetWorld()) return;
+	const FVector Loc = MyPawn->GetActorLocation() + MyPawn->GetActorForwardVector() * 200.f;
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+	AHostageActor* H = GetWorld()->SpawnActor<AHostageActor>(AHostageActor::StaticClass(), Loc, MyPawn->GetActorRotation(), Params);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan,
+			H ? TEXT("已生成人质占位（Tag=Hostage，F 跟随 stub，可受伤）") : TEXT("人质生成失败"));
+	}
+}
+
+
+void AShooterPlayerController::EnsureWatchInput()
+{
+	if (!IsLocalController()) return;
+	if (!WatchAction)
+	{
+		WatchAction = NewObject<UInputAction>(this, TEXT("IA_Watch_Runtime"));
+		WatchAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!WatchIMC)
+	{
+		WatchIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Watch_Runtime"));
+		// Map T; Input_CheckWatch requires Alt held (same pattern as Alt+K NVG).
+		WatchIMC->MapKey(WatchAction, EKeys::T);
+	}
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+	if (IsValid(Subsystem) && WatchIMC && !Subsystem->HasMappingContext(WatchIMC))
+	{
+		Subsystem->AddMappingContext(WatchIMC, 2);
+	}
+}
+
+void AShooterPlayerController::Input_CheckWatch()
+{
+	if (!bPawnAlive) return;
+	if (!IsInputKeyDown(EKeys::LeftAlt) && !IsInputKeyDown(EKeys::RightAlt))
+	{
+		return;
+	}
+	CheckWatch();
+}
+
+void AShooterPlayerController::CheckWatch()
+{
+	if (AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn()))
+	{
+		Char->CheckWatch();
+	}
+}
+
+void AShooterPlayerController::GrantRadar(int32 Enabled)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Radar] No ShooterCharacter pawn"));
+		return;
+	}
+	const bool bOn = Enabled != 0;
+	Char->SetHasRadar(bOn);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan,
+			FString::Printf(TEXT("Radar -> %s (GrantRadar 0/1)"), bOn ? TEXT("ON") : TEXT("OFF")));
+	}
+}
+
+void AShooterPlayerController::DebugBarrel(int32 Enabled)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Barrel] No ShooterCharacter pawn"));
+		return;
+	}
+	Char->SetDebugWeaponObstacle(Enabled != 0);
+}
+
+void AShooterPlayerController::MarkBlood(int32 Steps)
+{
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+	if (!IsValid(Char))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Blood] No ShooterCharacter pawn"));
+		return;
+	}
+	Char->MarkBloodyFeet(Steps > 0 ? Steps : 10);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("BloodyFeet marked — walk to leave prints"));
+	}
+}
+
+

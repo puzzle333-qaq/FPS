@@ -24,11 +24,17 @@ EHitZone ResolveHitZone(FName BoneName)
 	}
 
 	if (BoneNameHas(Name, TEXT("arm")) || BoneNameHas(Name, TEXT("hand"))
-		|| BoneNameHas(Name, TEXT("thigh")) || BoneNameHas(Name, TEXT("calf"))
+		|| BoneNameHas(Name, TEXT("clavicle")) || BoneNameHas(Name, TEXT("shoulder"))
+		|| BoneNameHas(Name, TEXT("ulna")) || BoneNameHas(Name, TEXT("radius")))
+	{
+		return EHitZone::Arm;
+	}
+
+	if (BoneNameHas(Name, TEXT("thigh")) || BoneNameHas(Name, TEXT("calf"))
 		|| BoneNameHas(Name, TEXT("foot")) || BoneNameHas(Name, TEXT("toe"))
 		|| BoneNameHas(Name, TEXT("ball")) || BoneNameHas(Name, TEXT("leg")))
 	{
-		return EHitZone::Limb;
+		return EHitZone::Leg;
 	}
 
 	return EHitZone::Torso;
@@ -57,7 +63,8 @@ float ScaleDamageForBone(float BaseDamage, FName BoneName, float HeadshotMultipl
 	{
 	case EHitZone::Head:
 		return BaseDamage * HeadshotMultiplier;
-	case EHitZone::Limb:
+	case EHitZone::Arm:
+	case EHitZone::Leg:
 		return BaseDamage * LimbMultiplier;
 	default:
 		return BaseDamage;

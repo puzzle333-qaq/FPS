@@ -89,10 +89,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine|CharacterReload")
 	TObjectPtr<UAnimMontage> MagCharacterTacticalReloadMontage;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine|CharacterReload")
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Grab reload removed."))
 	TObjectPtr<UAnimMontage> MagCharacterEmptyReloadMontage_Grab;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine|CharacterReload")
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Grab reload removed."))
 	TObjectPtr<UAnimMontage> MagCharacterTacticalReloadMontage_Grab;
 
 	// Hide bone mag_02 (spare mag on SKM_AK_Mag). Uncheck to show the second mag mesh.

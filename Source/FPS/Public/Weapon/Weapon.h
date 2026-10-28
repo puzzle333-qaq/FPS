@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "TimerManager.h"
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Engine/Texture2D.h"
@@ -138,7 +139,7 @@ class FPS_API AWeapon : public AActor, public IRecoilModifier   // 实现后座�
 	
 public:
 	// 观战切换时按本机视角重新切 1P/3P 网格
-	void RefreshViewMeshVisibility() const { SetMeshVisibility(GetInstigator()); }
+	void RefreshViewMeshVisibility() { SetMeshVisibility(GetInstigator()); }
 	
 	AWeapon();
 	virtual void OnRep_Instigator() override;
@@ -280,6 +281,10 @@ public:
 
 	/** 弹匣骨骼配件：换弹时播 MagReloadAnim（与手臂 reload 同步）。 */
 	void PlayMagazineReload(EReloadType ReloadType);
+	/** Show SOCKET_Magazine_Reserve SM for the whole reload (Infima dual-hand look). */
+	void ShowReserveMagazineForReload();
+	/** Hide reserve + clear reload dual-mag flag (reload end / re-attach). */
+	void FinishMagazineReloadVisuals();
 	USkeletalMeshComponent* GetMagazineSkelMesh1P() const;
 
 	// 双管霰弹：手臂换弹蒙太奇的 Bullet1Spawn / Bullet1Delete / Bullet2Spawn / Bullet2Delete。
@@ -495,6 +500,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Spread", meta = (ClampMin = "0", ClampMax = "30"))
 	float HipFireSpread = 3.f;
 
+	// Barrel / obstacle length (cm). Trace from camera forward; longer = more CQB penalty.
+	// Rifle ~70-80, SMG ~40-50, pistol ~20-25, melee 0.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Obstacle", meta = (ClampMin = "0", ClampMax = "200"))
+	float WeaponLength = 70.f;
+
+	// Extra hip-fire half-cone (deg) while barrel is blocked against a wall/body.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Obstacle", meta = (ClampMin = "0", ClampMax = "45"))
+	float BlockedHipFireExtra = 8.f;
+
 	// Degrees per second given back after RecoilRecoveryDelay, once the trigger is up.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
 	float RecoilRecoverySpeed;
@@ -618,8 +632,11 @@ public:
 
 	EWeaponStatus WeaponStatus;
 
-	// 这把枪是不是已经换过弹（决定第一次换弹播 FirstReloadMontage）。只在本地/服务器各自记，不同步
+	// 这把枪是不是已经换过弹（旧 FirstReload 已废弃，仅作兼容标记）。只在本地/服务器各自记，不同步
 	bool bHasReloadedOnce = false;
+
+	// 本局是否掏过这把枪（决定播 FirstEquipMontage 还是 EquipMontage）
+	bool bHasEquippedOnce = false;
 
 protected:
 	virtual void BeginPlay() override;
@@ -641,7 +658,7 @@ protected:
 private:
 
 
-	void SetMeshVisibility(APawn* OwningPawn) const;
+	void SetMeshVisibility(APawn* OwningPawn);
 	void CaptureAuthoredMeshRelative();
 
 	// 双管霰弹弹壳。插槽挂在没蒙皮的 Bullet 骨上，不强制刷新的话运行时会停在绑定姿势。
@@ -685,9 +702,10 @@ private:
 
 	// 按 EquippedAttachments 重新生成所有配件模型和手电
 	void RebuildAttachmentVisuals();
-	// 手电挂到 1P 还是 3P 模型上（本地玩家看 1P，其他人看 3P）
+		// Dual lights: 1P for local arms view, 3P so other players see the beam (parent-hide safe).
 	void UpdateFlashlightAttachment();
 	void ApplyFlashlightState();
+	USpotLightComponent* CreateFlashlightLight(USceneComponent* AttachParent);
 	UStaticMeshComponent* SpawnAttachmentMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson);
 	USkeletalMeshComponent* SpawnAttachmentSkelMesh(USkeletalMeshComponent* Parent, const UAttachmentData* Data, bool bFirstPerson);
 	const FAttachmentVisual* FindVisual(const FGameplayTag& SlotTag) const;
@@ -697,8 +715,11 @@ private:
 	UPROPERTY(Transient)
 	TArray<FAttachmentVisual> AttachmentVisuals;
 
+		UPROPERTY(Transient)
+	TObjectPtr<USpotLightComponent> Flashlight1P;
+
 	UPROPERTY(Transient)
-	TObjectPtr<USpotLightComponent> Flashlight;
+	TObjectPtr<USpotLightComponent> Flashlight3P;
 
 	// 激光（第 11 步）：光束和光斑都只在本地生成，不同步
 	UPROPERTY(Transient)
@@ -724,10 +745,14 @@ private:
 
 	int32 Sequence;
 
+	/** While true, SetMeshVisibility must not hide SOCKET_Magazine_Reserve (tactical dual-mag). */
+	bool bReloadReserveMagVisible = false;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UMaterialInterface> ReticleMaterial;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInstanceDynamic> DynMatInst_Reticle;
 };
+
 

@@ -6,6 +6,7 @@
 #include "Loadout/LoadoutTypes.h"
 #include "Ui/BuyShopTypes.h"
 #include "Game/SearchDestroyTypes.h"
+#include "Game/PoliceCriminalTypes.h"
 #include "ShooterPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -19,6 +20,7 @@ class UMatchHUD;
 class AGameStateBase;
 class AWeaponPickup;
 class UScoreboardScreen;
+class URadarWidget;
 class AShooterCharacter;
 class USettingsScreen;
 struct FInputActionValue;
@@ -55,6 +57,90 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	void StopSprinting();
+
+	// PIE/debug: console `Armor 0|1|2` (None/Light/Heavy).
+	UFUNCTION(Exec)
+	void Armor(int32 Level);
+
+	// PIE/debug: console `FactionLook 0|1|2` (DefaultManny/Criminal/Police).
+	UFUNCTION(Exec)
+	void FactionLook(int32 Level);
+
+	// PIE/debug: console `ToggleThirdPerson` or `ThirdPerson 0|1` — see own 3P body / FactionLook.
+	UFUNCTION(Exec)
+	void ToggleThirdPerson();
+
+	UFUNCTION(Exec)
+	void ThirdPerson(int32 Enabled);
+
+	// PIE/debug: console `Vision 0|1|2` (Off/NVG/Thermal), `CycleVision`, `RefillVision`, `FlashWash`.
+	UFUNCTION(Exec)
+	void Vision(int32 Mode);
+
+	UFUNCTION(Exec)
+	void CycleVision();
+
+	UFUNCTION(Exec)
+	void RefillVision(float Amount = -1.f);
+
+	UFUNCTION(Exec)
+	void FlashWash(float Amount = 2.f);
+
+	// PIE/debug: console `SpawnTestDoor` — wooden breakable door in front of you.
+	UFUNCTION(Exec)
+	void SpawnTestDoor();
+
+	// PIE/debug traps: Spawn* ignore setup; Place* require criminal setup (or non-PC mode).
+	UFUNCTION(Exec)
+	void SpawnTripwire();
+
+	UFUNCTION(Exec)
+	void SpawnGasCan();
+
+	UFUNCTION(Exec)
+	void PlaceTripwire();
+
+	UFUNCTION(Exec)
+	void PlaceGasCan();
+
+	// ---- 警匪战术 PIE ----
+	// PickFaction 0=警察 1=匪；VanPick / ArmoryPick；SkipSetup 跳过布置
+	UFUNCTION(Exec)
+	void PickFaction(int32 Faction);
+
+	UFUNCTION(Exec)
+	void VanPick(FString WeaponName);
+
+	UFUNCTION(Exec)
+	void ArmoryPick(FString WeaponName);
+
+	UFUNCTION(Exec)
+	void SkipSetup();
+
+	UFUNCTION(Exec)
+	void SpawnTestHostage();
+
+	// Polish: watch time, radar equip, barrel debug, blood footprints PIE.
+	UFUNCTION(Exec)
+	void CheckWatch();
+
+	UFUNCTION(Exec)
+	void GrantRadar(int32 Enabled = 1);
+
+	UFUNCTION(Exec)
+	void DebugBarrel(int32 Enabled = 1);
+
+	UFUNCTION(Exec)
+	void MarkBlood(int32 Steps = 10);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|HUD")
+	UMatchHUD* GetMatchHUD() const { return MatchHUD; }
+
+
+	/** Server helper: write SubmittedLoadout + rebuild (GameMode calls this). */
+	void Auth_SetSubmittedLoadout(const FLoadoutPreset& Loadout, bool bStripAttachments);
+
+
 
 	bool bPawnAlive;
 
@@ -152,6 +238,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|HUD")
 	void ShowScoreboard(bool bShow);
 
+	// ---- 战术大地图（M 开关；Esc 优先关地图） ----
+	UFUNCTION(BlueprintCallable, Category = "FPS|HUD")
+	void ToggleFullMap();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|HUD")
+	void ShowFullMap(bool bShow);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|HUD")
+	bool IsFullMapOpen() const;
+
 	// 填 WBP_BuyShop（父类 BuyShopScreen）。只在爆破局使用；TDM 可留空。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy")
 	TSubclassOf<UBuyShopScreen> BuyShopWidgetClass;
@@ -242,6 +338,25 @@ private:
 
 	void Input_ToggleFlashlight();
 
+	// NVG toggle (runtime Alt+K). Default Off; Thermal remains console-only for now.
+	void EnsureNVGInput();
+	void EnsureWatchInput();
+	void Input_CheckWatch();
+	void Input_ToggleNVG();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> NVGAction;
+	UPROPERTY()
+	TObjectPtr<UInputAction> WatchAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> NVGIMC;
+	UPROPERTY()
+	TObjectPtr<UInputMappingContext> WatchIMC;
+
+	bool bNVGBound = false;
+
+
 	// 爆破交互（安放 / 拆除）。空着时运行时绑 F
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> InteractAction;
@@ -324,6 +439,20 @@ private:
 	TObjectPtr<UInputMappingContext> CrouchRuntimeIMC;
 
 	bool bCrouchHeld = false;
+	// Repeated crouch/stand gets progressively slower.
+	int32 CrouchSpamCount = 0;
+	double LastCrouchToggleTime = -100.0;
+	double CrouchReadyTime = 0.0;
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|CrouchSpam", meta = (ClampMin = "0.1"))
+	float CrouchSpamWindow = 1.0f;
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|CrouchSpam", meta = (ClampMin = "0"))
+	float CrouchSpamBaseCooldown = 0.15f;
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|CrouchSpam", meta = (ClampMin = "0"))
+	float CrouchSpamStep = 0.2f;
+	UPROPERTY(EditAnywhere, Category = "FPS|Movement|CrouchSpam", meta = (ClampMin = "0"))
+	float CrouchSpamMaxCooldown = 1.2f;
+	bool CanToggleCrouchNow() const;
+	void NoteCrouchToggle();
 	void Input_Jump();
 	void Input_Sprint();
 	void Input_Walk();
@@ -350,6 +479,19 @@ private:
 	void EnsureScoreboardInput();
 	void Input_Scoreboard_Started();
 	void Input_Scoreboard_Completed();
+	void EnsureFullMapInput();
+	void Input_ToggleFullMap();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> FullMapAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> FullMapIMC;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URadarWidget> FullMapWidget;
+
+	bool bFullMapBound = false;
 	void EnsureInteractInput();
 
 	// ---- 观战 ----
@@ -399,20 +541,20 @@ private:
 	TObjectPtr<UInputMappingContext> InteractIMC;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement")
-	float WalkSpeed = 250.f;
+	float WalkSpeed = 120.f; // quiet-walk reference (Apply uses RunSpeed * WalkSpeedMultiplier)
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement")
-	float RunSpeed = 500.f;
+	float RunSpeed = 220.f; // was 500 — small CQB maps
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement")
-	float SprintSpeed = 700.f;
+	float SprintSpeed = 320.f; // was 700
 
 	// ---------- 战术冲刺：冲刺中快速再按一次冲刺键（双击 Shift） ----------
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint")
-	bool bEnableTacticalSprint = true;
+	bool bEnableTacticalSprint = false; // off for tactical mode
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0"))
-	float TacticalSprintSpeed = 800.f;
+	float TacticalSprintSpeed = 380.f; // was 800
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0.1"))
 	float TacticalSprintDuration = 3.f;
@@ -479,4 +621,29 @@ private:
 	// 服务器 -> 客户端：耐力耗尽，退出冲刺
 	UFUNCTION(Client, Reliable)
 	void Client_StopSprint();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SpawnTestDoor();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SpawnTripwire(bool bIgnoreSetup);
+
+	UFUNCTION(Server, Reliable)
+	void Server_SpawnGasCan(bool bIgnoreSetup);
+
+	UFUNCTION(Server, Reliable)
+	void Server_PickFaction(uint8 FactionByte);
+
+	UFUNCTION(Server, Reliable)
+	void Server_VanPickByName(const FString& WeaponName);
+
+	UFUNCTION(Server, Reliable)
+	void Server_ArmoryPickByName(const FString& WeaponName);
+
+	UFUNCTION(Server, Reliable)
+	void Server_SkipSetup();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SpawnTestHostage();
+
 };

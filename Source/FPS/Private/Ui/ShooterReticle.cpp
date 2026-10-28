@@ -31,6 +31,14 @@ void UShooterReticle::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
+	// TacticalTrim: force-hide default crosshair (BP defaults may re-enable image/spread).
+	bShowReticleImage = false;
+	bDrawSpreadingCrosshair = false;
+	if (UImage* ReticleImage = ResolveReticleImage())
+	{
+		ReticleImage->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	APlayerController* OwningPlayer = GetOwningPlayer();
 	if (!IsValid(OwningPlayer)) return;
 
@@ -74,6 +82,10 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	KillMarkerRemaining = FMath::Max(0.f, KillMarkerRemaining - InDeltaTime);
 	CrosshairSpread = FMath::Max(0.f, CrosshairSpread - CrosshairSpreadRecovery * InDeltaTime);
 
+	// TacticalTrim: keep flags off even if a BP tick/event flips them.
+	bShowReticleImage = false;
+	bDrawSpreadingCrosshair = false;
+
 	UImage* ReticleImage = ResolveReticleImage();
 	if (!IsValid(ReticleImage))
 	{
@@ -87,7 +99,7 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
 	const bool bAimThroughSight = IsValid(Combat) && Combat->bAiming
 		&& IsValid(Weapon) && Weapon->WeaponKind != EWeaponKind::Melee;
-	const ESlateVisibility DesiredVisibility = bAimThroughSight
+	const ESlateVisibility DesiredVisibility = (!bShowReticleImage || bAimThroughSight)
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::HitTestInvisible;
 	if (ReticleImage->GetVisibility() != DesiredVisibility)
@@ -128,8 +140,8 @@ int32 UShooterReticle::NativePaint(const FPaintArgs& Args, const FGeometry& Allo
 	}
 
 	// Hit marker: four short lines at 45, 135, -135, -45 degrees. Kill marker = bigger red X (wins over hit).
-	const bool bKillMark = KillMarkerRemaining > 0.f;
-	if (bKillMark || HitMarkerRemaining > 0.f)
+	const bool bKillMark = bShowHitKillMarkers && KillMarkerRemaining > 0.f;
+	if (bShowHitKillMarkers && (bKillMark || HitMarkerRemaining > 0.f))
 	{
 		FLinearColor Color = bKillMark ? KillMarkerColor : HitMarkerColor;
 		const float Remaining = bKillMark ? KillMarkerRemaining : HitMarkerRemaining;
@@ -232,6 +244,7 @@ void UShooterReticle::PlayFeedbackSound(USoundBase* Sound)
 
 void UShooterReticle::ShowHitMarker()
 {
+	if (!bShowHitKillMarkers) return;
 	HitMarkerRemaining = HitMarkerDuration;
 	USoundBase* Sound = HitMarkerSound ? HitMarkerSound.Get() : HitMarkerSoundFallback.LoadSynchronous();
 	PlayFeedbackSound(Sound);
@@ -239,6 +252,7 @@ void UShooterReticle::ShowHitMarker()
 
 void UShooterReticle::ShowKillMarker(bool bHeadshot)
 {
+	if (!bShowHitKillMarkers) return;
 	// 击杀：与普通命中标记同尺寸/同时长，仅颜色改为 KillMarkerColor（橙色）
 	KillMarkerRemaining = HitMarkerDuration;
 	HitMarkerRemaining = 0.f;

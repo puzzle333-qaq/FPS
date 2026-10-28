@@ -153,6 +153,13 @@ void ASearchDestroyGameState::SetRoundWinningTeam(uint8 Team)
 	ForceNetUpdate();
 }
 
+void ASearchDestroyGameState::SetRoundOutcome(uint8 Team, ERoundWinReason Reason)
+{
+	LastWinReason = Reason;
+	RoundWinningTeam = Team;
+	// No ForceNetUpdate: caller SetRoundPhase next so one bunch carries both
+}
+
 void ASearchDestroyGameState::SetBomb(ABombActor* InBomb)
 {
 	Bomb = InBomb;

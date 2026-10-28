@@ -111,7 +111,7 @@ FLinearColor UKillFeedEntry::ColorFor(uint8 TeamId, bool bIsLocalName) const
 void UKillFeedWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	SetVisibility(ESlateVisibility::HitTestInvisible);
+	SetVisibility(ESlateVisibility::Collapsed); // tactical: no kill feed
 	if (!FeedList) FeedList = Cast<UPanelWidget>(GetWidgetFromName(TEXT("FeedList")));
 	if (!EntryClass)
 	{
@@ -182,6 +182,8 @@ void UKillFeedWidget::HandleKillFeed(const FString& KillerName, uint8 KillerTeam
 
 void UKillFeedWidget::AddEntry(const FString& KillerName, uint8 KillerTeam, const FString& VictimName, uint8 VictimTeam, UTexture2D* WeaponIcon)
 {
+	if (true) { return; } // tactical: kill feed disabled
+
 	if (!FeedList)
 	{
 		FeedList = Cast<UPanelWidget>(GetWidgetFromName(TEXT("FeedList")));

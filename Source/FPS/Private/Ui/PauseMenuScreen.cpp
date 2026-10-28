@@ -3,10 +3,12 @@
 #include "ShooterPlayerController.h"
 #include "ShooterGameInstance.h"
 #include "Components/Button.h"
+#include "Ui/TacticalUIStyle.h"
 
 void UPauseMenuScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FTacticalUIStyle::ApplyToUserWidget(this);
 	SetIsFocusable(true);
 	if (Button_Resume) Button_Resume->OnClicked.AddUniqueDynamic(this, &ThisClass::Resume);
 	if (Button_Settings) Button_Settings->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSettings);
@@ -59,3 +61,4 @@ void UPauseMenuScreen::HandleSettings()
 	}
 	OnSettingsRequested();
 }
+

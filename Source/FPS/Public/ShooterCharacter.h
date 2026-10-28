@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -23,6 +23,8 @@ class UAnimMontage;
 class AWeapon;
 class USoundBase;
 class USoundAttenuation;
+class USkeletalMesh;
+class UMaterialInterface;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
 // 第 10 步：侧瞄开/关（只在本地）
@@ -52,7 +54,7 @@ struct FFootstepSurfaceSounds
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
 	TSoftObjectPtr<USoundBase> Default;
 
-	// SurfaceType2 Concrete — 项目里用 Tile Cue
+	// SurfaceType2 Concrete - 项目里用 Tile Cue
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
 	TSoftObjectPtr<USoundBase> Concrete;
 
@@ -239,6 +241,58 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Spectate")
 	void SetFirstPersonViewedLocally(bool bViewed);
 
+	// PIE/debug: toggle local third-person so you can see own Mesh3P / FactionLook.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Debug")
+	void SetDebugThirdPerson(bool bThirdPerson);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Debug")
+	void ToggleDebugThirdPerson();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Debug")
+	bool IsDebugThirdPerson() const { return bDebugThirdPerson; }
+
+	// PIE/debug: Off / NVG / Thermal camera post-process (+ battery). Console Vision / CycleVision.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+	void SetTacticalVisionMode(ETacticalVisionMode NewMode);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+	void CycleTacticalVisionMode();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+	void ToggleNVG();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
+	ETacticalVisionMode GetTacticalVisionMode() const { return TacticalVisionMode; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
+	float GetVisionBatteryNormalized() const;
+
+	// Call from flashbang BP (or console FlashWash) - NVG washes out harder.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+	void AddVisionFlashWash(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+	void RefillVisionBattery(float Amount = -1.f);
+
+	// Radar accessory: MatchHUD shows radar only while true. Console GrantRadar.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Radar")
+	void SetHasRadar(bool bEnable);
+	UFUNCTION(Server, Reliable)
+	void Server_SetHasRadar(bool bEnable);
+	UFUNCTION(BlueprintPure, Category = "FPS|Radar")
+	bool HasRadar() const { return bHasRadar; }
+
+	// Watch check: play optional FP montage + briefly show remaining match time.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Watch")
+	void CheckWatch();
+
+	// Bloody footprints (local decals). Auto on HP drop; console MarkBlood.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Blood")
+	void MarkBloodyFeet(int32 ExtraSteps = -1);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Obstacle")
+	void SetDebugWeaponObstacle(bool bEnable);
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Spectate")
 	bool IsFirstPersonViewedLocally() const { return bFirstPersonViewedLocally; }
 
@@ -248,6 +302,35 @@ public:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "FPS|Spectate")
 	bool bFirstPersonViewedLocally = false;
+
+	// Local-only debug third-person camera (not replicated).
+	bool bDebugThirdPerson = false;
+	float DebugThirdPersonArmLength = 250.f;
+	float SavedSpringArmLength = 0.f;
+	bool bSavedSpringArmLength = false;
+
+	// ===== Tactical vision (NVG / Thermal) - local camera only =====
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Vision")
+	ETacticalVisionMode TacticalVisionMode = ETacticalVisionMode::Off;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Vision", meta = (ClampMin = "5"))
+	float VisionBatteryMaxSeconds = 60.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Vision", meta = (ClampMin = "0.1"))
+	float VisionBatteryDrainPerSecond = 1.f;
+
+	// Optional PP materials (Material Domain = Post Process). Soft-load; Engine CustomDepth used as thermal fallback.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Vision")
+	TSoftObjectPtr<UMaterialInterface> NVGPostProcessMaterial;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Vision")
+	TSoftObjectPtr<UMaterialInterface> ThermalPostProcessMaterial;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Vision")
+	TSoftObjectPtr<UMaterialInterface> ThermalBodyOverlayMaterial;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Vision", meta = (ClampMin = "500"))
+	float ThermalOverlayRangeCm = 8000.f;
 
 	// 枪身视觉后坐总开关（第 4 步）。关掉时不加任何偏移，Mesh1P 完全不受影响，方便对比手感
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Recoil|Visual")
@@ -424,6 +507,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Slide")
 	float SlideAlpha = 0.f;
 
+	// Tactical mode: slide disabled. Leave code paths intact for possible future modes.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
+	bool bEnableSlide = false;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
 	float SlideMinSpeed = 600.f;
 
@@ -486,6 +572,170 @@ public:
 
 	// 控制器读：滑铲后保留的速度上限（0 = 没有）
 	float GetCarriedSpeed() const { return CarriedSpeed; }
+	float GetLandingSpeedMultiplier() const;
+	float GetInjurySpeedMultiplier() const;
+	float GetBandageSpeedMultiplier() const;
+	float GetArmorSpeedMultiplier() const;
+	float GetWeaponBlockAlpha() const { return WeaponBlockAlpha; }
+	bool IsWeaponBlocked() const { return WeaponBlockAlpha > 0.55f; }
+	float GetMuzzleDipAlpha() const { return MuzzleDipAlpha; }
+	bool IsMuzzleDipped() const { return MuzzleDipAlpha > 0.35f; }
+	bool IsArmInjured() const { return bArmInjured; }
+	bool IsLegInjured() const { return bLegInjured; }
+	bool IsBandaging() const { return bIsBandaging; }
+	EBodyArmorType GetBodyArmor() const { return BodyArmor; }
+
+	// Authority: apply arm/leg injury from hit zone (server).
+	void Auth_ApplyHitZoneInjury(EHitZone Zone);
+
+	// Scale ballistic torso damage by armor. Explosives/fire should call DoDamage directly (no armor).
+	float ScaleDamageByArmor(float Damage, EHitZone Zone, bool bPistolOrShotgun) const;
+
+	// PIE/debug: 0=None 1=Light 2=Heavy. Replicated via Server_SetBodyArmor.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Armor")
+	void SetBodyArmorLocal(EBodyArmorType NewArmor);
+	UFUNCTION(Server, Reliable)
+	void Server_SetBodyArmor(EBodyArmorType NewArmor);
+
+	// PIE/debug: 0=DefaultManny 1=Criminal(Bandits05) 2=Police(Bandits02). Mesh1P FP arms untouched.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Look")
+	void SetFactionLookLocal(ECharacterLookFaction NewLook);
+	UFUNCTION(Server, Reliable)
+	void Server_SetFactionLook(ECharacterLookFaction NewLook);
+	UFUNCTION(BlueprintPure, Category = "FPS|Look")
+	ECharacterLookFaction GetFactionLook() const { return FactionLook; }
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Movement|Landing")
+	float LandingSlowDuration = 0.35f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Movement|Landing", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float LandingSlowMultiplier = 0.55f;
+	float LandingSlowUntil = -1.f;
+
+	// ===== Locational injury / bandage / barrel obstacle (tactical) =====
+	UPROPERTY(ReplicatedUsing = OnRep_ArmInjured, BlueprintReadOnly, Category = "FPS|Injury")
+	bool bArmInjured = false;
+	UPROPERTY(ReplicatedUsing = OnRep_LegInjured, BlueprintReadOnly, Category = "FPS|Injury")
+	bool bLegInjured = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Injury")
+	float LegInjurySpeedMultiplier = 0.45f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Injury")
+	float ArmInjuryAdsTimeMultiplier = 1.8f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Injury")
+	float ArmInjurySwayMultiplier = 2.5f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Injury")
+	float LimpBobAmount = 1.2f;
+
+	// Hold HealAction (~6s). Clears arm+leg only (not HP). Key = character HealAction binding.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Bandage", meta = (ClampMin = "1"))
+	float BandageHoldDuration = 6.f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Bandage")
+	float BandageSpeedMultiplier = 0.35f;
+
+	// ===== Body armor (tactical) =====
+	// Default None. For PIE: set on character BP defaults, or console `Armor 0|1|2`.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_BodyArmor, Category = "FPS|Armor")
+	EBodyArmorType BodyArmor = EBodyArmorType::None;
+
+	// Equipped radar tablet / tactical map accessory.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_HasRadar, Category = "FPS|Radar")
+	bool bHasRadar = false;
+
+	// Soft ref; defaults to RAR WatchCheck montage if null.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Watch")
+	TSoftObjectPtr<UAnimMontage> WatchCheckMontage;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Watch", meta = (ClampMin = "1"))
+	float WatchTimeDisplaySeconds = 4.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood")
+	TSoftObjectPtr<UMaterialInterface> BloodFootprintDecal;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood", meta = (ClampMin = "4"))
+	float BloodFootprintSize = 18.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood", meta = (ClampMin = "1"))
+	float BloodFootprintLifeSpan = 14.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood", meta = (ClampMin = "1"))
+	int32 BloodyFootstepsOnHit = 10;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+	bool bDebugWeaponObstacle = false;
+
+	// Multipliers applied to torso (chest/abdomen) ballistic damage only.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.05", ClampMax = "1"))
+	float LightArmorTorsoMultiplier = 0.65f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.05", ClampMax = "1"))
+	float HeavyArmorTorsoMultiplier = 0.50f;
+	// Heavy vs pistol / shotgun torso (much stronger).
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.05", ClampMax = "1"))
+	float HeavyArmorPistolShotgunTorsoMultiplier = 0.25f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.2", ClampMax = "1"))
+	float HeavyArmorMoveSpeedMultiplier = 0.78f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "1"))
+	float HeavyArmorAdsTimeMultiplier = 1.45f;
+
+	// ===== 3P faction look + optional Bandits 1P arms =====
+	// Criminal = Bandits Preset_05. Police = Bandits Preset_02 (blue tactical). CharGen soft refs kept unused by default.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_FactionLook, Category = "FPS|Look")
+	ECharacterLookFaction FactionLook = ECharacterLookFaction::Default;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> CriminalMesh3P;
+
+	/** Single-body Bandits police look (same UE5 Epic skeleton as CriminalMesh3P). Preferred over CharGen modular. */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> PoliceMesh3P;
+
+	/** Legacy CharGen modular parts - kept for BP experiments; not used when PoliceMesh3P loads. */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> PoliceHeadMesh3P;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> PoliceBodyDetMesh3P;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> PoliceBodyUpMesh3P;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> PolicePantsMesh3P;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> PoliceJacketMesh3P;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<UMaterialInterface> PoliceJacketMaterial;
+
+	/** Unused at runtime (TPS_Char_AnimBP T-poses on ShooterCharacter). Kept for optional BP override experiments. */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftClassPtr<UAnimInstance> CharGenAnimBP3P;
+
+
+	/** When true, FactionLook Criminal/Police also swaps Mesh1P to Bandits gloved arms (sockets patched in C++). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Look")
+	bool bUseBanditsArms1P = true;
+
+	/** Criminal 1P arms (black gloves). */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> CriminalArmsMesh1P;
+
+	/** Police 1P arms (green gloves). */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> PoliceArmsMesh1P;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+	float WeaponBlockRaisePitch = 28.f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+	float WeaponBlockRetract = 18.f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+	float WeaponBlockInterpSpeed = 10.f;
+
+	// Close-range aim at teammate/hostage: gently lower muzzle (not holster). Off while ADS.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|MuzzleDip", meta = (ClampMin = "50", ClampMax = "500"))
+	float MuzzleDipRange = 250.f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|MuzzleDip", meta = (ClampMin = "0", ClampMax = "40"))
+	float MuzzleDipPitch = 12.f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|MuzzleDip")
+	float MuzzleDipInterpSpeed = 12.f;
 
 	// 开镜时间倍率（滑铲中慢慢靠到 SlideAdsTimeMultiplier，避免中途突变卡枪）
 	float AdsTimeScaleCurrent = 1.f;
@@ -768,7 +1018,15 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> LeanRuntimeIMC;
-	void Input_ReloadWeapon();
+	void Input_ReloadWeapon_Started();
+	void Input_ReloadWeapon_Completed();
+	void Input_ReloadWeapon(); // legacy alias -> Started
+	void OnReloadHoldThreshold();
+	FTimerHandle ReloadHoldTimer;
+	bool bReloadKeyHeld = false;
+	bool bReloadHoldTriggered = false;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Reload", meta = (ClampMin = "0.05"))
+	float ReloadHoldThreshold = 0.35f;
 	void Input_SwitchFireMode();
 	void Input_SwitchZoom();
 	// 第 12 步：侧瞄是切档循环里的一档（主镜各档 -> 侧瞄 -> 第一档），不再有单独按键
@@ -820,11 +1078,11 @@ private:
 	float AimAlpha = 0.f;
 	float SmoothedAimFOV = 90.f;
 	void UpdateAimAlpha(float DeltaTime);
-	// 算出“瞄准点正好在屏幕中心”时 Mesh1P 的相对位置；算不出（没枪/没瞄准点）返回 false
+	// 算出"瞄准点正好在屏幕中心"时 Mesh1P 的相对位置；算不出（没枪/没瞄准点）返回 false
 	bool ComputeAdsMeshLocation(FVector& OutLocation);
 
 	// ---------- 枪身视觉后坐 ----------
-	// 先把上一帧加在 Mesh1P 上的偏移撤掉，让开镜对准按“没有后坐”的位置算，算完再加回去
+	// 先把上一帧加在 Mesh1P 上的偏移撤掉，让开镜对准按"没有后坐"的位置算，算完再加回去
 	void RemoveVisualRecoilFromMesh();
 	void ApplyVisualRecoilToMesh(float DeltaTime);
 	void UpdateWeaponSway(float DeltaTime);
@@ -860,6 +1118,82 @@ private:
 
 	void AbortLocalHeal();
 	void AbortServerHeal();
+
+	void UpdateWeaponObstacle(float DeltaTime);
+	void SpawnBloodFootprint();
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_NotifyBloodyFeet();
+	void UpdateMuzzleDip(float DeltaTime);
+	bool IsProtectedAimTarget(const AActor* HitActor) const;
+	void UpdateBandage(float DeltaTime);
+	void UpdateTacticalVision(float DeltaTime);
+	void ApplyTacticalVisionEffects();
+	void ClearTacticalVisionEffects();
+	void RefreshThermalOverlays();
+	void ClearThermalOverlays();
+	void Input_Bandage_Started();
+	void Input_Bandage_Completed();
+	void BeginBandage();
+	void AbortBandage(bool bCompleted);
+	UFUNCTION(Server, Reliable)
+	void Server_BeginBandage();
+	UFUNCTION(Server, Reliable)
+	void Server_FinishBandage(bool bCompleted);
+	UFUNCTION()
+	void OnRep_ArmInjured();
+	UFUNCTION()
+	void OnRep_LegInjured();
+	UFUNCTION()
+	void OnRep_BodyArmor();
+	UFUNCTION()
+	void OnRep_HasRadar();
+	UFUNCTION()
+	void OnRep_FactionLook();
+
+	void ApplyFactionLookMeshes();
+	void ApplyFactionArms1P();
+	void EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkeletalMesh* SourceMesh);
+	void EnsureFactionLookDefaults();
+	void SetModularLookVisible(bool bVisible);
+	USkeletalMesh* LoadSoftMesh(const TSoftObjectPtr<USkeletalMesh>& Soft) const;
+	UMaterialInterface* LoadSoftMaterial(const TSoftObjectPtr<UMaterialInterface>& Soft) const;
+
+	UPROPERTY()
+	TObjectPtr<USkeletalMesh> DefaultMesh3PAsset;
+	UPROPERTY()
+	TSubclassOf<UAnimInstance> DefaultMesh3PAnimClass;
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> Mesh3P_Head;
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> Mesh3P_BodyUp;
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> Mesh3P_Pants;
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> Mesh3P_Jacket;
+	bool bCapturedDefaultMesh3P = false;
+	UPROPERTY()
+	TObjectPtr<USkeletalMesh> DefaultArmsMesh1PAsset;
+	bool bCapturedDefaultArms1P = false;
+
+	bool bIsBandaging = false;
+	bool bBandageHoldInput = false;
+	float BandageHoldElapsed = 0.f;
+	float WeaponBlockAlpha = 0.f;
+	FVector WeaponBlockLocCurrent = FVector::ZeroVector;
+	FRotator WeaponBlockRotCurrent = FRotator::ZeroRotator;
+	int32 BloodyFootstepsRemaining = 0;
+	float WatchDisplayUntil = -1.f;
+	float MuzzleDipAlpha = 0.f;
+	FRotator MuzzleDipRotCurrent = FRotator::ZeroRotator;
+
+	float VisionBatterySeconds = 60.f;
+	float VisionFlashWash = 0.f;
+	float VisionOverlayRefreshAcc = 0.f;
+	ETacticalVisionMode AppliedVisionMode = ETacticalVisionMode::Off;
+	TWeakObjectPtr<UMaterialInterface> ActiveVisionBlendable;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> CachedThermalOverlayMat;
+	TArray<TWeakObjectPtr<USkeletalMeshComponent>> ThermalOverlayMeshes;
 
 	// Mesh1P relative pose captured at BeginPlay. Used when the blueprint hip variables are absent.
 	FVector AuthoredHipMeshLocation = FVector::ZeroVector;

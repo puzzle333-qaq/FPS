@@ -1,4 +1,6 @@
 #include "CombatComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "Animation/FirstPersonAnimInstance.h"
 #include "Animation/PSRArmsAnimInstance.h"
 #include "ShooterCharacter.h"
@@ -43,26 +45,14 @@ namespace
 		return IsValid(Mag) && (
 			Mag->MagCharacterReloadMontage
 			|| Mag->MagCharacterEmptyReloadMontage
-			|| Mag->MagCharacterTacticalReloadMontage
-			|| Mag->MagCharacterEmptyReloadMontage_Grab
-			|| Mag->MagCharacterTacticalReloadMontage_Grab);
+			|| Mag->MagCharacterTacticalReloadMontage);
 	}
 
 	UAnimMontage* ResolveMagazineCharacterReload(const UAttachmentData* Mag, EReloadType Type, EGripHoldStyle Style)
 	{
+		(void)Style;
 		if (!IsValid(Mag)) return nullptr;
 
-		if (Style == EGripHoldStyle::Grab)
-		{
-			if (Type == EReloadType::Empty && Mag->MagCharacterEmptyReloadMontage_Grab)
-			{
-				return Mag->MagCharacterEmptyReloadMontage_Grab;
-			}
-			if (Type == EReloadType::Tactical && Mag->MagCharacterTacticalReloadMontage_Grab)
-			{
-				return Mag->MagCharacterTacticalReloadMontage_Grab;
-			}
-		}
 		if (Type == EReloadType::Empty && Mag->MagCharacterEmptyReloadMontage)
 		{
 			return Mag->MagCharacterEmptyReloadMontage;
@@ -183,14 +173,19 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 	}
 	ApplyEquippedWeaponAnim(CurrentWeapon);
 
-	if (const int32* FoundReserve = ReserveAmmo.Find(CurrentWeapon->WeaponType))
+	EnsureMagQueueForWeapon(CurrentWeapon);
+	if (const TArray<int32>* Q = MagQueues.Find(CurrentWeapon->WeaponType))
+	{
+		CurrentReserveAmmo = Q->Num();
+		ReserveAmmo.Add(CurrentWeapon->WeaponType, CurrentReserveAmmo);
+	}
+	else if (const int32* FoundReserve = ReserveAmmo.Find(CurrentWeapon->WeaponType))
 	{
 		CurrentReserveAmmo = *FoundReserve;
 	}
 	else
 	{
-		CurrentReserveAmmo = CurrentWeapon->StartingCarriedAmmo;
-		ReserveAmmo.Add(CurrentWeapon->WeaponType, CurrentReserveAmmo);
+		CurrentReserveAmmo = 0;
 	}
 	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 	NotifyAmmoChanged();
@@ -245,7 +240,14 @@ void UCombatComponent::SpawnInventory()
 	TArray<const FWeaponPreset*> SpawnPresets;
 	SpawnPresets.Init(nullptr, SpawnClasses.Num());
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	const AShooterPlayerController* LoadoutPC = IsValid(OwnerPawn) ? Cast<AShooterPlayerController>(OwnerPawn->GetController()) : nullptr;
+		const AShooterPlayerController* LoadoutPC = IsValid(OwnerPawn) ? Cast<AShooterPlayerController>(OwnerPawn->GetController()) : nullptr;
+	const bool bPoliceCriminalMode = ModeGS && ModeGS->GetMatchMode() == EShooterGameMode::PoliceCriminal;
+	if (bPoliceCriminalMode && IsValid(LoadoutPC) && LoadoutPC->GetSubmittedLoadout())
+	{
+		// 警匪：只用水印/面包车提交的枪，不用角色默认大图鉴
+		SpawnClasses.Reset();
+		SpawnPresets.Reset();
+	}
 	if (const FLoadoutPreset* Loadout = IsValid(LoadoutPC) ? LoadoutPC->GetSubmittedLoadout() : nullptr)
 	{
 		for (const FWeaponPreset& Preset : Loadout->Weapons)
@@ -623,6 +625,11 @@ void UCombatComponent::Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson)
 	}
 
 	PlayEquipMontage(NextWeapon, bFirstPerson);
+	// Multicast skips locally-controlled owners — also play 3P equip for ToggleThirdPerson.
+	if (bFirstPerson)
+	{
+		PlayEquipMontage(NextWeapon, false);
+	}
 }
 
 
@@ -636,6 +643,12 @@ void UCombatComponent::CacheDefaultFirstPersonArms()
 	DefaultArmsMesh1P = Arms->GetSkeletalMeshAsset();
 	DefaultArmsAnimClass = Arms->GetAnimClass();
 	bCachedDefaultArms = true;
+}
+
+void UCombatComponent::RecacheDefaultFirstPersonArms()
+{
+	bCachedDefaultArms = false;
+	CacheDefaultFirstPersonArms();
 }
 
 void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
@@ -711,6 +724,16 @@ bool UCombatComponent::HasStrafeWalkingAnim() const
 	// Either view having Walk BS is enough — 3P is what you see for foot sliding
 	return HasWalk(WeaponData->ThirdPersonAnims) || HasWalk(WeaponData->FirstPersonAnims);
 }
+
+void UCombatComponent::RefreshAnimsAfterMesh3PSwap()
+{
+	if (IsValid(CurrentWeapon))
+	{
+		ApplyEquippedWeaponAnim(CurrentWeapon);
+	}
+}
+
+
 void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 {
 	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
@@ -843,13 +866,21 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 		? WeaponData->FirstPersonMontages
 		: WeaponData->ThirdPersonMontages;
 
+	const bool bFirstDraw = !Weapon->bHasEquippedOnce;
 	const FMontageData* MontageData = ViewMontages.Find(Weapon->WeaponType);
-	UAnimMontage* EquipMontage = MontageData ? MontageData->ResolveEquipMontage() : nullptr;
+	UAnimMontage* EquipMontage = MontageData ? MontageData->ResolveEquipMontage(bFirstDraw) : nullptr;
+	if (!IsValid(EquipMontage) && !bFirstPerson)
+	{
+		if (const FMontageData* FPData = WeaponData->FirstPersonMontages.Find(Weapon->WeaponType))
+		{
+			EquipMontage = FPData->ResolveEquipMontage(bFirstDraw);
+		}
+	}
 	if (!IsValid(EquipMontage))
 	{
 		if (const FMontageData* SharedData = WeaponData->WeaponMontages.Find(Weapon->WeaponType))
 		{
-			EquipMontage = SharedData->ResolveEquipMontage();
+			EquipMontage = SharedData->ResolveEquipMontage(bFirstDraw);
 		}
 	}
 
@@ -869,7 +900,11 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 	if (!IsValid(AnimInstance) || !IsValid(PlayedEquip))
 	{
 		// No equip anim: still allow Idle (sequence weapons may only have fire/reload).
-		Weapon->WeaponStatus = EWeaponStatus::Idle;
+		// Do not clobber an in-progress 1P equip when the optional 3P clip is missing.
+		if (Weapon->WeaponStatus != EWeaponStatus::Cycling)
+		{
+			Weapon->WeaponStatus = EWeaponStatus::Idle;
+		}
 		if (bFirstPerson && IsValid(Weapon->WeaponEquipSequence))
 		{
 			AWeapon::PlayWeaponSequence(Weapon->GetMesh1P(), Weapon->WeaponEquipSequence);
@@ -882,7 +917,10 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 		const float PlayedLength = AnimInstance->Montage_Play(PlayedEquip);
 		if (PlayedLength <= 0.f)
 		{
-			Weapon->WeaponStatus = EWeaponStatus::Idle;
+			if (Weapon->WeaponStatus != EWeaponStatus::Cycling)
+			{
+				Weapon->WeaponStatus = EWeaponStatus::Idle;
+			}
 			return;
 		}
 	}
@@ -906,7 +944,7 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 		bool bPlayedWeaponEquip = false;
 		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(Weapon->WeaponType))
 		{
-			if (UAnimMontage* WeaponEquip = WeaponMontageData->ResolveEquipMontage())
+			if (UAnimMontage* WeaponEquip = WeaponMontageData->ResolveEquipMontage(bFirstDraw))
 			{
 				if (USkeletalMeshComponent* WeaponMesh = Weapon->GetMesh1P())
 				{
@@ -941,6 +979,7 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 	FOnMontageEnded EndDelegate;
 	EndDelegate.BindUObject(this, &UCombatComponent::OnEquipMontageEnded, TWeakObjectPtr<AWeapon>(Weapon));
 	AnimInstance->Montage_SetEndDelegate(EndDelegate, EquipMontage);
+	Weapon->bHasEquippedOnce = true;
 	Weapon->WeaponStatus = EWeaponStatus::Cycling;
 }
 
@@ -990,13 +1029,11 @@ void UCombatComponent::StopReloadMontages(AWeapon* Weapon)
 	{
 		if (const FMontageData* Data = Map.Find(Weapon->WeaponType))
 		{
-			for (EReloadType Type : { EReloadType::First, EReloadType::Empty, EReloadType::Tactical })
+			for (EReloadType Type : { EReloadType::Empty, EReloadType::Tactical })
 			{
-				for (EGripHoldStyle Style : { EGripHoldStyle::Cradle, EGripHoldStyle::Grab })
-				{
-					if (UAnimMontage* M = Data->ResolveReloadMontage(Type, Style)) Montages.AddUnique(M);
-				}
+				if (UAnimMontage* M = Data->ResolveReloadMontage(Type)) Montages.AddUnique(M);
 			}
+			if (UAnimMontage* Legacy = Data->ReloadMontage) Montages.AddUnique(Legacy);
 		}
 	};
 	Collect(WeaponData->FirstPersonMontages);
@@ -1081,6 +1118,10 @@ void UCombatComponent::Multicast_CycleWeapon_Implementation(int32 WeaponIndex)
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
 	CancelInspect();
+	if (const AShooterCharacter* Self = Cast<AShooterCharacter>(GetOwner()))
+	{
+		if (Self->IsBandaging()) return;
+	}
 	if (const UWorld* World = GetWorld())
 	{
 		if (const AShooterGameState* GS = World->GetGameState<AShooterGameState>())
@@ -1143,6 +1184,13 @@ void UCombatComponent::Initiate_FireWeapon_Pressed()
 	else
 	{
 		BurstShotsRemaining = 0;
+		{
+			APawn* LocalPawn = Cast<APawn>(GetOwner());
+			if (IsValid(LocalPawn) && LocalPawn->IsLocallyControlled())
+			{
+				PlayDryFireClick();
+			}
+		}
 	}
 }
 
@@ -1158,6 +1206,34 @@ void UCombatComponent::Initiate_FireWeapon_Released()
 	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponKind == EWeaponKind::Throwable)
 	{
 		ReleaseThrow();
+	}
+}
+
+
+void UCombatComponent::PlayOwnerThirdPersonFireMontage()
+{
+	if (!IsValid(WeaponData) || !IsValid(CurrentWeapon)) return;
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
+
+	UAnimMontage* Montage3P = nullptr;
+	if (const FMontageData* Montage3PData = WeaponData->ThirdPersonMontages.Find(CurrentWeapon->WeaponType))
+	{
+		Montage3P = Montage3PData->ResolveFireMontage();
+	}
+	// Soft fallback: if no dedicated 3P fire clip, try 1P fire on the body (compatible skeletons).
+	if (!IsValid(Montage3P))
+	{
+		if (const FMontageData* Montage1PData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
+		{
+			Montage3P = Montage1PData->ResolveFireMontage();
+		}
+	}
+	USkeletalMeshComponent* Mesh3P = IPlayerInterface::Execute_GetMesh3P(Owner);
+	UAnimInstance* AnimInstance3P = IsValid(Mesh3P) ? Mesh3P->GetAnimInstance() : nullptr;
+	if (IsValid(Montage3P) && IsValid(AnimInstance3P))
+	{
+		AnimInstance3P->Montage_Play(Montage3P);
 	}
 }
 
@@ -1229,20 +1305,8 @@ void UCombatComponent::Local_FireWeapon()
 		}
 	}
 
-	// 近战：第三人称全身攻击（蒙太奇需挂 FullBody/DefaultSlot，勿只用 UpperBody）
-	if (CurrentWeapon->WeaponKind == EWeaponKind::Melee)
-	{
-		if (const FMontageData* Montage3PData = WeaponData->ThirdPersonMontages.Find(CurrentWeapon->WeaponType))
-		{
-			UAnimMontage* Montage3P = Montage3PData->ResolveFireMontage();
-			USkeletalMeshComponent* Mesh3P = IPlayerInterface::Execute_GetMesh3P(GetOwner());
-			UAnimInstance* AnimInstance3P = IsValid(Mesh3P) ? Mesh3P->GetAnimInstance() : nullptr;
-			if (IsValid(Montage3P) && IsValid(AnimInstance3P))
-			{
-				AnimInstance3P->Montage_Play(Montage3P);
-			}
-		}
-	}
+	// Owner Multicast skips 3P fire — always play 3P locally (melee + guns) so ToggleThirdPerson / body view sees it.
+	PlayOwnerThirdPersonFireMontage();
 
 	TArray<FHitResult> Hits;
 	if (CurrentWeapon->WeaponKind == EWeaponKind::Melee)
@@ -1318,17 +1382,11 @@ void UCombatComponent::FireTimerFinished()
 		return;
 	}
 
-	APawn* OwningPawn = Cast<APawn>(GetOwner());
-	// Empty mag starts the same reload as the reload key. ApplyReload here fills the
-	// magazine immediately and never plays the montage. Throwables have no reload.
+	// Tactical: no auto-reload. Empty mag just stops firing; player must press R.
 	if (CurrentWeapon->WeaponKind != EWeaponKind::Throwable
 		&& CurrentWeapon->UsesAmmo() && CurrentWeapon->Ammo == 0)
 	{
 		BurstShotsRemaining = 0;
-		if (CurrentReserveAmmo > 0 && IsValid(OwningPawn) && OwningPawn->IsLocallyControlled())
-		{
-			Initiate_ReloadWeapon();
-		}
 		return;
 	}
 
@@ -1373,17 +1431,32 @@ void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>
 		{
 			FName Bone = ResolveDamageBone(Hit);
 			if (const ATargetDummy* Dummy = Cast<ATargetDummy>(Hit.GetActor())) Bone = Dummy->ResolveHitBone(Hit, Bone);
-			const float Damage = ScaleDamageForBone(CurrentWeapon->Damage, Bone, CurrentWeapon->HeadshotMultiplier, CurrentWeapon->LimbMultiplier);
-			UE_LOG(LogTemp, Log, TEXT("Hit %s bone %s zone %s damage %.1f pellet %d"),
-				*GetNameSafe(Hit.GetActor()),
-				*Bone.ToString(),
-				*UEnum::GetValueAsString(ResolveHitZone(Bone)),
-				Damage,
-				i);
+			float BaseDmg = CurrentWeapon->Damage;
+			float HeadMul = CurrentWeapon->HeadshotMultiplier;
+			float LimbMul = CurrentWeapon->LimbMultiplier;
+			// Short-TTK migrate: C++ default used to be 15/2.0; BP copies often still carry that.
+			if (CurrentWeapon->PelletsPerShot <= 1 && BaseDmg <= 20.f) BaseDmg = 40.f;
+			if (HeadMul <= 2.01f) HeadMul = 2.5f;
+			float Damage = ScaleDamageForBone(BaseDmg, Bone, HeadMul, LimbMul);
 			AShooterGameModeBase* DamageGM = GetWorld() ? GetWorld()->GetAuthGameMode<AShooterGameModeBase>() : nullptr;
 			if (DamageGM) DamageGM->SetPendingDamageIcon(CurrentWeapon->WeaponIcon);
 			AShooterCharacter* ShooterSelf = Cast<AShooterCharacter>(GetOwner());
-			if (ShooterSelf) ShooterSelf->bPendingHeadshotHit = ResolveHitZone(Bone) == EHitZone::Head;
+			const EHitZone Zone = ResolveHitZone(Bone);
+			if (ShooterSelf) ShooterSelf->bPendingHeadshotHit = Zone == EHitZone::Head;
+			if (AShooterCharacter* Victim = Cast<AShooterCharacter>(Hit.GetActor()))
+			{
+				Victim->Auth_ApplyHitZoneInjury(Zone);
+				const bool bPistolOrShotgun = CurrentWeapon->WeaponKind == EWeaponKind::Pistol
+					|| CurrentWeapon->PelletsPerShot > 1
+					|| CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun);
+				Damage = Victim->ScaleDamageByArmor(Damage, Zone, bPistolOrShotgun);
+			}
+			UE_LOG(LogTemp, Log, TEXT("Hit %s bone %s zone %s damage %.1f pellet %d"),
+				*GetNameSafe(Hit.GetActor()),
+				*Bone.ToString(),
+				*UEnum::GetValueAsString(Zone),
+				Damage,
+				i);
 			IPlayerInterface::Execute_DoDamage(Hit.GetActor(), Damage, GetOwner());
 			if (ShooterSelf) ShooterSelf->bPendingHeadshotHit = false;
 			if (DamageGM) DamageGM->ClearPendingDamageIcon();
@@ -1450,7 +1523,73 @@ bool UCombatComponent::IsReloading() const
 	return IsValid(CurrentWeapon) && CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading;
 }
 
-void UCombatComponent::Initiate_ReloadWeapon()
+
+int32 UCombatComponent::GetSpareMagCount() const
+{
+	if (!IsValid(CurrentWeapon)) return 0;
+	if (const TArray<int32>* Q = MagQueues.Find(CurrentWeapon->WeaponType))
+	{
+		return Q->Num();
+	}
+	return FMath::Max(0, CurrentReserveAmmo);
+}
+
+void UCombatComponent::EnsureMagQueueForWeapon(AWeapon* Weapon)
+{
+	if (!IsValid(Weapon) || !Weapon->UsesAmmo()) return;
+	if (MagQueues.Contains(Weapon->WeaponType)) return;
+
+	TArray<int32> Queue;
+	const int32 Cap = FMath::Max(1, Weapon->MagCapacity);
+	int32 Left = FMath::Max(0, Weapon->StartingCarriedAmmo);
+	// Convert legacy "spare rounds pool" into FIFO mags (full first, leftover last).
+	while (Left > 0)
+	{
+		const int32 Take = FMath::Min(Cap, Left);
+		Queue.Add(Take);
+		Left -= Take;
+	}
+	MagQueues.Add(Weapon->WeaponType, Queue);
+	ReserveAmmo.Add(Weapon->WeaponType, Queue.Num());
+}
+
+bool UCombatComponent::ConsumeMagFromQueue(AWeapon* Weapon, bool bFastDrop)
+{
+	if (!IsValid(Weapon)) return false;
+	EnsureMagQueueForWeapon(Weapon);
+	TArray<int32>* Queue = MagQueues.Find(Weapon->WeaponType);
+	if (!Queue || Queue->Num() <= 0) return false;
+
+	if (!bFastDrop && Weapon->Ammo > 0)
+	{
+		Queue->Add(Weapon->Ammo); // keep partial mag at the back
+	}
+	// empty mag or fast-drop: discard current mag
+
+	Weapon->Ammo = (*Queue)[0];
+	Queue->RemoveAt(0);
+	CurrentReserveAmmo = Queue->Num();
+	ReserveAmmo.Add(Weapon->WeaponType, CurrentReserveAmmo);
+	NotifyAmmoChanged();
+	return true;
+}
+
+void UCombatComponent::PlayDryFireClick()
+{
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	if (Now - LastDryFireTime < 0.2) return;
+	LastDryFireTime = Now;
+
+	static TSoftObjectPtr<USoundBase> DryCue(
+		FSoftObjectPath(TEXT("/Game/cgARMod/Weapons/Audio/SC_DryShot1_Cue.SC_DryShot1_Cue")));
+	if (USoundBase* Sound = DryCue.LoadSynchronous())
+	{
+		UGameplayStatics::PlaySound2D(this, Sound);
+	}
+}
+
+void UCombatComponent::Initiate_ReloadWeapon(bool bFastDrop)
 {
 	CancelInspect();
 	BurstShotsRemaining = 0;
@@ -1461,7 +1600,17 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 	if (CurrentWeapon->Ammo >= CurrentWeapon->MagCapacity) return;
-	if (CurrentReserveAmmo <= 0) return;
+	// CurrentReserveAmmo is replicated mag-count; MagQueues is server-authoritative.
+	if (GetOwnerRole() == ROLE_Authority)
+	{
+		EnsureMagQueueForWeapon(CurrentWeapon);
+		if (const TArray<int32>* Q = MagQueues.Find(CurrentWeapon->WeaponType))
+		{
+			CurrentReserveAmmo = Q->Num();
+		}
+	}
+	if (CurrentReserveAmmo <= 0) return; // no spare mags
+	bPendingFastReloadDrop = bFastDrop;
 
 	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
 	{
@@ -1470,8 +1619,8 @@ void UCombatComponent::Initiate_ReloadWeapon()
 			PC->StopSprinting();
 		}
 	}
-	// 先定好这次是哪种换弹，手臂、枪、第三人称都用同一个种类
-	const EReloadType ReloadType = ChooseReloadType();
+	// 短按 R = EmptyReloadMontage（保留半匣）；长按 R = TacticalReloadMontage（丢匣）
+	const EReloadType ReloadType = bFastDrop ? EReloadType::Tactical : EReloadType::Empty;
 
 	UAnimMontage* ReloadMontage = nullptr;
 	UAnimInstance* AnimInstance = nullptr;
@@ -1486,7 +1635,7 @@ void UCombatComponent::Initiate_ReloadWeapon()
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Reloading;
 	CurrentWeapon->bHasReloadedOnce = true;
 	ResetRecoilPattern();
-	Server_ReloadWeapon(ReloadType);
+	Server_ReloadWeapon(ReloadType, bFastDrop);
 	bool bPlayed = false;
 	if (bHasMontage)
 	{
@@ -1501,6 +1650,14 @@ void UCombatComponent::Initiate_ReloadWeapon()
 		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 		Server_EndReload(false);
 	}
+	else
+	{
+		// Multicast_Reload skips owner — drive Mesh3P reload for ToggleThirdPerson / body view.
+		if (!PlayReloadMontage(false, ReloadType))
+		{
+			PlayReloadSequences(false, ReloadType);
+		}
+	}
 }
 
 bool UCombatComponent::ApplyReload()
@@ -1513,25 +1670,15 @@ bool UCombatComponent::ApplyReload()
 	const bool bLocal = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
 	if (!bLocal && GetOwnerRole() != ROLE_Authority) return false;
 
-	const int32 Needed = CurrentWeapon->MagCapacity - CurrentWeapon->Ammo;
-	const int32 Taken = FMath::Min(Needed, CurrentReserveAmmo);
-	if (Taken <= 0) return false;
-
-	CurrentWeapon->Ammo += Taken;
-	CurrentReserveAmmo -= Taken;
-	ReserveAmmo.Add(CurrentWeapon->WeaponType, CurrentReserveAmmo);
-	NotifyAmmoChanged();
-	return true;
+	// Mag-queue model: swap whole magazines instead of topping up from a round pool.
+	return ConsumeMagFromQueue(CurrentWeapon, bPendingFastReloadDrop);
 }
 
 EReloadType UCombatComponent::ChooseReloadType() const
 {
 	if (!IsValid(CurrentWeapon)) return EReloadType::Tactical;
-	// Shotguns / tube guns: skip FirstReload — pick Empty vs Reload solely by ammo in the weapon.
-	if (!CurrentWeapon->bSkipFirstReload && !CurrentWeapon->bHasReloadedOnce)
-	{
-		return EReloadType::First;
-	}
+	// Player short/long overrides this in Initiate_ReloadWeapon.
+	// Bots / Auth still pick by chamber empty vs not. FirstReload retired.
 	return CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
 }
 
@@ -1548,20 +1695,20 @@ bool UCombatComponent::GetReloadMontage(bool bFirstPerson, EReloadType ReloadTyp
 		? WeaponData->FirstPersonMontages
 		: WeaponData->ThirdPersonMontages;
 	const FMontageData* MontageData = ViewMontages.Find(CurrentWeapon->WeaponType);
+	if (!MontageData && !bFirstPerson)
+	{
+		// No authored 3P reload — fall back to 1P clip on body mesh (UE4/5 compatible skeletons).
+		MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType);
+	}
 
 	const UAttachmentData* Mag = CurrentWeapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Magazine);
 	const EGripHoldStyle GripStyle = CurrentWeapon->GetGripHoldStyle();
 
-	// 第一次换弹没填 FirstReloadMontage 时，按弹匣空不空退回空匣/战术。
-	// 弹匣自己填了手臂换弹时也这样退：拓展弹匣只有 empty/tactical，没有 First。
+	// FirstReload 已废弃：若仍传入 First，按弹匣是否空退回 Empty/Tactical。
 	EReloadType Resolved = ReloadType;
 	if (Resolved == EReloadType::First)
 	{
-		const bool bHasWeaponFirst = MontageData && IsValid(MontageData->FirstReloadMontage);
-		if (MagHasCharacterReload(Mag) || !bHasWeaponFirst)
-		{
-			Resolved = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
-		}
+		Resolved = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
 	}
 
 	UAnimMontage* Chosen = nullptr;
@@ -1631,6 +1778,7 @@ bool UCombatComponent::PlayReloadSequences(bool bFirstPerson, EReloadType Reload
 		{
 			AWeapon::PlayWeaponSequence(CurrentWeapon->GetMesh1P(), WeaponSeq);
 		}
+		CurrentWeapon->PlayMagazineReload(Resolved);
 	}
 
 	FOnMontageEnded EndDelegate;
@@ -1771,19 +1919,24 @@ void UCombatComponent::Client_ReloadWeapon_Implementation(AWeapon* ReloadedWeapo
 	}
 }
 
-void UCombatComponent::Server_ReloadWeapon_Implementation(EReloadType ReloadType)
+void UCombatComponent::Server_ReloadWeapon_Implementation(EReloadType ReloadType, bool bFastDrop)
 {
 	if (!IsValid(CurrentWeapon)) return;
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
 	// 本机操控的角色（房主 / 单机）在 Initiate_ReloadWeapon 里已经做过检查并设成 Reloading
 	const bool bLocallyPredicted = IsValid(OwningPawn) && OwningPawn->IsLocallyControlled();
+	bPendingFastReloadDrop = bFastDrop;
 	if (!bLocallyPredicted)
 	{
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 		if (CurrentWeapon->WeaponStatus == EWeaponStatus::Cycling) return;
 		if (CurrentWeapon->Ammo >= CurrentWeapon->MagCapacity) return;
-		if (CurrentReserveAmmo <= 0) return;
+		EnsureMagQueueForWeapon(CurrentWeapon);
+		{
+			const TArray<int32>* Q = MagQueues.Find(CurrentWeapon->WeaponType);
+			if (!Q || Q->Num() <= 0) return;
+		}
 		CurrentWeapon->WeaponStatus = EWeaponStatus::Reloading;
 		CurrentWeapon->bHasReloadedOnce = true;
 	}
@@ -1831,7 +1984,7 @@ void UCombatComponent::Auth_FireWeapon(const TArray<FHitResult>& Hits)
 void UCombatComponent::Auth_ReloadWeapon(EReloadType ReloadType)
 {
 	if (GetOwnerRole() != ROLE_Authority) return;
-	Server_ReloadWeapon_Implementation(ReloadType);
+	Server_ReloadWeapon_Implementation(ReloadType, false);
 }
 
 void UCombatComponent::Auth_CancelReload()
@@ -2815,14 +2968,8 @@ void UCombatComponent::Notify_ReloadWeapon()
 	// 换弹已被切枪打断：不给子弹
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return;
 
-	const int32 EmptySpace = CurrentWeapon->MagCapacity - CurrentWeapon->Ammo;
-	const int32 AmountToRefill = FMath::Min(EmptySpace, CurrentReserveAmmo);
-	if (AmountToRefill > 0)
-	{
-		CurrentWeapon->Ammo += AmountToRefill;
-		CurrentReserveAmmo -= AmountToRefill;
-		ReserveAmmo.Add(CurrentWeapon->WeaponType, CurrentReserveAmmo);
-	}
+	ConsumeMagFromQueue(CurrentWeapon, bPendingFastReloadDrop);
+	bPendingFastReloadDrop = false;
 
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 	Client_ReloadWeapon(CurrentWeapon, CurrentWeapon->Ammo, CurrentReserveAmmo);
@@ -2837,6 +2984,14 @@ void UCombatComponent::Server_Aim_Implementation(bool bPressed)
 
 void UCombatComponent::Local_Aim(bool bPressed)
 {
+	// 枪管顶墙 / 包扎中禁止开镜
+	if (bPressed)
+	{
+		if (const AShooterCharacter* Self = Cast<AShooterCharacter>(GetOwner()))
+		{
+			if (Self->IsWeaponBlocked() || Self->IsBandaging()) return;
+		}
+	}
 	// 近战强制关镜：本地 / 服务器 / 切枪同步都走这里
 	if (bPressed && IsValid(CurrentWeapon) && !CurrentWeapon->CanAimWeapon())
 	{

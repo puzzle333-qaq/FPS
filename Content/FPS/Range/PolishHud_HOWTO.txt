@@ -1,0 +1,32 @@
+﻿PolishHud batch — watch / radar / blood / barrel
+Backup: Saved/CodeBackup_20261028_032452_PolishHud
+说明: Content/FPS/Range/PolishHud_HOWTO.txt
+
+【本机编译】当前机器编译器堆/虚拟内存不足（C1060/C1076），命令行编不过。
+请在已打开的 UE 编辑器里按 Ctrl+Alt+F11 做 Live Coding，或关掉占内存程序后再编。
+
+1) 看手表 / 剩余时间
+- 控制台: CheckWatch
+- 快捷键: Alt+T（按住 Alt 再按 T）
+- 有则播 RAR 的 AM_RAR_FP_PCH_AssaultRifle_WatchCheck；屏幕短暂显示剩余时间
+- 需要 GameState 里有倒计时（警匪突击阶段）；靶场无倒计时会显示「无倒计时」
+
+2) 雷达当配件
+- 默认 HUD 雷达继续隐藏
+- 控制台: GrantRadar 1 开启 / GrantRadar 0 关闭
+- MatchHUD 每 0.1s 根据角色 bHasRadar 显示/隐藏
+
+3) 血脚印
+- 受伤会 Multicast 标记血脚（本地贴花）
+- 控制台: MarkBlood 10 后走路会留逐渐淡出的血脚印
+- 材质: M_blood_decal_Mat（DEFINITIVE_FPS_KIT）
+- 不强制同步给其他客户端（local OK）
+
+4) 枪管抬枪修复
+- 原因: 原先 ECC_Visibility 经常打不中靶场墙/静态网格
+- 现改为 WorldStatic/Dynamic/Physics/Pawn 物体查询，失败再走 ECC_Weapon
+- 抬枪角度默认 28°，回收 18cm
+- 控制台: DebugBarrel 1 画橙色/绿色射线调试
+- 步枪 WeaponLength 建议 70；手枪强制按 22；近战 0
+
+未改 FactionFlow / Traps。

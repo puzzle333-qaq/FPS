@@ -1,0 +1,33 @@
+﻿BanditsArms1P — 第一人称 Bandits 手臂 + Ironbelly 武器插槽对齐
+Backup: Saved/CodeBackup_20261028_072334_BanditsArms1P
+DLL: 已编过（UnrealEditor-FPS.dll）
+
+【改动】
+1) bUseBanditsArms1P 默认 true（BP 可关）
+- FactionLook 1 匪：CriminalArmsMesh1P → SKM_Arms_Gloves_Black
+- FactionLook 2 警：PoliceArmsMesh1P → SKM_Arms_Gloves_Green
+- FactionLook 0：恢复默认 Ironbelly Mesh1P
+- 保留原 AnimBP；不做姿势重定向
+
+2) EnsureArms1PGripSockets
+- 从默认 Ironbelly Mesh1P（hand_r 空间）拷贝：
+  weapon_r / WeaponSocket / weapon_mount / SOCKET_Weapon /
+  RifleSocket* / PistolSocket* / GrenadeSocket / HandGrip_R
+- 再从 SK_FPSArms authored socket 补缺
+- 关键 GripPoints 仍缺则在 hand_r 上建 identity socket（会话内 AddSocket）
+
+3) CombatComponent::RecacheDefaultFirstPersonArms
+- 换手臂后刷新 DefaultArms，避免切枪把 Bandits 换回 Ironbelly
+
+【编译】
+已成功。若编辑器开着：关再开，或 Ctrl+Alt+F11。不要强杀 UE。
+
+【PIE】
+1. 进靶场 → FactionLook 1（或 2）
+2. 日志：
+   [Look] Arms1P sockets+=N ...
+   [Look] Mesh1P -> SKM_Arms_Gloves_... FactionLook=1
+   [WeaponAttach] ... -> 1P sock=weapon_r（或对应 GripPoint）
+3. 检查：1P 手套手臂 + 枪挂在手上
+4. 切 AK / RAR / 手枪各试挂点
+5. 某枪仍歪：把 [WeaponAttach] 的 1P sock= 发我，再微调相对 hand_r 偏移

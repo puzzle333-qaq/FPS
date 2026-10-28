@@ -29,7 +29,7 @@ public:
 	float PostMatchDelay = 8.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|TDM")
-	bool bFriendlyFire = false;
+	bool bFriendlyFire = true;
 
 	// 从房间进来时：等房间里的人都到齐（且每队 >=1）；超时回房间大厅
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|TDM")

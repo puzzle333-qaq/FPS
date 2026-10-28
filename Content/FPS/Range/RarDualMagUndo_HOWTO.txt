@@ -1,0 +1,48 @@
+﻿RAR dual-mag undo + investigation (2026-10-28 ~06:21 America/New_York)
+======================================================================
+
+UNDO DONE
+---------
+Backup: Saved\CodeBackup_20261028_061728_RarDualMagUndo
+Restored from: CodeBackup_20261028_032452_PolishHud
+  (= hash-identical to 053921_RarMag pre-RarMag Weapon.cpp/CombatComponent.cpp + Weapon.h)
+Assets: AM_RAR_Reload = 000454_RARSharedPose; DA_WeaponData = SGSharePose DA_AFTER
+DLL: full rebuild Succeeded 06:21 America/New_York (-MaxParallelActions=1 -NoXGE)
+No DefaultSlot / ForceShowSpare dual-mag hacks reapplied.
+
+PIE: cold-start editor (UE was closed). Equip RAR, hold R.
+
+USER EXPECTATION (clarified)
+----------------------------
+Tactical reload: hand ALREADY holds a NEW mag, then pulls OLD mag off the gun —
+two mags in hands the whole time (not just gun-socket visibility).
+
+WHY DUAL MAG STILL LIKELY MISSING AFTER UNDO
+--------------------------------------------
+1) Project montages (what DA uses for arms):
+   /Game/FPS/Animation/RAR/AM_RAR_Reload
+   /Game/FPS/Animation/RAR/AM_RAR_Reload_Empty
+   → only AnimNotify_PlaySound + camera shake. NO Infima mag notifies.
+
+2) Infima originals (have the dual-mag notifies):
+   /Game/InfimaGames/.../AM_RAR_FP_PCH_AssaultRifle_Reload
+   /Game/InfimaGames/.../AM_RAR_FP_PCH_AssaultRifle_Reload_Empty
+   → BP_IG_AN_Magazine_Reserve_Set_Visiblity
+   → BP_IG_AN_Magazine_Hidden_Visually_Character
+   BPs live under Content\InfimaGames\...
+
+3) Restored C++ still has baseline PlayMagazineReload: shows/spawns SM on
+   SOCKET_Magazine_Reserve during reload (gun-socket dual). That is NOT the
+   hand-held "two mags in hands" path Infima notifies drive, and SetMeshVisibility
+   still calls HideReserveMagazines at end.
+
+SAFE NEXT FIX (do not ship in this undo)
+----------------------------------------
+A) Point RAR tactical/empty arms montages at Infima AM_RAR_FP_PCH_* Reload, OR
+B) Copy Infima mag notifies onto project AM_RAR_Reload / _Empty,
+   and ensure weapon BP responds the same way Infima's character does.
+C) Keep WEP path as Anim->Montage_Play (AM_RAR_FP_WEP_*). NEVER DefaultSlot
+   PlaySlotAnimationAsDynamicMontage for mag bones.
+D) KitMag AnimNotifyState is for MCX/Deagle KitMag_1P/3P — not RAR Infima.
+
+Do NOT re-apply today's RarMag/RarDualMag C++ visibility hacks.

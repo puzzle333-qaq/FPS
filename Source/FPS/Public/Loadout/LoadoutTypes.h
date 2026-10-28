@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "LoadoutTypes.generated.h"
@@ -17,7 +17,8 @@ enum class EShooterGameMode : uint8
 	SearchDestroy  UMETA(DisplayName = "爆破"),
 	Story          UMETA(DisplayName = "剧情"),
 	Duel           UMETA(DisplayName = "单挑"),
-	Extraction     UMETA(DisplayName = "搜打撤")
+	Extraction     UMETA(DisplayName = "搜打撤"),
+	PoliceCriminal UMETA(DisplayName = "警匪战术")
 };
 
 // 一种模式用哪个 GameMode、哪张地图。在 BP_ShooterGameInstance 里填

@@ -1,0 +1,26 @@
+﻿RAR mag motion restore (RarMagDig) — 2026-10-28
+===============================================
+
+Why '没效果' after claimed revert
+--------------------------------
+Source was already back to pre-RarMag (053921), but:
+1) UnrealEditor-FPS.dll still had the RarMag hack (PlaySlotAnimationAsDynamicMontage
+   on DefaultSlot) from the 05:48 compile — Live Coding after revert OOM'd, so PIE
+   kept the dead-mag binary.
+2) AM_RAR_Reload.uasset was resaved at 05:30; DA_WeaponData at 05:33 during that work.
+
+What we restored
+----------------
+- C++: already = CodeBackup_20261028_053921_RarMag (Weapon.cpp / CombatComponent.cpp)
+- AM_RAR_Reload: CodeBackup_20261028_000454_RARSharedPose (Oct 18 good)
+- DA_WeaponData: CodeBackup_20261028_024657_SGSharePose\DA_WeaponData_AFTER
+- DLL: full rebuild 05:59 with MaxParallelActions=1 (editor was closed)
+
+Backup of pre-restore: Saved\CodeBackup_20261028_055712_RarMagDig
+
+PIE
+---
+1. Open editor (cold start so it loads new DLL + restored uassets)
+2. PIE, equip RAR
+3. Point-tap R (empty/partial keep) and hold R (tactical) — magazine bones should move again
+4. Tactical may still show only one visible mag (old issue); motion first, dual-mag later

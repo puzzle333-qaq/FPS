@@ -93,6 +93,8 @@ public:
 	void SetRoundPhase(EBombRoundPhase NewPhase);
 	void SetLastWinReason(ERoundWinReason Reason);
 	void SetRoundWinningTeam(uint8 Team);
+	// Write winner+reason before SetRoundPhase so OnRep sees both
+	void SetRoundOutcome(uint8 Team, ERoundWinReason Reason);
 	void SetBomb(ABombActor* InBomb);
 	void SetFreezeEndServerTime(float ServerTime);
 	void SetBombExplodeServerTime(float ServerTime);

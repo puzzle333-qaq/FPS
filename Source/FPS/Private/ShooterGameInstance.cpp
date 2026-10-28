@@ -13,6 +13,8 @@ extern bool GFPS_SessionJoinInProgress;
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerState.h"
 #include "Online/ShooterSessionSubsystem.h"
+#include "HAL/IConsoleManager.h"
+#include "Ui/ShooterLoadingScreen.h"
 
 UShooterGameInstance::UShooterGameInstance()
 {
@@ -29,11 +31,13 @@ UShooterGameInstance::UShooterGameInstance()
 	AddMode(EShooterGameMode::Story, TEXT("剧情"), 4);
 	AddMode(EShooterGameMode::Duel, TEXT("单挑"), 2);
 	AddMode(EShooterGameMode::Extraction, TEXT("搜打撤"), 12);
+	AddMode(EShooterGameMode::PoliceCriminal, TEXT("警匪战术"), 10);
 }
 
 void UShooterGameInstance::Init()
 {
 	Super::Init();
+	ShooterLoadingScreen::Register(this);
 	LoadLoadout();
 
 	if (GEngine)
@@ -109,6 +113,7 @@ bool UShooterGameInstance::HostRoom(EShooterGameMode Mode)
 		return false;
 	}
 	SelectedMode = Mode;
+	bPracticeMode = false;
 	// 有房间大厅时，开房 = 进房间大厅（不再直接进对局地图）
 	if (!RoomLobbyMap.IsNull())
 	{
@@ -129,11 +134,41 @@ bool UShooterGameInstance::JoinByIP(const FString& Address)
 
 bool UShooterGameInstance::OpenRange()
 {
+	bPracticeMode = false;
 	return TravelTo(RangeMap, RangeGameMode, false);
+}
+
+bool UShooterGameInstance::StartPractice(EShooterGameMode Mode)
+{
+	if (!IsModeAvailable(Mode))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Practice] Mode %d is not implemented or has no map."), static_cast<int32>(Mode));
+		return false;
+	}
+	// 练习不进房间：清房间状态，避免等人 / 回大厅逻辑
+	bPracticeMode = true;
+	Room = FShooterRoomState();
+	SelectedMode = Mode;
+	if (LocalPlayerName.TrimStartAndEnd().IsEmpty())
+	{
+		FString Hint = GetNameOption();
+		if (!Hint.IsEmpty() && Hint.StartsWith(TEXT("?Name=")))
+		{
+			LocalPlayerName = Hint.RightChop(6);
+		}
+	}
+	const FShooterModeInfo& Info = Modes.FindChecked(Mode);
+	TArray<FString> Extra;
+	Extra.Add(TEXT("Practice=1"));
+	const FString NameOpt = GetNameOption();
+	if (!NameOpt.IsEmpty()) Extra.Add(NameOpt.RightChop(1));
+	UE_LOG(LogTemp, Log, TEXT("[Practice] Solo practice mode=%d (no room)"), (int32)Mode);
+	return TravelTo(Info.Map, Info.GameModeClass, false, Extra);
 }
 
 bool UShooterGameInstance::GoToMainMenu()
 {
+	bPracticeMode = false;
 	if (UShooterSessionSubsystem* Sessions = GetSubsystem<UShooterSessionSubsystem>())
 	{
 		Sessions->DestroyRoomSession();
@@ -313,6 +348,22 @@ FString UShooterGameInstance::GetRoomKey(const APlayerState* PS)
 FString UShooterGameInstance::GetNameOption() const
 {
 	FString Name = LocalPlayerName.TrimStartAndEnd();
+	// 懒填充：登录完成前就开房时，尽量用 Steam / 系统名，避免计分板变成 Player0
+	if (Name.IsEmpty())
+	{
+		if (IOnlineSubsystem* Steam = IOnlineSubsystem::Get(STEAM_SUBSYSTEM))
+		{
+			if (IOnlineIdentityPtr Id = Steam->GetIdentityInterface())
+			{
+				if (Id->GetLoginStatus(0) == ELoginStatus::LoggedIn)
+				{
+					Name = Id->GetPlayerNickname(0);
+				}
+			}
+		}
+		if (Name.IsEmpty()) Name = FPlatformProcess::UserName();
+		if (Name.IsEmpty()) Name = FPlatformProcess::ComputerName();
+	}
 	if (Name.IsEmpty()) return FString();
 	Name.ReplaceInline(TEXT("?"), TEXT(""));
 	Name.ReplaceInline(TEXT("="), TEXT(""));
@@ -322,6 +373,7 @@ FString UShooterGameInstance::GetNameOption() const
 
 void UShooterGameInstance::Shutdown()
 {
+	ShooterLoadingScreen::Unregister();
 	if (GEngine)
 	{
 		GEngine->OnNetworkFailure().Remove(NetFailHandle);
@@ -338,12 +390,37 @@ void UShooterGameInstance::SetLastOnlineError(const FString& Error)
 
 void UShooterGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString)
 {
+	ShooterLoadingScreen::Hide();
 	SetLastOnlineError(FString::Printf(TEXT("网络错误（%s）：%s"), ENetworkFailure::ToString(FailureType), *ErrorString));
+	GFPS_SessionJoinInProgress = false;
+	// 对局中掉线 / 房主关服：自动回主菜单，避免卡在空图
+	if (World && !MainMenuMap.IsNull())
+	{
+		const FString MenuPkg = MainMenuMap.ToSoftObjectPath().GetLongPackageName();
+		const FString CurPkg = World->GetOutermost() ? World->GetOutermost()->GetName() : FString();
+		if (!CurPkg.Equals(MenuPkg, ESearchCase::IgnoreCase))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Online] NetworkFailure -> GoToMainMenu"));
+			GoToMainMenu();
+		}
+	}
 }
 
 void UShooterGameInstance::HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& ErrorString)
 {
+	ShooterLoadingScreen::Hide();
 	SetLastOnlineError(FString::Printf(TEXT("跳转失败（%s）：%s"), ETravelFailure::ToString(FailureType), *ErrorString));
+	GFPS_SessionJoinInProgress = false;
+	if (World && !MainMenuMap.IsNull())
+	{
+		const FString MenuPkg = MainMenuMap.ToSoftObjectPath().GetLongPackageName();
+		const FString CurPkg = World->GetOutermost() ? World->GetOutermost()->GetName() : FString();
+		if (!CurPkg.Equals(MenuPkg, ESearchCase::IgnoreCase))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Online] TravelFailure -> GoToMainMenu"));
+			GoToMainMenu();
+		}
+	}
 }
 
 bool UShooterGameInstance::CreateRoom(EShooterGameMode Mode)
@@ -379,7 +456,17 @@ bool UShooterGameInstance::CreateRoom(EShooterGameMode Mode)
 		return false;
 	}
 	SelectedMode = Mode;
+	bPracticeMode = false;
 	Room = FShooterRoomState(); // 本地当服务器：大厅 GameMode 会新建房间
+	// 开房前尽量把 Steam/系统昵称写入 LocalPlayerName，这样 ?Name= 和房主广告一致
+	if (LocalPlayerName.TrimStartAndEnd().IsEmpty())
+	{
+		FString Hint = GetNameOption(); // 懒填充读 Steam/系统名
+		if (!Hint.IsEmpty() && Hint.StartsWith(TEXT("?Name=")))
+		{
+			LocalPlayerName = Hint.RightChop(6);
+		}
+	}
 	TArray<FString> Extra;
 	Extra.Add(FString::Printf(TEXT("Mode=%d"), (int32)Mode));
 	Extra.Add(TEXT("Host=1"));
@@ -397,3 +484,195 @@ bool UShooterGameInstance::CreateRoomOnServer(const FString& Address, EShooterGa
 	PC->ClientTravel(FString::Printf(TEXT("%s?Mode=%d?Host=1%s"), *Trimmed, (int32)Mode, *GetNameOption()), TRAVEL_Absolute);
 	return true;
 }
+
+
+// 控制台：fps.Practice bomb | fps.Practice tdm
+
+namespace
+{
+	void ForceLocalLanMode(UGameInstance* GIObj)
+	{
+		if (IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("fps.OnlineUseNull")))
+		{
+			if (CVar->GetInt() == 0)
+			{
+				CVar->Set(1, ECVF_SetByCode);
+				UE_LOG(LogTemp, Log, TEXT("[LocalMP] fps.OnlineUseNull -> 1 (IpNetDriver)"));
+			}
+		}
+		// CVar change callback (OnUseNullChanged) already calls ApplyNetDriverForMode.
+		(void)GIObj;
+	}
+}
+
+void UShooterGameInstance::EnsureLocalLanMode()
+{
+	ForceLocalLanMode(this);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan, TEXT("[LocalMP] 局域网模式已开（Null / IpNetDriver）"));
+	}
+}
+
+bool UShooterGameInstance::HostLocalListen(FString Target)
+{
+	ForceLocalLanMode(this);
+	ClearLastOnlineError();
+
+	FString Key = Target.TrimStartAndEnd().ToLower();
+	if (Key.IsEmpty())
+	{
+		Key = TEXT("range");
+	}
+
+	bPracticeMode = false;
+	Room = FShooterRoomState();
+
+	if (Key.Contains(TEXT("lobby")) || Key.Contains(TEXT("room")))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> lobby (CreateRoom TDM)"));
+		const bool bOk = CreateRoom(EShooterGameMode::TDM);
+		if (!bOk && GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Orange, TEXT("[LocalMP] 开大厅失败，检查 RoomLobbyMap / 在线状态"));
+		}
+		return bOk;
+	}
+
+	if (Key.Contains(TEXT("tdm")) || Key.Contains(TEXT("team")))
+	{
+		if (!IsModeAvailable(EShooterGameMode::TDM))
+		{
+			SetLastOnlineError(TEXT("TDM 地图未配置"));
+			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] TDM mode map missing"));
+			return false;
+		}
+		SelectedMode = EShooterGameMode::TDM;
+		const FShooterModeInfo& Info = Modes.FindChecked(EShooterGameMode::TDM);
+		UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> TDM listen"));
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("[LocalMP] 本机房主：团战 listen。另一窗口 fps.LocalJoin"));
+		}
+		return TravelTo(Info.Map, Info.GameModeClass, true);
+	}
+
+	if (Key.Contains(TEXT("bomb")) || Key.Contains(TEXT("sd")) || Key.Contains(TEXT("bdm")))
+	{
+		if (!IsModeAvailable(EShooterGameMode::SearchDestroy))
+		{
+			SetLastOnlineError(TEXT("爆破地图未配置"));
+			return false;
+		}
+		SelectedMode = EShooterGameMode::SearchDestroy;
+		const FShooterModeInfo& Info = Modes.FindChecked(EShooterGameMode::SearchDestroy);
+		UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> bomb listen"));
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("[LocalMP] 本机房主：爆破 listen。另一窗口 fps.LocalJoin"));
+		}
+		return TravelTo(Info.Map, Info.GameModeClass, true);
+	}
+
+	if (RangeMap.IsNull())
+	{
+		SetLastOnlineError(TEXT("RangeMap 未配置"));
+		UE_LOG(LogTemp, Warning, TEXT("[LocalMP] RangeMap not set"));
+		return false;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> range listen"));
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("[LocalMP] 本机房主：靶场 listen。另一窗口 fps.LocalJoin"));
+	}
+	return TravelTo(RangeMap, RangeGameMode, true);
+}
+
+bool UShooterGameInstance::JoinLocalhost(FString Address)
+{
+	FString Addr = Address.TrimStartAndEnd();
+	if (Addr.IsEmpty())
+	{
+		Addr = TEXT("127.0.0.1");
+	}
+	ForceLocalLanMode(this);
+	UE_LOG(LogTemp, Log, TEXT("[LocalMP] JoinLocalhost %s"), *Addr);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan, FString::Printf(TEXT("[LocalMP] 正在加入 %s …"), *Addr));
+	}
+	return JoinByIP(Addr);
+}
+
+// 控制台：fps.LocalHost range|tdm|bomb|lobby
+static FAutoConsoleCommandWithWorldAndArgs GFPSLocalHostCmd(
+	TEXT("fps.LocalHost"),
+	TEXT("Local listen-server test (forces Null/IpNet). Usage: fps.LocalHost range|tdm|bomb|lobby"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World) return;
+		UShooterGameInstance* GI = Cast<UShooterGameInstance>(World->GetGameInstance());
+		if (!GI)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] No ShooterGameInstance"));
+			return;
+		}
+		const FString Target = Args.Num() > 0 ? Args[0] : TEXT("range");
+		if (!GI->HostLocalListen(Target))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] HostLocalListen failed: %s"), *GI->GetLastOnlineError());
+		}
+	}));
+
+// 控制台：fps.LocalJoin [127.0.0.1]
+static FAutoConsoleCommandWithWorldAndArgs GFPSLocalJoinCmd(
+	TEXT("fps.LocalJoin"),
+	TEXT("Join local listen host. Usage: fps.LocalJoin [ip[:port]]  (default 127.0.0.1)"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World) return;
+		UShooterGameInstance* GI = Cast<UShooterGameInstance>(World->GetGameInstance());
+		if (!GI)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] No ShooterGameInstance"));
+			return;
+		}
+		const FString Addr = Args.Num() > 0 ? Args[0] : TEXT("127.0.0.1");
+		if (!GI->JoinLocalhost(Addr))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] JoinLocalhost failed"));
+		}
+	}));
+
+static FAutoConsoleCommandWithWorldAndArgs GFPSPracticeCmd(
+	TEXT("fps.Practice"),
+	TEXT("Solo practice without a room. Usage: fps.Practice bomb|tdm"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World) return;
+		UShooterGameInstance* GI = Cast<UShooterGameInstance>(World->GetGameInstance());
+		if (!GI)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Practice] No ShooterGameInstance"));
+			return;
+		}
+		EShooterGameMode Mode = EShooterGameMode::SearchDestroy;
+		if (Args.Num() > 0)
+		{
+			const FString A = Args[0].ToLower();
+			if (A.Contains(TEXT("tdm")) || A == TEXT("1") || A.Contains(TEXT("team")))
+			{
+				Mode = EShooterGameMode::TDM;
+			}
+			else if (A.Contains(TEXT("bomb")) || A.Contains(TEXT("sd")) || A.Contains(TEXT("bdm")) || A == TEXT("2"))
+			{
+				Mode = EShooterGameMode::SearchDestroy;
+			}
+		}
+		if (!GI->StartPractice(Mode))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Practice] StartPractice failed — check Modes map on BP_ShooterGameInstance"));
+		}
+	}));
+
+

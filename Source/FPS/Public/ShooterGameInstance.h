@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
@@ -91,8 +91,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool JoinByIP(const FString& Address);
 
+	// 本机联机测试：强制 Null/IpNetDriver，跳过 EOS，以 listen 打开靶场/团战/大厅。
+	// Target: range | tdm | bomb | lobby（空=range）
+	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
+	bool HostLocalListen(FString Target);
+
+	// 本机联机测试：加入本机 listen（Address 空 = 127.0.0.1）
+	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
+	bool JoinLocalhost(FString Address);
+
+	// 打开局域网模式（fps.OnlineUseNull=1 + IpNetDriver），不跳图
+	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
+	void EnsureLocalLanMode();
+
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool OpenRange();
+
+	// 单人练习：不进房间大厅，直接进该模式地图；爆破/团战允许 1 人开局（不影响真联机）
+	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
+	bool StartPractice(EShooterGameMode Mode);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Mode")
+	bool IsPracticeMode() const { return bPracticeMode; }
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool GoToMainMenu();
@@ -166,6 +186,8 @@ public:
 private:
 	UPROPERTY()
 	FLoadoutPreset CurrentLoadout;
+
+	bool bPracticeMode = false;
 
 	FString LastOnlineError;
 	FDelegateHandle NetFailHandle, TravelFailHandle;

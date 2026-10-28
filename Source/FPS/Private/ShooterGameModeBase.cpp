@@ -93,6 +93,11 @@ void AShooterGameModeBase::OnPlayerKilled(AController* KillerController, AContro
 		ScoreKill(KillerPS, VictimPS);
 	}
 
+	if (AShooterGameState* AliveGS = GetGameState<AShooterGameState>())
+	{
+		AliveGS->RefreshTeamAliveCounts();
+	}
+
 	if (RespawnDelay > 0.f && IsValid(VictimController) && CanRespawn(VictimController))
 	{
 		FTimerHandle& Handle = RespawnTimers.FindOrAdd(VictimController);
@@ -126,6 +131,10 @@ void AShooterGameModeBase::RespawnPlayer(AController* Controller, bool bForce)
 	}
 	RespawnTimers.Remove(Controller);
 	RestartPlayer(Controller);
+	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
+	{
+		GS->RefreshTeamAliveCounts();
+	}
 }
 
 void AShooterGameModeBase::ClearRespawnTimers()
@@ -141,6 +150,10 @@ void AShooterGameModeBase::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
 	AssignShortPlayerName(NewPlayer);
+	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
+	{
+		GS->RefreshTeamAliveCounts();
+	}
 }
 
 void AShooterGameModeBase::AssignShortPlayerName(APlayerController* NewPlayer)
@@ -283,6 +296,10 @@ bool AShooterGameModeBase::AreExpectedPlayersPresent(int32& OutArrived, int32& O
 void AShooterGameModeBase::Logout(AController* Exiting)
 {
 	Super::Logout(Exiting);
+	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
+	{
+		GS->RefreshTeamAliveCounts();
+	}
 	// 下一帧再数（这一帧 PlayerState 还在列表里）
 	GetWorldTimerManager().SetTimer(LogoutCheckTimer, this, &ThisClass::CheckTeamsAfterLogout, 0.2f, false);
 }

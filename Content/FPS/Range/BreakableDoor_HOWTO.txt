@@ -1,0 +1,20 @@
+﻿# Breakable Door — how to place / test
+
+## Quick test (no level edit)
+1. PIE into Lvl_Range (or any map).
+2. Console: `SpawnTestDoor`
+3. A wooden door appears ~1.8m ahead.
+4. Look at it, press **F** to open/close.
+5. Shoot the door until it breaks (default MaxHealth 150). Debris cubes spawn and despawn after a few seconds.
+
+## Place permanently in a level
+1. In Content Browser: right-click → Blueprint Class → parent **BreakableDoor** (C++).
+   Save as e.g. `/Game/FPS/Blueprint/BP_BreakableDoor`.
+2. Optional: set mesh to `SM_Door` / `SM_ExteriorDoor` / `SM_WarehouseDoor`, tune `MaxHealth`, `bCanBreak`, `OpenDirection`.
+3. Drag into Lvl_Range. Put the actor so the **hinge** (actor origin) sits on the doorframe edge; leaf swings around that.
+4. Metal / unbreakable: uncheck `bCanBreak`.
+
+## Notes
+- Uses existing Interact (F) and bullet damage via `IPlayerInterface::DoDamage` (same as TargetDummy).
+- No true hole-cutting; full break only.
+- CharGen meshes were not touched.

@@ -65,6 +65,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Session")
 	void CreateRoom();
 
+	// 本机局域网开房：先 fps.OnlineUseNull，再 CreateRoom（不依赖 EOS）
+	UFUNCTION(BlueprintCallable, Category = "FPS|Session")
+	void HostLocalLan();
+
 	UFUNCTION(BlueprintCallable, Category = "FPS|Session")
 	void JoinRoomAt(int32 ResultIndex);
 
@@ -91,6 +95,7 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UPanelWidget> RoomList;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Create;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_LocalHost;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Refresh;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_JoinCode;
 	// EditableTextBox 或 EditableText 都行
@@ -109,6 +114,7 @@ protected:
 
 private:
 	UFUNCTION() void HandleCreate();
+	UFUNCTION() void HandleLocalHost();
 	UFUNCTION() void HandleRefresh();
 	UFUNCTION() void HandleJoinCode();
 	UFUNCTION() void HandleBack();

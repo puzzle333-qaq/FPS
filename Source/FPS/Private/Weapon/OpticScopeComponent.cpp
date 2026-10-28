@@ -80,7 +80,17 @@ void UOpticScopeComponent::UpdateView()
 		if (IsValid(Cam) && IsValid(OpticMesh->GetStaticMesh()))
 		{
 			const FVector Ext = OpticMesh->GetStaticMesh()->GetBounds().BoxExtent * OpticMesh->GetComponentScale().GetAbs();
-			const float LensRadius = FMath::Min3(Ext.X, Ext.Y, Ext.Z) * 0.85f;
+			float LensRadius = FMath::Min3(Ext.X, Ext.Y, Ext.Z) * 0.85f;
+			// 模型上有 <镜片插槽>_Rim（镜片边缘一点）就用真实镜片半径，倍率才准。没有就退回整体包围盒估算
+			const FName RimName(*(LensName.ToString() + TEXT("_Rim")));
+			if (OpticMesh->DoesSocketExist(RimName))
+			{
+				const float RimRadius = FVector::Dist(OpticMesh->GetSocketLocation(RimName), OpticMesh->GetSocketLocation(LensName));
+				if (RimRadius > 0.1f)
+				{
+					LensRadius = RimRadius;
+				}
+			}
 			const float Dist = FVector::Dist(Cam->GetComponentLocation(), OpticMesh->GetSocketLocation(LensName));
 			if (LensRadius > 0.1f && Dist > 0.1f)
 			{
@@ -125,6 +135,11 @@ void UOpticScopeComponent::UpdateView()
 			OpticMesh->SetMaterial(BoundMaterialIndex, LensMID);
 		}
 		HideGlassSlots(OpticMesh);
+	}
+	else if (IsValid(LensMID) && BoundMaterialIndex != INDEX_NONE && OpticMesh->GetMaterial(BoundMaterialIndex) != LensMID)
+	{
+		// 每帧保险：画面槽材质被别处改掉时立刻换回画中画，不让镜片和准心掉线
+		OpticMesh->SetMaterial(BoundMaterialIndex, LensMID);
 	}
 }
 

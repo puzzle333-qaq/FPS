@@ -1,4 +1,4 @@
-#include "Ui/ScoreboardScreen.h"
+﻿#include "Ui/ScoreboardScreen.h"
 
 #include "Game/ShooterPlayerState.h"
 #include "Game/ShooterGameState.h"
@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "Ui/TacticalUIStyle.h"
 
 void UScoreboardRowWidget::SetRow(const FScoreboardRow& InRow)
 {
@@ -22,6 +23,7 @@ void UScoreboardRowWidget::SetRow(const FScoreboardRow& InRow)
 void UScoreboardScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FTacticalUIStyle::ApplyToUserWidget(this);
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 	RefreshScoreboard();
 	if (UWorld* World = GetWorld())
@@ -126,3 +128,4 @@ void UScoreboardScreen::RefreshScoreboard()
 	if (Text_TeamBScore) Text_TeamBScore->SetText(FText::AsNumber(GetTeamScore(1)));
 	OnScoreboardRefreshed();
 }
+

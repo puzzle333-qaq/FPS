@@ -1,0 +1,43 @@
+﻿RAR tactical dual magazine (safe) — 2026-10-28
+=============================================
+
+Root cause
+----------
+1. Infima original arm montage AM_RAR_FP_PCH_AssaultRifle_Reload has
+   BP_IG_AN_Magazine_Reserve_Set_Visiblity (Set Reserve Magazine Visibility).
+   Project copies AM_RAR_Reload / AM_RAR_Reload_Empty do NOT — only sound/camera notifies.
+2. C++ already spawned a hidden SM on SOCKET_Magazine_Reserve, but SetMeshVisibility
+   parent SetHiddenInGame(..., propagate) + HideReserveMagazines kept stomping it
+   during reload attach/refresh, so only SOCKET_Magazine (one mag) stayed visible.
+3. Prior RarMag "fix" also replaced WEP Montage_Play with DefaultSlot
+   PlaySlotAnimationAsDynamicMontage — that froze magazine bones. DO NOT repeat.
+
+Safe fix (this backup)
+----------------------
+- PlayMagazineReload: set bReloadReserveMagVisible, force-show main + reserve
+  (spawn ReserveMag_1P if missing). No WEP playback changes.
+- SetMeshVisibility: while flag set, re-show reserve after parent propagate.
+- FinishMagazineReloadVisuals: clear flag + hide; called from OnReloadMontageEnded,
+  OnObservedReloadMontageEnded, StopReloadMontages.
+- PlayReloadSequences(1P) also calls PlayMagazineReload.
+- PlayWeaponMontageOrSequence UNCHANGED (still Anim->Montage_Play).
+
+Backup
+------
+Saved\CodeBackup_20261028_060810_RarDualMag\
+
+PIE
+---
+1. .h changed (member + method) → prefer close editor, then:
+   build with -MaxParallelActions=1
+   Or try Ctrl+Alt+F11 Live Coding; if layout reject, full rebuild.
+2. Equip RAR, mag not empty: HOLD R → should see TWO mags (out + in).
+3. Empty mag: TAP R → empty reload still OK, bones still move.
+4. If dual missing: Output Log for [MagReload] ... no reserve mag.
+
+Do NOT regress
+--------------
+- Do not use DefaultSlot / PlaySlotAnimationAsDynamicMontage for WEP reload.
+- Do not force SetMeshVisibility Reloading without FinishMagazineReloadVisuals
+  (would leave reserve stuck visible after reload).
+- Mag bone motion must keep working (Montage_Play path).

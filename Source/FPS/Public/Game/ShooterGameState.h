@@ -15,6 +15,7 @@ enum class EShooterMatchState : uint8
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTeamScoreChanged, uint8, TeamId, int32, NewScore);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTeamAliveChanged, uint8, TeamId, int32, AliveCount);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchStateChanged, EShooterMatchState, NewState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchEnded, uint8, WinningTeam);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FMatchModeChanged, EShooterGameMode, NewMode);
@@ -47,6 +48,14 @@ public:
 	// 队伍分数（没有这个队返回 0）
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	int32 GetTeamScore(uint8 TeamId) const { return TeamScores.IsValidIndex(TeamId) ? TeamScores[TeamId] : 0; }
+
+	// 当前存活人数（DeathState==NotDead 且有 Pawn）。爆破/团战 HUD 用。
+	UFUNCTION(BlueprintPure, Category = "FPS|Match")
+	int32 GetTeamAliveCount(uint8 TeamId) const { return TeamAliveCounts.IsValidIndex(TeamId) ? TeamAliveCounts[TeamId] : 0; }
+
+	// 队伍在线人数（含死亡等待复活的）
+	UFUNCTION(BlueprintPure, Category = "FPS|Match")
+	int32 GetTeamPlayerCount(uint8 TeamId) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	int32 GetNumTeams() const { return TeamScores.Num(); }
@@ -86,6 +95,9 @@ public:
 	FTeamScoreChanged OnTeamScoreChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Match")
+	FTeamAliveChanged OnTeamAliveChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Match")
 	FMatchStateChanged OnMatchStateChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Match")
@@ -100,6 +112,8 @@ public:
 	// ---- 只在服务器调用 ----
 	void InitTeams(int32 NumTeams, int32 InScoreToWin);
 	void AddTeamScore(uint8 TeamId, int32 Delta);
+	// 按当前 PlayerArray + Pawn 死亡状态重算并复制存活人数
+	void RefreshTeamAliveCounts();
 	void SetMatchState(EShooterMatchState NewState);
 	void SetMatchEndServerTime(float ServerTime) { MatchEndServerTime = ServerTime; }
 	void SetMatchStartServerTime(float ServerTime) { MatchStartServerTime = ServerTime; }
@@ -115,6 +129,9 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_TeamScores)
 	TArray<int32> TeamScores;
+
+	UPROPERTY(ReplicatedUsing = OnRep_TeamAliveCounts)
+	TArray<int32> TeamAliveCounts;
 
 	UPROPERTY(Replicated)
 	int32 ScoreToWin = 0;
@@ -141,8 +158,12 @@ protected:
 	void OnRep_TeamScores();
 
 	UFUNCTION()
+	void OnRep_TeamAliveCounts();
+
+	UFUNCTION()
 	void OnRep_MatchRules();
 
 private:
 	TArray<int32> LastBroadcastScores;
+	TArray<int32> LastBroadcastAlive;
 };

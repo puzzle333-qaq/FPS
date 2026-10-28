@@ -9,6 +9,7 @@
 #include "Weapon/Weapon.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Components/SlateWrapperTypes.h"
 
 void UReserveAmmo::NativeOnInitialized()
 {
@@ -74,13 +75,15 @@ void UReserveAmmo::RefreshAmmoFromPawn(APawn* Pawn)
 
 void UReserveAmmo::OnCurrentReserveAmmoChanged(int32 RoundsInServe, int32 RoundsInWeapon, UTexture2D* WeaponIcon)
 {
-	if (IsValid(Image_WeaponIcon) && IsValid(WeaponIcon))
+	// Tactical HUD: hide weapon icon; show "current mag | spare mag count" only.
+	if (IsValid(Image_WeaponIcon))
 	{
-		Image_WeaponIcon->SetBrushFromTexture(WeaponIcon);
+		Image_WeaponIcon->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	if (IsValid(Text_Ammo))
 	{
-		FText AmmoText = FText::Format(NSLOCTEXT("AmmoText", "AmmoKey", "{0}/{1}"), RoundsInWeapon, RoundsInServe);
+		// RoundsInServe is now spare mag count (not total reserve rounds).
+		FText AmmoText = FText::Format(NSLOCTEXT("AmmoText", "AmmoKey", "{0} | {1}"), RoundsInWeapon, RoundsInServe);
 		Text_Ammo->SetText(AmmoText);
 	}
 }

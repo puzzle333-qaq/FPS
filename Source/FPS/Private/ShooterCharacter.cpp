@@ -1,11 +1,19 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
+#include "Engine/Engine.h"
+#include "DrawDebugHelpers.h"
+#include "Ui/MatchHUD.h"
+#include "Game/ShooterGameState.h"
+#include "Engine/DecalActor.h"
+#include "Components/DecalComponent.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMeshSocket.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/Skeleton.h"
 #include "Animation/AnimMontage.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -30,6 +38,8 @@
 #include "InputCoreTypes.h"
 #include "Engine/LocalPlayer.h"
 #include "ShooterGameModeBase.h"
+#include "Game/ShooterPlayerState.h"
+#include "Interface/HostageProtectInterface.h"
 #include "CombatComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Kismet/GameplayStatics.h"
@@ -38,6 +48,13 @@
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Engine/EngineTypes.h"
 #include "UObject/SoftObjectPath.h"
+#include "Engine/SkeletalMesh.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/World.h"
+#include "GameFramework/Pawn.h"
+#include "EngineUtils.h"
+#include "Range/TargetDummy.h"
 
 namespace
 {
@@ -85,7 +102,7 @@ AShooterCharacter::AShooterCharacter()
 	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
 	{
 		CMC->AirControl = 0.4f;
-		CMC->JumpZVelocity = 420.f;
+		CMC->JumpZVelocity = 0.f; // TacticalTrim: jump disabled (climb/vault later)
 		CMC->GravityScale = 1.5f;
 		CMC->BrakingDecelerationFalling = 200.f;
 		CMC->MaxAcceleration = 3000.f;
@@ -95,6 +112,8 @@ AShooterCharacter::AShooterCharacter()
 		CMC->BrakingFriction = 6.f;
 		CMC->FallingLateralFriction = 0.f;
 	}
+	// TacticalTrim: locomotion play rate may slow (<1) but never speed up above 1.
+	MaxLocomotionPlayRate = 1.0f;
 	SpringArm->bUsePawnControlRotation = true;
 
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
@@ -115,6 +134,39 @@ AShooterCharacter::AShooterCharacter()
 	GetMesh()->bOnlyOwnerSee = false;
 	GetMesh()->bOwnerNoSee = true;
 	GetMesh()->bReceivesDecals = false;
+
+	// CharGen modular 3P parts (LeaderPose followers). Hidden until Police look.
+	Mesh3P_Head = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P_Head"));
+	Mesh3P_Head->SetupAttachment(GetMesh());
+	Mesh3P_Head->bOnlyOwnerSee = false;
+	Mesh3P_Head->bOwnerNoSee = true;
+	Mesh3P_Head->bReceivesDecals = false;
+	Mesh3P_Head->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh3P_Head->SetVisibility(false);
+
+	Mesh3P_BodyUp = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P_BodyUp"));
+	Mesh3P_BodyUp->SetupAttachment(GetMesh());
+	Mesh3P_BodyUp->bOnlyOwnerSee = false;
+	Mesh3P_BodyUp->bOwnerNoSee = true;
+	Mesh3P_BodyUp->bReceivesDecals = false;
+	Mesh3P_BodyUp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh3P_BodyUp->SetVisibility(false);
+
+	Mesh3P_Pants = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P_Pants"));
+	Mesh3P_Pants->SetupAttachment(GetMesh());
+	Mesh3P_Pants->bOnlyOwnerSee = false;
+	Mesh3P_Pants->bOwnerNoSee = true;
+	Mesh3P_Pants->bReceivesDecals = false;
+	Mesh3P_Pants->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh3P_Pants->SetVisibility(false);
+
+	Mesh3P_Jacket = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P_Jacket"));
+	Mesh3P_Jacket->SetupAttachment(GetMesh());
+	Mesh3P_Jacket->bOnlyOwnerSee = false;
+	Mesh3P_Jacket->bOwnerNoSee = true;
+	Mesh3P_Jacket->bReceivesDecals = false;
+	Mesh3P_Jacket->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh3P_Jacket->SetVisibility(false);
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
 	Combat->SetIsReplicated(true);
@@ -175,6 +227,30 @@ void AShooterCharacter::BeginPlay()
 	{
 		AuthoredHipMeshLocation = Mesh1P->GetRelativeLocation();
 		AuthoredHipMeshRotation = Mesh1P->GetRelativeRotation();
+	}
+
+	EnsureFactionLookDefaults();
+	if (!bCapturedDefaultMesh3P && IsValid(GetMesh()))
+	{
+		DefaultMesh3PAsset = GetMesh()->GetSkeletalMeshAsset();
+		DefaultMesh3PAnimClass = GetMesh()->GetAnimClass();
+		bCapturedDefaultMesh3P = true;
+	}
+	ApplyFactionLookMeshes();
+	VisionBatterySeconds = VisionBatteryMaxSeconds;
+	if (WatchCheckMontage.IsNull())
+	{
+		WatchCheckMontage = TSoftObjectPtr<UAnimMontage>(FSoftObjectPath(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/AM_RAR_FP_PCH_AssaultRifle_WatchCheck.AM_RAR_FP_PCH_AssaultRifle_WatchCheck")));
+	}
+	if (BloodFootprintDecal.IsNull())
+	{
+		BloodFootprintDecal = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat")));
+	}
+	// Always write custom depth so Thermal can silhouette others when a local player enables it.
+	if (USkeletalMeshComponent* M3 = GetMesh())
+	{
+		M3->SetRenderCustomDepth(true);
+		M3->SetCustomDepthStencilValue(1);
 	}
 
 	ConfigureAimTickOrder();
@@ -238,8 +314,12 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateAimAlpha(DeltaTime);             // 开镜进度先推进，下面对准和 FOV 都用它
 	RemoveVisualRecoilFromMesh();          // 开镜对准要按没有后坐的位置算
 	UpdateAimSocketAlignment(DeltaTime);
+	UpdateWeaponObstacle(DeltaTime);       // 枪管顶墙：抬枪/收枪，拦开镜
+	UpdateMuzzleDip(DeltaTime);            // 近距离瞄队友/人质：枪口下压
 	UpdateWeaponSway(DeltaTime);           // 转视角拖拽 / 走路晃 / 落地下沉（和枪身后坐一起写进 Mesh1P）
 	ApplyVisualRecoilToMesh(DeltaTime);    // 算完再把枪身后坐叠回去
+	UpdateBandage(DeltaTime);              // 长按包扎进度
+	UpdateTacticalVision(DeltaTime);       // NVG / Thermal PP + battery
 	UpdateAimFieldOfView(DeltaTime);
 	UpdateLean(DeltaTime);
 	UpdateSlide(DeltaTime);
@@ -293,7 +373,7 @@ void AShooterCharacter::CalculateTurnInPlaceParameters(float DeltaTime)
 	
 	AO_Yaw *= -1.f;
 
-	// Shotgun 1P: AO_Yaw feeds ABP AimOffset — zero it so arms stay on authored pose.
+	// Shotgun 1P: AO_Yaw feeds ABP AimOffset - zero it so arms stay on authored pose.
 	if (IsValid(Combat) && IsValid(Combat->CurrentWeapon)
 		&& Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun))
 	{
@@ -438,8 +518,10 @@ void AShooterCharacter::UpdateAimAlpha(float DeltaTime)
 
 	// 开镜和关镜都用同一个时间；时间为 0 就瞬间到位
 	float AdsTime = IsValid(Weapon) ? Weapon->GetEffectiveAdsTime() : 0.2f;
-	// 用 bIsSliding 作目标，平滑追过去——不要跟 SlideAlpha 绑死（滑铲结束/开镜中途倍率突变会让枪卡一下）
-	const float DesiredAdsScale = bIsSliding ? SlideAdsTimeMultiplier : 1.f;
+	// 用 bIsSliding 作目标，平滑追过去--不要跟 SlideAlpha 绑死（滑铲结束/开镜中途倍率突变会让枪卡一下）
+	float DesiredAdsScale = bIsSliding ? SlideAdsTimeMultiplier : 1.f;
+	if (bArmInjured) DesiredAdsScale *= ArmInjuryAdsTimeMultiplier;
+	if (BodyArmor == EBodyArmorType::Heavy) DesiredAdsScale *= HeavyArmorAdsTimeMultiplier;
 	AdsTimeScaleCurrent = FMath::FInterpTo(AdsTimeScaleCurrent, DesiredAdsScale, DeltaTime, 6.f);
 	AdsTime *= AdsTimeScaleCurrent;
 	if (AdsTime <= KINDA_SMALL_NUMBER)
@@ -550,7 +632,7 @@ void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 		const float KickSpeed = IsValid(Weapon) ? Weapon->VisualRecoilKickSpeed : 50.f;
 		const float RecoverySpeed = IsValid(Weapon) ? Weapon->VisualRecoilRecoverySpeed : 16.f;
 
-		// 两段弹簧：目标慢慢回 0，当前值快速追目标 → 开枪瞬间“踢一下”，然后平滑回位
+		// 两段弹簧：目标慢慢回 0，当前值快速追目标 → 开枪瞬间"踢一下"，然后平滑回位
 		VisualRecoilLocTarget = FMath::VInterpTo(VisualRecoilLocTarget, FVector::ZeroVector, DeltaTime, RecoverySpeed);
 		VisualRecoilRotTarget = FMath::RInterpTo(VisualRecoilRotTarget, FRotator::ZeroRotator, DeltaTime, RecoverySpeed);
 		VisualRecoilLocCurrent = FMath::VInterpTo(VisualRecoilLocCurrent, VisualRecoilLocTarget, DeltaTime, KickSpeed);
@@ -564,9 +646,9 @@ void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 		}
 	}
 
-	// 后坐 + 晃动合在一起（都是镜头空间）
-	const FVector TotalLoc = VisualRecoilLocCurrent + SwayLocCurrent + FVector(0.f, 0.f, SwayDipZ);
-	const FRotator TotalRot = VisualRecoilRotCurrent + SwayRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f);
+	// 后坐 + 晃动 + 枪管顶墙抬枪（都是镜头空间）
+	const FVector TotalLoc = VisualRecoilLocCurrent + SwayLocCurrent + WeaponBlockLocCurrent + FVector(0.f, 0.f, SwayDipZ - MuzzleDipAlpha * 2.f);
+	const FRotator TotalRot = VisualRecoilRotCurrent + SwayRotCurrent + WeaponBlockRotCurrent + MuzzleDipRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f);
 	if (TotalLoc.IsNearlyZero(0.001f) && TotalRot.IsNearlyZero(0.001f))
 	{
 		return;   // 没有偏移就不碰 Mesh1P
@@ -616,8 +698,9 @@ void AShooterCharacter::UpdateWeaponSway(float DeltaTime)
 		return;
 	}
 
-	// 开镜时晃动减小
-	const float AimScale = FMath::Lerp(1.f, SwayAimMultiplier, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
+	// 开镜时晃动减小；手臂受伤时晃动加大
+	float AimScale = FMath::Lerp(1.f, SwayAimMultiplier, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
+	if (bArmInjured) AimScale *= ArmInjurySwayMultiplier;
 
 	// 1) 转视角拖拽：视角角速度（度/秒）→ 枪反向偏一点
 	const FRotator ControlRot = GetControlRotation();
@@ -647,6 +730,13 @@ void AShooterCharacter::UpdateWeaponSway(float DeltaTime)
 	TargetLoc.Y += FMath::Sin(BobPhase) * BobHorizontalAmount * BobWeight;
 	TargetLoc.Z += FMath::Sin(BobPhase * 2.f) * BobVerticalAmount * BobWeight;
 	TargetRot.Roll += FMath::Sin(BobPhase) * 0.4f * BobWeight;
+	// 瘸腿第一人称：镜头一高一低 + 侧倾（第三人称瘸腿动画以后再说）
+	if (bLegInjured && BobWeight > 0.05f)
+	{
+		TargetLoc.Z += FMath::Sin(BobPhase) * LimpBobAmount * BobWeight;
+		TargetRot.Roll += FMath::Sin(BobPhase) * 1.5f * BobWeight;
+		TargetRot.Pitch += FMath::Cos(BobPhase) * 0.8f * BobWeight;
+	}
 
 	// 3) 落地下沉：目标慢慢回 0，当前值快速追目标
 	LandingDipTarget = FMath::FInterpTo(LandingDipTarget, 0.f, DeltaTime, LandingDipRecoverySpeed);
@@ -668,6 +758,34 @@ void AShooterCharacter::Landed(const FHitResult& Hit)
 	LastFallingVelocityZ = 0.f;
 	if (FallSpeed < 200.f) return;   // 小台阶不下沉
 	LandingDipTarget = -FMath::Min(FallSpeed / 1000.f * LandingDipAmount, LandingDipMax);
+	// Brief landing slowdown (tactical)
+	if (const UWorld* World = GetWorld())
+	{
+		LandingSlowUntil = World->GetTimeSeconds() + LandingSlowDuration;
+		RefreshControllerMovementSpeed();
+	}
+}
+
+float AShooterCharacter::GetLandingSpeedMultiplier() const
+{
+	const UWorld* World = GetWorld();
+	if (!World || LandingSlowUntil < 0.f) return 1.f;
+	return World->GetTimeSeconds() < LandingSlowUntil ? LandingSlowMultiplier : 1.f;
+}
+
+float AShooterCharacter::GetInjurySpeedMultiplier() const
+{
+	return bLegInjured ? LegInjurySpeedMultiplier : 1.f;
+}
+
+float AShooterCharacter::GetBandageSpeedMultiplier() const
+{
+	return bIsBandaging ? BandageSpeedMultiplier : 1.f;
+}
+
+float AShooterCharacter::GetArmorSpeedMultiplier() const
+{
+	return BodyArmor == EBodyArmorType::Heavy ? HeavyArmorMoveSpeedMultiplier : 1.f;
 }
 
 float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
@@ -822,12 +940,19 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_FireWeapon_Released);
 	ShooterInputComponent->BindAction(AimWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_Aim_Pressed);
 	ShooterInputComponent->BindAction(AimWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_Aim_Released);
-	ShooterInputComponent->BindAction(ReloadWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_ReloadWeapon);
+	ShooterInputComponent->BindAction(ReloadWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_ReloadWeapon_Started);
+	ShooterInputComponent->BindAction(ReloadWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_ReloadWeapon_Completed);
 	ShooterInputComponent->BindAction(EquipMainWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipMainWeapon);
 	ShooterInputComponent->BindAction(EquipSeconedaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipSeconedaryWeapon);
 	ShooterInputComponent->BindAction(EquipMeleeWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipMeleeWeapon);
 	ShooterInputComponent->BindAction(EquipPistolWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipPistolWeapon);
-	ShooterInputComponent->BindAction(HealAction, ETriggerEvent::Started, this, &ThisClass::Input_Heal);
+	// HealAction: TAP = old heal/hotkey5; HOLD while injured = bandage (clears arm/leg).
+	if (HealAction)
+	{
+		ShooterInputComponent->BindAction(HealAction, ETriggerEvent::Started, this, &ThisClass::Input_Bandage_Started);
+		ShooterInputComponent->BindAction(HealAction, ETriggerEvent::Completed, this, &ThisClass::Input_Bandage_Completed);
+		ShooterInputComponent->BindAction(HealAction, ETriggerEvent::Canceled, this, &ThisClass::Input_Bandage_Completed);
+	}
 	if (SwitchZoomAction)
 	{
 		ShooterInputComponent->BindAction(SwitchZoomAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchZoom);
@@ -944,6 +1069,7 @@ bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* Damag
 	}
 
 	Stats->ChangeHealthByAmout(-DamageAmout, DamageInstigator);
+	Multicast_NotifyBloodyFeet();
 	if (ShooterGM) ShooterGM->NotifyDamage(InstigatorController, GetController());
 	if (ShooterGM && Stats->DeathState != EDeathState::NotDead)
 	{
@@ -1079,6 +1205,11 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION(AShooterCharacter, LeanTarget, COND_SkipOwner);
 	DOREPLIFETIME(AShooterCharacter, bIsProne);
 	DOREPLIFETIME(AShooterCharacter, bIsSliding);
+	DOREPLIFETIME(AShooterCharacter, bArmInjured);
+	DOREPLIFETIME(AShooterCharacter, bLegInjured);
+	DOREPLIFETIME(AShooterCharacter, BodyArmor);
+	DOREPLIFETIME(AShooterCharacter, FactionLook);
+	DOREPLIFETIME(AShooterCharacter, bHasRadar);
 }
 
 // ===== 趴下 / 趴行 (Prone) =====
@@ -1285,6 +1416,7 @@ void AShooterCharacter::UpdateProne(float DeltaTime)
 // ===== 滑铲 (Slide) =====
 bool AShooterCharacter::CanStartSlide(float SpeedScale) const
 {
+	if (!bEnableSlide) return false; // tactical mode: slide fully gated
 	const UCharacterMovementComponent* CMC = GetCharacterMovement();
 	if (!IsValid(CMC) || bIsSliding || bIsProne || bIsHealing) return false;
 	if (!CMC->IsMovingOnGround()) return false;
@@ -1771,7 +1903,44 @@ void AShooterCharacter::Input_SwitchFireMode()
 
 void AShooterCharacter::Input_ReloadWeapon()
 {
-	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon();
+	Input_ReloadWeapon_Started();
+}
+
+void AShooterCharacter::Input_ReloadWeapon_Started()
+{
+	bReloadKeyHeld = true;
+	bReloadHoldTriggered = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
+		World->GetTimerManager().SetTimer(
+			ReloadHoldTimer, this, &AShooterCharacter::OnReloadHoldThreshold,
+			FMath::Max(0.05f, ReloadHoldThreshold), false);
+	}
+}
+
+void AShooterCharacter::OnReloadHoldThreshold()
+{
+	if (!bReloadKeyHeld || bReloadHoldTriggered) return;
+	bReloadHoldTriggered = true;
+	// HOLD R = tactical reload montage + drop mag
+	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(true);
+}
+
+void AShooterCharacter::Input_ReloadWeapon_Completed()
+{
+	bReloadKeyHeld = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
+	}
+	if (bReloadHoldTriggered)
+	{
+		bReloadHoldTriggered = false;
+		return; // already started fast reload
+	}
+	// TAP R = empty reload montage + keep partial mag in queue
+	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(false);
 }
 
 void AShooterCharacter::Input_FireWeapon_Pressed()
@@ -2133,8 +2302,8 @@ void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeig
 
 bool AShooterCharacter::CanJumpInternal_Implementation() const
 {
-	// 客户端用同步过来的耐力做预测，服务器用真实耐力做最终判断
-	return !bIsProne && !bIsSliding && Super::CanJumpInternal_Implementation() && (!IsValid(Stats) || Stats->HasStaminaForJump());
+	// TacticalTrim: CanJump denied — no jump until climb/vault.
+	return false;
 }
 
 void AShooterCharacter::OnJumped_Implementation()
@@ -2188,14 +2357,15 @@ void AShooterCharacter::UpdateLocomotionGait(bool bNotifyCombat)
 	}
 	else
 	{
-		// Still on Jog Strafe_Standing (common when Strafe_Walking empty) — slow play rate = fewer steps
+		// Still on Jog Strafe_Standing (common when Strafe_Walking empty) - slow play rate = fewer steps
 		RefSpeed = JogAnimReferenceSpeed;
 	}
 	RefSpeed = FMath::Max(RefSpeed, 1.f);
 
 	if (GroundSpeed > 1.f)
 	{
-		LocomotionPlayRate = FMath::Clamp(GroundSpeed / RefSpeed, MinLocomotionPlayRate, MaxLocomotionPlayRate);
+		// TacticalTrim: clamp play rate max to 1.0 (allow slow-down only).
+		LocomotionPlayRate = FMath::Clamp(GroundSpeed / RefSpeed, MinLocomotionPlayRate, FMath::Min(MaxLocomotionPlayRate, 1.0f));
 	}
 	else
 	{
@@ -2358,6 +2528,90 @@ void AShooterCharacter::SetFirstPersonViewedLocally(bool bViewed)
 	}
 }
 
+
+void AShooterCharacter::SetDebugThirdPerson(bool bThirdPerson)
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+	if (bDebugThirdPerson == bThirdPerson)
+	{
+		return;
+	}
+	bDebugThirdPerson = bThirdPerson;
+
+	if (IsValid(SpringArm))
+	{
+		if (!bSavedSpringArmLength)
+		{
+			SavedSpringArmLength = SpringArm->TargetArmLength;
+			bSavedSpringArmLength = true;
+		}
+		SpringArm->TargetArmLength = bDebugThirdPerson ? DebugThirdPersonArmLength : SavedSpringArmLength;
+		SpringArm->bDoCollisionTest = bDebugThirdPerson;
+		SpringArm->bUsePawnControlRotation = true;
+	}
+
+	// 1P arms: hide in third person
+	if (IsValid(Mesh1P))
+	{
+		Mesh1P->SetOwnerNoSee(bDebugThirdPerson);
+		Mesh1P->SetHiddenInGame(bDebugThirdPerson);
+	}
+
+	auto SetBodyOwnerSee = [bThirdPerson](USkeletalMeshComponent* Comp)
+	{
+		if (!IsValid(Comp)) return;
+		Comp->SetOwnerNoSee(!bThirdPerson); // FP: owner no see body; 3P: owner sees body
+	};
+	SetBodyOwnerSee(GetMesh());
+	SetBodyOwnerSee(Mesh3P_Head.Get());
+	SetBodyOwnerSee(Mesh3P_BodyUp.Get());
+	SetBodyOwnerSee(Mesh3P_Pants.Get());
+	SetBodyOwnerSee(Mesh3P_Jacket.Get());
+
+	if (IsValid(Combat))
+	{
+		for (AWeapon* Weapon : Combat->GetInventory())
+		{
+			if (!IsValid(Weapon)) continue;
+			if (USkeletalMeshComponent* W1 = Weapon->GetMesh1P())
+			{
+				W1->SetOwnerNoSee(bDebugThirdPerson);
+				W1->SetHiddenInGame(bDebugThirdPerson);
+			}
+			if (USkeletalMeshComponent* W3 = Weapon->GetMesh3P())
+			{
+				W3->SetOwnerNoSee(!bDebugThirdPerson);
+			}
+			// Refresh then re-apply debug ownership so FP/3P swap sticks for local view.
+			Weapon->RefreshViewMeshVisibility();
+			if (USkeletalMeshComponent* W1b = Weapon->GetMesh1P())
+			{
+				W1b->SetOwnerNoSee(bDebugThirdPerson);
+				W1b->SetHiddenInGame(bDebugThirdPerson);
+			}
+			if (USkeletalMeshComponent* W3b = Weapon->GetMesh3P())
+			{
+				W3b->SetOwnerNoSee(!bDebugThirdPerson);
+			}
+		}
+	}
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan,
+			bDebugThirdPerson ? TEXT("DebugThirdPerson ON（看自己 3P）") : TEXT("DebugThirdPerson OFF（回第一人称）"));
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Debug3P] %s"), bDebugThirdPerson ? TEXT("ON") : TEXT("OFF"));
+}
+
+void AShooterCharacter::ToggleDebugThirdPerson()
+{
+	SetDebugThirdPerson(!bDebugThirdPerson);
+}
+
 void AShooterCharacter::SetDefaultFieldOfView(float InFOV)
 {
 	DefaultFOV = FMath::Clamp(InFOV, 60.f, 120.f);
@@ -2439,6 +2693,13 @@ void AShooterCharacter::UpdateFootsteps(float DeltaTime)
 	const EPhysicalSurface Surface = TraceFootstepSurface();
 	USoundBase* Sound = ResolveFootstepSound(Surface);
 	PlayFootstepAtFeet(Sound, Volume);
+
+	// Bloody footprints (local): leave fading decals while bloodied from recent hits.
+	if (BloodyFootstepsRemaining > 0 && GetNetMode() != NM_DedicatedServer)
+	{
+		SpawnBloodFootprint();
+		--BloodyFootstepsRemaining;
+	}
 }
 
 EPhysicalSurface AShooterCharacter::TraceFootstepSurface() const
@@ -2528,3 +2789,1396 @@ void AShooterCharacter::PlayFootstepAtFeet(USoundBase* Sound, float Volume)
 	UGameplayStatics::PlaySoundAtLocation(World, Sound, Loc, Volume, 1.f, 0.f, Atten);
 }
 
+
+// ===== Barrel obstacle / limb injury / bandage (tactical) =====
+
+void AShooterCharacter::UpdateWeaponObstacle(float DeltaTime)
+{
+	if (!IsLocallyControlled() || DeltaTime <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	float TargetAlpha = 0.f;
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	float Length = IsValid(Weapon) ? Weapon->WeaponLength : 0.f;
+	// Pistol BPs often inherit the LongGun default (70); treat as short.
+	if (IsValid(Weapon) && Weapon->WeaponKind == EWeaponKind::Pistol && Length >= 60.f) Length = 22.f;
+	if (IsValid(Weapon) && (Weapon->WeaponKind == EWeaponKind::Melee || Weapon->WeaponKind == EWeaponKind::Throwable || Weapon->WeaponKind == EWeaponKind::Bomb)) Length = 0.f;
+
+	FHitResult Hit;
+	bool bHit = false;
+	FVector Start = FVector::ZeroVector;
+	FVector End = FVector::ZeroVector;
+
+	if (Length > 1.f && IsValid(FirstPersonCamera) && IsValid(Weapon)
+		&& Weapon->WeaponKind != EWeaponKind::Melee
+		&& Weapon->WeaponKind != EWeaponKind::Throwable
+		&& Weapon->WeaponKind != EWeaponKind::Bomb
+		&& GetWorld())
+	{
+		Start = FirstPersonCamera->GetComponentLocation();
+		const FVector Dir = FirstPersonCamera->GetForwardVector();
+		End = Start + Dir * Length;
+
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(WeaponBarrelObstacle), false, this);
+		Params.AddIgnoredActor(this);
+		Params.AddIgnoredActor(Weapon);
+
+		// Visibility often misses range/static meshes; query world geometry + pawns instead.
+		FCollisionObjectQueryParams ObjectParams;
+		ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
+		ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+		ObjectParams.AddObjectTypesToQuery(ECC_PhysicsBody);
+		ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+
+		bHit = GetWorld()->LineTraceSingleByObjectType(Hit, Start, End, ObjectParams, Params);
+
+		// Fallback: weapon channel with explicit responses (same family as muzzle-dip).
+		if (!bHit)
+		{
+			FCollisionResponseParams ResponseParams;
+			ResponseParams.CollisionResponse.SetAllChannels(ECR_Ignore);
+			ResponseParams.CollisionResponse.SetResponse(ECC_WorldStatic, ECR_Block);
+			ResponseParams.CollisionResponse.SetResponse(ECC_WorldDynamic, ECR_Block);
+			ResponseParams.CollisionResponse.SetResponse(ECC_PhysicsBody, ECR_Block);
+			ResponseParams.CollisionResponse.SetResponse(ECC_Pawn, ECR_Block);
+			bHit = GetWorld()->LineTraceSingleByChannel(
+				Hit, Start, End, FPSTraceChannels::ECC_Weapon, Params, ResponseParams);
+		}
+
+		if (bHit && IsValid(Hit.GetActor()))
+		{
+			const float Dist = Hit.Distance;
+			TargetAlpha = FMath::Clamp(1.f - (Dist / Length), 0.f, 1.f);
+			if (Dist > Length * 0.95f) TargetAlpha = 0.f;
+		}
+	}
+
+	if (bDebugWeaponObstacle && GetWorld() && Length > 1.f)
+	{
+		const FColor Col = (bHit && TargetAlpha > 0.f) ? FColor::Orange : FColor::Green;
+		DrawDebugLine(GetWorld(), Start, End, Col, false, -1.f, 0, 1.2f);
+		if (bHit)
+		{
+			DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 8.f, FColor::Red, false, -1.f);
+		}
+	}
+
+	WeaponBlockAlpha = FMath::FInterpTo(WeaponBlockAlpha, TargetAlpha, DeltaTime, WeaponBlockInterpSpeed);
+
+	const FVector TargetLoc(-WeaponBlockRetract * WeaponBlockAlpha, 0.f, WeaponBlockRetract * 0.35f * WeaponBlockAlpha);
+	const FRotator TargetRot(WeaponBlockRaisePitch * WeaponBlockAlpha, 0.f, 0.f);
+	WeaponBlockLocCurrent = FMath::VInterpTo(WeaponBlockLocCurrent, TargetLoc, DeltaTime, WeaponBlockInterpSpeed);
+	WeaponBlockRotCurrent = FMath::RInterpTo(WeaponBlockRotCurrent, TargetRot, DeltaTime, WeaponBlockInterpSpeed);
+
+	// Auto drop ADS when jammed.
+	if (IsWeaponBlocked() && IsValid(Combat) && Combat->bAiming)
+	{
+		Combat->Initiate_Aim_Released();
+	}
+}
+
+
+bool AShooterCharacter::IsProtectedAimTarget(const AActor* HitActor) const
+{
+	if (!IsValid(HitActor) || HitActor == this) return false;
+
+	// Future hostages: interface and/or Actor tag "Hostage".
+	if (HitActor->ActorHasTag(FName(TEXT("Hostage")))) return true;
+	if (HitActor->GetClass()->ImplementsInterface(UHostageProtectInterface::StaticClass()))
+	{
+		return true;
+	}
+
+	const AShooterCharacter* Other = Cast<AShooterCharacter>(HitActor);
+	if (!Other)
+	{
+		Other = Cast<AShooterCharacter>(HitActor->GetOwner());
+	}
+	if (!Other || Other == this) return false;
+
+	const AShooterPlayerState* MyPS = GetPlayerState<AShooterPlayerState>();
+	const AShooterPlayerState* TheirPS = Other->GetPlayerState<AShooterPlayerState>();
+	if (!MyPS || !TheirPS || !MyPS->HasTeam() || !TheirPS->HasTeam()) return false;
+	return MyPS->GetTeamId() == TheirPS->GetTeamId();
+}
+
+void AShooterCharacter::UpdateMuzzleDip(float DeltaTime)
+{
+	if (!IsLocallyControlled() || DeltaTime <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	float TargetAlpha = 0.f;
+	const bool bAds = IsValid(Combat) && Combat->bAiming;
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	const bool bGunOut = IsValid(Weapon)
+		&& Weapon->WeaponKind != EWeaponKind::Melee
+		&& Weapon->WeaponKind != EWeaponKind::Throwable
+		&& Weapon->WeaponKind != EWeaponKind::Bomb;
+
+	if (!bAds && bGunOut && IsValid(FirstPersonCamera) && GetWorld() && MuzzleDipRange > 1.f)
+	{
+		const FVector Start = FirstPersonCamera->GetComponentLocation();
+		const FVector Dir = FirstPersonCamera->GetForwardVector();
+		const FVector End = Start + Dir * MuzzleDipRange;
+
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(MuzzleDipProtect), false, this);
+		Params.AddIgnoredActor(this);
+		if (IsValid(Weapon)) Params.AddIgnoredActor(Weapon);
+
+		FCollisionResponseParams ResponseParams;
+		ResponseParams.CollisionResponse.SetAllChannels(ECR_Ignore);
+		ResponseParams.CollisionResponse.SetResponse(ECC_Pawn, ECR_Block);
+		ResponseParams.CollisionResponse.SetResponse(ECC_WorldStatic, ECR_Block);
+		ResponseParams.CollisionResponse.SetResponse(ECC_WorldDynamic, ECR_Block);
+		ResponseParams.CollisionResponse.SetResponse(ECC_PhysicsBody, ECR_Block);
+
+		FHitResult Hit;
+		const bool bHit = GetWorld()->LineTraceSingleByChannel(
+			Hit, Start, End, FPSTraceChannels::ECC_Weapon, Params, ResponseParams);
+
+		if (bHit && IsProtectedAimTarget(Hit.GetActor()))
+		{
+			// Soft ramp within range; strongest when close.
+			const float Dist = Hit.Distance;
+			TargetAlpha = FMath::Clamp(1.f - (Dist / MuzzleDipRange), 0.15f, 1.f);
+		}
+	}
+
+	MuzzleDipAlpha = FMath::FInterpTo(MuzzleDipAlpha, TargetAlpha, DeltaTime, MuzzleDipInterpSpeed);
+	const FRotator TargetRot(-MuzzleDipPitch * MuzzleDipAlpha, 0.f, 0.f);
+	MuzzleDipRotCurrent = FMath::RInterpTo(MuzzleDipRotCurrent, TargetRot, DeltaTime, MuzzleDipInterpSpeed);
+	if (MuzzleDipAlpha < 0.01f && TargetAlpha <= 0.f)
+	{
+		MuzzleDipAlpha = 0.f;
+		MuzzleDipRotCurrent = FRotator::ZeroRotator;
+	}
+}
+
+float AShooterCharacter::ScaleDamageByArmor(float Damage, EHitZone Zone, bool bPistolOrShotgun) const
+{
+	if (BodyArmor == EBodyArmorType::None || Zone != EHitZone::Torso)
+	{
+		return Damage;
+	}
+	float Mul = 1.f;
+	if (BodyArmor == EBodyArmorType::Light)
+	{
+		Mul = LightArmorTorsoMultiplier;
+	}
+	else // Heavy
+	{
+		Mul = bPistolOrShotgun ? HeavyArmorPistolShotgunTorsoMultiplier : HeavyArmorTorsoMultiplier;
+	}
+	return Damage * Mul;
+}
+
+void AShooterCharacter::SetBodyArmorLocal(EBodyArmorType NewArmor)
+{
+	if (HasAuthority())
+	{
+		BodyArmor = NewArmor;
+		OnRep_BodyArmor();
+	}
+	else
+	{
+		Server_SetBodyArmor(NewArmor);
+	}
+}
+
+void AShooterCharacter::Server_SetBodyArmor_Implementation(EBodyArmorType NewArmor)
+{
+	BodyArmor = NewArmor;
+	OnRep_BodyArmor();
+}
+
+void AShooterCharacter::OnRep_BodyArmor()
+{
+	UE_LOG(LogTemp, Log, TEXT("[Armor] %s BodyArmor=%d"), *GetNameSafe(this), static_cast<int32>(BodyArmor));
+}
+
+void AShooterCharacter::EnsureFactionLookDefaults()
+{
+	// Prefer Bandits over any leftover CharGen terrorist soft ref from BP/CDO.
+	const FSoftObjectPath BanditMesh(TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_05.SKM_Bandit_Preset_05"));
+	const FString CriminalPath = CriminalMesh3P.ToSoftObjectPath().ToString();
+	if (CriminalMesh3P.IsNull() || CriminalPath.Contains(TEXT("CharGen")) || CriminalPath.Contains(TEXT("SK_Terrorist")))
+	{
+		CriminalMesh3P = TSoftObjectPtr<USkeletalMesh>(BanditMesh);
+	}
+	// Police: Bandits Preset_02 (blue tactical jacket) - same UE5 Epic skeleton as Preset_05.
+	const FSoftObjectPath PoliceBanditMesh(TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_02.SKM_Bandit_Preset_02"));
+	const FString PolicePath = PoliceMesh3P.ToSoftObjectPath().ToString();
+	if (PoliceMesh3P.IsNull() || PolicePath.Contains(TEXT("CharGen")))
+	{
+		PoliceMesh3P = TSoftObjectPtr<USkeletalMesh>(PoliceBanditMesh);
+	}
+	if (PoliceHeadMesh3P.IsNull())
+	{
+		PoliceHeadMesh3P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(TEXT("/Game/CharGen/CharGen_Base/Meshes/SK_CTHead_2.SK_CTHead_2")));
+	}
+	if (PoliceBodyDetMesh3P.IsNull())
+	{
+		PoliceBodyDetMesh3P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(TEXT("/Game/CharGen/CharGen_Base/Meshes/SK_Body_det.SK_Body_det")));
+	}
+	if (PoliceBodyUpMesh3P.IsNull())
+	{
+		PoliceBodyUpMesh3P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(TEXT("/Game/CharGen/CharGen_Base/Meshes/SK_Body_Up.SK_Body_Up")));
+	}
+	if (PolicePantsMesh3P.IsNull())
+	{
+		PolicePantsMesh3P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(TEXT("/Game/CharGen/CharGen_Base/Meshes/SK_Body_Pants.SK_Body_Pants")));
+	}
+	if (PoliceJacketMesh3P.IsNull())
+	{
+		PoliceJacketMesh3P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(TEXT("/Game/CharGen/CharGen_Base/Meshes/SK_Jacket_Main.SK_Jacket_Main")));
+	}
+	if (PoliceJacketMaterial.IsNull())
+	{
+		PoliceJacketMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/CharGen/CharGen_Base/Materials/MI_Jacket_Black.MI_Jacket_Black")));
+	}
+	if (CharGenAnimBP3P.IsNull())
+	{
+		CharGenAnimBP3P = TSoftClassPtr<UAnimInstance>(FSoftObjectPath(TEXT("/Game/CharGen/CharGen_Base/Animations/TPS_Char_AnimBP.TPS_Char_AnimBP_C")));
+	}
+	if (CriminalArmsMesh1P.IsNull())
+	{
+		CriminalArmsMesh1P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
+			TEXT("/Game/Bandits/Mesh/Arms/Arms_Gloves/SKM_Arms_Gloves_Black.SKM_Arms_Gloves_Black")));
+	}
+	if (PoliceArmsMesh1P.IsNull())
+	{
+		PoliceArmsMesh1P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
+			TEXT("/Game/Bandits/Mesh/Arms/Arms_Gloves/SKM_Arms_Gloves_Green.SKM_Arms_Gloves_Green")));
+	}
+}
+
+USkeletalMesh* AShooterCharacter::LoadSoftMesh(const TSoftObjectPtr<USkeletalMesh>& Soft) const
+{
+	if (Soft.IsNull()) return nullptr;
+	if (USkeletalMesh* Loaded = Soft.Get()) return Loaded;
+	return Soft.LoadSynchronous();
+}
+
+UMaterialInterface* AShooterCharacter::LoadSoftMaterial(const TSoftObjectPtr<UMaterialInterface>& Soft) const
+{
+	if (Soft.IsNull()) return nullptr;
+	if (UMaterialInterface* Loaded = Soft.Get()) return Loaded;
+	return Soft.LoadSynchronous();
+}
+
+void AShooterCharacter::SetModularLookVisible(bool bVisible)
+{
+	const auto SetOne = [bVisible](USkeletalMeshComponent* Comp)
+	{
+		if (!IsValid(Comp)) return;
+		Comp->SetVisibility(bVisible, true);
+		Comp->SetHiddenInGame(!bVisible);
+	};
+	SetOne(Mesh3P_Head);
+	SetOne(Mesh3P_BodyUp);
+	SetOne(Mesh3P_Pants);
+	SetOne(Mesh3P_Jacket);
+}
+
+void AShooterCharacter::SetFactionLookLocal(ECharacterLookFaction NewLook)
+{
+	if (HasAuthority())
+	{
+		FactionLook = NewLook;
+		OnRep_FactionLook();
+	}
+	else
+	{
+		Server_SetFactionLook(NewLook);
+	}
+}
+
+void AShooterCharacter::Server_SetFactionLook_Implementation(ECharacterLookFaction NewLook)
+{
+	FactionLook = NewLook;
+	OnRep_FactionLook();
+}
+
+void AShooterCharacter::OnRep_FactionLook()
+{
+	ApplyFactionLookMeshes();
+	UE_LOG(LogTemp, Log, TEXT("[Look] %s FactionLook=%d"), *GetNameSafe(this), static_cast<int32>(FactionLook));
+}
+
+void AShooterCharacter::ApplyFactionLookMeshes()
+{
+	EnsureFactionLookDefaults();
+
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!IsValid(Body)) return;
+
+	// BanditsArms1P: swap FP arms + copy weapon sockets from Ironbelly (no pose retarget).
+	ApplyFactionArms1P();
+	if (!bCapturedDefaultMesh3P)
+	{
+		DefaultMesh3PAsset = Body->GetSkeletalMeshAsset();
+		DefaultMesh3PAnimClass = Body->GetAnimClass();
+		bCapturedDefaultMesh3P = true;
+	}
+
+	// Prefer project ABP_ThirdPerson for locomotion. CharGen TPS_Char_AnimBP is authored for
+	// BP_CharGenCharacter only - on ShooterCharacter it stays in reference pose (T-pose).
+	// UE4 CharGen skeleton <-> project Manny: link CompatibleSkeletons so ABP can drive the mesh.
+	auto EnsureSkeletonCompat = [](USkeleton* A, USkeleton* B)
+	{
+		if (!IsValid(A) || !IsValid(B) || A == B) return;
+#if WITH_EDITOR
+		// AddCompatibleSkeleton is editor-only in UE5.8; PIE has WITH_EDITOR.
+		A->AddCompatibleSkeleton(B);
+		B->AddCompatibleSkeleton(A);
+#endif
+	};
+
+	auto SetBodyMeshKeepAnim = [this, Body, &EnsureSkeletonCompat](USkeletalMesh* MeshAsset, bool /*bUseCharGenAnim*/)
+	{
+		if (!IsValid(Body) || !IsValid(MeshAsset)) return;
+		if (!bCapturedDefaultMesh3P)
+		{
+			DefaultMesh3PAsset = Body->GetSkeletalMeshAsset();
+			DefaultMesh3PAnimClass = Body->GetAnimClass();
+			bCapturedDefaultMesh3P = true;
+		}
+
+		USkeleton* MeshSkel = MeshAsset->GetSkeleton();
+		USkeleton* DefaultSkel = IsValid(DefaultMesh3PAsset) ? DefaultMesh3PAsset->GetSkeleton() : nullptr;
+		EnsureSkeletonCompat(MeshSkel, DefaultSkel);
+		// Link Bandits skeleton <-> project Mannequin skeletons (load meshes, then GetSkeleton).
+		static const TCHAR* ExtraMeshPaths[] = {
+			TEXT("/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"),
+			TEXT("/Game/FPS_Controller/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"),
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+			TEXT("/Game/FPS_Controller/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"),
+			TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_05.SKM_Bandit_Preset_05"),
+			TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_02.SKM_Bandit_Preset_02"),
+		};
+		for (const TCHAR* Path : ExtraMeshPaths)
+		{
+			if (USkeletalMesh* ExtraMesh = LoadObject<USkeletalMesh>(nullptr, Path))
+			{
+				USkeleton* Extra = ExtraMesh->GetSkeleton();
+				EnsureSkeletonCompat(MeshSkel, Extra);
+				EnsureSkeletonCompat(DefaultSkel, Extra);
+			}
+		}
+		if (USkeleton* BanditSkel = LoadObject<USkeleton>(nullptr, TEXT("/Game/Bandits/Mesh/SKM_Bandit_Skeleton.SKM_Bandit_Skeleton")))
+		{
+			EnsureSkeletonCompat(MeshSkel, BanditSkel);
+			EnsureSkeletonCompat(DefaultSkel, BanditSkel);
+		}
+
+		Body->SetSkeletalMesh(MeshAsset, /*bReinitPose=*/true);
+		Body->SetRelativeScale3D(FVector::OneVector);
+		Body->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
+		UClass* WantAnim = DefaultMesh3PAnimClass.Get();
+		if (!WantAnim)
+		{
+			WantAnim = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/FPS/Character/ABP_ThirdPerson.ABP_ThirdPerson_C"));
+			if (WantAnim)
+			{
+				DefaultMesh3PAnimClass = WantAnim;
+			}
+		}
+
+		// Always re-assign after mesh swap so AnimInstance is recreated on the new skeleton.
+		if (WantAnim)
+		{
+			Body->SetAnimInstanceClass(WantAnim);
+			if (UAnimInstance* AnimInst = Body->GetAnimInstance())
+			{
+				AnimInst->InitializeAnimation(true);
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Look] No DefaultMesh3P AnimBP - body will T-pose"));
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[Look] Body mesh=%s skel=%s anim=%s (project ABP, not CharGen)"),
+			*GetNameSafe(MeshAsset),
+			*GetNameSafe(MeshSkel),
+			*GetNameSafe(Body->GetAnimClass()));
+	};
+
+	auto SetupFollower = [Body](USkeletalMeshComponent* Comp, USkeletalMesh* MeshAsset)
+	{
+		if (!IsValid(Comp)) return;
+		if (!IsValid(MeshAsset))
+		{
+			Comp->SetLeaderPoseComponent(nullptr);
+			Comp->SetSkeletalMesh(nullptr);
+			Comp->SetVisibility(false);
+			Comp->SetHiddenInGame(true);
+			return;
+		}
+		Comp->SetSkeletalMesh(MeshAsset);
+		Comp->SetLeaderPoseComponent(Body);
+		Comp->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator);
+		Comp->SetRelativeScale3D(FVector::OneVector);
+		Comp->bOnlyOwnerSee = Body->bOnlyOwnerSee;
+		Comp->bOwnerNoSee = Body->bOwnerNoSee;
+		Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Comp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	};
+
+	auto ClearFollowers = [&]()
+	{
+		SetupFollower(Mesh3P_Head, nullptr);
+		SetupFollower(Mesh3P_BodyUp, nullptr);
+		SetupFollower(Mesh3P_Pants, nullptr);
+		SetupFollower(Mesh3P_Jacket, nullptr);
+	};
+
+	switch (FactionLook)
+	{
+	case ECharacterLookFaction::Criminal:
+	{
+		ClearFollowers();
+		SetModularLookVisible(false);
+		if (USkeletalMesh* Criminal = LoadSoftMesh(CriminalMesh3P))
+		{
+			SetBodyMeshKeepAnim(Criminal, true);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Look] Criminal mesh failed to load"));
+		}
+		break;
+	}
+		case ECharacterLookFaction::Police:
+	{
+		// Prefer single Bandits preset (UE5 Epic skeleton, same pipeline as Criminal).
+		// CharGen modular parts remain available if PoliceMesh3P fails to load.
+		ClearFollowers();
+		SetModularLookVisible(false);
+		if (USkeletalMesh* PoliceBody = LoadSoftMesh(PoliceMesh3P))
+		{
+			SetBodyMeshKeepAnim(PoliceBody, true);
+			break;
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[Look] PoliceMesh3P failed; falling back to CharGen modular"));
+		USkeletalMesh* BodyDet = LoadSoftMesh(PoliceBodyDetMesh3P);
+		USkeletalMesh* BodyUp = LoadSoftMesh(PoliceBodyUpMesh3P);
+		USkeletalMesh* Head = LoadSoftMesh(PoliceHeadMesh3P);
+		USkeletalMesh* Pants = LoadSoftMesh(PolicePantsMesh3P);
+		USkeletalMesh* Jacket = LoadSoftMesh(PoliceJacketMesh3P);
+		if (BodyDet)
+		{
+			SetBodyMeshKeepAnim(BodyDet, true);
+		}
+		else if (BodyUp)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Look] Police Body_det missing; falling back to Body_Up (no hands)"));
+			SetBodyMeshKeepAnim(BodyUp, true);
+			BodyUp = nullptr;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Look] Police body meshes failed to load"));
+		}
+		SetupFollower(Mesh3P_Head, Head);
+		SetupFollower(Mesh3P_BodyUp, BodyUp);
+		SetupFollower(Mesh3P_Pants, Pants);
+		SetupFollower(Mesh3P_Jacket, Jacket);
+		if (IsValid(Mesh3P_Jacket))
+		{
+			if (UMaterialInterface* JacketMat = LoadSoftMaterial(PoliceJacketMaterial))
+			{
+				Mesh3P_Jacket->SetMaterial(0, JacketMat);
+			}
+		}
+		SetModularLookVisible(true);
+		break;
+	}
+	default:
+	{
+		ClearFollowers();
+		SetModularLookVisible(false);
+		if (IsValid(DefaultMesh3PAsset))
+		{
+			SetBodyMeshKeepAnim(DefaultMesh3PAsset, false);
+		}
+		break;
+	}
+	}
+
+	ConfigureWeaponHitCollision();
+
+	if (IsValid(Combat))
+	{
+		Combat->RefreshAnimsAfterMesh3PSwap();
+		// Bandits may lack weapon_r; re-resolve attach (falls back to hand_r).
+		if (AWeapon* W = Combat->CurrentWeapon.Get())
+		{
+			W->AttachToOwingPawn();
+		}
+		// Re-apply debug 3P visibility after mesh/anim reinits.
+		if (bDebugThirdPerson && IsLocallyControlled())
+		{
+			const bool bOn = bDebugThirdPerson;
+			bDebugThirdPerson = false;
+			SetDebugThirdPerson(bOn);
+		}
+	}
+}
+
+void AShooterCharacter::Auth_ApplyHitZoneInjury(EHitZone Zone)
+{
+	if (!HasAuthority()) return;
+	if (IsValid(Stats) && Stats->DeathState != EDeathState::NotDead) return;
+
+	bool bChanged = false;
+	if (Zone == EHitZone::Arm && !bArmInjured)
+	{
+		bArmInjured = true;
+		bChanged = true;
+		OnRep_ArmInjured();
+	}
+	else if (Zone == EHitZone::Leg && !bLegInjured)
+	{
+		bLegInjured = true;
+		bChanged = true;
+		OnRep_LegInjured();
+	}
+	if (bChanged)
+	{
+		ForceNetUpdate();
+		RefreshControllerMovementSpeed();
+	}
+}
+
+void AShooterCharacter::OnRep_ArmInjured()
+{
+	RefreshControllerMovementSpeed();
+}
+
+void AShooterCharacter::OnRep_LegInjured()
+{
+	RefreshControllerMovementSpeed();
+	// Leg injury cancels sprint on owning controller.
+	if (bLegInjured)
+	{
+		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
+		{
+			PC->StopSprinting();
+		}
+	}
+}
+
+void AShooterCharacter::Input_Bandage_Started()
+{
+	if (!IsLocallyControlled()) return;
+	if (bArmInjured || bLegInjured)
+	{
+		BeginBandage();
+		return;
+	}
+	// Not injured: keep old HealAction behavior (hotkey 5 / HP heal).
+	Input_Heal();
+}
+
+void AShooterCharacter::Input_Bandage_Completed()
+{
+	if (!IsLocallyControlled()) return;
+	if (!bBandageHoldInput && !bIsBandaging) return;
+	bBandageHoldInput = false;
+	if (bIsBandaging && BandageHoldElapsed < BandageHoldDuration - 0.05f)
+	{
+		AbortBandage(false);
+	}
+}
+
+void AShooterCharacter::BeginBandage()
+{
+	if (!IsLocallyControlled() || bIsBandaging || bIsHealing) return;
+	if (!bArmInjured && !bLegInjured) return;
+	if (IsValid(Stats) && Stats->DeathState != EDeathState::NotDead) return;
+	if (IsValid(Combat) && IsValid(Combat->CurrentWeapon))
+	{
+		const EWeaponStatus Status = Combat->CurrentWeapon->WeaponStatus;
+		if (Status == EWeaponStatus::Reloading || Status == EWeaponStatus::Cycling) return;
+	}
+
+	bBandageHoldInput = true;
+	bIsBandaging = true;
+	BandageHoldElapsed = 0.f;
+	if (IsValid(Combat) && Combat->bAiming)
+	{
+		Combat->Initiate_Aim_Released();
+	}
+	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
+	{
+		PC->StopSprinting();
+	}
+	Server_BeginBandage();
+	RefreshControllerMovementSpeed();
+}
+
+void AShooterCharacter::AbortBandage(bool bCompleted)
+{
+	const bool bWas = bIsBandaging;
+	bBandageHoldInput = false;
+	bIsBandaging = false;
+	BandageHoldElapsed = 0.f;
+	if (bWas && IsLocallyControlled())
+	{
+		Server_FinishBandage(bCompleted);
+	}
+	RefreshControllerMovementSpeed();
+}
+
+void AShooterCharacter::UpdateBandage(float DeltaTime)
+{
+	if (!IsLocallyControlled() || !bIsBandaging) return;
+
+	if (!bBandageHoldInput || (!bArmInjured && !bLegInjured)
+		|| (IsValid(Stats) && Stats->DeathState != EDeathState::NotDead))
+	{
+		AbortBandage(false);
+		return;
+	}
+
+	BandageHoldElapsed += DeltaTime;
+	if (BandageHoldElapsed >= BandageHoldDuration)
+	{
+		AbortBandage(true);
+	}
+}
+
+void AShooterCharacter::Server_BeginBandage_Implementation()
+{
+	if (IsValid(Stats) && Stats->DeathState != EDeathState::NotDead) return;
+	if (!bArmInjured && !bLegInjured) return;
+	bIsBandaging = true;
+	RefreshControllerMovementSpeed();
+}
+
+void AShooterCharacter::Server_FinishBandage_Implementation(bool bCompleted)
+{
+	bIsBandaging = false;
+	if (bCompleted && (bArmInjured || bLegInjured))
+	{
+		bArmInjured = false;
+		bLegInjured = false;
+		OnRep_ArmInjured();
+		OnRep_LegInjured();
+		ForceNetUpdate();
+	}
+	RefreshControllerMovementSpeed();
+}
+
+
+
+// ---------- Tactical vision (NVG / Thermal) ----------
+float AShooterCharacter::GetVisionBatteryNormalized() const
+{
+	return VisionBatteryMaxSeconds > KINDA_SMALL_NUMBER
+		? FMath::Clamp(VisionBatterySeconds / VisionBatteryMaxSeconds, 0.f, 1.f)
+		: 0.f;
+}
+
+void AShooterCharacter::RefillVisionBattery(float Amount)
+{
+	if (Amount < 0.f)
+	{
+		VisionBatterySeconds = VisionBatteryMaxSeconds;
+	}
+	else
+	{
+		VisionBatterySeconds = FMath::Clamp(VisionBatterySeconds + Amount, 0.f, VisionBatteryMaxSeconds);
+	}
+}
+
+void AShooterCharacter::AddVisionFlashWash(float Amount)
+{
+	VisionFlashWash = FMath::Clamp(VisionFlashWash + FMath::Max(0.f, Amount), 0.f, 4.f);
+	if (IsLocallyControlled())
+	{
+		ApplyTacticalVisionEffects();
+	}
+}
+
+void AShooterCharacter::CycleTacticalVisionMode()
+{
+	const uint8 Next = (static_cast<uint8>(TacticalVisionMode) + 1) % 3;
+	SetTacticalVisionMode(static_cast<ETacticalVisionMode>(Next));
+}
+
+void AShooterCharacter::ToggleNVG()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+	// Alt+K: NVG on/off only (Thermal stays console CycleVision / Vision 2).
+	if (TacticalVisionMode == ETacticalVisionMode::NVG)
+	{
+		SetTacticalVisionMode(ETacticalVisionMode::Off);
+	}
+	else
+	{
+		SetTacticalVisionMode(ETacticalVisionMode::NVG);
+	}
+}
+
+
+void AShooterCharacter::SetTacticalVisionMode(ETacticalVisionMode NewMode)
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+	if (NewMode != ETacticalVisionMode::Off && VisionBatterySeconds <= 0.f)
+	{
+		NewMode = ETacticalVisionMode::Off;
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(99201, 2.f, FColor::Orange, TEXT("Vision battery empty"));
+		}
+	}
+	if (TacticalVisionMode == NewMode)
+	{
+		ApplyTacticalVisionEffects();
+		return;
+	}
+	TacticalVisionMode = NewMode;
+	ApplyTacticalVisionEffects();
+	if (GEngine)
+	{
+		const TCHAR* Name =
+			TacticalVisionMode == ETacticalVisionMode::NVG ? TEXT("NVG") :
+			TacticalVisionMode == ETacticalVisionMode::Thermal ? TEXT("Thermal") : TEXT("Off");
+		GEngine->AddOnScreenDebugMessage(99202, 2.5f, FColor::Cyan,
+			FString::Printf(TEXT("Vision -> %s (battery %.0f%%)"), Name, GetVisionBatteryNormalized() * 100.f));
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Vision] mode=%d battery=%.1f"), static_cast<int32>(TacticalVisionMode), VisionBatterySeconds);
+}
+
+void AShooterCharacter::ClearThermalOverlays()
+{
+	for (const TWeakObjectPtr<USkeletalMeshComponent>& WeakMesh : ThermalOverlayMeshes)
+	{
+		if (USkeletalMeshComponent* MeshComp = WeakMesh.Get())
+		{
+			MeshComp->SetOverlayMaterial(nullptr);
+		}
+	}
+	ThermalOverlayMeshes.Reset();
+}
+
+void AShooterCharacter::RefreshThermalOverlays()
+{
+	ClearThermalOverlays();
+	if (TacticalVisionMode != ETacticalVisionMode::Thermal || !IsLocallyControlled() || !GetWorld())
+	{
+		return;
+	}
+
+	if (!CachedThermalOverlayMat)
+	{
+		CachedThermalOverlayMat = LoadSoftMaterial(ThermalBodyOverlayMaterial);
+		if (!CachedThermalOverlayMat)
+		{
+			CachedThermalOverlayMat = LoadObject<UMaterialInterface>(nullptr,
+				TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
+		}
+	}
+	if (!CachedThermalOverlayMat)
+	{
+		return;
+	}
+
+	const FVector MyLoc = GetActorLocation();
+	const float RangeSq = FMath::Square(ThermalOverlayRangeCm);
+	for (TActorIterator<AShooterCharacter> It(GetWorld()); It; ++It)
+	{
+		AShooterCharacter* Other = *It;
+		if (!IsValid(Other) || Other == this)
+		{
+			continue;
+		}
+		if (FVector::DistSquared(MyLoc, Other->GetActorLocation()) > RangeSq)
+		{
+			continue;
+		}
+		auto Mark = [this](USkeletalMeshComponent* Comp)
+		{
+			if (!IsValid(Comp)) return;
+			Comp->SetRenderCustomDepth(true);
+			Comp->SetCustomDepthStencilValue(1);
+			Comp->SetOverlayMaterial(CachedThermalOverlayMat);
+			ThermalOverlayMeshes.Add(Comp);
+		};
+		Mark(Other->GetMesh());
+		// Modular police parts (if present)
+		Mark(Other->Mesh3P_Head);
+		Mark(Other->Mesh3P_BodyUp);
+		Mark(Other->Mesh3P_Pants);
+		Mark(Other->Mesh3P_Jacket);
+	}
+
+	// Range dummies also light up under thermal (handy in PIE without a second pawn).
+	for (TActorIterator<ATargetDummy> DummyIt(GetWorld()); DummyIt; ++DummyIt)
+	{
+		ATargetDummy* Dummy = *DummyIt;
+		if (!IsValid(Dummy) || !IsValid(Dummy->Mesh))
+		{
+			continue;
+		}
+		if (FVector::DistSquared(MyLoc, Dummy->GetActorLocation()) > RangeSq)
+		{
+			continue;
+		}
+		Dummy->Mesh->SetRenderCustomDepth(true);
+		Dummy->Mesh->SetCustomDepthStencilValue(1);
+		Dummy->Mesh->SetOverlayMaterial(CachedThermalOverlayMat);
+		ThermalOverlayMeshes.Add(Dummy->Mesh);
+	}
+}
+
+void AShooterCharacter::ClearTacticalVisionEffects()
+{
+	ClearThermalOverlays();
+	if (!IsValid(FirstPersonCamera))
+	{
+		return;
+	}
+	if (ActiveVisionBlendable.IsValid())
+	{
+		FirstPersonCamera->RemoveBlendable(ActiveVisionBlendable.Get());
+		ActiveVisionBlendable.Reset();
+	}
+	FPostProcessSettings& PPS = FirstPersonCamera->PostProcessSettings;
+	PPS.bOverride_SceneColorTint = false;
+	PPS.bOverride_ColorSaturation = false;
+	PPS.bOverride_ColorContrast = false;
+	PPS.bOverride_ColorGamma = false;
+	PPS.bOverride_AutoExposureBias = false;
+	PPS.bOverride_BloomIntensity = false;
+	PPS.bOverride_VignetteIntensity = false;
+	PPS.bOverride_FilmGrainIntensity = false;
+	FirstPersonCamera->PostProcessBlendWeight = 1.f;
+	AppliedVisionMode = ETacticalVisionMode::Off;
+}
+
+void AShooterCharacter::ApplyTacticalVisionEffects()
+{
+	if (!IsLocallyControlled() || !IsValid(FirstPersonCamera))
+	{
+		return;
+	}
+
+	const bool bModeChanged = (AppliedVisionMode != TacticalVisionMode);
+	if (bModeChanged)
+	{
+		ClearTacticalVisionEffects();
+		AppliedVisionMode = TacticalVisionMode;
+	}
+
+	if (TacticalVisionMode == ETacticalVisionMode::Off)
+	{
+		return;
+	}
+
+	FPostProcessSettings& PPS = FirstPersonCamera->PostProcessSettings;
+	const float Wash = VisionFlashWash;
+	const float Batt = GetVisionBatteryNormalized();
+
+	if (TacticalVisionMode == ETacticalVisionMode::NVG)
+	{
+		PPS.bOverride_SceneColorTint = true;
+		PPS.SceneColorTint = FLinearColor(0.35f, 1.05f, 0.42f);
+		PPS.bOverride_ColorSaturation = true;
+		PPS.ColorSaturation = FVector4(0.55f, 1.15f, 0.55f, 1.f);
+		PPS.bOverride_ColorContrast = true;
+		PPS.ColorContrast = FVector4(1.25f, 1.25f, 1.25f, 1.f);
+		PPS.bOverride_AutoExposureBias = true;
+		PPS.AutoExposureBias = (1.6f + 1.2f * Batt) + Wash * 6.f;
+		PPS.bOverride_BloomIntensity = true;
+		PPS.BloomIntensity = 1.8f + Wash * 10.f;
+		PPS.bOverride_VignetteIntensity = true;
+		PPS.VignetteIntensity = 0.55f;
+		PPS.bOverride_FilmGrainIntensity = true;
+		PPS.FilmGrainIntensity = 0.28f + (1.f - Batt) * 0.25f;
+
+		if (bModeChanged)
+		{
+			if (UMaterialInterface* NVGMat = LoadSoftMaterial(NVGPostProcessMaterial))
+			{
+				FirstPersonCamera->AddOrUpdateBlendable(NVGMat, 1.f);
+				ActiveVisionBlendable = NVGMat;
+			}
+		}
+	}
+	else if (TacticalVisionMode == ETacticalVisionMode::Thermal)
+	{
+		PPS.bOverride_SceneColorTint = true;
+		PPS.SceneColorTint = FLinearColor(0.12f, 0.22f, 0.55f);
+		PPS.bOverride_ColorSaturation = true;
+		PPS.ColorSaturation = FVector4(0.15f, 0.2f, 0.35f, 1.f);
+		PPS.bOverride_ColorContrast = true;
+		PPS.ColorContrast = FVector4(1.55f, 1.45f, 1.35f, 1.f);
+		PPS.bOverride_ColorGamma = true;
+		PPS.ColorGamma = FVector4(0.85f, 0.9f, 1.1f, 1.f);
+		PPS.bOverride_AutoExposureBias = true;
+		PPS.AutoExposureBias = 0.35f + Wash * 3.f;
+		PPS.bOverride_BloomIntensity = true;
+		PPS.BloomIntensity = 0.6f + Wash * 4.f;
+		PPS.bOverride_VignetteIntensity = true;
+		PPS.VignetteIntensity = 0.4f;
+		PPS.bOverride_FilmGrainIntensity = true;
+		PPS.FilmGrainIntensity = 0.2f;
+
+		if (bModeChanged)
+		{
+			UMaterialInterface* ThermalMat = LoadSoftMaterial(ThermalPostProcessMaterial);
+			if (!ThermalMat)
+			{
+				ThermalMat = LoadObject<UMaterialInterface>(nullptr,
+					TEXT("/Engine/BufferVisualization/CustomDepth.CustomDepth"));
+			}
+			if (ThermalMat)
+			{
+				FirstPersonCamera->AddOrUpdateBlendable(ThermalMat, 0.85f);
+				ActiveVisionBlendable = ThermalMat;
+			}
+			RefreshThermalOverlays();
+		}
+	}
+}
+
+void AShooterCharacter::UpdateTacticalVision(float DeltaTime)
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (VisionFlashWash > 0.f)
+	{
+		VisionFlashWash = FMath::Max(0.f, VisionFlashWash - DeltaTime * 1.25f);
+	}
+
+	if (TacticalVisionMode != ETacticalVisionMode::Off)
+	{
+		VisionBatterySeconds = FMath::Max(0.f, VisionBatterySeconds - VisionBatteryDrainPerSecond * DeltaTime);
+		if (VisionBatterySeconds <= 0.f)
+		{
+			TacticalVisionMode = ETacticalVisionMode::Off;
+			if (GEngine)
+			{
+				GEngine->AddOnScreenDebugMessage(99201, 2.5f, FColor::Orange, TEXT("Vision battery depleted -> Off"));
+			}
+		}
+	}
+
+	ApplyTacticalVisionEffects();
+
+	if (TacticalVisionMode == ETacticalVisionMode::Thermal)
+	{
+		VisionOverlayRefreshAcc += DeltaTime;
+		if (VisionOverlayRefreshAcc >= 0.35f)
+		{
+			VisionOverlayRefreshAcc = 0.f;
+			RefreshThermalOverlays();
+		}
+	}
+	else
+	{
+		VisionOverlayRefreshAcc = 0.f;
+	}
+}
+
+
+// ===== Radar / Watch / Blood polish =====
+
+void AShooterCharacter::SetHasRadar(bool bEnable)
+{
+	if (HasAuthority())
+	{
+		bHasRadar = bEnable;
+		OnRep_HasRadar();
+	}
+	else
+	{
+		Server_SetHasRadar(bEnable);
+	}
+}
+
+void AShooterCharacter::Server_SetHasRadar_Implementation(bool bEnable)
+{
+	bHasRadar = bEnable;
+	OnRep_HasRadar();
+}
+
+void AShooterCharacter::OnRep_HasRadar()
+{
+	UE_LOG(LogTemp, Log, TEXT("[Radar] %s HasRadar=%s"), *GetNameSafe(this), bHasRadar ? TEXT("1") : TEXT("0"));
+}
+
+void AShooterCharacter::SetDebugWeaponObstacle(bool bEnable)
+{
+	bDebugWeaponObstacle = bEnable;
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Yellow,
+			FString::Printf(TEXT("DebugBarrel -> %s"), bEnable ? TEXT("ON") : TEXT("OFF")));
+	}
+}
+
+void AShooterCharacter::CheckWatch()
+{
+	if (!IsLocallyControlled()) return;
+
+	UAnimMontage* Montage = nullptr;
+	if (!WatchCheckMontage.IsNull())
+	{
+		Montage = WatchCheckMontage.LoadSynchronous();
+	}
+	if (!Montage)
+	{
+		Montage = LoadObject<UAnimMontage>(nullptr,
+			TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/AM_RAR_FP_PCH_AssaultRifle_WatchCheck.AM_RAR_FP_PCH_AssaultRifle_WatchCheck"));
+	}
+	if (IsValid(Montage) && IsValid(Mesh1P))
+	{
+		if (UAnimInstance* Anim = Mesh1P->GetAnimInstance())
+		{
+			Anim->Montage_Play(Montage, 1.f);
+		}
+	}
+
+	float Remaining = 0.f;
+	FString PhaseNote;
+	if (UWorld* World = GetWorld())
+	{
+		if (AShooterGameState* GS = World->GetGameState<AShooterGameState>())
+		{
+			Remaining = GS->GetRemainingTime();
+		}
+	}
+
+	const int32 TotalSec = FMath::Max(0, FMath::CeilToInt(Remaining));
+	const int32 Mins = TotalSec / 60;
+	const int32 Secs = TotalSec % 60;
+	const FString Msg = (Remaining <= 0.f)
+		? TEXT("手表：无倒计时（非对局或未开始）")
+		: FString::Printf(TEXT("手表：剩余 %d:%02d"), Mins, Secs);
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(88221001, WatchTimeDisplaySeconds, FColor::Cyan, Msg);
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Watch] %s"), *Msg);
+
+	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
+	{
+		if (UMatchHUD* HUD = PC->GetMatchHUD())
+		{
+			HUD->ShowWatchTime(Remaining, WatchTimeDisplaySeconds);
+		}
+	}
+}
+
+void AShooterCharacter::Multicast_NotifyBloodyFeet_Implementation()
+{
+	MarkBloodyFeet();
+}
+
+
+void AShooterCharacter::MarkBloodyFeet(int32 ExtraSteps)
+{
+	if (GetNetMode() == NM_DedicatedServer) return;
+	const int32 Add = ExtraSteps > 0 ? ExtraSteps : BloodyFootstepsOnHit;
+	BloodyFootstepsRemaining = FMath::Max(BloodyFootstepsRemaining, Add);
+}
+
+void AShooterCharacter::SpawnBloodFootprint()
+{
+	UWorld* World = GetWorld();
+	if (!World || GetNetMode() == NM_DedicatedServer) return;
+
+	UMaterialInterface* Mat = nullptr;
+	if (!BloodFootprintDecal.IsNull())
+	{
+		Mat = BloodFootprintDecal.LoadSynchronous();
+	}
+	if (!Mat)
+	{
+		Mat = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat"));
+	}
+	if (!Mat) return;
+
+	const UCapsuleComponent* Cap = GetCapsuleComponent();
+	const float Half = IsValid(Cap) ? Cap->GetScaledCapsuleHalfHeight() : 90.f;
+	const FVector Start = GetActorLocation();
+	const FVector End = Start - FVector(0.f, 0.f, Half + 60.f);
+
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BloodFootprint), false, this);
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	{
+		// Floor often blocks WorldStatic better than Visibility.
+		FCollisionObjectQueryParams Obj;
+		Obj.AddObjectTypesToQuery(ECC_WorldStatic);
+		Obj.AddObjectTypesToQuery(ECC_WorldDynamic);
+		if (!World->LineTraceSingleByObjectType(Hit, Start, End, Obj, Params))
+		{
+			return;
+		}
+	}
+
+	const float Side = bFootstepLeft ? -10.f : 10.f;
+	const FVector Right = GetActorRightVector();
+	const FVector Loc = Hit.ImpactPoint + Hit.ImpactNormal * 1.5f + Right * Side;
+
+	const FRotator DecalRot = FRotationMatrix::MakeFromZX(Hit.ImpactNormal, GetActorForwardVector()).Rotator();
+	UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(
+		World, Mat, FVector(BloodFootprintSize * 0.35f, BloodFootprintSize, BloodFootprintSize),
+		Loc, DecalRot, BloodFootprintLifeSpan);
+	if (IsValid(Decal))
+	{
+		Decal->SetFadeScreenSize(0.001f);
+		Decal->SetFadeOut(BloodFootprintLifeSpan * 0.55f, BloodFootprintLifeSpan * 0.45f, false);
+	}
+}
+
+void AShooterCharacter::EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkeletalMesh* SourceMesh)
+{
+	if (!IsValid(Mesh1P) || !IsValid(ArmsMesh)) return;
+
+	static const FName SocketNames[] = {
+		TEXT("weapon_r"), TEXT("WeaponSocket"), TEXT("weapon_mount"), TEXT("SOCKET_Weapon"),
+		TEXT("RifleSocket"), TEXT("RifleSocketak"), TEXT("RifleSocketMCX"), TEXT("RifleSocketPCC"),
+		TEXT("PistolSocket"), TEXT("PistolSocketDeagle"), TEXT("PistolSocketX24"),
+		TEXT("GrenadeSocket"), TEXT("HandGrip_R")
+	};
+
+	struct FCopiedSocket
+	{
+		FName Name;
+		FName BoneName;
+		FVector RelLoc;
+		FRotator RelRot;
+		FVector RelScale;
+	};
+	TArray<FCopiedSocket> Copied;
+
+	auto HasAttach = [](const USkeletalMeshComponent* Comp, FName Name) -> bool
+	{
+		if (!IsValid(Comp) || Name.IsNone()) return false;
+		if (Comp->GetSocketByName(Name) != nullptr) return true;
+		return Comp->GetBoneIndex(Name) != INDEX_NONE;
+	};
+
+	auto FindAuthoredSocket = [](USkeletalMesh* InMesh, FName Name) -> USkeletalMeshSocket*
+	{
+		if (!IsValid(InMesh) || Name.IsNone()) return nullptr;
+		if (USkeletalMeshSocket* S = InMesh->FindSocket(Name)) return S;
+		if (USkeleton* Sk = InMesh->GetSkeleton())
+		{
+			for (USkeletalMeshSocket* S : Sk->Sockets)
+			{
+				if (IsValid(S) && S->SocketName == Name) return S;
+			}
+		}
+		return nullptr;
+	};
+
+	const bool bSrcHasHand = HasAttach(Mesh1P, TEXT("hand_r"));
+	const bool bMeshStillSource = IsValid(SourceMesh) && Mesh1P->GetSkeletalMeshAsset() == SourceMesh;
+	if (bSrcHasHand && bMeshStillSource)
+	{
+		const FTransform HandWorld = Mesh1P->GetSocketTransform(TEXT("hand_r"), RTS_World);
+		for (const FName Name : SocketNames)
+		{
+			if (!HasAttach(Mesh1P, Name)) continue;
+			const FTransform AttachWorld = Mesh1P->GetSocketTransform(Name, RTS_World);
+			const FTransform Rel = AttachWorld.GetRelativeTransform(HandWorld);
+			FCopiedSocket Entry;
+			Entry.Name = Name;
+			Entry.BoneName = TEXT("hand_r");
+			Entry.RelLoc = Rel.GetLocation();
+			Entry.RelRot = Rel.Rotator();
+			Entry.RelScale = Rel.GetScale3D();
+			Copied.Add(Entry);
+		}
+	}
+
+	USkeletalMesh* IronMesh = SourceMesh;
+	if (!IsValid(IronMesh) || IronMesh == ArmsMesh)
+	{
+		IronMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/FirstPersonBPIronbelly/Arms/SK_FPSArms.SK_FPSArms"));
+	}
+	if (IsValid(IronMesh))
+	{
+		for (const FName Name : SocketNames)
+		{
+			if (Copied.ContainsByPredicate([&](const FCopiedSocket& E) { return E.Name == Name; })) continue;
+			if (USkeletalMeshSocket* Src = FindAuthoredSocket(IronMesh, Name))
+			{
+				FCopiedSocket Entry;
+				Entry.Name = Name;
+				Entry.BoneName = Src->BoneName.IsNone() ? FName(TEXT("hand_r")) : Src->BoneName;
+				Entry.RelLoc = Src->RelativeLocation;
+				Entry.RelRot = Src->RelativeRotation;
+				Entry.RelScale = Src->RelativeScale;
+				Copied.Add(Entry);
+			}
+		}
+	}
+
+	auto EnsureNamed = [&](FName Name)
+	{
+		if (Copied.ContainsByPredicate([&](const FCopiedSocket& E) { return E.Name == Name; })) return;
+		FCopiedSocket Entry;
+		Entry.Name = Name;
+		Entry.BoneName = TEXT("hand_r");
+		Entry.RelLoc = FVector::ZeroVector;
+		Entry.RelRot = FRotator::ZeroRotator;
+		Entry.RelScale = FVector::OneVector;
+		Copied.Add(Entry);
+	};
+	EnsureNamed(TEXT("weapon_r"));
+	EnsureNamed(TEXT("WeaponSocket"));
+	EnsureNamed(TEXT("SOCKET_Weapon"));
+	EnsureNamed(TEXT("RifleSocket"));
+	EnsureNamed(TEXT("RifleSocketak"));
+	EnsureNamed(TEXT("PistolSocket"));
+	EnsureNamed(TEXT("GrenadeSocket"));
+
+	const FReferenceSkeleton& RefSkel = ArmsMesh->GetRefSkeleton();
+	int32 Added = 0;
+	for (const FCopiedSocket& Entry : Copied)
+	{
+		if (FindAuthoredSocket(ArmsMesh, Entry.Name) != nullptr) continue;
+
+		FName BoneName = Entry.BoneName;
+		FVector RelLoc = Entry.RelLoc;
+		FRotator RelRot = Entry.RelRot;
+		FVector RelScale = Entry.RelScale.IsNearlyZero() ? FVector::OneVector : Entry.RelScale;
+		if (RefSkel.FindBoneIndex(BoneName) == INDEX_NONE)
+		{
+			BoneName = TEXT("hand_r");
+			if (RefSkel.FindBoneIndex(BoneName) == INDEX_NONE) continue;
+			if (Entry.BoneName != BoneName)
+			{
+				RelLoc = FVector::ZeroVector;
+				RelRot = FRotator::ZeroRotator;
+				RelScale = FVector::OneVector;
+			}
+		}
+
+		USkeletalMeshSocket* NewSock = NewObject<USkeletalMeshSocket>(ArmsMesh);
+		NewSock->SocketName = Entry.Name;
+		NewSock->BoneName = BoneName;
+		NewSock->RelativeLocation = RelLoc;
+		NewSock->RelativeRotation = RelRot;
+		NewSock->RelativeScale = RelScale;
+		ArmsMesh->AddSocket(NewSock);
+		++Added;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Look] Arms1P sockets+=%d (wanted %d) on %s"),
+		Added, Copied.Num(), *GetNameSafe(ArmsMesh));
+}
+
+void AShooterCharacter::ApplyFactionArms1P()
+{
+	if (!bUseBanditsArms1P || !IsValid(Mesh1P))
+	{
+		return;
+	}
+
+	if (!bCapturedDefaultArms1P)
+	{
+		DefaultArmsMesh1PAsset = Mesh1P->GetSkeletalMeshAsset();
+		bCapturedDefaultArms1P = true;
+	}
+
+	EnsureFactionLookDefaults();
+
+	USkeletalMesh* WantMesh = nullptr;
+	switch (FactionLook)
+	{
+	case ECharacterLookFaction::Criminal:
+		WantMesh = LoadSoftMesh(CriminalArmsMesh1P);
+		break;
+	case ECharacterLookFaction::Police:
+		WantMesh = LoadSoftMesh(PoliceArmsMesh1P);
+		break;
+	default:
+		WantMesh = DefaultArmsMesh1PAsset.Get();
+		break;
+	}
+
+	if (!IsValid(WantMesh))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Look] Arms1P mesh missing for FactionLook=%d"), static_cast<int32>(FactionLook));
+		return;
+	}
+
+	USkeletalMesh* SourceForSockets = DefaultArmsMesh1PAsset.Get();
+	if (!IsValid(SourceForSockets))
+	{
+		SourceForSockets = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/FirstPersonBPIronbelly/Arms/SK_FPSArms.SK_FPSArms"));
+	}
+
+	const bool bBanditsTarget = (FactionLook == ECharacterLookFaction::Criminal || FactionLook == ECharacterLookFaction::Police);
+	if (bBanditsTarget)
+	{
+		EnsureArms1PGripSockets(WantMesh, SourceForSockets);
+	}
+
+	USkeleton* WantSkel = WantMesh->GetSkeleton();
+	USkeleton* CurSkel = Mesh1P->GetSkeletalMeshAsset() ? Mesh1P->GetSkeletalMeshAsset()->GetSkeleton() : nullptr;
+#if WITH_EDITOR
+	if (IsValid(WantSkel) && IsValid(CurSkel) && WantSkel != CurSkel)
+	{
+		WantSkel->AddCompatibleSkeleton(CurSkel);
+		CurSkel->AddCompatibleSkeleton(WantSkel);
+	}
+	if (IsValid(WantSkel) && IsValid(SourceForSockets) && SourceForSockets->GetSkeleton())
+	{
+		WantSkel->AddCompatibleSkeleton(SourceForSockets->GetSkeleton());
+		SourceForSockets->GetSkeleton()->AddCompatibleSkeleton(WantSkel);
+	}
+#endif
+
+	const bool bAlready = (Mesh1P->GetSkeletalMeshAsset() == WantMesh);
+	if (!bAlready)
+	{
+		const TSubclassOf<UAnimInstance> KeepAnim = Mesh1P->GetAnimClass();
+		Mesh1P->SetSkeletalMesh(WantMesh, true);
+		if (KeepAnim)
+		{
+			Mesh1P->SetAnimInstanceClass(KeepAnim);
+			if (UAnimInstance* AnimInst = Mesh1P->GetAnimInstance())
+			{
+				AnimInst->InitializeAnimation(true);
+			}
+		}
+	}
+
+	if (IsValid(Combat))
+	{
+		Combat->RecacheDefaultFirstPersonArms();
+		if (AWeapon* W = Combat->CurrentWeapon.Get())
+		{
+			W->AttachToOwingPawn();
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[Look] Mesh1P -> %s FactionLook=%d already=%d"),
+		*GetNameSafe(WantMesh), static_cast<int32>(FactionLook), bAlready ? 1 : 0);
+}

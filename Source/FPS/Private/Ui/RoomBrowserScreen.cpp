@@ -1,4 +1,4 @@
-#include "Ui/RoomBrowserScreen.h"
+﻿#include "Ui/RoomBrowserScreen.h"
 
 #include "ShooterGameInstance.h"
 #include "Menu/MainMenuPlayerController.h"
@@ -7,6 +7,7 @@
 #include "Components/PanelWidget.h"
 #include "Components/EditableTextBox.h"
 #include "Components/EditableText.h"
+#include "Ui/TacticalUIStyle.h"
 
 static FText FPS_ModeName(const UGameInstance* GIBase, EShooterGameMode Mode)
 {
@@ -23,6 +24,7 @@ static FText FPS_ModeName(const UGameInstance* GIBase, EShooterGameMode Mode)
 void URoomBrowserRowWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FTacticalUIStyle::ApplyToUserWidget(this);
 	if (Button_Join) Button_Join->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleJoin);
 }
 
@@ -61,7 +63,9 @@ UShooterSessionSubsystem* URoomBrowserScreen::GetSessions() const
 void URoomBrowserScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
+	FTacticalUIStyle::ApplyToUserWidget(this);
 	if (Button_Create) Button_Create->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCreate);
+	if (Button_LocalHost) Button_LocalHost->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLocalHost);
 	if (Button_Refresh) Button_Refresh->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRefresh);
 	if (Button_JoinCode) Button_JoinCode->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleJoinCode);
 	if (Button_Back) Button_Back->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBack);
@@ -238,7 +242,27 @@ void URoomBrowserScreen::Back()
 	OnBackRequested();
 }
 
+
+void URoomBrowserScreen::HostLocalLan()
+{
+	if (UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>())
+	{
+		GI->EnsureLocalLanMode();
+		SetStatus(NSLOCTEXT("Browser", "LocalHost", "本机局域网开房…"));
+		GI->SelectMode(Mode);
+		if (!GI->HostLocalListen(TEXT("lobby")))
+		{
+			const FString Err = GI->GetLastOnlineError();
+			SetStatus(Err.IsEmpty() ? NSLOCTEXT("Browser", "LocalHostFail", "本机开房失败") : FText::FromString(Err));
+			GI->ClearLastOnlineError();
+		}
+	}
+}
+
+void URoomBrowserScreen::HandleLocalHost() { HostLocalLan(); }
+
 void URoomBrowserScreen::HandleCreate() { CreateRoom(); }
 void URoomBrowserScreen::HandleRefresh() { RefreshRooms(); }
 void URoomBrowserScreen::HandleJoinCode() { JoinByCodeOrIP(GetCodeInput()); }
 void URoomBrowserScreen::HandleBack() { Back(); }
+

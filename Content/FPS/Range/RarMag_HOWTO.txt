@@ -1,0 +1,42 @@
+﻿RAR 战术换弹双弹匣 (2026-10-28)
+================================
+
+问题
+----
+长按 R（战术换弹）换弹时只看见一只弹匣；战术应同时看见两只：
+  - SOCKET_Magazine：旧匣拔出
+  - SOCKET_Magazine_Reserve：新匣送入
+空仓点按 R 仍应正常。
+
+根因
+----
+1. Infima 原版手臂蒙太奇有 BP_IG_AN_Magazine_Reserve_Set_Visiblity；
+   项目拷贝 AM_RAR_Reload / _Empty 没有这些 Notify，靠 C++ 亮备用匣。
+2. 枪身 WEP 动画（AM_RAR_FP_WEP_AssaultRifle_Reload）才会把两根弹匣插槽拉开；
+   原先 Montage_Play 若 AnimBP 槽对不上，骨骼不动，两只匣叠在一起像一只。
+3. SetMeshVisibility 会 HideReserveMagazines，换弹中途若被调用会把第二只藏掉。
+
+修复（C++）
+----
+- Weapon.cpp PlayMagazineReload：强制显示主匣 + 备用匣，缺则生成 ReserveMag_1P
+- Weapon.cpp PlayWeaponMontageOrSequence：用 DefaultSlot 动态蒙太奇播 WEP 第一段，驱动 socket_magazine_*_CONTROL
+- Weapon.cpp SetMeshVisibility：Reloading 期间不藏备用匣
+- CombatComponent.cpp PlayReloadSequences：1P 也调 PlayMagazineReload
+
+备份
+----
+Saved\CodeBackup_20261028_053921_RarMag\
+
+PIE 测
+----
+1. 编辑器 Ctrl+Alt+F11 Live Coding（只改了 .cpp）
+2. 拿 RAR，弹匣非空：长按 R → 应看见两只匣（一出一进）
+3. 打空：点按 R → 空仓换弹仍正常
+4. 输出日志若出现 [MagReload] ... no reserve mag，检查 DA_RAR_Magazine.Mesh 与枪模 SOCKET_Magazine_Reserve
+
+相关资产
+----
+- DA: /Game/FPS/Data/RAR/DA_RAR_Magazine
+- 手臂: /Game/FPS/Animation/RAR/AM_RAR_Reload（战术） / AM_RAR_Reload_Empty（空仓）
+- 枪身: /Game/InfimaGames/.../AM_RAR_FP_WEP_AssaultRifle_Reload(_Empty)
+- 枪 BP: /Game/FPS/Weapon/RAR/BP_FPS_RAR（Mesh1P AnimClass=ABP_RAR）

@@ -1,0 +1,39 @@
+RAR tactical dual mag fix — 2026-10-28
+=====================================
+
+Root cause
+----------
+1. SOCKET_Magazine_Reserve is on the GUN (SK_RAR Mesh1P), not the hand.
+   Infima "two mags in hands" = WEP reload moves gun sockets to hands + both SM visible.
+   BP_IG_AN_Magazine_Reserve_Set_Visiblity toggles weapon reserve via BPI_IG_Weapon —
+   not a separate hand-attached mesh. Our pawn does not implement Infima BPI.
+2. Last fix ScheduleInfimaMagazineNotifies HID the reserve at reload start, then hoped
+   Infima PCH notify timers would re-show it. Project arms use AM_RAR_Reload (no those
+   notifies); timer path left reserve hidden → only one mag near magwell.
+3. Do NOT use DefaultSlot PlaySlotAnimationAsDynamicMontage for WEP (freezes mag bones).
+
+Fix
+---
+- Remove Infima notify timer scheduling.
+- PlayMagazineReload: bReloadReserveMagVisible=true, ShowReserveMagazineForReload()
+  for the WHOLE reload (PolishHud behavior that worked before today's timer path).
+- SetMeshVisibility: if flag set, re-show reserve after HideReserveMagazines.
+- FinishMagazineReloadVisuals on AttachToOwingPawn (reload end / stop).
+- PlayWeaponMontageOrSequence UNCHANGED.
+
+Backup
+------
+Saved\CodeBackup_20261028_065038_RarDualMagFix\
+
+Compile
+-------
+.h changed — close editor, then:
+  Build.bat FPSEditor Win64 Development -Project="...\FPS.uproject" -WaitMutex -MaxParallelActions=1
+
+PIE
+---
+1. Cold-start editor with new DLL.
+2. RAR, ammo not empty: HOLD R.
+   Expect TWO mags (new held + old pulled); Output Log: [RarMag] ShowReserve sock=1 hasReserve=1
+3. TAP R empty: mag bones still move; reserve may also show (OK).
+4. After reload ends, only one mag on gun.

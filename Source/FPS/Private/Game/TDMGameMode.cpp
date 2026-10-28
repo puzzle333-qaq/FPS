@@ -130,6 +130,7 @@ void ATDMGameMode::StartMatch()
 	if (!GS || GS->GetMatchState() == EShooterMatchState::InProgress || GS->GetMatchState() == EShooterMatchState::PostMatch) return;
 	GS->SetMatchEndServerTime(MatchDuration > 0.f ? GS->GetServerWorldTimeSeconds() + MatchDuration : 0.f);
 	GS->SetMatchState(EShooterMatchState::InProgress);
+	GS->RefreshTeamAliveCounts();
 	if (MatchDuration > 0.f)
 	{
 		GetWorldTimerManager().SetTimer(MatchTimer, this, &ThisClass::TickMatchTimer, 1.f, true);
