@@ -20,7 +20,6 @@
 #include "Components/CapsuleComponent.h"
 #include "WeaponData.h"
 #include "Weapon/Weapon.h"
-#include "Weapon/SniperScopeComponent.h"
 #include "Weapon/OpticScopeComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -204,12 +203,7 @@ AShooterCharacter::AShooterCharacter()
 
 void AShooterCharacter::BeginPlay()
 {
-	if (GetNetMode() != NM_DedicatedServer && !FindComponentByClass<USniperScopeComponent>())
-	{
-		USniperScopeComponent* Scope = NewObject<USniperScopeComponent>(this, TEXT("SniperScope"));
-		Scope->RegisterComponent();
-	}
-	// 倍镜画中画（配件瞄具 OpticType = Magnified 时用）
+	// 倍镜画中画（配件瞄具 OpticType = Magnified 时用，PSR 走这条）
 	if (GetNetMode() != NM_DedicatedServer && !FindComponentByClass<UOpticScopeComponent>())
 	{
 		UOpticScopeComponent* OpticScope = NewObject<UOpticScopeComponent>(this, TEXT("OpticScope"));
@@ -348,14 +342,8 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateTacticalVision(DeltaTime);       // NVG / Thermal PP + battery
 	UpdateAimFieldOfView(DeltaTime);
 	UpdateLean(DeltaTime);
-	UpdateSlide(DeltaTime);
 	UpdateMomentumCarry(DeltaTime);
-	UpdateProne(DeltaTime);
 
-	if (USniperScopeComponent* Scope = FindComponentByClass<USniperScopeComponent>())
-	{
-		Scope->UpdateView();
-	}
 	if (UOpticScopeComponent* OpticScope = FindComponentByClass<UOpticScopeComponent>())
 	{
 		OpticScope->UpdateView();
@@ -991,11 +979,6 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	UEnhancedInputComponent* ShooterInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
 
 	EnsureLeanInput(ShooterInputComponent);
-	EnsureProneInput();
-	if (ProneAction)
-	{
-		ShooterInputComponent->BindAction(ProneAction, ETriggerEvent::Started, this, &ThisClass::Input_Prone);
-	}
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanLeft_Started);
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanLeft_Completed);
 	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanRight_Started);
@@ -1346,16 +1329,8 @@ bool AShooterCharacter::CanExitProne(bool bToCrouch) const
 
 void AShooterCharacter::RequestSetProne(bool bNewProne, bool bExitToCrouch)
 {
-	if (bNewProne == bIsProne) return;
-	if (bIsSliding) return;   // finish/cancel the slide first
-	if (bNewProne && !CanEnterProne()) return;
-	if (!bNewProne && !CanExitProne(bExitToCrouch)) return;   // ceiling above: stay prone
-
-	ApplyProneState(bNewProne, bExitToCrouch);   // local prediction (server: authoritative)
-	if (!HasAuthority())
-	{
-		Server_SetProne(bNewProne, bExitToCrouch);
-	}
+	(void)bNewProne;
+	(void)bExitToCrouch;
 }
 
 void AShooterCharacter::Server_SetProne_Implementation(bool bNewProne, bool bExitToCrouch)
@@ -1490,14 +1465,7 @@ bool AShooterCharacter::CanStartSlide(float SpeedScale) const
 
 bool AShooterCharacter::TryStartSlide()
 {
-	if (!IsLocallyControlled() || !CanStartSlide(1.f)) return false;
-	bSlideEndCrouch = true;
-	ApplySlideState(true);
-	if (!HasAuthority())
-	{
-		Server_SetSliding(true);
-	}
-	return true;
+	return false;
 }
 
 void AShooterCharacter::CancelSlideToStand()

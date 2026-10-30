@@ -4,25 +4,19 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Loadout/LoadoutTypes.h"
-#include "Ui/BuyShopTypes.h"
-#include "Game/SearchDestroyTypes.h"
 #include "Game/PoliceCriminalTypes.h"
 #include "ShooterPlayerController.generated.h"
 
 class UInputMappingContext;
 class UInputAction;
-class UAttachmentMenu;
 class AWeapon;
 class UPauseMenuScreen;
-class UBuyShopScreen;
 class UModeHudWidget;
 class UMatchHUD;
 class UCombatHudKeepAlive;
 class UCombatStatusHud;
 class AGameStateBase;
-class AWeaponPickup;
 class UScoreboardScreen;
-class URadarWidget;
 class AShooterCharacter;
 class USettingsScreen;
 struct FInputActionValue;
@@ -41,12 +35,10 @@ public:
 	// 只按当前状态重新算速度（不发 RPC），角色在开镜/下蹲变化时调用
 	void RefreshMovementSpeed() { ApplyMovementSpeed(); }
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement") bool IsSprinting() const { return bIsSprinting; }
-	UFUNCTION(BlueprintPure, Category = "FPS|Movement") bool IsTacticalSprinting() const { return bIsSprinting && bIsTacticalSprinting; }
 
-	// 冲刺中按开火到第一枪的缓冲（战术冲刺更长）
-	float GetSprintToFireDelay() const { return IsTacticalSprinting() ? TacticalSprintToFireDelay : SprintToFireDelay; }
+	float GetSprintToFireDelay() const { return SprintToFireDelay; }
 
-	// 冲刺后摇 + Option A 滑铲前半段门控：要再等这么久才能开镜（Combat 预输入复用）
+	// 冲刺后摇：要再等这么久才能开镜（Combat 预输入复用）
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
 	bool CanStartAds() const;
 
@@ -200,52 +192,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|PauseMenu")
 	bool IsPauseMenuOpen() const;
 
-	// ---------- 爆破购买商店 ----------
-	UFUNCTION(BlueprintCallable, Category = "FPS|Buy")
-	void ToggleBuyShop();
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Buy")
-	void OpenBuyShop();
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Buy")
-	void CloseBuyShop();
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
-	bool IsBuyShopOpen() const;
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
-	bool CanOpenBuyShop() const;
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Buy")
-	bool RequestBuyShopItem(int32 CatalogIndex);
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
-	TArray<FBuyShopItem> GetCachedBuyCatalog() const;
-
-	bool Auth_ApplyBoughtWeapon(const FWeaponPreset& Preset);
-
-	// ---- F 交互 / 武器掉落 ----
+	// ---- F 交互 ----
 	// 相机射线长度（cm）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Interact")
 	float InteractDistance = 250.f;
-
-	// 掉落物类，可填 AWeaponPickup 的蓝图子类；为空用 C++ 默认
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Interact")
-	TSubclassOf<AWeaponPickup> WeaponPickupClass;
 
 	// 本地：准星对着的可交互物（没有返回 nullptr）
 	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
 	AActor* TraceInteractable() const;
 
-	// HUD 绑定：当前交互提示（门/枪 > 爆破拾取/安放/拆除），没有则为空
+	// HUD 绑定：当前交互提示（门/人质/陷阱），没有则为空
 	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
 	FText GetInteractPromptText() const;
-
-	// 服务器：死亡掉落主枪/手枪（刀和炸弹不在这里）
-	void Auth_DropWeaponsOnDeath(APawn* DeadPawn);
-
-	// 服务器：捡枪，同槽位旧枪丢地上。成功返回 true（调用方销毁掉落物）
-	bool Auth_PickupWeapon(AWeaponPickup* Pickup);
 
 	// ---- 计分板（按住 Tab） ----
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|HUD")
@@ -253,22 +211,6 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|HUD")
 	void ShowScoreboard(bool bShow);
-
-	// ---- 战术大地图（M 开关；Esc 优先关地图） ----
-	UFUNCTION(BlueprintCallable, Category = "FPS|HUD")
-	void ToggleFullMap();
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|HUD")
-	void ShowFullMap(bool bShow);
-
-	UFUNCTION(BlueprintPure, Category = "FPS|HUD")
-	bool IsFullMapOpen() const;
-
-	// 填 WBP_BuyShop（父类 BuyShopScreen）。只在爆破局使用；TDM 可留空。
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Buy")
-	TSubclassOf<UBuyShopScreen> BuyShopWidgetClass;
-
-
 
 	// ---------- 局外配装 ----------
 	// 服务器上已校验的配装；SpawnInventory 读它。控制器跨重生存在，所以重生也会用
@@ -280,9 +222,6 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void Server_SubmitLoadout(const FLoadoutPreset& Loadout);
-
-	UFUNCTION(Server, Reliable)
-	void Server_BuyShopItem(int32 CatalogIndex);
 
 	// ---------- 比赛 ----------
 	// 比赛结束：本地停掉输入（结算界面由 HUD 监听 GameState.OnMatchEnded 显示）
@@ -296,7 +235,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	bool IsMatchOver() const { return bMatchOver; }
 
-	// ---------- 观战（爆破：死亡/回合中途加入） ----------
+	// ---------- 观战（死亡后看队友） ----------
 	UFUNCTION(BlueprintPure, Category = "FPS|Spectate")
 	bool IsSpectating() const { return bSpectating; }
 
@@ -374,43 +313,9 @@ private:
 	bool bNVGBound = false;
 
 
-	// 爆破交互（安放 / 拆除）。空着时运行时绑 F
+	// 世界交互（门 / 人质 / 陷阱）。空着时运行时绑 F
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> InteractAction;
-
-	// 配件菜单开关（例如 B 键）
-	UPROPERTY(EditAnywhere, Category = "FPS|Input")
-	TObjectPtr<UInputAction> ToggleAttachmentMenuAction;
-
-	// 填 WBP_AttachmentMenu
-	UPROPERTY(EditAnywhere, Category = "FPS|UI")
-	TSubclassOf<UAttachmentMenu> AttachmentMenuClass;
-
-	// 只创建一次，之后反复加到屏幕/移除
-	UPROPERTY(Transient)
-	TObjectPtr<UAttachmentMenu> AttachmentMenu;
-
-	void Input_ToggleAttachmentMenu();
-
-	// Tab 打开爆破购买商店（仅购买阶段有效）。按键运行时注册。
-	UPROPERTY(Transient)
-	TObjectPtr<UInputAction> BuyShopAction;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UInputMappingContext> BuyShopIMC;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBuyShopScreen> BuyShop;
-
-	void EnsureBuyShopInput();
-	bool bBuyShopBound = false;
-	void Input_ToggleBuyShop();
-
-	UFUNCTION()
-	void HandleBuyPhaseChanged(EBombRoundPhase NewPhase);
-
-	void HandleGameStateSetForBuy(AGameStateBase* NewGameState);
-
 
 	// 暂停菜单按键（运行时创建：Esc + P，P 方便 PIE 里测，因为 PIE 默认 Esc 是停止）
 	void EnsurePauseInput();
@@ -452,8 +357,8 @@ private:
 	FLoadoutPreset SubmittedLoadout;
 	bool bHasSubmittedLoadout = false;
 
-	void Input_Crouch();          // C: toggle crouch / stand (prone -> crouch); slides when fast
-	void Input_CrouchHold_Started();   // Left Ctrl pressed: crouch (or slide when fast)
+	void Input_Crouch();          // C: toggle crouch / stand
+	void Input_CrouchHold_Started();   // Left Ctrl pressed: crouch
 	void Input_CrouchHold_Completed(); // Left Ctrl released: stand (CMC waits for headroom)
 	void EnsureCrouchInput();
 
@@ -493,8 +398,6 @@ private:
 	UFUNCTION(Server, Reliable)
 	void Server_Interact(AActor* Target);
 
-	AWeaponPickup* Auth_SpawnPickupFromWeapon(AWeapon* Weapon, APawn* FromPawn, const FVector& Offset);
-
 	UPROPERTY()
 	TObjectPtr<UInputAction> ScoreboardAction;
 
@@ -508,19 +411,7 @@ private:
 	void EnsureScoreboardInput();
 	void Input_Scoreboard_Started();
 	void Input_Scoreboard_Completed();
-	void EnsureFullMapInput();
-	void Input_ToggleFullMap();
 
-	UPROPERTY(Transient)
-	TObjectPtr<UInputAction> FullMapAction;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UInputMappingContext> FullMapIMC;
-
-	UPROPERTY(Transient)
-	TObjectPtr<URadarWidget> FullMapWidget;
-
-	bool bFullMapBound = false;
 	void EnsureInteractInput();
 
 	// ---- 观战 ----
@@ -568,12 +459,6 @@ private:
 
 	bool IsMovementLocked() const;
 
-	UFUNCTION(Server, Reliable)
-	void Server_BeginBombInteract();
-
-	UFUNCTION(Server, Reliable)
-	void Server_EndBombInteract();
-
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> InteractIMC;
 
@@ -586,50 +471,17 @@ private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement")
 	float SprintSpeed = 320.f; // was 700
 
-	// ---------- 战术冲刺：冲刺中快速再按一次冲刺键（双击 Shift） ----------
-	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint")
-	bool bEnableTacticalSprint = false; // off for tactical mode
-
-	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0"))
-	float TacticalSprintSpeed = 380.f; // was 800
-
-	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0.1"))
-	float TacticalSprintDuration = 3.f;
-
-	// 战术冲刺结束后多久才能再用
-	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0"))
-	float TacticalSprintCooldown = 5.f;
-
-	// 两次按冲刺键间隔小于这个算双击
-	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0.05"))
-	float SprintDoubleTapWindow = 0.3f;
-
 	// 冲刺转开火缓冲（秒）
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0"))
 	float SprintToFireDelay = 0.12f;
 
-	UPROPERTY(EditAnywhere, Category = "FPS|Movement|TacticalSprint", meta = (ClampMin = "0"))
-	float TacticalSprintToFireDelay = 0.22f;
-
-	// 松开冲刺（或滑铲取消冲刺）后，多久才能开镜
+	// 松开冲刺后，多久才能开镜
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0"))
 	float SprintToAdsDelay = 0.05f;
-
-
-	bool bIsTacticalSprinting = false;
-	double LastSprintPressTime = -10.0;
-	double TacticalSprintReadyTime = 0.0;
-	FTimerHandle TacticalSprintTimer;
-	void StartTacticalSprint();
-	void EndTacticalSprint();
 
 	// 下面三个倍率会相乘叠加，例如 下蹲+静步+开镜 = 500 * 0.6 * 0.5 * 0.7
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float CrouchSpeedMultiplier = 0.6f;
-
-	// 趴行速度 = RunSpeed * 这个倍率（再乘静步/开镜倍率）。不能冲刺
-	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float ProneSpeedMultiplier = 0.25f;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float WalkSpeedMultiplier = 0.5f;
@@ -653,7 +505,7 @@ private:
 
 	// 客户端 -> 服务器：告诉服务器我现在的移动状态
 	UFUNCTION(Server, Reliable)
-	void Server_SetMovementState(bool bNewSprinting, bool bNewWalking, bool bNewTactical);
+	void Server_SetMovementState(bool bNewSprinting, bool bNewWalking);
 
 	// 服务器 -> 客户端：耐力耗尽，退出冲刺
 	UFUNCTION(Client, Reliable)

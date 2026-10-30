@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "ShooterGameModeBase.h"
 #include "Game/PoliceCriminalTypes.h"
-#include "Ui/BuyShopTypes.h"
 class UWorld;
 #include "PoliceCriminalGameMode.generated.h"
 

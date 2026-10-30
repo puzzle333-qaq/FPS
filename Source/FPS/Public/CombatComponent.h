@@ -128,18 +128,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_EquipOrCycleThrowable();
 
-	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
-	void Initiate_EquipBombWeapon();
-
-	// 数字键 1-5：按当前模式解释。5 在摸金是治疗（返回 false），爆破是切炸弹。
+	// 数字键 1-5：5 留给治疗（返回 false 让角色走 HealPlayer）。
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool Initiate_Hotkey(int32 Hotkey);
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool AllowsHeal() const;
 
-	void GrantBombWeapon();
-	void RemoveBombWeapon();
 	
 	// 第 9 步：检视武器。只在本地第一人称播放，不走网络
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
@@ -298,9 +293,6 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon")
 	TArray<TSubclassOf<AWeapon>> DefaultWeaponClass;
 
-	// 爆破模式 5 切出来的炸弹。空 = 用 C++ ABombWeapon（无动画）
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon")
-	TSubclassOf<AWeapon> BombWeaponClass;
 	
 	AWeapon* SpawnWeapon(TSubclassOf<AWeapon> WeaponClass) const;
 

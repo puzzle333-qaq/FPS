@@ -4,9 +4,7 @@
 
 #include "Ui/MatchHeaderWidget.h"
 #include "Ui/KillFeedWidget.h"
-#include "Ui/RadarWidget.h"
 #include "Game/ShooterPlayerState.h"
-#include "Game/SearchDestroyGameState.h"
 #include "Game/PoliceCriminalGameState.h"
 #include "Game/PoliceCriminalTypes.h"
 #include "Blueprint/WidgetTree.h"
@@ -103,17 +101,6 @@ void UMatchHUD::BindGameState(AShooterGameState* GS)
 	GS->OnMatchModeChanged.AddUniqueDynamic(this, &ThisClass::HandleMatchModeChanged);
 	GS->OnMatchEnded.AddUniqueDynamic(this, &ThisClass::HandleMatchEnded);
 
-	if (ASearchDestroyGameState* SDGS = Cast<ASearchDestroyGameState>(GS))
-	{
-		SDGS->OnRoundEnded.AddUniqueDynamic(this, &ThisClass::HandleRoundEnded);
-		SDGS->OnRoundPhaseChanged.AddUniqueDynamic(this, &ThisClass::HandleRoundPhaseChanged);
-		if (SDGS->GetRoundPhase() == EBombRoundPhase::PostRound
-			&& GS->GetMatchState() != EShooterMatchState::PostMatch)
-		{
-			ShowRoundResult(SDGS->GetRoundWinningTeam(), SDGS->GetLastWinReason());
-		}
-	}
-
 	RebuildHeader();
 	if (GS->GetMatchState() == EShooterMatchState::PostMatch)
 	{
@@ -127,11 +114,6 @@ void UMatchHUD::UnbindGameState()
 	{
 		BoundGameState->OnMatchModeChanged.RemoveDynamic(this, &ThisClass::HandleMatchModeChanged);
 		BoundGameState->OnMatchEnded.RemoveDynamic(this, &ThisClass::HandleMatchEnded);
-		if (ASearchDestroyGameState* SDGS = Cast<ASearchDestroyGameState>(BoundGameState.Get()))
-		{
-			SDGS->OnRoundEnded.RemoveDynamic(this, &ThisClass::HandleRoundEnded);
-			SDGS->OnRoundPhaseChanged.RemoveDynamic(this, &ThisClass::HandleRoundPhaseChanged);
-		}
 	}
 	if (IsValid(ActiveHeader))
 	{
@@ -161,12 +143,6 @@ TSubclassOf<UMatchHeaderWidget> UMatchHUD::ResolveHeaderClass(EShooterGameMode M
 	switch (Mode)
 	{
 	case EShooterGameMode::TDM:
-		if (TDMHeaderClass) return TDMHeaderClass;
-		// C++ Valorant-style top bar (timer / scores / alive + portraits)
-		return UTDMHeaderWidget::StaticClass();
-	case EShooterGameMode::SearchDestroy:
-		if (SDHeaderClass) return SDHeaderClass;
-		return USDHeaderWidget::StaticClass();
 	case EShooterGameMode::PoliceCriminal:
 		// Reuse Valorant-style TDM top bar (timer / scores / alive).
 		if (TDMHeaderClass) return TDMHeaderClass;
@@ -291,34 +267,7 @@ void UMatchHUD::HandleMatchEnded(uint8 WinningTeam)
 	ShowMatchResult(WinningTeam);
 }
 
-void UMatchHUD::HandleRoundEnded(uint8 WinningTeam, ERoundWinReason Reason)
-{
-	if (bMatchResultVisible) return;
-	if (BoundGameState.IsValid() && BoundGameState->GetMatchState() == EShooterMatchState::PostMatch)
-	{
-		return;
-	}
-	ShowRoundResult(WinningTeam, Reason);
-}
 
-void UMatchHUD::HandleRoundPhaseChanged(EBombRoundPhase NewPhase)
-{
-	if (NewPhase == EBombRoundPhase::PostRound)
-	{
-		if (bMatchResultVisible) return;
-		if (ASearchDestroyGameState* SDGS = Cast<ASearchDestroyGameState>(BoundGameState.Get()))
-		{
-			ShowRoundResult(SDGS->GetRoundWinningTeam(), SDGS->GetLastWinReason());
-		}
-		return;
-	}
-
-	// 新回合开始：收起回合横幅（比赛结算保留）
-	if (!bMatchResultVisible)
-	{
-		HideRoundBanner();
-	}
-}
 
 void UMatchHUD::EnsureResultWidgets()
 {
@@ -452,17 +401,6 @@ void UMatchHUD::ApplyResultColors(bool bDraw, bool bLocalWon)
 	}
 }
 
-FText UMatchHUD::ReasonToText(ERoundWinReason Reason) const
-{
-	switch (Reason)
-	{
-	case ERoundWinReason::Elimination: return ReasonEliminationText;
-	case ERoundWinReason::BombExploded: return ReasonBombExplodedText;
-	case ERoundWinReason::BombDefused: return ReasonBombDefusedText;
-	case ERoundWinReason::TimeExpired: return ReasonTimeExpiredText;
-	default: return FText::GetEmpty();
-	}
-}
 
 void UMatchHUD::ShowMatchResult(uint8 WinningTeam)
 {
@@ -537,15 +475,6 @@ void UMatchHUD::ShowMatchResult(uint8 WinningTeam)
 		Detail = FText::Format(MatchScoreFormat,
 			FText::AsNumber(BoundGameState->GetTeamScore(0)),
 			FText::AsNumber(BoundGameState->GetTeamScore(1)));
-		// 爆破终局也带上最后一回合原因
-		if (ASearchDestroyGameState* SDGS = Cast<ASearchDestroyGameState>(BoundGameState.Get()))
-		{
-			const FText Reason = ReasonToText(SDGS->GetLastWinReason());
-			if (!Reason.IsEmpty())
-			{
-				Detail = FText::Format(NSLOCTEXT("MatchHUD", "MatchDetailCombo", "{0}  ·  {1}"), Detail, Reason);
-			}
-		}
 	}
 	if (Text_ResultDetail)
 	{
@@ -559,63 +488,7 @@ void UMatchHUD::ShowMatchResult(uint8 WinningTeam)
 	OnShowMatchResult(WinningTeam, bWon, bDraw);
 }
 
-void UMatchHUD::ShowRoundResult(uint8 WinningTeam, ERoundWinReason Reason)
-{
-	if (bMatchResultVisible) return;
-	EnsureResultWidgets();
-	BindLocalPlayerState();
 
-	const uint8 LocalTeam = BoundPlayerState.IsValid() ? BoundPlayerState->GetTeamId() : AShooterPlayerState::NoTeam;
-	const bool bDraw = WinningTeam == AShooterPlayerState::NoTeam;
-	const bool bWon = !bDraw && LocalTeam != AShooterPlayerState::NoTeam && LocalTeam == WinningTeam;
-
-	if (Text_MatchResult)
-	{
-		Text_MatchResult->SetText(bDraw ? RoundDrawText : (bWon ? RoundVictoryText : RoundDefeatText));
-	}
-
-	FText Detail = ReasonToText(Reason);
-	if (BoundGameState.IsValid())
-	{
-		const FText Score = FText::Format(MatchScoreFormat,
-			FText::AsNumber(BoundGameState->GetTeamScore(0)),
-			FText::AsNumber(BoundGameState->GetTeamScore(1)));
-		Detail = Detail.IsEmpty()
-			? Score
-			: FText::Format(NSLOCTEXT("MatchHUD", "RoundDetailCombo", "{0}  ·  {1}"), Detail, Score);
-	}
-	if (Text_ResultDetail)
-	{
-		Text_ResultDetail->SetText(Detail);
-		Text_ResultDetail->SetVisibility(Detail.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	}
-
-	ApplyResultColors(bDraw, bWon);
-	SetResultVisible(true);
-	OnShowRoundResult(WinningTeam, Reason, bWon, bDraw);
-
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(RoundBannerTimer);
-		World->GetTimerManager().SetTimer(
-			RoundBannerTimer,
-			this,
-			&ThisClass::HideRoundBanner,
-			FMath::Max(RoundBannerDuration, 0.5f),
-			false);
-	}
-}
-
-void UMatchHUD::HideRoundBanner()
-{
-	if (bMatchResultVisible) return;
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(RoundBannerTimer);
-	}
-	SetResultVisible(false);
-	OnHideRoundResult();
-}
 
 void UMatchHUD::BindLocalPlayerState()
 {
@@ -626,8 +499,6 @@ void UMatchHUD::BindLocalPlayerState()
 
 void UMatchHUD::RefreshRespawn()
 {
-	RefreshRadarEquip();
-
 	if (!ActiveHeader && BoundGameState.IsValid())
 	{
 		RebuildHeader();
@@ -653,107 +524,8 @@ void UMatchHUD::RefreshRespawn()
 	Text_Respawn->SetText(FText::Format(RespawnFormat, FText::AsNumber(Seconds)));
 }
 
-void UMatchHUD::EnsureRadarWidget()
-{
-	auto ApplyRadarLayout = [this](URadarWidget* W)
-	{
-		if (!IsValid(W)) return;
-		// 强制左上角大雷达（即使蓝图里曾经摆在左下）
-		if (W->RadarPixelSize < 220.f) W->RadarPixelSize = 232.f;
-		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(W->Slot))
-		{
-			const float Margin = 24.f;
-			const float Size = W->RadarPixelSize;
-			CanvasSlot->SetAnchors(FAnchors(0.f, 0.f));
-			CanvasSlot->SetAlignment(FVector2D(0.f, 0.f));
-			CanvasSlot->SetPosition(FVector2D(Margin, Margin));
-			CanvasSlot->SetSize(FVector2D(Size, Size));
-			CanvasSlot->SetZOrder(20);
-		}
-		else if (UOverlaySlot* OverlaySlot = Cast<UOverlaySlot>(W->Slot))
-		{
-			const float Margin = 24.f;
-			OverlaySlot->SetHorizontalAlignment(HAlign_Left);
-			OverlaySlot->SetVerticalAlignment(VAlign_Top);
-			OverlaySlot->SetPadding(FMargin(Margin, Margin, 0.f, 0.f));
-		}
-		W->SetVisibility(ESlateVisibility::Collapsed); // tactical: radar off by default
-	};
-
-	if (Radar)
-	{
-		ApplyRadarLayout(Radar);
-		return;
-	}
-	if (URadarWidget* Named = Cast<URadarWidget>(GetWidgetFromName(TEXT("Radar"))))
-	{
-		Radar = Named;
-		ApplyRadarLayout(Radar);
-		return;
-	}
-	if (bBuiltFallbackRadar) return;
-
-	APlayerController* PC = GetOwningPlayer();
-	Radar = CreateWidget<URadarWidget>(PC, URadarWidget::StaticClass());
-	if (!IsValid(Radar)) return;
-	PlaceRadar(Radar);
-	bBuiltFallbackRadar = true;
-	ApplyRadarLayout(Radar);
-	UE_LOG(LogTemp, Log, TEXT("[MatchHUD] Built fallback Radar widget."));
-}
-
-void UMatchHUD::PlaceRadar(URadarWidget* InRadar)
-{
-	if (!IsValid(InRadar)) return;
-
-	const float Margin = 24.f;
-	if (InRadar->RadarPixelSize < 220.f) InRadar->RadarPixelSize = 232.f;
-	const float Size = InRadar->RadarPixelSize;
-
-	if (UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(GetRootWidget()))
-	{
-		if (UCanvasPanelSlot* RadarSlot = RootCanvas->AddChildToCanvas(InRadar))
-		{
-			// 左上角
-			RadarSlot->SetAnchors(FAnchors(0.f, 0.f));
-			RadarSlot->SetAlignment(FVector2D(0.f, 0.f));
-			RadarSlot->SetPosition(FVector2D(Margin, Margin));
-			RadarSlot->SetSize(FVector2D(Size, Size));
-			RadarSlot->SetZOrder(20);
-		}
-		return;
-	}
-
-	if (UOverlay* RootOverlay = Cast<UOverlay>(GetRootWidget()))
-	{
-		if (UOverlaySlot* RadarSlot = RootOverlay->AddChildToOverlay(InRadar))
-		{
-			RadarSlot->SetHorizontalAlignment(HAlign_Left);
-			RadarSlot->SetVerticalAlignment(VAlign_Top);
-			RadarSlot->SetPadding(FMargin(Margin, Margin, 0.f, 0.f));
-		}
-		return;
-	}
-
-	UE_LOG(LogTemp, Warning, TEXT("[MatchHUD] Cannot place Radar — root is not Canvas/Overlay on %s"), *GetName());
-}
 
 
-void UMatchHUD::RefreshRadarEquip()
-{
-	EnsureRadarWidget();
-	if (!IsValid(Radar)) return;
-
-	bool bShow = false;
-	if (APlayerController* PC = GetOwningPlayer())
-	{
-		if (const AShooterCharacter* Char = Cast<AShooterCharacter>(PC->GetPawn()))
-		{
-			bShow = Char->HasRadar();
-		}
-	}
-	Radar->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-}
 
 void UMatchHUD::EnsureWatchText()
 {

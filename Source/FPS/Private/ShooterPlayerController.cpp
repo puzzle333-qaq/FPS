@@ -1,4 +1,4 @@
-﻿#include "ShooterPlayerController.h"
+#include "ShooterPlayerController.h"
 #include "Game/PoliceCriminalGameMode.h"
 #include "Game/PoliceCriminalGameState.h"
 #include "Game/HostageActor.h"
@@ -13,17 +13,14 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/LocalPlayer.h"
-#include "Ui/AttachmentMenu.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputTriggers.h"
 #include "InputCoreTypes.h"
 #include "ShooterGameInstance.h"
 #include "Ui/PauseMenuScreen.h"
-#include "Game/SearchDestroyGameState.h"
 #include "ShooterGameModeBase.h"
 #include "Ui/ModeHudWidget.h"
-#include "Ui/BuyShopScreen.h"
 #include "Ui/MatchHUD.h"
 #include "Ui/CombatHudKeepAlive.h"
 #include "Ui/CombatStatusHud.h"
@@ -31,14 +28,12 @@
 #include "Weapon/AttachmentData.h"
 #include "Game/ShooterGameState.h"
 #include "GameFramework/GameStateBase.h"
-#include "Game/SearchDestroyGameMode.h"
-#include "Game/WeaponPickup.h"
 #include "Interface/Interactable.h"
+#include "CollisionQueryParams.h"
 #include "World/BreakableDoor.h"
 #include "World/TripwireTrap.h"
 #include "World/GasCan.h"
 #include "Ui/ScoreboardScreen.h"
-#include "Ui/RadarWidget.h"
 #include "Engine/Engine.h"
 #include "GameFramework/HUD.h"
 #include "EngineUtils.h"
@@ -84,11 +79,6 @@ float AShooterPlayerController::GetAdsSettleRemaining() const
 			Remain = FMath::Max(0.f, SprintToAdsDelay - Elapsed);
 		}
 	}
-	// Option A：滑铲前半段开镜门控（与冲刺后摇取较大值；Combat 预输入缓冲复用此接口）
-	if (const AShooterCharacter* Char = Cast<AShooterCharacter>(GetCharacter()))
-	{
-		Remain = FMath::Max(Remain, Char->GetSlideAdsSettleRemaining());
-	}
 	return Remain;
 }
 
@@ -99,26 +89,7 @@ void AShooterPlayerController::StopSprinting()
 	UpdateMovementSpeed();
 }
 
-void AShooterPlayerController::StartTacticalSprint()
-{
-	if (const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
-	{
-		if (Combat->IsReloading()) return;   // 换弹期间禁止战术冲刺
-	}
-	bIsTacticalSprinting = true;
-	GetWorldTimerManager().SetTimer(TacticalSprintTimer, this, &ThisClass::EndTacticalSprint, FMath::Max(0.1f, TacticalSprintDuration), false);
-	UpdateMovementSpeed();
-}
 
-void AShooterPlayerController::EndTacticalSprint()
-{
-	if (!bIsTacticalSprinting) return;
-	// 时间到：退回普通冲刺（还在冲刺的话）。ApplyMovementSpeed 里会记冷却
-	bIsTacticalSprinting = false;
-	GetWorldTimerManager().ClearTimer(TacticalSprintTimer);
-	if (const UWorld* World = GetWorld()) TacticalSprintReadyTime = World->GetTimeSeconds() + TacticalSprintCooldown;
-	UpdateMovementSpeed();
-}
 
 void AShooterPlayerController::BeginPlay()
 {
@@ -126,9 +97,7 @@ void AShooterPlayerController::BeginPlay()
 	// TacticalBatch1: force CQB speeds (override BP defaults if any)
 	RunSpeed = 220.f;
 	SprintSpeed = 320.f;
-	TacticalSprintSpeed = 380.f;
 	WalkSpeed = 120.f;
-	bEnableTacticalSprint = false;
 
 	// 从主菜单跳过来时 UI 输入和鼠标会跟着视口保留，进局恢复游戏输入
 	if (IsLocalController())
@@ -155,23 +124,8 @@ void AShooterPlayerController::BeginPlay()
 	{
 		Subsystem->AddMappingContext(ShooterIMC, 0);
 	}
-	EnsureBuyShopInput();
-
-	// 购买阶段结束自动关商店
-	if (IsLocalController())
-	{
-		if (UWorld* World = GetWorld())
-		{
-			if (ASearchDestroyGameState* SDGS = World->GetGameState<ASearchDestroyGameState>())
-			{
-				SDGS->OnRoundPhaseChanged.AddUniqueDynamic(this, &ThisClass::HandleBuyPhaseChanged);
-			}
-			World->GameStateSetEvent.AddUObject(this, &ThisClass::HandleGameStateSetForBuy);
-		}
-	}
 	EnsureCrouchInput();
 	EnsurePauseInput();
-	EnsureFullMapInput();
 	EnsureNVGInput();
 	EnsureWatchInput();
 	EnsureModeHud();
@@ -193,8 +147,6 @@ void AShooterPlayerController::BeginPlay()
 void AShooterPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
-
-	EnsureBuyShopInput();
 
 	UEnhancedInputComponent* ShooterInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!IsValid(ShooterInputComponent)) return;
@@ -260,17 +212,11 @@ void AShooterPlayerController::SetupInputComponent()
 		ShooterInputComponent->BindAction(InteractAction, ETriggerEvent::Completed, this, &ThisClass::Input_Interact_Completed);
 		ShooterInputComponent->BindAction(InteractAction, ETriggerEvent::Canceled, this, &ThisClass::Input_Interact_Completed);
 	}
-	if (ToggleAttachmentMenuAction)
-	{
-		ShooterInputComponent->BindAction(ToggleAttachmentMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleAttachmentMenu);
-	}
 	EnsurePauseInput();
-	EnsureFullMapInput();
 	if (PauseMenuAction)
 	{
 		ShooterInputComponent->BindAction(PauseMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_TogglePauseMenu);
 	}
-	EnsureBuyShopInput();
 }
 
 void AShooterPlayerController::Input_ToggleFlashlight()
@@ -319,48 +265,6 @@ void AShooterPlayerController::Input_ToggleNVG()
 }
 
 
-void AShooterPlayerController::Input_ToggleAttachmentMenu()
-{
-	if (!bPawnAlive)return;
-	// 爆破模式 B 是商店，配件菜单不开
-	if (GetWorld() && GetWorld()->GetGameState<ASearchDestroyGameState>()) return;
-	// UI 只存在于本地玩家。整备界面开着时 B 不再叠一层菜单。
-	if (!IsLocalController() || !AttachmentMenuClass) return;
-	if (IsValid(BuyShop) && BuyShop->IsInViewport()) return;
-
-	if (!IsValid(AttachmentMenu))
-	{
-		AttachmentMenu = CreateWidget<UAttachmentMenu>(this, AttachmentMenuClass);
-		if (!IsValid(AttachmentMenu)) return;
-	}
-
-	if (AttachmentMenu->IsInViewport())
-	{
-		// 关闭：回到纯游戏输入，隐藏鼠标，恢复转视角
-		AttachmentMenu->RemoveFromParent();
-		SetInputMode(FInputModeGameOnly());
-		SetShowMouseCursor(false);
-		SetIgnoreLookInput(false);
-	}
-	else
-	{
-		// 松开扳机，避免菜单开着时连发还在继续
-		if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
-		{
-			Combat->Initiate_FireWeapon_Released();
-		}
-
-		// 打开：游戏+UI（B 仍能关掉），显示鼠标，鼠标移动不再转视角
-		AttachmentMenu->AddToViewport(10);
-		FInputModeGameAndUI Mode;
-		Mode.SetWidgetToFocus(AttachmentMenu->TakeWidget());
-		Mode.SetHideCursorDuringCapture(false);
-		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		SetInputMode(Mode);
-		SetShowMouseCursor(true);
-		SetIgnoreLookInput(true);
-	}
-}
 
 void AShooterPlayerController::EnsureCrouchInput()
 {
@@ -429,24 +333,6 @@ void AShooterPlayerController::Input_CrouchHold_Started()
 	bCrouchHeld = true;
 	ACharacter* MyChar = GetCharacter();
 	if (!IsValid(MyChar)) return;
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyChar))
-	{
-		if (Shooter->IsProne())
-		{
-			Shooter->RequestSetProne(false, true);   // prone -> crouch
-			return;
-		}
-		if (Shooter->IsSliding())
-		{
-			Shooter->SetSlideEndCrouch(true);
-			return;
-		}
-		if (Shooter->TryStartSlide())
-		{
-			Shooter->SetSlideEndCrouch(true);
-			return;
-		}
-	}
 	if (UCharacterMovementComponent* CMC = MyChar->GetCharacterMovement())
 	{
 		CMC->bWantsToCrouch = true;
@@ -458,15 +344,6 @@ void AShooterPlayerController::Input_CrouchHold_Completed()
 	bCrouchHeld = false;
 	ACharacter* MyChar = GetCharacter();
 	if (!IsValid(MyChar)) return;
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyChar))
-	{
-		if (Shooter->IsProne()) return;
-		if (Shooter->IsSliding())
-		{
-			Shooter->SetSlideEndCrouch(false);   // stand when the slide ends
-			return;
-		}
-	}
 	if (UCharacterMovementComponent* CMC = MyChar->GetCharacterMovement())
 	{
 		// CMC keeps trying to uncrouch every tick and stays crouched while blocked overhead.
@@ -481,25 +358,6 @@ void AShooterPlayerController::Input_Crouch()
 	if (!CanToggleCrouchNow()) return;
 	if (!IsValid(GetCharacter())) return;
 	NoteCrouchToggle();
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(Shooter))
-	{
-		// 趴着按下蹲 = 起身到蹲姿
-		if (Shooter->IsProne())
-		{
-			Shooter->RequestSetProne(false, true);
-			return;
-		}
-		if (Shooter->IsSliding())
-		{
-			return;
-		}
-		// 高速按 C = 滑铲，结束后保持蹲姿
-		if (Shooter->TryStartSlide())
-		{
-			Shooter->SetSlideEndCrouch(true);
-			return;
-		}
-	}
 	if (UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();IsValid(CMC))
 	{
 		CMC->bWantsToCrouch = !CMC->bWantsToCrouch;
@@ -515,25 +373,7 @@ void AShooterPlayerController::Input_Jump()
 	UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();
 	if (!IsValid(CMC)) return;
 
-	// TacticalTrim: no jump. Space still stands from prone/slide.
-	if (AShooterCharacter* SlideShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(SlideShooter) && SlideShooter->IsSliding())
-	{
-		SlideShooter->CancelSlideToStand();
-		CMC->bWantsToCrouch = false;
-		if (SlideShooter->bIsCrouched)
-		{
-			CMC->UnCrouch(false);
-		}
-		return;
-	}
-
-	if (AShooterCharacter* ProneShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(ProneShooter) && ProneShooter->IsProne())
-	{
-		ProneShooter->RequestSetProne(false, false);
-		return;
-	}
-
-	// RemoveVault: Space no longer vaults/climbs/ladders; jump stays disabled.
+	// CQB: no jump.
 }
 
 void AShooterPlayerController::Input_Sprint()
@@ -546,43 +386,9 @@ void AShooterPlayerController::Input_Sprint()
 	if (!bPawnAlive)return;
 	if (IsMovementLocked()) return;
 
-	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-	const double SincePrevPress = Now - LastSprintPressTime;
-	LastSprintPressTime = Now;
-
-	// 滑铲中按冲刺 = 取消滑铲，站起来接着冲刺
-	if (AShooterCharacter* SlideShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(SlideShooter) && SlideShooter->IsSliding())
-	{
-		SlideShooter->CancelSlideToStand();
-		if (UCharacterMovementComponent* SlideCMC = SlideShooter->GetCharacterMovement())
-		{
-			SlideCMC->bWantsToCrouch = false;
-			if (SlideShooter->bIsCrouched) SlideCMC->UnCrouch(false);
-		}
-		// 换弹中只取消滑铲，不进入冲刺
-		if (const UCombatComponent* SlideCombat = UCombatComponent::FindCombatComponent(GetPawn()); IsValid(SlideCombat) && SlideCombat->IsReloading())
-		{
-			UpdateMovementSpeed();
-			return;
-		}
-		bIsSprinting = true;
-		bIsWalking = false;
-		UpdateMovementSpeed();
-		return;
-	}
-
 	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
 	if (!bIsSprinting && IsValid(Combat) && Combat->IsReloading())
 	{
-		// 换弹优先：换弹期间禁止开始冲刺/战术冲刺，也不打断换弹
-		return;
-	}
-
-	// 冲刺中快速再按一次 = 战术冲刺（冷却好了才行）
-	if (bIsSprinting && bEnableTacticalSprint && !bIsTacticalSprinting
-		&& SincePrevPress <= SprintDoubleTapWindow && Now >= TacticalSprintReadyTime)
-	{
-		StartTacticalSprint();
 		return;
 	}
 
@@ -623,12 +429,6 @@ void AShooterPlayerController::Input_Move(const FInputActionValue& InputActionVa
 	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
-	// 滑铲中不接受移动输入（保持惯性，靠 CMC 线性减速）
-	if (const AShooterCharacter* SlideChar = Cast<AShooterCharacter>(GetPawn()); IsValid(SlideChar) && SlideChar->IsSliding())
-	{
-		return;
-	}
-
 	if (APawn* ControlledPawn = GetPawn())
 	{
 		ControlledPawn->AddMovementInput(ForwardDirection, InputAxisVector.Y);
@@ -666,7 +466,7 @@ void AShooterPlayerController::UpdateMovementSpeed()
 	// 客户端改的速度会被服务器纠正回去，所以必须让服务器也改
 	if (!HasAuthority())
 	{
-		Server_SetMovementState(bIsSprinting, bIsWalking, bIsTacticalSprinting);
+		Server_SetMovementState(bIsSprinting, bIsWalking);
 	}
 }
 
@@ -682,31 +482,14 @@ void AShooterPlayerController::ApplyMovementSpeed()
 	const bool bAiming = IsValid(Combat) && Combat->bAiming;
 	const bool bReloading = IsValid(Combat) && Combat->IsReloading();
 	const bool bCrouched = MyCharacter->bIsCrouched;
-	const AShooterCharacter* ProneChar = Cast<AShooterCharacter>(MyCharacter);
-	const bool bProne = IsValid(ProneChar) && ProneChar->IsProne();
-	const bool bSliding = IsValid(ProneChar) && ProneChar->IsSliding();
-	if (bSliding && bIsSprinting)
-	{
-		NoteSprintEnded();   // 滑铲取消冲刺：同样进入开镜后摇
-		bIsSprinting = false;
-	}
-
-	// 下蹲、趴下、开镜或换弹时不能冲刺
-	if (bIsSprinting && (bAiming || bCrouched || bProne || bReloading))
+	// 下蹲、开镜或换弹时不能冲刺
+	if (bIsSprinting && (bAiming || bCrouched || bReloading))
 	{
 		NoteSprintEnded();
 		bIsSprinting = false;
 	}
-	// 不冲刺了，战术冲刺也结束并开始冷却
-	if (!bIsSprinting && bIsTacticalSprinting)
-	{
-		bIsTacticalSprinting = false;
-		GetWorldTimerManager().ClearTimer(TacticalSprintTimer);
-		if (const UWorld* World = GetWorld()) TacticalSprintReadyTime = World->GetTimeSeconds() + TacticalSprintCooldown;
-	}
 
-	// 基础速度：冲刺或正常跑；静步/开镜作为倍率乘上去
-	float Speed = bIsSprinting ? (bIsTacticalSprinting ? TacticalSprintSpeed : SprintSpeed) : RunSpeed;
+	float Speed = bIsSprinting ? SprintSpeed : RunSpeed;
 	if (bIsWalking) Speed *= WalkSpeedMultiplier;
 	if (bAiming)    Speed *= AimSpeedMultiplier;
 
@@ -736,13 +519,7 @@ void AShooterPlayerController::ApplyMovementSpeed()
 		}
 	}
 	CMC->MaxWalkSpeed = Speed;
-	// 趴下复用 CMC 的蹲伏（更矮的胶囊），所以趴行速度也写在 MaxWalkSpeedCrouched
-	CMC->MaxWalkSpeedCrouched = bProne ? Speed * ProneSpeedMultiplier : Speed * CrouchSpeedMultiplier;
-	if (bSliding)
-	{
-		// 滑铲时速度高于蹲走上限：放宽上限，减速交给 BrakingDecelerationWalking
-		CMC->MaxWalkSpeedCrouched = FMath::Max(SprintSpeed, TacticalSprintSpeed) * 1.5f;
-	}
+	CMC->MaxWalkSpeedCrouched = Speed * CrouchSpeedMultiplier;
 
 	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyCharacter))
 	{
@@ -774,24 +551,21 @@ void AShooterPlayerController::HandleStaminaDepleted()
 	// TacticalTrim: stamina depleted ignored — keep sprinting.
 }
 
-void AShooterPlayerController::Server_SetMovementState_Implementation(bool bNewSprinting, bool bNewWalking, bool bNewTactical)
+void AShooterPlayerController::Server_SetMovementState_Implementation(bool bNewSprinting, bool bNewWalking)
 {
 	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
 	if (bNewSprinting && IsValid(Combat) && Combat->IsReloading())
 	{
-		// 换弹优先：服务器拒绝冲刺，不取消换弹
 		bNewSprinting = false;
 	}
 	bIsSprinting = bNewSprinting;
 	bIsWalking = bNewWalking;
-	bIsTacticalSprinting = bNewSprinting && bNewTactical && bEnableTacticalSprint;
-	UpdateMovementSpeed();   // 在服务器上 HasAuthority 为 true，不会再发 RPC
+	UpdateMovementSpeed();
 }
 
 void AShooterPlayerController::Client_StopSprint_Implementation()
 {
 	bIsSprinting = false;
-	bIsTacticalSprinting = false;
 	ApplyMovementSpeed();
 }
 void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadoutPreset& Loadout)
@@ -802,15 +576,7 @@ void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadou
 	TSet<EWeaponKind> SeenKinds;
 	int32 LongGunCount = 0;
 	const AShooterGameState* MatchGS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
-	const bool bBombMode = MatchGS && MatchGS->GetMatchMode() == EShooterGameMode::SearchDestroy;
-	if (bBombMode)
-	{
-		// 爆破不用改枪台预设：默认只有 Glock18，长枪靠商店
-		UE_LOG(LogTemp, Log, TEXT("[Shop] Bomb mode: ignoring gunsmith loadout for %s"), *GetName());
-		return;
-	}
-	// 爆破：进局只带手枪/刀/投掷，长枪靠商店买。团战/摸金仍用改枪台预设。
-	const int32 MaxLong = bBombMode ? 0 : ((!MatchGS || !MatchGS->HasMatchHeader() || MatchGS->GetMatchMode() == EShooterGameMode::Extraction) ? 2 : 1);
+	const int32 MaxLong = 2;
 	for (const FWeaponPreset& Preset : Loadout.Weapons)
 	{
 		if (Clean.Weapons.Num() >= 4) break;
@@ -935,12 +701,6 @@ bool AShooterPlayerController::IsPauseMenuOpen() const
 
 void AShooterPlayerController::TogglePauseMenu()
 {
-	// Esc: close full map before opening pause
-	if (IsFullMapOpen())
-	{
-		ShowFullMap(false);
-		return;
-	}
 	if (IsPauseMenuOpen()) ClosePauseMenu();
 	else OpenPauseMenu();
 }
@@ -948,7 +708,6 @@ void AShooterPlayerController::TogglePauseMenu()
 void AShooterPlayerController::OpenPauseMenu()
 {
 	if (!IsLocalController() || IsPauseMenuOpen()) return;
-	ShowFullMap(false);
 	if (!PauseMenuWidgetClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PauseMenu] PauseMenuWidgetClass is not set on %s."), *GetClass()->GetName());
@@ -986,7 +745,6 @@ void AShooterPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	if (HasAuthority()) Auth_StopSpectating();
-	EnsureBuyShopInput();
 	if (IsLocalController() && PlayerCameraManager)
 	{
 		// 复活：清掉死亡时的黑屏
@@ -1005,7 +763,6 @@ void AShooterPlayerController::OnPossess(APawn* InPawn)
 void AShooterPlayerController::AcknowledgePossession(APawn* P)
 {
 	Super::AcknowledgePossession(P);
-	EnsureBuyShopInput();
 	if (PlayerCameraManager)
 	{
 		PlayerCameraManager->StopCameraFade();
@@ -1059,39 +816,18 @@ void AShooterPlayerController::EnsureInteractInput()
 
 void AShooterPlayerController::Input_Interact_Started()
 {
-	// 优先：准星对着的枪/门（IInteractable）；否则走爆破拾取/安放/拆除（按住）
-	if (bPawnAlive)
-	{
-		if (AActor* Target = TraceInteractable())
-		{
-			Server_Interact(Target);
-			return;
-		}
-	}
 	if (!bPawnAlive) return;
-	Server_BeginBombInteract();
+	if (AActor* Target = TraceInteractable())
+	{
+		Server_Interact(Target);
+	}
 }
 
 void AShooterPlayerController::Input_Interact_Completed()
 {
-	Server_EndBombInteract();
 }
 
-void AShooterPlayerController::Server_BeginBombInteract_Implementation()
-{
-	if (ASearchDestroyGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>() : nullptr)
-	{
-		GM->BeginBombInteract(this);
-	}
-}
 
-void AShooterPlayerController::Server_EndBombInteract_Implementation()
-{
-	if (ASearchDestroyGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>() : nullptr)
-	{
-		GM->EndBombInteract(this);
-	}
-}
 
 void AShooterPlayerController::Client_OnMatchEnded_Implementation(uint8 WinningTeam)
 {
@@ -1117,212 +853,16 @@ void AShooterPlayerController::Client_GoToMainMenu_Implementation()
 }
 
 
-void AShooterPlayerController::EnsureBuyShopInput()
-{
-	if (!IsLocalController()) return;
-	EnsureScoreboardInput(); // Tab 计分板所有模式都要
-	if (!BuyShopWidgetClass) return; // TDM 等不填商店类则不绑 B
 
-	if (!BuyShopAction)
-	{
-		BuyShopAction = NewObject<UInputAction>(this, TEXT("IA_BuyShop_Runtime"));
-		BuyShopAction->ValueType = EInputActionValueType::Boolean;
-	}
-	if (!BuyShopIMC)
-	{
-		BuyShopIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_BuyShop_Runtime"));
-		BuyShopIMC->MapKey(BuyShopAction, EKeys::B);
-	}
 
-	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
-	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(BuyShopIMC))
-	{
-		Subsystem->AddMappingContext(BuyShopIMC, 1);
-		UE_LOG(LogTemp, Log, TEXT("[Shop] Tab mapped (local=%d)"), IsLocalController() ? 1 : 0);
-	}
-	if (!bBuyShopBound)
-	{
-		if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
-		{
-			EIC->BindAction(BuyShopAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleBuyShop);
-			bBuyShopBound = true;
-			UE_LOG(LogTemp, Log, TEXT("[Shop] Tab action bound"));
-		}
-	}
-}
 
-void AShooterPlayerController::Input_ToggleBuyShop()
-{
-	const ASearchDestroyGameState* GS = GetWorld() ? GetWorld()->GetGameState<ASearchDestroyGameState>() : nullptr;
-	UE_LOG(LogTemp, Log, TEXT("[Shop] Tab: class=%d alive=%d matchOver=%d pause=%d buyPhase=%d phase=%d open=%d"),
-		BuyShopWidgetClass ? 1 : 0, bPawnAlive ? 1 : 0, bMatchOver ? 1 : 0, IsPauseMenuOpen() ? 1 : 0,
-		(GS && GS->IsBuyPhase()) ? 1 : 0, GS ? (int32)GS->GetRoundPhase() : -1, IsBuyShopOpen() ? 1 : 0);
-	ToggleBuyShop();
-}
 
-bool AShooterPlayerController::CanOpenBuyShop() const
-{
-	if (!BuyShopWidgetClass || !bPawnAlive || bMatchOver || IsPauseMenuOpen()) return false;
-	const UWorld* World = GetWorld();
-	const ASearchDestroyGameState* GS = World ? World->GetGameState<ASearchDestroyGameState>() : nullptr;
-	return GS && GS->IsBuyPhase();
-}
 
-bool AShooterPlayerController::IsBuyShopOpen() const
-{
-	return IsValid(BuyShop) && BuyShop->IsInViewport();
-}
 
-void AShooterPlayerController::ToggleBuyShop()
-{
-	if (IsBuyShopOpen())
-	{
-		CloseBuyShop();
-	}
-	else
-	{
-		OpenBuyShop();
-	}
-}
 
-void AShooterPlayerController::OpenBuyShop()
-{
-	if (!IsLocalController() || !CanOpenBuyShop()) return;
 
-	if (IsValid(PauseMenu) && PauseMenu->IsInViewport())
-	{
-		ClosePauseMenu();
-	}
-	if (IsValid(AttachmentMenu) && AttachmentMenu->IsInViewport())
-	{
-		Input_ToggleAttachmentMenu();
-	}
-	if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
-	{
-		Combat->Initiate_FireWeapon_Released();
-	}
 
-	if (!IsValid(BuyShop))
-	{
-		BuyShop = CreateWidget<UBuyShopScreen>(this, BuyShopWidgetClass);
-		if (!IsValid(BuyShop)) return;
-	}
 
-	if (!BuyShop->IsInViewport())
-	{
-		BuyShop->AddToViewport(25);
-	}
-	FInputModeGameAndUI Mode;
-	Mode.SetWidgetToFocus(BuyShop->TakeWidget());
-	Mode.SetHideCursorDuringCapture(false);
-	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	SetInputMode(Mode);
-	SetShowMouseCursor(true);
-	SetIgnoreLookInput(true);
-	SetIgnoreMoveInput(true);
-}
-
-void AShooterPlayerController::CloseBuyShop()
-{
-	if (!IsLocalController()) return;
-	if (IsValid(BuyShop) && BuyShop->IsInViewport())
-	{
-		BuyShop->RemoveFromParent();
-	}
-	if (!IsPauseMenuOpen())
-	{
-		SetInputMode(FInputModeGameOnly());
-		SetShowMouseCursor(false);
-		SetIgnoreLookInput(false);
-		SetIgnoreMoveInput(false);
-	}
-}
-
-bool AShooterPlayerController::RequestBuyShopItem(int32 CatalogIndex)
-{
-	if (!CanOpenBuyShop()) return false;
-	Server_BuyShopItem(CatalogIndex);
-	return true;
-}
-
-TArray<FBuyShopItem> AShooterPlayerController::GetCachedBuyCatalog() const
-{
-	if (const UWorld* World = GetWorld())
-	{
-		if (const ASearchDestroyGameState* GS = World->GetGameState<ASearchDestroyGameState>())
-		{
-			return GS->GetBuyCatalog();
-		}
-	}
-	return TArray<FBuyShopItem>();
-}
-
-void AShooterPlayerController::Server_BuyShopItem_Implementation(int32 CatalogIndex)
-{
-	if (ASearchDestroyGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>() : nullptr)
-	{
-		GM->Auth_TryBuyItem(this, CatalogIndex);
-	}
-}
-
-bool AShooterPlayerController::Auth_ApplyBoughtWeapon(const FWeaponPreset& Preset)
-{
-	if (!HasAuthority() || !Preset.WeaponClass) return false;
-
-	const AWeapon* CDO = Preset.WeaponClass->GetDefaultObject<AWeapon>();
-	if (!CDO) return false;
-
-	if (!bHasSubmittedLoadout)
-	{
-		SubmittedLoadout = FLoadoutPreset();
-		bHasSubmittedLoadout = true;
-	}
-
-	if (CDO->WeaponKind == EWeaponKind::LongGun)
-	{
-		// 替换第一把长枪；没有则插入
-		bool bReplaced = false;
-		for (FWeaponPreset& Existing : SubmittedLoadout.Weapons)
-		{
-			const AWeapon* ExistingCDO = Existing.WeaponClass ? Existing.WeaponClass->GetDefaultObject<AWeapon>() : nullptr;
-			if (ExistingCDO && ExistingCDO->WeaponKind == EWeaponKind::LongGun)
-			{
-				Existing = Preset;
-				bReplaced = true;
-				break;
-			}
-		}
-		if (!bReplaced)
-		{
-			SubmittedLoadout.Weapons.Insert(Preset, 0);
-		}
-	}
-	else
-	{
-		// 手枪/刀等同种替换
-		bool bReplaced = false;
-		for (FWeaponPreset& Existing : SubmittedLoadout.Weapons)
-		{
-			const AWeapon* ExistingCDO = Existing.WeaponClass ? Existing.WeaponClass->GetDefaultObject<AWeapon>() : nullptr;
-			if (ExistingCDO && ExistingCDO->WeaponKind == CDO->WeaponKind)
-			{
-				Existing = Preset;
-				bReplaced = true;
-				break;
-			}
-		}
-		if (!bReplaced)
-		{
-			SubmittedLoadout.Weapons.Add(Preset);
-		}
-	}
-
-	if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
-	{
-		Combat->RebuildInventory();
-	}
-	return true;
-}
 
 void AShooterPlayerController::EnsureModeHud()
 {
@@ -1341,23 +881,7 @@ void AShooterPlayerController::EnsureModeHud()
 	}
 }
 
-void AShooterPlayerController::HandleGameStateSetForBuy(AGameStateBase* NewGameState)
-{
-	if (ASearchDestroyGameState* SDGS = Cast<ASearchDestroyGameState>(NewGameState))
-	{
-		SDGS->OnRoundPhaseChanged.AddUniqueDynamic(this, &ThisClass::HandleBuyPhaseChanged);
-	}
-}
 
-void AShooterPlayerController::HandleBuyPhaseChanged(EBombRoundPhase NewPhase)
-{
-	if (NewPhase != EBombRoundPhase::Freeze && IsBuyShopOpen())
-	{
-		CloseBuyShop();
-	}
-}
-
-// ================= F 交互 / 武器掉落 =================
 
 AActor* AShooterPlayerController::TraceInteractable() const
 {
@@ -1372,7 +896,8 @@ AActor* AShooterPlayerController::TraceInteractable() const
 	MyPawn->GetAttachedActors(AttachedToPawn, true, true);
 	Q.AddIgnoredActors(AttachedToPawn);
 	FHitResult Hit;
-	if (!World->SweepSingleByChannel(Hit, ViewLoc, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(8.f), Q))
+	if (!World->SweepSingleByChannel(Hit, ViewLoc, End, FQuat::Identity, ECC_Visibility,
+		FCollisionShape::MakeSphere(8.f), Q))
 	{
 		return nullptr;
 	}
@@ -1389,16 +914,6 @@ FText AShooterPlayerController::GetInteractPromptText() const
 	{
 		return IInteractable::Execute_GetInteractPrompt(Target, GetPawn());
 	}
-	if (const ASearchDestroyGameState* SDGS = GetWorld() ? GetWorld()->GetGameState<ASearchDestroyGameState>() : nullptr)
-	{
-		switch (SDGS->GetPromptForPawn(GetPawn()))
-		{
-		case EBombPrompt::Pickup: return NSLOCTEXT("Interact", "BombPickup", "按 F 拾取炸弹");
-		case EBombPrompt::Plant:  return NSLOCTEXT("Interact", "BombPlant", "按住 F 安放炸弹");
-		case EBombPrompt::Defuse: return NSLOCTEXT("Interact", "BombDefuse", "按住 F 拆除炸弹");
-		default: break;
-		}
-	}
 	return FText::GetEmpty();
 }
 
@@ -1414,70 +929,8 @@ void AShooterPlayerController::Server_Interact_Implementation(AActor* Target)
 	IInteractable::Execute_Interact(Target, MyPawn);
 }
 
-AWeaponPickup* AShooterPlayerController::Auth_SpawnPickupFromWeapon(AWeapon* Weapon, APawn* FromPawn, const FVector& Offset)
-{
-	if (!IsValid(Weapon) || !IsValid(FromPawn)) return nullptr;
-	FWeaponPreset Preset;
-	Preset.WeaponClass = Weapon->GetClass();
-	for (UAttachmentData* Att : Weapon->GetEquippedAttachments())
-	{
-		if (Att) Preset.Attachments.Add(Att);
-	}
-	const FVector Loc = FromPawn->GetActorLocation() + FromPawn->GetActorRotation().RotateVector(Offset);
-	return AWeaponPickup::SpawnDropped(GetWorld(), WeaponPickupClass, Preset, Loc, FromPawn->GetActorRotation().Yaw + FMath::FRandRange(-40.f, 40.f), FromPawn);
-}
 
-void AShooterPlayerController::Auth_DropWeaponsOnDeath(APawn* DeadPawn)
-{
-	if (!HasAuthority() || !IsValid(DeadPawn)) return;
-	int32 Index = 0;
-	for (TActorIterator<AWeapon> It(GetWorld()); It; ++It)
-	{
-		AWeapon* W = *It;
-		if (!IsValid(W) || W->GetOwner() != DeadPawn) continue;
-		if (W->WeaponKind != EWeaponKind::LongGun && W->WeaponKind != EWeaponKind::Pistol) continue;
-		const FVector Offset(40.f, (Index == 0 ? -25.f : 25.f), 0.f);
-		if (Auth_SpawnPickupFromWeapon(W, DeadPawn, Offset))
-		{
-			W->SetActorHiddenInGame(true);
-			++Index;
-		}
-	}
-	// 死了买的枪就没了：下回合只拿默认手枪 + 刀（CS 规则）
-	if (bHasSubmittedLoadout)
-	{
-		SubmittedLoadout.Weapons.RemoveAll([](const FWeaponPreset& P)
-		{
-			const AWeapon* CDO = P.WeaponClass ? P.WeaponClass->GetDefaultObject<AWeapon>() : nullptr;
-			return CDO && (CDO->WeaponKind == EWeaponKind::LongGun || CDO->WeaponKind == EWeaponKind::Pistol);
-		});
-	}
-}
 
-bool AShooterPlayerController::Auth_PickupWeapon(AWeaponPickup* Pickup)
-{
-	APawn* MyPawn = GetPawn();
-	if (!HasAuthority() || !bPawnAlive || !IsValid(MyPawn) || !IsValid(Pickup)) return false;
-	const TSubclassOf<AWeapon> NewClass = Pickup->GetWeaponClass();
-	const AWeapon* NewCDO = NewClass ? NewClass->GetDefaultObject<AWeapon>() : nullptr;
-	if (!NewCDO || (NewCDO->WeaponKind != EWeaponKind::LongGun && NewCDO->WeaponKind != EWeaponKind::Pistol)) return false;
-
-	// 同槽位旧枪丢在地上
-	for (TActorIterator<AWeapon> It(GetWorld()); It; ++It)
-	{
-		AWeapon* W = *It;
-		if (!IsValid(W) || W->GetOwner() != MyPawn || W->IsHidden()) continue;
-		if (W->WeaponKind != NewCDO->WeaponKind) continue;
-		Auth_SpawnPickupFromWeapon(W, MyPawn, FVector(60.f, 0.f, 0.f));
-		break;
-	}
-	// 写进 SubmittedLoadout 并重建背包（注意：弹药会重置为满）
-	const bool bOk = Auth_ApplyBoughtWeapon(Pickup->GetPreset());
-	UE_LOG(LogTemp, Log, TEXT("[Interact] Pickup %s ok=%d"), *GetNameSafe(NewClass), bOk ? 1 : 0);
-	return bOk;
-}
-
-// ================= 计分板（按住 Tab） =================
 
 void AShooterPlayerController::EnsureScoreboardInput()
 {
@@ -1547,97 +1000,10 @@ void AShooterPlayerController::ShowScoreboard(bool bShow)
 
 // ================= 战术大地图 (M) =================
 
-void AShooterPlayerController::EnsureFullMapInput()
-{
-	if (!IsLocalController()) return;
-	if (!FullMapAction)
-	{
-		FullMapAction = NewObject<UInputAction>(this, TEXT("IA_FullMap_Runtime"));
-		FullMapAction->ValueType = EInputActionValueType::Boolean;
-	}
-	if (!FullMapIMC)
-	{
-		FullMapIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_FullMap_Runtime"));
-		FullMapIMC->MapKey(FullMapAction, EKeys::M);
-	}
-	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
-	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(FullMapIMC))
-	{
-		Subsystem->AddMappingContext(FullMapIMC, 1);
-	}
-	if (!bFullMapBound)
-	{
-		if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
-		{
-			EIC->BindAction(FullMapAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFullMap);
-			bFullMapBound = true;
-		}
-	}
-}
 
-void AShooterPlayerController::Input_ToggleFullMap()
-{
-	ToggleFullMap();
-}
 
-void AShooterPlayerController::ToggleFullMap()
-{
-	ShowFullMap(!IsFullMapOpen());
-}
 
-bool AShooterPlayerController::IsFullMapOpen() const
-{
-	return IsValid(FullMapWidget) && FullMapWidget->IsInViewport()
-		&& FullMapWidget->GetVisibility() != ESlateVisibility::Collapsed
-		&& FullMapWidget->GetVisibility() != ESlateVisibility::Hidden;
-}
 
-void AShooterPlayerController::ShowFullMap(bool bShow)
-{
-	if (!IsLocalController()) return;
-
-	if (!bShow)
-	{
-		if (IsValid(FullMapWidget))
-		{
-			FullMapWidget->SetVisibility(ESlateVisibility::Collapsed);
-			if (FullMapWidget->IsInViewport())
-			{
-				FullMapWidget->RemoveFromParent();
-			}
-		}
-		return;
-	}
-
-	// Don't stack over pause / buy / attachment UI
-	if (IsPauseMenuOpen()) return;
-	if (IsValid(BuyShop) && BuyShop->IsInViewport()) return;
-
-	if (!IsValid(FullMapWidget))
-	{
-		FullMapWidget = CreateWidget<URadarWidget>(this, URadarWidget::StaticClass());
-		if (!IsValid(FullMapWidget)) return;
-		FullMapWidget->SetDisplayMode(ERadarDisplayMode::FullMap);
-		FullMapWidget->FullMapPixelSize = 640.f;
-		FullMapWidget->bShowMapBackground = true;
-	}
-
-	if (!FullMapWidget->IsInViewport())
-	{
-		FullMapWidget->AddToViewport(18);
-	}
-	FullMapWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
-	// Center on screen; keep GameOnly so move/shoot still work
-	FullMapWidget->SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
-	if (GEngine && GEngine->GameViewport)
-	{
-		FVector2D ViewSize(0.f, 0.f);
-		GEngine->GameViewport->GetViewportSize(ViewSize);
-		FullMapWidget->SetPositionInViewport(ViewSize * 0.5f, true);
-	}
-}
-
-// ================= 观战 =================
 
 void AShooterPlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {

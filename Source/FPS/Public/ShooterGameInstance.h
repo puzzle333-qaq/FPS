@@ -20,7 +20,7 @@ struct FShooterRoomState
 	FString RoomCode;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
-	EShooterGameMode Mode = EShooterGameMode::TDM;
+	EShooterGameMode Mode = EShooterGameMode::PoliceCriminal;
 
 	// 房主的 RoomKey（UniqueId 或名字）
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
@@ -72,7 +72,7 @@ public:
 	TSoftObjectPtr<UWorld> MainMenuMap;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Mode")
-	EShooterGameMode SelectedMode = EShooterGameMode::TDM;
+	EShooterGameMode SelectedMode = EShooterGameMode::PoliceCriminal;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	void SelectMode(EShooterGameMode Mode) { SelectedMode = Mode; }
@@ -91,8 +91,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool JoinByIP(const FString& Address);
 
-	// 本机联机测试：强制 Null/IpNetDriver，跳过 EOS，以 listen 打开靶场/团战/大厅。
-	// Target: range | tdm | bomb | lobby（空=range）
+	// 本机联机测试：强制 Null/IpNetDriver，跳过 EOS，以 listen 打开靶场/警匪/大厅。
+	// Target: range | pc | lobby（空=range）
 	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
 	bool HostLocalListen(FString Target);
 
@@ -107,7 +107,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool OpenRange();
 
-	// 单人练习：不进房间大厅，直接进该模式地图；爆破/团战允许 1 人开局（不影响真联机）
+	// 单人练习：不进房间大厅，直接进该模式地图（警匪战术允许 1 人开局）
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool StartPractice(EShooterGameMode Mode);
 

@@ -67,9 +67,7 @@ UShooterGameInstance::UShooterGameInstance()
 		Info.MaxPlayers = MaxPlayers;
 		Modes.Add(Mode, Info);
 	};
-	AddMode(EShooterGameMode::TDM, TEXT("团队竞技"), 12);
 	AddMode(EShooterGameMode::FFA, TEXT("死斗"), 8);
-	AddMode(EShooterGameMode::SearchDestroy, TEXT("爆破"), 10);
 	AddMode(EShooterGameMode::Story, TEXT("剧情"), 4);
 	AddMode(EShooterGameMode::Duel, TEXT("单挑"), 2);
 	AddMode(EShooterGameMode::Extraction, TEXT("搜打撤"), 12);
@@ -600,8 +598,8 @@ bool UShooterGameInstance::HostLocalListen(FString Target)
 
 	if (Key.Contains(TEXT("lobby")) || Key.Contains(TEXT("room")))
 	{
-		UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> lobby (CreateRoom TDM)"));
-		const bool bOk = CreateRoom(EShooterGameMode::TDM);
+		UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> lobby (CreateRoom PoliceCriminal)"));
+		const bool bOk = CreateRoom(EShooterGameMode::PoliceCriminal);
 		if (!bOk && GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Orange, TEXT("[LocalMP] 开大厅失败，检查 RoomLobbyMap / 在线状态"));
@@ -609,39 +607,10 @@ bool UShooterGameInstance::HostLocalListen(FString Target)
 		return bOk;
 	}
 
-	if (Key.Contains(TEXT("tdm")) || Key.Contains(TEXT("team")))
+	if (Key.Contains(TEXT("tdm")) || Key.Contains(TEXT("team")) || Key.Contains(TEXT("bomb")) || Key.Contains(TEXT("sd")) || Key.Contains(TEXT("bdm")))
 	{
-		if (!IsModeAvailable(EShooterGameMode::TDM))
-		{
-			SetLastOnlineError(TEXT("TDM 地图未配置"));
-			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] TDM mode map missing"));
-			return false;
-		}
-		SelectedMode = EShooterGameMode::TDM;
-		const FShooterModeInfo& Info = Modes.FindChecked(EShooterGameMode::TDM);
-		UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> TDM listen"));
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("[LocalMP] 本机房主：团战 listen。另一窗口 fps.LocalJoin"));
-		}
-		return TravelTo(Info.Map, Info.GameModeClass, true);
-	}
-
-	if (Key.Contains(TEXT("bomb")) || Key.Contains(TEXT("sd")) || Key.Contains(TEXT("bdm")))
-	{
-		if (!IsModeAvailable(EShooterGameMode::SearchDestroy))
-		{
-			SetLastOnlineError(TEXT("爆破地图未配置"));
-			return false;
-		}
-		SelectedMode = EShooterGameMode::SearchDestroy;
-		const FShooterModeInfo& Info = Modes.FindChecked(EShooterGameMode::SearchDestroy);
-		UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> bomb listen"));
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("[LocalMP] 本机房主：爆破 listen。另一窗口 fps.LocalJoin"));
-		}
-		return TravelTo(Info.Map, Info.GameModeClass, true);
+		UE_LOG(LogTemp, Log, TEXT("[LocalMP] arena mode aliases now open PoliceCriminal"));
+		Key = TEXT("pc");
 	}
 
 if (Key.Contains(TEXT("pc")) || Key.Contains(TEXT("police")) || Key.Contains(TEXT("criminal")) || Key.Contains(TEXT("jingfei")))
@@ -711,9 +680,6 @@ static FAutoConsoleCommandWithWorldAndArgs GFPSStartPracticeCmd(
 		EnsurePoliceCriminalTestDefaults(GI);
 		FString Key = Args.Num() > 0 ? Args[0].TrimStartAndEnd().ToLower() : TEXT("pc");
 		EShooterGameMode Mode = EShooterGameMode::PoliceCriminal;
-		if (Key.Contains(TEXT("tdm")) || Key.Contains(TEXT("team"))) Mode = EShooterGameMode::TDM;
-		else if (Key.Contains(TEXT("bomb")) || Key.Contains(TEXT("sd")) || Key.Contains(TEXT("bdm"))) Mode = EShooterGameMode::SearchDestroy;
-		else Mode = EShooterGameMode::PoliceCriminal;
 		if (!GI->StartPractice(Mode))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[Practice] StartPractice failed mode=%d err=%s"), (int32)Mode, *GI->GetLastOnlineError());
@@ -772,19 +738,7 @@ static FAutoConsoleCommandWithWorldAndArgs GFPSPracticeCmd(
 			UE_LOG(LogTemp, Warning, TEXT("[Practice] No ShooterGameInstance"));
 			return;
 		}
-		EShooterGameMode Mode = EShooterGameMode::SearchDestroy;
-		if (Args.Num() > 0)
-		{
-			const FString A = Args[0].ToLower();
-			if (A.Contains(TEXT("tdm")) || A == TEXT("1") || A.Contains(TEXT("team")))
-			{
-				Mode = EShooterGameMode::TDM;
-			}
-			else if (A.Contains(TEXT("bomb")) || A.Contains(TEXT("sd")) || A.Contains(TEXT("bdm")) || A == TEXT("2"))
-			{
-				Mode = EShooterGameMode::SearchDestroy;
-			}
-		}
+		EShooterGameMode Mode = EShooterGameMode::PoliceCriminal;
 		if (!GI->StartPractice(Mode))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[Practice] StartPractice failed — check Modes map on BP_ShooterGameInstance"));

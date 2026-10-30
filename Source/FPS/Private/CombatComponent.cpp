@@ -1,4 +1,4 @@
-﻿#include "CombatComponent.h"
+#include "CombatComponent.h"
 #include "FPSTraceChannels.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
@@ -33,9 +33,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Game/ShooterGameState.h"
 #include "Game/PoliceCriminalGameMode.h"
-#include "Game/SearchDestroyGameState.h"
 #include "Game/ShooterPlayerState.h"
-#include "Game/BombWeapon.h"
 #include "Range/TargetDummy.h"
 #include "Ui/HudBodyMarks.h"
 #include "Weapon/ThrownProjectile.h"
@@ -200,27 +198,6 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 }
 
 
-// 爆破默认手枪：BuyCatalog 里第一个 Price=0 的手枪（填 Glock18），否则 DefaultWeaponClass 里第一把手枪
-static TSubclassOf<AWeapon> FPS_FindBombDefaultPistol(const UWorld* World, const TArray<TSubclassOf<AWeapon>>* Defaults)
-{
-	if (const ASearchDestroyGameState* SDGS = World ? World->GetGameState<ASearchDestroyGameState>() : nullptr)
-	{
-		for (const FBuyShopItem& Item : SDGS->GetBuyCatalog())
-		{
-			if (Item.Price == 0 && Item.WeaponClass && Item.WeaponClass->GetDefaultObject<AWeapon>()->WeaponKind == EWeaponKind::Pistol)
-				return Item.WeaponClass;
-		}
-	}
-	if (Defaults)
-	{
-		for (const TSubclassOf<AWeapon>& C : *Defaults)
-		{
-			if (C && C->GetDefaultObject<AWeapon>()->WeaponKind == EWeaponKind::Pistol) return C;
-		}
-	}
-	return nullptr;
-}
-
 void UCombatComponent::SpawnInventory()
 {
 	if (GetOwner()->GetLocalRole() < ROLE_Authority)return;
@@ -228,18 +205,6 @@ void UCombatComponent::SpawnInventory()
 	// 局外配装：每把预设枪替换默认武器里同 WeaponKind 的第一把；没有同类就追加
 	TArray<TSubclassOf<AWeapon>> SpawnClasses = DefaultWeaponClass;
 	const AShooterGameState* ModeGS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
-	if (ModeGS && ModeGS->GetMatchMode() == EShooterGameMode::SearchDestroy)
-	{
-		// 爆破：不用角色默认武器，只给默认手枪（Glock18）+ 购买的枪
-		SpawnClasses.Reset();
-		if (TSubclassOf<AWeapon> Pistol = FPS_FindBombDefaultPistol(GetWorld(), &DefaultWeaponClass)) SpawnClasses.Add(Pistol);
-		else UE_LOG(LogTemp, Warning, TEXT("[Shop] No default pistol: add Glock18 to BuyCatalog with Price=0"));
-		// 刀永远默认带
-		for (const TSubclassOf<AWeapon>& C : DefaultWeaponClass)
-		{
-			if (C && C->GetDefaultObject<AWeapon>()->WeaponKind == EWeaponKind::Melee) { SpawnClasses.Add(C); break; }
-		}
-	}
 	TArray<const FWeaponPreset*> SpawnPresets;
 	SpawnPresets.Init(nullptr, SpawnClasses.Num());
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
@@ -376,11 +341,6 @@ void UCombatComponent::SpawnInventory()
 	if (Inventory.Num() > 0)
 	{
 		AWeapon* ToEquip = Inventory[0];
-		if (ModeGS && ModeGS->GetMatchMode() == EShooterGameMode::SearchDestroy)
-		{
-			// 爆破：买了长枪就直接拿长枪
-			for (AWeapon* W : Inventory) { if (IsValid(W) && W->WeaponKind == EWeaponKind::LongGun) { ToEquip = W; break; } }
-		}
 		Equip(ToEquip);
 		InitializeWeaponWidget();
 		IPlayerInterface::Execute_WeaponReplicated(GetOwner());
@@ -400,16 +360,6 @@ void UCombatComponent::RebuildInventory()
 	ReserveAmmo.Reset();
 	SpawnInventory();
 
-	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
-	{
-		if (const AShooterPlayerState* PS = OwnerPawn->GetPlayerState<AShooterPlayerState>())
-		{
-			if (PS->IsCarryingBomb())
-			{
-				GrantBombWeapon();
-			}
-		}
-	}
 }
 
 void UCombatComponent::DestroyInventory()
@@ -3021,98 +2971,36 @@ void UCombatComponent::Initiate_EquipOrCycleThrowable()
 	Server_CycleWeapon(WeaponIndex);
 }
 
-void UCombatComponent::Initiate_EquipBombWeapon()
-{
-	Initiate_EquipSlot(EWeaponSlot::Bomb);
-}
 
 bool UCombatComponent::AllowsHeal() const
 {
-	const AShooterGameState* GS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
-	return !GS || !GS->HasMatchHeader() || GS->GetMatchMode() == EShooterGameMode::Extraction;
+	return true;
 }
 
 bool UCombatComponent::Initiate_Hotkey(int32 Hotkey)
 {
-	const AShooterGameState* GS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
-	const bool bArena = GS && GS->HasMatchHeader() && GS->GetMatchMode() != EShooterGameMode::Extraction;
-	const bool bSearchDestroy = GS && GS->GetMatchMode() == EShooterGameMode::SearchDestroy;
-
 	switch (Hotkey)
 	{
 	case 1:
 		Initiate_EquipSlot(EWeaponSlot::Main);
 		return true;
 	case 2:
-		Initiate_EquipSlot(bArena ? EWeaponSlot::Pistol : EWeaponSlot::Secondary);
+		Initiate_EquipSlot(EWeaponSlot::Pistol);
 		return true;
 	case 3:
-	{
-		const bool bPoliceCriminal = GS && GS->GetMatchMode() == EShooterGameMode::PoliceCriminal;
-		if (bPoliceCriminal || !FindWeaponForSlot(EWeaponSlot::Melee))
-		{
-			Initiate_EquipOrCycleThrowable();
-		}
-		else
-		{
-			Initiate_EquipSlot(EWeaponSlot::Melee);
-		}
+		Initiate_EquipOrCycleThrowable();
 		return true;
-	}
 	case 4:
-		Initiate_EquipSlot(bArena ? EWeaponSlot::Throwable : EWeaponSlot::Pistol);
+		Initiate_EquipSlot(EWeaponSlot::Throwable);
 		return true;
 	case 5:
-		if (bSearchDestroy)
-		{
-			Initiate_EquipSlot(EWeaponSlot::Bomb);
-			return true;
-		}
 		return false;
 	default:
 		return false;
 	}
 }
 
-void UCombatComponent::GrantBombWeapon()
-{
-	if (GetOwnerRole() < ROLE_Authority) return;
-	if (FindWeaponForSlot(EWeaponSlot::Bomb)) return;
 
-	TSubclassOf<AWeapon> ClassToSpawn = BombWeaponClass ? BombWeaponClass : TSubclassOf<AWeapon>(ABombWeapon::StaticClass());
-	AWeapon* Bomb = SpawnWeapon(ClassToSpawn);
-	if (!IsValid(Bomb)) return;
-	Bomb->WeaponKind = EWeaponKind::Bomb;
-	Inventory.AddUnique(Bomb);
-	ReserveAmmo.Add(Bomb->WeaponType, Bomb->StartingCarriedAmmo);
-	if (AActor* Owner = GetOwner())
-	{
-		Owner->ForceNetUpdate();
-	}
-}
-
-void UCombatComponent::RemoveBombWeapon()
-{
-	if (GetOwnerRole() < ROLE_Authority) return;
-	AWeapon* Bomb = FindWeaponForSlot(EWeaponSlot::Bomb);
-	if (!IsValid(Bomb)) return;
-
-	const bool bWasCurrent = CurrentWeapon == Bomb;
-	Inventory.Remove(Bomb);
-	Bomb->Destroy();
-	if (bWasCurrent)
-	{
-		CurrentWeapon = nullptr;
-		if (AWeapon* Main = FindWeaponForSlot(EWeaponSlot::Main))
-		{
-			Equip(Main);
-		}
-		else if (Inventory.Num() > 0)
-		{
-			Equip(Inventory[0]);
-		}
-	}
-}
 
 void UCombatComponent::Initiate_VersionWeapon()
 {

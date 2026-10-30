@@ -2,10 +2,6 @@
 
 #include "CombatComponent.h"
 #include "FPSTraceChannels.h"
-#include "Game/BombActor.h"
-#include "Game/BombSite.h"
-#include "Game/SearchDestroyGameMode.h"
-#include "Game/SearchDestroyGameState.h"
 #include "Game/ShooterGameState.h"
 #include "Game/ShooterPlayerState.h"
 #include "NavigationData.h"
@@ -13,7 +9,6 @@
 #include "NavigationSystem.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Interface/Interactable.h"
-#include "Game/WeaponPickup.h"
 #include "Components/PrimitiveComponent.h"
 #include "ShooterCharacter.h"
 #include "Stats/StatsComponent.h"
@@ -58,7 +53,6 @@ void AShooterBotController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	bPawnAlive = true;
-	bHoldingBombInteract = false;
 	ReloadCommitTime = 0.f;
 	NextFireTime = 0.f;
 	CachedPath.Reset();
@@ -82,36 +76,6 @@ bool AShooterBotController::IsAlive() const
 	if (!IsValid(MyPawn)) return false;
 	const UStatsComponent* Stats = UStatsComponent::FindStatsComponent(MyPawn);
 	return !Stats || Stats->DeathState == EDeathState::NotDead;
-}
-
-void AShooterBotController::BuyOnce()
-{
-	ASearchDestroyGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>() : nullptr;
-	const ASearchDestroyGameState* GS = GetWorld() ? GetWorld()->GetGameState<ASearchDestroyGameState>() : nullptr;
-	if (!GM || !GS || !GS->IsBuyPhase()) return;
-
-	const int32 Round = GS->GetRoundIndex();
-	if (BoughtRound == Round) return;
-	BoughtRound = Round;
-
-	const AShooterPlayerState* PS = GetPlayerState<AShooterPlayerState>();
-	const int32 Money = PS ? PS->GetMoney() : 0;
-	int32 BestIndex = INDEX_NONE;
-	int32 BestPrice = -1;
-	const TArray<FBuyShopItem>& Catalog = GM->GetBuyCatalog();
-	for (int32 Index = 0; Index < Catalog.Num(); ++Index)
-	{
-		const FBuyShopItem& Item = Catalog[Index];
-		if (!Item.WeaponClass || Item.Price > Money || Item.Price <= BestPrice) continue;
-		const AWeapon* CDO = Item.WeaponClass->GetDefaultObject<AWeapon>();
-		if (!CDO || CDO->WeaponKind == EWeaponKind::Bomb) continue;
-		BestIndex = Index;
-		BestPrice = Item.Price;
-	}
-	if (BestIndex != INDEX_NONE)
-	{
-		GM->Auth_TryBuyItem(this, BestIndex);
-	}
 }
 
 void AShooterBotController::EnsureGun()
@@ -263,62 +227,6 @@ APawn* AShooterBotController::FindChasePawn() const
 	return Best;
 }
 
-ABombSite* AShooterBotController::FindPreferredSite() const
-{
-	ABombSite* Fallback = nullptr;
-	for (TActorIterator<ABombSite> It(GetWorld()); It; ++It)
-	{
-		if (!Fallback) Fallback = *It;
-		if (It->GetSiteId() == PreferredSite) return *It;
-	}
-	return Fallback;
-}
-
-bool AShooterBotController::WantsToPlantOrDefuse(FVector& OutGoal) const
-{
-	const ASearchDestroyGameState* GS = GetWorld() ? GetWorld()->GetGameState<ASearchDestroyGameState>() : nullptr;
-	const AShooterPlayerState* PS = GetPlayerState<AShooterPlayerState>();
-	const APawn* MyPawn = GetPawn();
-	if (!GS || !PS || !MyPawn || GS->GetRoundPhase() != EBombRoundPhase::Live) return false;
-
-	const bool bAttacker = GS->IsAttackingTeam(PS->GetTeamId());
-	if (bAttacker && PS->IsCarryingBomb())
-	{
-		if (ABombSite* Site = FindPreferredSite())
-		{
-			OutGoal = Site->GetActorLocation();
-			return true;
-		}
-	}
-	if (bAttacker && !PS->IsCarryingBomb())
-	{
-		if (const ABombActor* Bomb = GS->GetBomb(); IsValid(Bomb) && Bomb->IsDropped())
-		{
-			OutGoal = Bomb->GetActorLocation();
-			return true;
-		}
-	}
-	if (!bAttacker && GS->IsBombDown())
-	{
-		if (const ABombActor* Bomb = GS->GetBomb(); IsValid(Bomb))
-		{
-			OutGoal = Bomb->GetActorLocation();
-			return true;
-		}
-	}
-	return false;
-}
-
-void AShooterBotController::ReleasePlant()
-{
-	if (!bHoldingBombInteract) return;
-	bHoldingBombInteract = false;
-	if (ASearchDestroyGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>() : nullptr)
-	{
-		GM->EndBombInteract(this);
-	}
-}
-
 namespace
 {
 	// 返回 true = 探测点已能投影到导航网格（可寻路）。
@@ -406,7 +314,6 @@ namespace
 		auto TryActor = [&](AActor* Candidate) -> bool
 		{
 			if (!IsValid(Candidate) || Candidate == Pawn) return false;
-			if (Candidate->IsA(AWeaponPickup::StaticClass())) return false;
 			if (!Candidate->GetClass()->ImplementsInterface(UInteractable::StaticClass())) return false;
 			if (!IInteractable::Execute_CanInteract(Candidate, Pawn)) return false;
 			UE_LOG(LogTemp, Log, TEXT("[Bot] 开门/交互 %s -> %s"), *GetNameSafe(Controller), *GetNameSafe(Candidate));
@@ -817,34 +724,10 @@ void AShooterBotController::Think(float DeltaSeconds)
 	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
 	static volatile bool bBotsDisabled = true;
 	if (bBotsDisabled) { return; }
-	if (!IsAlive())
-	{
-		ReleasePlant();
-		return;
-	}
+	if (!IsAlive()) return;
 
 	const AShooterGameState* MatchGS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
-	if (MatchGS && MatchGS->GetMatchState() == EShooterMatchState::PostMatch)
-	{
-		ReleasePlant();
-		return;
-	}
-
-	const ASearchDestroyGameState* GS = Cast<ASearchDestroyGameState>(MatchGS);
-	if (GS)
-	{
-		if (GS->IsBuyPhase())
-		{
-			ReleasePlant();
-			BuyOnce();
-			return;
-		}
-		if (GS->GetRoundPhase() != EBombRoundPhase::Live)
-		{
-			ReleasePlant();
-			return;
-		}
-	}
+	if (MatchGS && MatchGS->GetMatchState() == EShooterMatchState::PostMatch) return;
 
 	const float Now = GetWorld()->GetTimeSeconds();
 	EnsureGun();
@@ -855,87 +738,10 @@ void AShooterBotController::Think(float DeltaSeconds)
 	const bool bReloading = Combat && Combat->IsReloading();
 	APawn* Enemy = bReloading ? nullptr : FindEnemy();
 
-	FVector Objective = FVector::ZeroVector;
-	const bool bObjective = GS && WantsToPlantOrDefuse(Objective);
-	const AShooterPlayerState* PS = GetPlayerState<AShooterPlayerState>();
-	const bool bAttacker = GS && GS->IsAttackingTeam(PS ? PS->GetTeamId() : AShooterPlayerState::NoTeam);
-
-	bool bMustStand = false;
-	if (GS && bObjective && MyPawn)
+	FVector Goal = FVector::ZeroVector;
+	if (APawn* Chase = FindChasePawn())
 	{
-		if (bAttacker && PS && PS->IsCarryingBomb())
-		{
-			if (ABombSite* Site = FindPreferredSite(); Site && Site->ContainsPawn(MyPawn))
-			{
-				bMustStand = true;
-				if (ASearchDestroyGameMode* GM = GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>())
-				{
-					GM->BeginBombInteract(this);
-					bHoldingBombInteract = true;
-				}
-			}
-		}
-		else if (bAttacker && PS && !PS->IsCarryingBomb())
-		{
-			if (const ABombActor* Bomb = GS->GetBomb(); IsValid(Bomb) && Bomb->IsDropped()
-				&& FVector::DistSquared(MyPawn->GetActorLocation(), Bomb->GetActorLocation()) < FMath::Square(160.f))
-			{
-				bMustStand = true;
-				if (ASearchDestroyGameMode* GM = GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>())
-				{
-					GM->BeginBombInteract(this);
-				}
-			}
-		}
-		else if (!bAttacker && GS->IsBombDown())
-		{
-			if (const ABombActor* Bomb = GS->GetBomb(); IsValid(Bomb)
-				&& FVector::DistSquared(MyPawn->GetActorLocation(), Bomb->GetActorLocation()) <= FMath::Square(120.f))
-			{
-				bMustStand = true;
-				if (ASearchDestroyGameMode* GM = GetWorld()->GetAuthGameMode<ASearchDestroyGameMode>())
-				{
-					GM->BeginBombInteract(this);
-					bHoldingBombInteract = true;
-				}
-			}
-		}
-	}
-
-	if (bMustStand)
-	{
-		AbortBotPathFollowing(this);
-		if (ACharacter* Body = Cast<ACharacter>(MyPawn))
-		{
-			if (UCharacterMovementComponent* Move = Body->GetCharacterMovement())
-			{
-				Move->StopActiveMovement();
-				Move->StopMovementImmediately();
-			}
-		}
-		return;
-	}
-
-	if (bHoldingBombInteract && (!bObjective || (PS && bAttacker && !PS->IsCarryingBomb() && !GS->IsBombDown())))
-	{
-		ReleasePlant();
-	}
-
-	// 看见人就边走边打，只有下包/拆包才站住。
-	FVector Goal = bObjective ? Objective : FVector::ZeroVector;
-	if (!bObjective)
-	{
-		if (GS)
-		{
-			if (ABombSite* Site = FindPreferredSite())
-			{
-				Goal = Site->GetActorLocation();
-			}
-		}
-		else if (APawn* Chase = FindChasePawn())
-		{
-			Goal = Chase->GetActorLocation();
-		}
+		Goal = Chase->GetActorLocation();
 	}
 	if (!Goal.IsNearlyZero())
 	{

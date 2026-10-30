@@ -11,7 +11,7 @@ class UModeHudWidget;
 class AShooterPlayerState;
 class AShooterBotController;
 
-// 所有局内模式的父类：击杀记录、击杀播报、定时复活。靶场/死斗直接用它，团队竞技用 ATDMGameMode，爆破用 ASearchDestroyGameMode
+// 所有局内模式的父类：击杀记录、击杀播报、定时复活。靶场直接用它，CQB 警匪用 APoliceCriminalGameMode
 class UTexture2D;
 
 UCLASS()

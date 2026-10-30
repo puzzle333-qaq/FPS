@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Game/ShooterGameState.h"
-#include "Game/SearchDestroyTypes.h"
 #include "MatchHeaderWidget.generated.h"
 
 class UTextBlock;
@@ -14,7 +13,6 @@ class UBorder;
 class USizeBox;
 class UImage;
 class AShooterPlayerState;
-class ASearchDestroyGameState;
 
 // 局内头顶计分条基类。每种模式做一个子类（TDM = UTDMHeaderWidget）。
 // 由 UMatchHUD 按 GameState.MatchMode 创建并塞进 HeaderHost。
@@ -36,7 +34,7 @@ public:
 protected:
 	virtual void NativeDestruct() override;
 
-	/** Builds Valorant-style center timer/score/alive + flanking portrait rows. */
+	/** Builds center timer/score/alive + flanking portrait rows. */
 	void EnsureValorantTopBar(bool bIncludeSDExtras);
 
 	/** Rebuild square portrait slots from GameState PlayerArray. */
@@ -154,112 +152,4 @@ private:
 	FTimerHandle TimerHandle;
 	TWeakObjectPtr<AShooterPlayerState> BoundPlayerState;
 	int32 LastDisplayedSeconds = -1;
-};
-
-// 爆破头顶：同上 + 回合/炸弹状态行
-UCLASS()
-class FPS_API USDHeaderWidget : public UMatchHeaderWidget
-{
-	GENERATED_BODY()
-
-public:
-	virtual void BindMatch(AShooterGameState* InGameState) override;
-	virtual void UnbindMatch() override;
-
-protected:
-	virtual bool Initialize() override;
-	virtual void NativeConstruct() override;
-	virtual void NativeDestruct() override;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_TeamAScore;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_TeamBScore;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_TeamAAlive;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_TeamBAlive;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_Timer;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_Round;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_BombState;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_Prompt;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_Role;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
-	TObjectPtr<UProgressBar> Progress_Action;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD|SD")
-	FLinearColor TeamAColor = FLinearColor(0.96f, 0.97f, 0.98f, 1.f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD|SD")
-	FLinearColor TeamBColor = FLinearColor(1.f, 0.82f, 0.32f, 1.f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD|SD")
-	FLinearColor BombTimerColor = FLinearColor(1.f, 0.35f, 0.1f, 1.f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD|SD")
-	FLinearColor RoundTimerColor = FLinearColor(1.f, 1.f, 1.f, 1.f);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|HUD|SD")
-	void OnScoresUpdated(int32 ScoreA, int32 ScoreB);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|HUD|SD")
-	void OnAliveCountsUpdated(int32 AliveA, int32 AliveB);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|HUD|SD")
-	void OnLocalTeamChanged(uint8 LocalTeamId);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|HUD|SD")
-	void OnHeaderBombStateChanged(EBombState NewState);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|HUD|SD")
-	void OnHeaderRoundPhaseChanged(EBombRoundPhase NewPhase);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|HUD|SD")
-	void OnHeaderPromptChanged(EBombPrompt Prompt);
-
-private:
-	void ResolveWidgets();
-	void BindLocalPlayerState();
-	void RefreshScores();
-	void RefreshAlive();
-	void RefreshTimer();
-	void RefreshBomb();
-	void RefreshRole();
-	void RefreshPrompt();
-	void TickHeader();
-	ASearchDestroyGameState* GetSDState() const;
-
-	UFUNCTION()
-	void HandleTeamScoreChanged(uint8 TeamId, int32 NewScore);
-
-	UFUNCTION()
-	void HandleTeamAliveChanged(uint8 TeamId, int32 AliveCount);
-
-	UFUNCTION()
-	void HandleBombStateChanged(EBombState NewState);
-
-	UFUNCTION()
-	void HandleRoundPhaseChanged(EBombRoundPhase NewPhase);
-
-	UFUNCTION()
-	void HandleLocalTeamChanged(uint8 TeamId);
-
-	FTimerHandle TimerHandle;
-	TWeakObjectPtr<AShooterPlayerState> BoundPlayerState;
-	int32 LastDisplayedSeconds = -1;
-	EBombPrompt LastPrompt = EBombPrompt::None;
 };

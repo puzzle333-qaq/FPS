@@ -149,7 +149,7 @@ protected:
 	bool bHasMatchHeader = false;
 
 	UPROPERTY(ReplicatedUsing = OnRep_MatchRules)
-	EShooterGameMode MatchMode = EShooterGameMode::TDM;
+	EShooterGameMode MatchMode = EShooterGameMode::PoliceCriminal;
 
 	UFUNCTION()
 	void OnRep_MatchState();

@@ -12,9 +12,9 @@ class UWorld;
 UENUM(BlueprintType)
 enum class EShooterGameMode : uint8
 {
-	TDM            UMETA(DisplayName = "团队竞技"),
+	TDM            UMETA(Hidden, DisplayName = "团队竞技"),
 	FFA            UMETA(DisplayName = "死斗"),
-	SearchDestroy  UMETA(DisplayName = "爆破"),
+	SearchDestroy  UMETA(Hidden, DisplayName = "爆破"),
 	Story          UMETA(DisplayName = "剧情"),
 	Duel           UMETA(DisplayName = "单挑"),
 	Extraction     UMETA(DisplayName = "搜打撤"),

@@ -115,8 +115,8 @@ void ULobbyScreen::HandleAddBotA() { AddBot(0); }
 void ULobbyScreen::HandleAddBotB() { AddBot(1); }
 void ULobbyScreen::HandleRemoveBot() { RemoveBot(); }
 void ULobbyScreen::HandleLeave() { LeaveRoom(); }
-void ULobbyScreen::HandleModeTDM() { SetRoomMode(EShooterGameMode::TDM); }
-void ULobbyScreen::HandleModeBDM() { SetRoomMode(EShooterGameMode::SearchDestroy); }
+void ULobbyScreen::HandleModeTDM() { SetRoomMode(EShooterGameMode::PoliceCriminal); }
+void ULobbyScreen::HandleModeBDM() { SetRoomMode(EShooterGameMode::PoliceCriminal); }
 
 FString ULobbyScreen::GetRoomCode() const
 {
@@ -127,7 +127,7 @@ FString ULobbyScreen::GetRoomCode() const
 EShooterGameMode ULobbyScreen::GetRoomMode() const
 {
 	const ALobbyGameState* GS = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr;
-	return GS ? GS->GetRoomMode() : EShooterGameMode::TDM;
+	return GS ? GS->GetRoomMode() : EShooterGameMode::PoliceCriminal;
 }
 
 FText ULobbyScreen::GetRoomModeName() const
