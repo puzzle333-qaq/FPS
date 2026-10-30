@@ -628,6 +628,15 @@ void UShooterSessionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		IConsoleManager::Get().FindConsoleVariable(TEXT("fps.EOSLoginType"))->Set(*TypeArg, ECVF_SetByCommandline);
 	}
 	CVarOnlineUseNull.AsVariable()->SetOnChangedCallback(FConsoleVariableDelegate::CreateStatic(&UShooterSessionSubsystem::OnUseNullChanged));
+#if WITH_EDITOR
+	// Editor / PIE Listen Server cannot bind NetDriverEOS without a logged-in local EOS user.
+	// Force Null + IpNetDriver so 2-player PIE works without a dedicated/online server.
+	if (GIsEditor && CVarOnlineUseNull->GetInt() == 0)
+	{
+		CVarOnlineUseNull->Set(1, ECVF_SetByCode);
+		UE_LOG(LogTemp, Log, TEXT("[Online] Editor: fps.OnlineUseNull=1 (IpNetDriver for local PIE)"));
+	}
+#endif
 	ApplyNetDriverForMode();
 	StartOnlineLogin();
 }

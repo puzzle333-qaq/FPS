@@ -6,6 +6,7 @@
 #include "Components/WidgetSwitcher.h"
 #include "Ui/SettingsScreen.h"
 #include "Ui/TacticalUIStyle.h"
+#include "Components/Button.h"
 
 AMainMenuPlayerController::AMainMenuPlayerController()
 {
@@ -30,6 +31,7 @@ void AMainMenuPlayerController::BeginPlay()
 			Mode.SetWidgetToFocus(MainMenuWidget->TakeWidget());
 			Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 			SetInputMode(Mode);
+			BindOptionalPoliceCriminalButtons();
 			return;
 		}
 	}
@@ -189,4 +191,55 @@ void AMainMenuPlayerController::JoinLocalhostTest(FString Address)
 			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] JoinLocalhostTest failed"));
 		}
 	}
+}
+
+void AMainMenuPlayerController::MenuStartPoliceCriminal()
+{
+	StartPractice(EShooterGameMode::PoliceCriminal);
+}
+
+void AMainMenuPlayerController::MenuHostPoliceCriminal()
+{
+	HostLocalListenTest(TEXT("pc"));
+}
+
+void AMainMenuPlayerController::BindOptionalPoliceCriminalButtons()
+{
+	if (!IsValid(MainMenuWidget)) return;
+
+	if (UButton* Btn = Cast<UButton>(MainMenuWidget->GetWidgetFromName(TEXT("Btn_PoliceCriminal"))))
+	{
+		Btn->OnClicked.AddUniqueDynamic(this, &AMainMenuPlayerController::HandleBtnPoliceCriminalPractice);
+		UE_LOG(LogTemp, Log, TEXT("[Menu] Bound optional button Btn_PoliceCriminal"));
+	}
+	if (UButton* Btn = Cast<UButton>(MainMenuWidget->GetWidgetFromName(TEXT("Button_PoliceCriminal"))))
+	{
+		Btn->OnClicked.AddUniqueDynamic(this, &AMainMenuPlayerController::HandleBtnPoliceCriminalPractice);
+		UE_LOG(LogTemp, Log, TEXT("[Menu] Bound optional button Button_PoliceCriminal"));
+	}
+	if (UButton* Btn = Cast<UButton>(MainMenuWidget->GetWidgetFromName(TEXT("Btn_PC"))))
+	{
+		Btn->OnClicked.AddUniqueDynamic(this, &AMainMenuPlayerController::HandleBtnPoliceCriminalPractice);
+		UE_LOG(LogTemp, Log, TEXT("[Menu] Bound optional button Btn_PC"));
+	}
+	if (UButton* Btn = Cast<UButton>(MainMenuWidget->GetWidgetFromName(TEXT("Btn_JingFei"))))
+	{
+		Btn->OnClicked.AddUniqueDynamic(this, &AMainMenuPlayerController::HandleBtnPoliceCriminalPractice);
+		UE_LOG(LogTemp, Log, TEXT("[Menu] Bound optional button Btn_JingFei"));
+	}
+	if (UButton* Btn = Cast<UButton>(MainMenuWidget->GetWidgetFromName(TEXT("Btn_PoliceCriminalRoom"))))
+	{
+		Btn->OnClicked.AddUniqueDynamic(this, &AMainMenuPlayerController::HandleBtnPoliceCriminalRoom);
+		UE_LOG(LogTemp, Log, TEXT("[Menu] Bound optional button Btn_PoliceCriminalRoom"));
+	}
+}
+
+void AMainMenuPlayerController::HandleBtnPoliceCriminalPractice()
+{
+	StartPractice(EShooterGameMode::PoliceCriminal);
+}
+
+void AMainMenuPlayerController::HandleBtnPoliceCriminalRoom()
+{
+	ShowRoomBrowser(EShooterGameMode::PoliceCriminal);
 }

@@ -29,7 +29,7 @@ public:
 
 	// 可选的模式（房主只能在这里面切）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Room")
-	TArray<EShooterGameMode> AllowedModes = { EShooterGameMode::TDM, EShooterGameMode::SearchDestroy };
+	TArray<EShooterGameMode> AllowedModes = { EShooterGameMode::TDM, EShooterGameMode::SearchDestroy, EShooterGameMode::PoliceCriminal };
 
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 	virtual FString InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId, const FString& Options, const FString& Portal = TEXT("")) override;

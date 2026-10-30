@@ -70,29 +70,7 @@ namespace
 		return IsValid(Component) && !SocketName.IsNone() && Component->DoesSocketExist(SocketName);
 	}
 
-	// X24 枪身没有能对上 SK_X24 的蒙太奇插槽。套筒和空仓换弹直接播序列，播完停在最后一帧。
-	void PlayX24BodySequence(USkeletalMeshComponent* Mesh, const TCHAR* SequencePath)
-	{
-		if (!IsValid(Mesh) || !SequencePath) return;
-		const UWorld* World = Mesh->GetWorld();
-		if (World && World->GetNetMode() == NM_DedicatedServer) return;
-
-		UAnimSequence* Sequence = LoadObject<UAnimSequence>(nullptr, SequencePath);
-		if (!IsValid(Sequence)) return;
-		Mesh->PlayAnimation(Sequence, false);
-	}
-
-	void PlayX24Shot(USkeletalMeshComponent* Mesh)
-	{
-		static const TCHAR* Shots[] = {
-			TEXT("/Game/FPS_Controller/Animations/WeaponsAnims/Pistol_X24/A_X24_Body_Shot_01.A_X24_Body_Shot_01"),
-			TEXT("/Game/FPS_Controller/Animations/WeaponsAnims/Pistol_X24/A_X24_Body_Shot_02.A_X24_Body_Shot_02"),
-			TEXT("/Game/FPS_Controller/Animations/WeaponsAnims/Pistol_X24/A_X24_Body_Shot_03.A_X24_Body_Shot_03"),
-		};
-		PlayX24BodySequence(Mesh, Shots[FMath::RandRange(0, UE_ARRAY_COUNT(Shots) - 1)]);
-	}
-
-	// 静态网格优先。X24 消音器、手电、红点是骨骼模型，没有静态网格时用骨骼那只。
+	// 静态网格优先。骨骼配件（消音器、手电、红点）没有静态网格时用骨骼那只。
 	USceneComponent* AttachmentViewComponent(const FAttachmentVisual& Visual, bool bFirstPerson)
 	{
 		if (bFirstPerson)
@@ -179,29 +157,30 @@ AWeapon::AWeapon()
 	AimSocketName = TEXT("AimSocket");
 	TraceRadius = 5.f;
 	FireTime = 0.1f;
-	// COD 式：以垂直为主，前几发稍重，左右很小（约 ±0.1）
+	// Original COD-ish feel: vertical primary, mild left/right (not vertical-only; not RoN spray).
 	RecoilPattern = {
 		FRecoilStep(0.50f,  0.00f),
-		FRecoilStep(0.48f,  0.04f),
-		FRecoilStep(0.45f,  0.08f),
-		FRecoilStep(0.42f,  0.05f),
-		FRecoilStep(0.38f, -0.03f),
-		FRecoilStep(0.36f, -0.08f),
-		FRecoilStep(0.34f, -0.10f),
-		FRecoilStep(0.33f, -0.04f),
-		FRecoilStep(0.32f,  0.04f),
-		FRecoilStep(0.31f,  0.09f),
-		FRecoilStep(0.30f,  0.06f),
+		FRecoilStep(0.48f,  0.10f),
+		FRecoilStep(0.45f,  0.16f),
+		FRecoilStep(0.42f,  0.12f),
+		FRecoilStep(0.38f, -0.08f),
+		FRecoilStep(0.36f, -0.16f),
+		FRecoilStep(0.34f, -0.20f),
+		FRecoilStep(0.33f, -0.10f),
+		FRecoilStep(0.32f,  0.10f),
+		FRecoilStep(0.31f,  0.18f),
+		FRecoilStep(0.30f,  0.14f),
 		FRecoilStep(0.30f,  0.00f)
 	};
 	RecoilPitchScale = 1.f;
-	RecoilYawScale = 1.f;
+	RecoilYawScale = 1.15f;
 	AimRecoilMultiplier = 0.65f;
 	RecoilRecoverySpeed = 30.f;
 	RecoilRecoveryDelay = 0.06f;
 	RecoilResetTime = 0.4f;
-	VisualRecoilLocation = FVector(2.5f, 0.15f, 0.4f);   // 后坐 2.5cm
-	VisualRecoilRotation = FRotator(3.f, 0.8f, 1.5f);   // FRotator(Pitch, Yaw, Roll)
+	// Mesh Loc/Rot kick kept OFF (user request) — view recoil only
+	VisualRecoilLocation = FVector::ZeroVector;
+	VisualRecoilRotation = FRotator::ZeroRotator;
 	VisualRecoilAimMultiplier = 0.4f;
 	VisualRecoilKickSpeed = 50.f;
 	VisualRecoilRecoverySpeed = 16.f;
@@ -361,32 +340,22 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 		}
 	}
 
-	if (ComponentHasSocket(WeaponMesh, TEXT("FABRIK")))
+	// Authored left-hand sockets only. Generic "Grip" / Barrel / Muzzle approximations
+	// pulled the hand to the wrong place on RAR/AK after Bandits (PoliceAttachFix).
+	static const FName FabrikNames[] = {
+		TEXT("FABRIK"), TEXT("LeftHandSocket"), TEXT("lefthand"), TEXT("IK_Hand_L"), TEXT("hand_l_socket")
+	};
+	for (const FName Name : FabrikNames)
 	{
-		OutWorld = WeaponMesh->GetSocketTransform(TEXT("FABRIK"), RTS_World);
-		return true;
+		if (ComponentHasSocket(WeaponMesh, Name))
+		{
+			OutWorld = WeaponMesh->GetSocketTransform(Name, RTS_World);
+			UE_LOG(LogTemp, Verbose, TEXT("[FABRIK] %s using socket %s (1P=%d)"),
+				*GetName(), *Name.ToString(), bFirstPerson ? 1 : 0);
+			return true;
+		}
 	}
 
-	// Double-barrel mesh has no authored FABRIK socket — approximate forend from Barrel / Root→Muzzle.
-	if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun) && IsValid(WeaponMesh))
-	{
-		if (ComponentHasSocket(WeaponMesh, TEXT("Barrel")))
-		{
-			OutWorld = WeaponMesh->GetSocketTransform(TEXT("Barrel"), RTS_World);
-			// Push toward muzzle (+Y in mesh) and slightly up so the palm sits on the forend.
-			OutWorld.AddToTranslation(OutWorld.GetRotation().RotateVector(FVector(0.f, 18.f, 5.f)));
-			return true;
-		}
-		if (ComponentHasSocket(WeaponMesh, TEXT("Muzzle")) && ComponentHasSocket(WeaponMesh, TEXT("Root")))
-		{
-			const FTransform RootXf = WeaponMesh->GetSocketTransform(TEXT("Root"), RTS_World);
-			const FTransform MuzzleXf = WeaponMesh->GetSocketTransform(TEXT("Muzzle"), RTS_World);
-			OutWorld.SetLocation(FMath::Lerp(RootXf.GetLocation(), MuzzleXf.GetLocation(), 0.45f));
-			OutWorld.SetRotation(MuzzleXf.GetRotation());
-			OutWorld.SetScale3D(FVector::OneVector);
-			return true;
-		}
-	}
 	return false;
 }
 
@@ -530,6 +499,23 @@ void AWeapon::ApplyMeshAttachRelative(USkeletalMeshComponent* WeaponMesh, bool b
 		Loc = Authored.GetLocation() + LocOffset;
 		Rot = RotOffset.Quaternion();
 	}
+
+	// Bandits FP arms: Ironbelly-tuned rifle Mesh1P sits ~90° yaw left on Epic hand_r.
+	// Apply only for Rifle (RAR); pistols/X24 and AK 1P were not reported wrong.
+	if (bFirstPerson && WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Rifle))
+	{
+		if (const USkeletalMeshComponent* ParentMesh = Cast<USkeletalMeshComponent>(WeaponMesh->GetAttachParent()))
+		{
+			if (const USkeletalMesh* ParentAsset = ParentMesh->GetSkeletalMeshAsset())
+			{
+				if (ParentAsset->GetPathName().Contains(TEXT("Bandit")))
+				{
+					Rot = FRotator(0.f, 90.f, 0.f).Quaternion() * Rot;
+				}
+			}
+		}
+	}
+
 	WeaponMesh->SetRelativeLocationAndRotation(Loc, Rot);
 	WeaponMesh->SetRelativeScale3D(Authored.GetScale3D());
 }
@@ -568,7 +554,9 @@ namespace
 			return Requested;
 		}
 		static const FName Fallbacks[] = {
+			FName(TEXT("weapon_r")), FName(TEXT("WeaponSocket")),
 			FName(TEXT("RifleSocketak")), FName(TEXT("RifleSocket")),
+			FName(TEXT("PistolSocket")), FName(TEXT("PistolSocketX24")),
 			FName(TEXT("hand_r")), FName(TEXT("HandGrip_R"))
 		};
 		for (const FName& Candidate : Fallbacks)
@@ -593,7 +581,11 @@ void AWeapon::AttachToOwingPawn()
 	APawn* OwningPawn = GetInstigator();
 	if (!IsValid(OwningPawn) || !OwningPawn->Implements<UPlayerInterface>()) return;
 
-	FinishMagazineReloadVisuals();
+	// 3P 换弹蒙太奇结束也会进这里。战术换弹还在播时不能把备用匣藏掉。
+	if (WeaponStatus != EWeaponStatus::Reloading)
+	{
+		FinishMagazineReloadVisuals();
+	}
 
 	CaptureAuthoredMeshRelative();
 	SetMeshVisibility(OwningPawn);
@@ -629,11 +621,25 @@ void AWeapon::AttachToOwingPawn()
 
 	Mesh3P->RefreshBoneTransforms();
 
+	const bool b1POk = IsUsableAttachPoint(PawnMesh1P, Mesh1P->GetAttachSocketName());
+	const bool b3POk = IsUsableAttachPoint(PawnMesh3P, Mesh3P->GetAttachSocketName());
 	UE_LOG(LogTemp, Log,
-		TEXT("[WeaponAttach] %s type=%s grip=%s -> 1P sock=%s | 3P sock=%s"),
+		TEXT("[WeaponAttach] %s type=%s grip=%s -> 1P sock=%s parent=%s ok=%d | 3P sock=%s parent=%s ok=%d mesh3p=%s"),
 		*GetName(), *WeaponType.ToString(), *AttachPoint.ToString(),
 		*Mesh1P->GetAttachSocketName().ToString(),
-		*Mesh3P->GetAttachSocketName().ToString());
+		*GetNameSafe(Mesh1P->GetAttachParent()),
+		b1POk ? 1 : 0,
+		*Mesh3P->GetAttachSocketName().ToString(),
+		*GetNameSafe(Mesh3P->GetAttachParent()),
+		b3POk ? 1 : 0,
+		*GetNameSafe(PawnMesh3P->GetSkeletalMeshAsset()));
+	if (!b1POk || !b3POk)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[WeaponAttach] BAD attach %s 1P=%d 3P=%d (requested grip=%s resolved1P=%s resolved3P=%s)"),
+			*GetName(), b1POk ? 1 : 0, b3POk ? 1 : 0,
+			*AttachPoint.ToString(), *Attach1P.ToString(), *Attach3P.ToString());
+	}
 
 	UpdateFlashlightAttachment();
 	UpdateLaserAttachment();
@@ -895,9 +901,20 @@ void AWeapon::ComputeThrowLaunch(bool bHighThrow, FVector& OutLocation, FVector&
 
 void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson, bool bConsumeAmmo)
 {
-	if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_X24))
+	if (WeaponFireSequences.Num() > 0)
 	{
-		PlayX24Shot(bIsFirstPerson ? Mesh1P : Mesh3P);
+		TArray<UAnimSequence*, TInlineAllocator<8>> Choices;
+		for (const TObjectPtr<UAnimSequence>& Seq : WeaponFireSequences)
+		{
+			if (IsValid(Seq))
+			{
+				Choices.Add(Seq.Get());
+			}
+		}
+		if (Choices.Num() > 0)
+		{
+			PlayBodySequence(bIsFirstPerson ? Mesh1P : Mesh3P, Choices[FMath::RandRange(0, Choices.Num() - 1)]);
+		}
 	}
 
 	FireEffect(ImpactPoint, ImpactNormal, ImpactSurfaceType, bIsFirstPerson);
@@ -1160,6 +1177,103 @@ void AWeapon::BeginPlay()
 {
 	Super::BeginPlay();
 	SanitizeFireType();
+
+	// [NoHipSpread] Undo RosterHipfire intentional huge cones (RAR 12 / AK 14 / base 10, etc.).
+	// User: no-crosshair already discourages casual hipfire — don't force a huge cone.
+	// Restore pre-20261028 small defaults; only shrink, never enlarge a tighter authored value.
+	{
+		float Target = 3.f;
+		const FString Cls = GetClass() ? GetClass()->GetName() : FString();
+		if (WeaponKind == EWeaponKind::Melee || WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Melee)
+			|| Cls.Contains(TEXT("Knife")))
+		{
+			Target = 0.f;
+		}
+		else if (PelletsPerShot > 1
+			|| WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun)
+			|| WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_DoubleBarrel)
+			|| WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Winchester)
+			|| Cls.Contains(TEXT("Shotgun")) || Cls.Contains(TEXT("ShotGun")))
+		{
+			Target = 6.f; // original pump/base shotgun hip (~ADS still fans pellets at 0.35x)
+		}
+		else if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_AK) || Cls.Contains(TEXT("AK")))
+		{
+			Target = 5.f;
+		}
+		else if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_MCX) || Cls.Contains(TEXT("MCX")))
+		{
+			Target = 5.f;
+		}
+		else if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_PSR) || Cls.Contains(TEXT("PSR")))
+		{
+			Target = 6.f;
+		}
+		else if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_X24) || Cls.Contains(TEXT("X24")))
+		{
+			Target = 1.2f;
+		}
+		else if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Deagle) || Cls.Contains(TEXT("Deagle")))
+		{
+			Target = 1.f;
+		}
+		else if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Pistol)
+			|| WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Colt1911)
+			|| WeaponKind == EWeaponKind::Pistol
+			|| Cls.Contains(TEXT("Pistol")) || Cls.Contains(TEXT("Glock")))
+		{
+			Target = 1.f;
+		}
+		else if (Cls.Contains(TEXT("PCC")))
+		{
+			Target = 3.5f;
+		}
+		else if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Rifle)
+			|| Cls.Contains(TEXT("RAR")) || Cls.Contains(TEXT("AR10")) || Cls.Contains(TEXT("HXR")))
+		{
+			Target = 3.f; // RAR / rifle original
+		}
+		else if (WeaponKind == EWeaponKind::Throwable
+			|| WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Grenade)
+			|| WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Smoke)
+			|| WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Molotov)
+			|| WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Flash))
+		{
+			Target = 0.f;
+		}
+
+		if (HipFireSpread > Target)
+		{
+			HipFireSpread = Target;
+		}
+	}
+
+	// [AdsHudYaw] Restore mild horizontal recoil after revert left yaw nearly invisible.
+	// Keep pitch as authored; only lift yaw if BP/C++ pattern is effectively vertical-only.
+	// Do NOT reintroduce RoN/RecoilFeel2 large scales.
+	if (WeaponKind == EWeaponKind::LongGun && RecoilPattern.Num() > 0)
+	{
+		float MaxAbsYaw = 0.f;
+		for (const FRecoilStep& Step : RecoilPattern)
+		{
+			MaxAbsYaw = FMath::Max(MaxAbsYaw, FMath::Abs(Step.Yaw));
+		}
+		if (MaxAbsYaw < 0.08f)
+		{
+			static const float MildYaw[12] = {
+				0.00f, 0.10f, 0.16f, 0.12f, -0.08f, -0.16f,
+				-0.20f, -0.10f, 0.10f, 0.18f, 0.14f, 0.00f
+			};
+			for (int32 i = 0; i < RecoilPattern.Num(); ++i)
+			{
+				RecoilPattern[i].Yaw = MildYaw[i % 12];
+			}
+		}
+		if (RecoilYawScale < 1.f)
+		{
+			RecoilYawScale = 1.15f;
+		}
+	}
 
 	if (AuthoredMagCapacity <= 0)
 	{
@@ -2039,12 +2153,11 @@ USkeletalMeshComponent* AWeapon::GetMagazineSkelMesh1P() const
 
 void AWeapon::PlayMagazineReload(EReloadType ReloadType)
 {
-	// 空仓才拉套筒。战术换弹没有枪身动画，只动弹匣。不依赖弹匣模型是否生成成功。
-	if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_X24) && ReloadType == EReloadType::Empty)
+	// 空仓才拉枪身（套筒）。序列填在 Weapon Reload Empty Sequence。战术换弹只动弹匣。
+	if (ReloadType == EReloadType::Empty && IsValid(WeaponReloadEmptySequence))
 	{
-		static const TCHAR* EmptyReload = TEXT("/Game/FPS_Controller/Animations/WeaponsAnims/Pistol_X24/A_X24_Body_EmptyReload.A_X24_Body_EmptyReload");
-		PlayX24BodySequence(Mesh1P, EmptyReload);
-		PlayX24BodySequence(Mesh3P, EmptyReload);
+		PlayBodySequence(Mesh1P, WeaponReloadEmptySequence);
+		PlayBodySequence(Mesh3P, WeaponReloadEmptySequence);
 	}
 
 	// Infima dual-hand: SOCKET_Magazine (old, pulled) + SOCKET_Magazine_Reserve (new, held)
@@ -2496,6 +2609,14 @@ UAnimMontage* AWeapon::PlaySequenceAsDynamicMontage(UAnimInstance* Anim, UAnimSe
 {
 	if (!IsValid(Anim) || !IsValid(Sequence)) return nullptr;
 	return Anim->PlaySlotAnimationAsDynamicMontage(Sequence, SlotName, BlendIn, BlendOut, 1.f, 1);
+}
+
+void AWeapon::PlayBodySequence(USkeletalMeshComponent* WeaponMesh, UAnimSequence* Sequence)
+{
+	if (!IsValid(WeaponMesh) || !IsValid(Sequence)) return;
+	const UWorld* World = WeaponMesh->GetWorld();
+	if (World && World->GetNetMode() == NM_DedicatedServer) return;
+	WeaponMesh->PlayAnimation(Sequence, false);
 }
 
 void AWeapon::PlayWeaponSequence(USkeletalMeshComponent* WeaponMesh, UAnimSequence* Sequence)

@@ -113,18 +113,9 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 				{
 					Currenr->SprintAnim = WeaponAnim->SprintAnim.Get();
 				}
-				else if (!IsValid(Currenr->SprintAnim))
+				else if (!IsValid(Currenr->SprintAnim) && IsValid(DesiredIdle))
 				{
-					const FString TypeStr = Combat->CurrentWeapon->WeaponType.ToString();
-					if (TypeStr.Equals(TEXT("Weapon.type.rar"), ESearchCase::IgnoreCase))
-					{
-						static const TCHAR* RarSprintPath = TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Movement/A_RAR_FP_PCH_AssaultRifle_Sprint_F_Loop.A_RAR_FP_PCH_AssaultRifle_Sprint_F_Loop");
-						Currenr->SprintAnim = LoadObject<UAnimSequence>(nullptr, RarSprintPath);
-					}
-					if (!IsValid(Currenr->SprintAnim) && IsValid(DesiredIdle))
-					{
-						Currenr->SprintAnim = DesiredIdle;
-					}
+					Currenr->SprintAnim = DesiredIdle;
 				}
 			}
 		}

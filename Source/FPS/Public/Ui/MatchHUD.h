@@ -118,6 +118,25 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
 	FText ReasonTimeExpiredText = NSLOCTEXT("MatchHUD", "ReasonTime", "时间耗尽");
 
+	// 警匪剿匪结算
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
+	FText PoliceWinText = NSLOCTEXT("MatchHUD", "PoliceWin", "警察胜利");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
+	FText CriminalWinText = NSLOCTEXT("MatchHUD", "CriminalWin", "匪徒胜利");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
+	FText PcReasonElimText = NSLOCTEXT("MatchHUD", "PcElim", "歼灭");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
+	FText PcReasonTimeoutText = NSLOCTEXT("MatchHUD", "PcTimeout", "时间到");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
+	FText PcReasonForfeitText = NSLOCTEXT("MatchHUD", "PcForfeit", "对方掉线");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
+	FText PcReasonDrawText = NSLOCTEXT("MatchHUD", "PcDraw", "同归于尽");
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|HUD")
 	FText MatchScoreFormat = NSLOCTEXT("MatchHUD", "MatchScoreFmt", "{0} : {1}");
 

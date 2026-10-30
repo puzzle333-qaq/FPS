@@ -17,6 +17,8 @@ class UPauseMenuScreen;
 class UBuyShopScreen;
 class UModeHudWidget;
 class UMatchHUD;
+class UCombatHudKeepAlive;
+class UCombatStatusHud;
 class AGameStateBase;
 class AWeaponPickup;
 class UScoreboardScreen;
@@ -119,6 +121,20 @@ public:
 
 	UFUNCTION(Exec)
 	void SpawnTestHostage();
+
+	// MvpRound 测试：KillSelf / ForceWin 0|1 / SetRoundTime 秒
+	UFUNCTION(Exec)
+	void KillSelf();
+
+	UFUNCTION(Exec)
+	void ForceWin(int32 Team);
+
+	UFUNCTION(Exec)
+	void SetRoundTime(float Seconds);
+
+	/** 面包车/军械库关卡测切图：TravelToMatch [/Game/.../MapName] */
+	UFUNCTION(Exec)
+	void TravelToMatch(FString MapName);
 
 	// Polish: watch time, radar equip, barrel debug, blood footprints PIE.
 	UFUNCTION(Exec)
@@ -300,6 +316,7 @@ public:
 	void Auth_StopSpectating();
 	// bOnlyIfInvalid：当前目标还活着就不换
 	void Auth_SpectateNext(bool bOnlyIfInvalid = false);
+	void Auth_SpectatePrev(bool bOnlyIfInvalid = false);
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -411,7 +428,19 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMatchHUD> MatchHUD;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UCombatHudKeepAlive> CombatHudKeepAlive;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCombatStatusHud> CombatStatusHud;
+
+	public:
+	/** Creates/re-pins CombatStatusHud + KeepAlive for local player. Safe to call repeatedly. */
+	void EnsureCombatHudKeepAlive();
+
+	private:
 	void EnsureMatchHUD();
+
 
 	void EnsureModeHud();
 
@@ -507,8 +536,13 @@ private:
 	UFUNCTION(Server, Reliable)
 	void Server_SpectateNext();
 
+	UFUNCTION(Server, Reliable)
+	void Server_SpectatePrev();
+
 	void EnsureSpectateInput();
 	void Input_SpectateNext();
+	void Input_SpectatePrev();
+	void Auth_SpectateCycle(int32 Direction, bool bOnlyIfInvalid);
 	void ApplySpectateLocal();
 	FTimerHandle SpectateFadeTimer;
 	// ---- 客户端校时（RTT/2 补偿） ----
@@ -525,6 +559,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> SpectateNextAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> SpectatePrevAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> SpectateIMC;
@@ -642,6 +679,12 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_SkipSetup();
+
+	UFUNCTION(Server, Reliable)
+	void Server_MvpDebug(int32 Op, float Value);
+
+	UFUNCTION(Server, Reliable)
+	void Server_TravelToMatch(const FString& MapName);
 
 	UFUNCTION(Server, Reliable)
 	void Server_SpawnTestHostage();

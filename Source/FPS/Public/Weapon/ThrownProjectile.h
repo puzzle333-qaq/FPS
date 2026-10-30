@@ -105,6 +105,7 @@ protected:
 
 	void ApplyThrownEffect();
 	void ApplyFragDamage();
+	void ApplyFlashWash();
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_OnDetonate();
@@ -112,4 +113,22 @@ protected:
 	FTimerHandle FuseTimer;
 	bool bDetonated = false;
 	bool bLaunched = false;
+};
+
+/** MVP flashbang projectile — washes nearby NVG/vision via ShooterCharacter::AddVisionFlashWash. */
+UCLASS()
+class FPS_API AThrownFlash : public AThrownProjectile
+{
+	GENERATED_BODY()
+public:
+	AThrownFlash();
+};
+
+/** MVP molotov projectile — impact burn stand-in (radial DoDamage). Full fire pool later. */
+UCLASS()
+class FPS_API AThrownMolotov : public AThrownProjectile
+{
+	GENERATED_BODY()
+public:
+	AThrownMolotov();
 };

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -70,6 +70,12 @@ public:
 	/** After FactionLook swaps Mesh1P (Bandits arms), refresh cached default arms so OverrideArms restore keeps Bandits. */
 	void RecacheDefaultFirstPersonArms();
 	int32 GetSpareMagCount() const;
+
+	/** HUD: fill fractions for current mag (index 0) then each spare mag. 1=full, 0=empty. */
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	void GetHudMagazineFills(TArray<float>& OutFills) const;
+
+	void SyncSpareMagRoundsForHud();
 	void Initiate_Aim_Pressed();
 	void Initiate_Aim_Released();
 
@@ -117,6 +123,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_EquipThrowableWeapon();
+
+	/** Key 3 in police/criminal MVP: equip throwable or cycle flash/HE / molotov/HE. */
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void Initiate_EquipOrCycleThrowable();
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_EquipBombWeapon();
@@ -221,6 +231,13 @@ public:
 
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentReserveAmmo)
 	int32 CurrentReserveAmmo;
+
+	/** Owner-only: rounds in each spare mag (FIFO). Used by combat HUD fill bars. */
+	UPROPERTY(ReplicatedUsing = OnRep_SpareMagRounds)
+	TArray<int32> SpareMagRounds;
+
+	UFUNCTION()
+	void OnRep_SpareMagRounds();
 
 
 
@@ -441,3 +458,4 @@ private:
 	// 当前武器现在能不能切射击模式
 	bool CanSwitchFireMode() const;
 };
+

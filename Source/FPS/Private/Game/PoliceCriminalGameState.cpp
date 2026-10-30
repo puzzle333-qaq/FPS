@@ -8,6 +8,7 @@ void APoliceCriminalGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProper
 	DOREPLIFETIME(APoliceCriminalGameState, MatchType);
 	DOREPLIFETIME(APoliceCriminalGameState, SetupEndServerTime);
 	DOREPLIFETIME(APoliceCriminalGameState, AssaultEndServerTime);
+	DOREPLIFETIME(APoliceCriminalGameState, LastWinReason);
 }
 
 float APoliceCriminalGameState::GetRemainingTime() const
@@ -83,4 +84,10 @@ void APoliceCriminalGameState::SetAssaultEndServerTime(float ServerTime)
 void APoliceCriminalGameState::OnRep_Phase()
 {
 	OnPhaseChanged.Broadcast(Phase);
+}
+
+void APoliceCriminalGameState::SetLastWinReason(EPoliceCriminalWinReason Reason)
+{
+	LastWinReason = Reason;
+	ForceNetUpdate();
 }

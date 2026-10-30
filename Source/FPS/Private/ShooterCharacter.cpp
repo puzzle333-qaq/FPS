@@ -1,7 +1,8 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
+#include "Ui/HudBodyMarks.h"
 #include "Engine/Engine.h"
 #include "DrawDebugHelpers.h"
 #include "Ui/MatchHUD.h"
@@ -39,6 +40,7 @@
 #include "Engine/LocalPlayer.h"
 #include "ShooterGameModeBase.h"
 #include "Game/ShooterPlayerState.h"
+#include "Game/PoliceCriminalTypes.h"
 #include "Interface/HostageProtectInterface.h"
 #include "CombatComponent.h"
 #include "Camera/PlayerCameraManager.h"
@@ -49,6 +51,9 @@
 #include "Engine/EngineTypes.h"
 #include "UObject/SoftObjectPath.h"
 #include "Engine/SkeletalMesh.h"
+#include "UObject/Package.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
@@ -102,7 +107,7 @@ AShooterCharacter::AShooterCharacter()
 	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
 	{
 		CMC->AirControl = 0.4f;
-		CMC->JumpZVelocity = 0.f; // TacticalTrim: jump disabled (climb/vault later)
+		CMC->JumpZVelocity = 0.f; // TacticalTrim: jump disabled
 		CMC->GravityScale = 1.5f;
 		CMC->BrakingDecelerationFalling = 200.f;
 		CMC->MaxAcceleration = 3000.f;
@@ -129,6 +134,19 @@ AShooterCharacter::AShooterCharacter()
 	Mesh1P->bReceivesDecals = false;
 	Mesh1P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 	Mesh1P->PrimaryComponentTick.TickGroup = TG_PrePhysics;
+
+	// FP sleeve cloth (LeaderPose follower of Mesh1P). Bandits has no dedicated sleeve SKM — use jacket/bomber.
+	Mesh1P_Sleeves = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh1P_Sleeves"));
+	Mesh1P_Sleeves->SetupAttachment(Mesh1P);
+	Mesh1P_Sleeves->bOnlyOwnerSee = true;
+	Mesh1P_Sleeves->bOwnerNoSee = false;
+	Mesh1P_Sleeves->bCastDynamicShadow = false;
+	Mesh1P_Sleeves->bReceivesDecals = false;
+	Mesh1P_Sleeves->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh1P_Sleeves->SetGenerateOverlapEvents(false);
+	Mesh1P_Sleeves->SetVisibility(false);
+	Mesh1P_Sleeves->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	Mesh1P_Sleeves->PrimaryComponentTick.TickGroup = TG_PrePhysics;
 
 	//BodyMeshB
 	GetMesh()->bOnlyOwnerSee = false;
@@ -245,6 +263,14 @@ void AShooterCharacter::BeginPlay()
 	if (BloodFootprintDecal.IsNull())
 	{
 		BloodFootprintDecal = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat")));
+	}
+	if (BloodHitDecal.IsNull())
+	{
+		BloodHitDecal = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat")));
+	}
+	if (BloodHitNiagara.IsNull())
+	{
+		BloodHitNiagara = TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/Game/DEFINITIVE_FPS_KIT/Niagara_VFX/Niagara/Impact/Impact_Blood.Impact_Blood")));
 	}
 	// Always write custom depth so Thermal can silhouette others when a local player enables it.
 	if (USkeletalMeshComponent* M3 = GetMesh())
@@ -450,19 +476,44 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 		return;
 	}
 
-	// Third-person: grip attachment FABRIK preferred, else weapon bone FABRIK.
+	// Third-person: only authored left-hand sockets (grip / FABRIK / LeftHandSocket).
+	// Do not IK to Barrel/Muzzle approximations — those looked like broken FABRIK on Bandits.
 	FTransform SocketWorld;
-	if (Combat->CurrentWeapon->GetFabrikWorldTransform(false, SocketWorld))
+	bool bHaveFabrik = Combat->CurrentWeapon->GetFabrikWorldTransform(false, SocketWorld);
+	float WantAlpha = 0.f;
+	if (bHaveFabrik)
 	{
 		WriteHandSpace(GetMesh(), SocketWorld, FABRIK_SocketTransform);
-		// Crawling uses full-body unarmed anims (FABRIK off). Prone + stopped and sliding keep gun hold (FABRIK on).
-		FABRIK_Alpha = bProneCrawling ? 0.f : 1.f;
+		WantAlpha = bProneCrawling ? 0.f : 1.f;
 	}
 	else
 	{
 		FABRIK_SocketTransform = FTransform::Identity;
-		FABRIK_Alpha = 0.f;
+		WantAlpha = 0.f;
 	}
+
+	if (bDisableLeftHandIKDuringReload
+		&& Combat->CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
+	{
+		WantAlpha = 0.f;
+	}
+	if (!DisableLeftHandIKCurveName.IsNone())
+	{
+		if (USkeletalMeshComponent* Body = GetMesh())
+		{
+			if (UAnimInstance* Anim = Body->GetAnimInstance())
+			{
+				const float DisableCurve = Anim->GetCurveValue(DisableLeftHandIKCurveName);
+				if (DisableCurve > 0.01f)
+				{
+					WantAlpha = 0.f;
+				}
+			}
+		}
+	}
+
+	const float Blend = FMath::Clamp(LeftHandIKBlendSpeed * DeltaTime, 0.f, 1.f);
+	FABRIK_Alpha = FMath::Lerp(FABRIK_Alpha, WantAlpha, Blend);
 
 	// First-person: permanently disable left-hand FABRIK.
 	// Grip alignment comes from per-weapon hold/equip animations on WeaponData tags.
@@ -579,18 +630,13 @@ void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
 	}
 }
 
-void AShooterCharacter::AddVisualRecoil(const FVector& KickLocation, const FRotator& KickRotation)
+void AShooterCharacter::AddVisualRecoil(const FVector& /*KickLocation*/, const FRotator& /*KickRotation*/)
 {
-	if (!IsLocallyControlled() || !bEnableVisualRecoil) return;
-
-	VisualRecoilLocTarget += KickLocation;
-	VisualRecoilRotTarget += KickRotation;
-
-	// 连发时别越叠越夸张：位移最多 8 厘米，旋转最多 10 度
-	VisualRecoilLocTarget = VisualRecoilLocTarget.GetClampedToMaxSize(8.f);
-	VisualRecoilRotTarget.Pitch = FMath::Clamp(VisualRecoilRotTarget.Pitch, -10.f, 10.f);
-	VisualRecoilRotTarget.Yaw = FMath::Clamp(VisualRecoilRotTarget.Yaw, -10.f, 10.f);
-	VisualRecoilRotTarget.Roll = FMath::Clamp(VisualRecoilRotTarget.Roll, -10.f, 10.f);
+	// [NoMeshKick][RecoilFeel2] gun-model Loc/Rot kick permanently disabled (push-back looked wrong).
+	VisualRecoilLocTarget = FVector::ZeroVector;
+	VisualRecoilRotTarget = FRotator::ZeroRotator;
+	VisualRecoilLocCurrent = FVector::ZeroVector;
+	VisualRecoilRotCurrent = FRotator::ZeroRotator;
 }
 
 void AShooterCharacter::RemoveVisualRecoilFromMesh()
@@ -647,8 +693,9 @@ void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 	}
 
 	// 后坐 + 晃动 + 枪管顶墙抬枪（都是镜头空间）
-	const FVector TotalLoc = VisualRecoilLocCurrent + SwayLocCurrent + WeaponBlockLocCurrent + FVector(0.f, 0.f, SwayDipZ - MuzzleDipAlpha * 2.f);
-	const FRotator TotalRot = VisualRecoilRotCurrent + SwayRotCurrent + WeaponBlockRotCurrent + MuzzleDipRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f);
+	// [RecoilFeel2] exclude VisualRecoilLoc/Rot — only sway + barrel-block remain on Mesh1P
+	const FVector TotalLoc = SwayLocCurrent + WeaponBlockLocCurrent + FVector(0.f, 0.f, SwayDipZ - MuzzleDipAlpha * 2.f);
+	const FRotator TotalRot = SwayRotCurrent + WeaponBlockRotCurrent + MuzzleDipRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f);
 	if (TotalLoc.IsNearlyZero(0.001f) && TotalRot.IsNearlyZero(0.001f))
 	{
 		return;   // 没有偏移就不碰 Mesh1P
@@ -785,7 +832,24 @@ float AShooterCharacter::GetBandageSpeedMultiplier() const
 
 float AShooterCharacter::GetArmorSpeedMultiplier() const
 {
-	return BodyArmor == EBodyArmorType::Heavy ? HeavyArmorMoveSpeedMultiplier : 1.f;
+	float Mul = BodyArmor == EBodyArmorType::Heavy ? HeavyArmorMoveSpeedMultiplier : 1.f;
+	// MVP: unarmored criminals move faster than police (who default to light armor).
+	if (BodyArmor == EBodyArmorType::None)
+	{
+		bool bCriminal = FactionLook == ECharacterLookFaction::Criminal;
+		if (const AShooterPlayerState* PS = GetPlayerState<AShooterPlayerState>())
+		{
+			if (PS->HasTeam())
+			{
+				bCriminal = PS->GetTeamId() == PoliceCriminalTeams::Criminal;
+			}
+		}
+		if (bCriminal)
+		{
+			Mul *= UnarmoredCriminalSpeedMultiplier; // default 1.12
+		}
+	}
+	return Mul;
 }
 
 float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
@@ -971,6 +1035,7 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 void AShooterCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	ClearHitZoneMarks();
 	if (IsValid(Combat))
 	{
 		Combat->SpawnInventory();
@@ -2241,6 +2306,7 @@ void AShooterCharacter::Input_VersionWeapon()
 
 void AShooterCharacter::OnDeathStarted()
 {
+	ClearHitZoneMarks();
 	if (GetNetMode() != NM_DedicatedServer)
 	{
 		DeathEffect();
@@ -2302,7 +2368,7 @@ void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeig
 
 bool AShooterCharacter::CanJumpInternal_Implementation() const
 {
-	// TacticalTrim: CanJump denied — no jump until climb/vault.
+	// TacticalTrim: CanJump denied — jump disabled.
 	return false;
 }
 
@@ -2558,6 +2624,7 @@ void AShooterCharacter::SetDebugThirdPerson(bool bThirdPerson)
 	{
 		Mesh1P->SetOwnerNoSee(bDebugThirdPerson);
 		Mesh1P->SetHiddenInGame(bDebugThirdPerson);
+		if (IsValid(Mesh1P_Sleeves)) Mesh1P_Sleeves->SetHiddenInGame(bDebugThirdPerson);
 	}
 
 	auto SetBodyOwnerSee = [bThirdPerson](USkeletalMeshComponent* Comp)
@@ -3009,10 +3076,10 @@ void AShooterCharacter::EnsureFactionLookDefaults()
 	{
 		CriminalMesh3P = TSoftObjectPtr<USkeletalMesh>(BanditMesh);
 	}
-	// Police: Bandits Preset_02 (blue tactical jacket) - same UE5 Epic skeleton as Preset_05.
-	const FSoftObjectPath PoliceBanditMesh(TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_02.SKM_Bandit_Preset_02"));
+	// Police: Bandits Preset_13 (beige gorka, black gloves) - same UE5 Epic skeleton as Preset_05.
+	const FSoftObjectPath PoliceBanditMesh(TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_13.SKM_Bandit_Preset_13"));
 	const FString PolicePath = PoliceMesh3P.ToSoftObjectPath().ToString();
-	if (PoliceMesh3P.IsNull() || PolicePath.Contains(TEXT("CharGen")))
+	if (PoliceMesh3P.IsNull() || PolicePath.Contains(TEXT("CharGen")) || PolicePath.Contains(TEXT("Preset_02")))
 	{
 		PoliceMesh3P = TSoftObjectPtr<USkeletalMesh>(PoliceBanditMesh);
 	}
@@ -3049,10 +3116,27 @@ void AShooterCharacter::EnsureFactionLookDefaults()
 		CriminalArmsMesh1P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
 			TEXT("/Game/Bandits/Mesh/Arms/Arms_Gloves/SKM_Arms_Gloves_Black.SKM_Arms_Gloves_Black")));
 	}
-	if (PoliceArmsMesh1P.IsNull())
+	// Police arms forced to match Preset_13 (uses M_Arms_Gloves_Black)
 	{
 		PoliceArmsMesh1P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
-			TEXT("/Game/Bandits/Mesh/Arms/Arms_Gloves/SKM_Arms_Gloves_Green.SKM_Arms_Gloves_Green")));
+			TEXT("/Game/Bandits/Mesh/Arms/Arms_Gloves/SKM_Arms_Gloves_Black.SKM_Arms_Gloves_Black")));
+	}
+	if (CriminalSleeveMesh1P.IsNull())
+	{
+		// Preset_05 outer cloth = Bomber (brown MI). Same SKM_Bandit_Skeleton as FP arms.
+		CriminalSleeveMesh1P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
+			TEXT("/Game/Bandits/Mesh/Cloth/Bomber/SKM_Bomber_Bege.SKM_Bomber_Bege")));
+	}
+	if (CriminalSleeveMaterial.IsNull())
+	{
+		CriminalSleeveMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(
+			TEXT("/Game/Bandits/Materials/Cloth/Bomber/M_Bomber_Brown.M_Bomber_Brown")));
+	}
+	if (PoliceSleeveMesh1P.IsNull())
+	{
+		// Preset_13 outer cloth = Gorka beige.
+		PoliceSleeveMesh1P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
+			TEXT("/Game/Bandits/Mesh/Cloth/Jacket_Gorka/SKM_Jacket_Gorka_Bege.SKM_Jacket_Gorka_Bege")));
 	}
 }
 
@@ -3158,7 +3242,7 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
 			TEXT("/Game/FPS_Controller/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"),
 			TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_05.SKM_Bandit_Preset_05"),
-			TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_02.SKM_Bandit_Preset_02"),
+			TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_13.SKM_Bandit_Preset_13"),
 		};
 		for (const TCHAR* Path : ExtraMeshPaths)
 		{
@@ -3246,6 +3330,7 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 		SetModularLookVisible(false);
 		if (USkeletalMesh* Criminal = LoadSoftMesh(CriminalMesh3P))
 		{
+			EnsureMesh3PGripSockets(Criminal, DefaultMesh3PAsset.Get(), Body);
 			SetBodyMeshKeepAnim(Criminal, true);
 		}
 		else
@@ -3262,6 +3347,7 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 		SetModularLookVisible(false);
 		if (USkeletalMesh* PoliceBody = LoadSoftMesh(PoliceMesh3P))
 		{
+			EnsureMesh3PGripSockets(PoliceBody, DefaultMesh3PAsset.Get(), Body);
 			SetBodyMeshKeepAnim(PoliceBody, true);
 			break;
 		}
@@ -3316,10 +3402,33 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 	if (IsValid(Combat))
 	{
 		Combat->RefreshAnimsAfterMesh3PSwap();
-		// Bandits may lack weapon_r; re-resolve attach (falls back to hand_r).
-		if (AWeapon* W = Combat->CurrentWeapon.Get())
+		// Bandits body now has copied grip sockets; force equipped gun back onto weapon_r / RifleSocket*.
+		auto ReattachEquipped = [](UCombatComponent* C)
 		{
-			W->AttachToOwingPawn();
+			if (!IsValid(C)) return;
+			if (AWeapon* W = C->CurrentWeapon.Get())
+			{
+				W->AttachToOwingPawn();
+			}
+		};
+		ReattachEquipped(Combat);
+		if (UWorld* World = GetWorld())
+		{
+			TWeakObjectPtr<AShooterCharacter> WeakThis(this);
+			World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([WeakThis]()
+			{
+				AShooterCharacter* Self = WeakThis.Get();
+				if (!IsValid(Self)) return;
+				UCombatComponent* C = Self->GetCombatComponent();
+				if (!IsValid(C)) return;
+				AWeapon* W = C->CurrentWeapon.Get();
+				if (IsValid(W))
+				{
+					W->AttachToOwingPawn();
+				}
+				UE_LOG(LogTemp, Log, TEXT("[Look] Post-swap reattach CurrentWeapon=%s Mesh3P=%s"),
+					*GetNameSafe(W), *GetNameSafe(Self->GetMesh() ? Self->GetMesh()->GetSkeletalMeshAsset() : nullptr));
+			}));
 		}
 		// Re-apply debug 3P visibility after mesh/anim reinits.
 		if (bDebugThirdPerson && IsLocallyControlled())
@@ -3335,6 +3444,8 @@ void AShooterCharacter::Auth_ApplyHitZoneInjury(EHitZone Zone)
 {
 	if (!HasAuthority()) return;
 	if (IsValid(Stats) && Stats->DeathState != EDeathState::NotDead) return;
+
+	Client_FlashHitZone(Zone);
 
 	bool bChanged = false;
 	if (Zone == EHitZone::Arm && !bArmInjured)
@@ -3356,14 +3467,55 @@ void AShooterCharacter::Auth_ApplyHitZoneInjury(EHitZone Zone)
 	}
 }
 
+void AShooterCharacter::Client_FlashHitZone_Implementation(EHitZone Zone)
+{
+	switch (Zone)
+	{
+	case EHitZone::Head: bHeadHitMarked = true; break;
+	case EHitZone::Torso: bTorsoHitMarked = true; break;
+	case EHitZone::Arm: break;
+	case EHitZone::Leg: break;
+	default: break;
+	}
+	// Remote clients don't get the bone side. NoteZone keeps a side the host already set.
+	HudBodyMarks::NoteZone(this, Zone);
+}
+
+bool AShooterCharacter::IsHitZoneMarked(EHitZone Zone) const
+{
+	switch (Zone)
+	{
+	case EHitZone::Head: return bHeadHitMarked;
+	case EHitZone::Torso: return bTorsoHitMarked;
+	case EHitZone::Arm: return bArmInjured;
+	case EHitZone::Leg: return bLegInjured;
+	default: return false;
+	}
+}
+
+void AShooterCharacter::ClearHitZoneMarks()
+{
+	bHeadHitMarked = false;
+	bTorsoHitMarked = false;
+	HudBodyMarks::Clear(this);
+}
+
 void AShooterCharacter::OnRep_ArmInjured()
 {
 	RefreshControllerMovementSpeed();
+	if (!bArmInjured)
+	{
+		HudBodyMarks::ClearArms(this);
+	}
 }
 
 void AShooterCharacter::OnRep_LegInjured()
 {
 	RefreshControllerMovementSpeed();
+	if (!bLegInjured)
+	{
+		HudBodyMarks::ClearLegs(this);
+	}
 	// Leg injury cancels sprint on owning controller.
 	if (bLegInjured)
 	{
@@ -3666,6 +3818,13 @@ void AShooterCharacter::ClearTacticalVisionEffects()
 	PPS.bOverride_BloomIntensity = false;
 	PPS.bOverride_VignetteIntensity = false;
 	PPS.bOverride_FilmGrainIntensity = false;
+	// NVGFix: clear exposure-range / shadow-lift overrides
+	PPS.bOverride_AutoExposureMethod = false;
+	PPS.bOverride_AutoExposureMinBrightness = false;
+	PPS.bOverride_AutoExposureMaxBrightness = false;
+	PPS.bOverride_ColorGammaShadows = false;
+	PPS.bOverride_ColorGainShadows = false;
+	PPS.bOverride_ColorOffset = false;
 	FirstPersonCamera->PostProcessBlendWeight = 1.f;
 	AppliedVisionMode = ETacticalVisionMode::Off;
 }
@@ -3695,20 +3854,33 @@ void AShooterCharacter::ApplyTacticalVisionEffects()
 
 	if (TacticalVisionMode == ETacticalVisionMode::NVG)
 	{
-		PPS.bOverride_SceneColorTint = true;
-		PPS.SceneColorTint = FLinearColor(0.35f, 1.05f, 0.42f);
+		// NVGTube: classic tube look - grayscale -> green phosphor, dark vignette edges.
 		PPS.bOverride_ColorSaturation = true;
-		PPS.ColorSaturation = FVector4(0.55f, 1.15f, 0.55f, 1.f);
+		PPS.ColorSaturation = FVector4(0.05f, 0.05f, 0.05f, 1.f);
+		PPS.bOverride_SceneColorTint = true;
+		PPS.SceneColorTint = FLinearColor(0.35f, 1.0f, 0.40f);
 		PPS.bOverride_ColorContrast = true;
-		PPS.ColorContrast = FVector4(1.25f, 1.25f, 1.25f, 1.f);
+		PPS.ColorContrast = FVector4(1.12f, 1.12f, 1.12f, 1.f);
+		PPS.bOverride_AutoExposureMethod = true;
+		PPS.AutoExposureMethod = EAutoExposureMethod::AEM_Histogram;
+		PPS.bOverride_AutoExposureMinBrightness = true;
+		PPS.AutoExposureMinBrightness = -1.5f;
+		PPS.bOverride_AutoExposureMaxBrightness = true;
+		PPS.AutoExposureMaxBrightness = 1.5f;
 		PPS.bOverride_AutoExposureBias = true;
-		PPS.AutoExposureBias = (1.6f + 1.2f * Batt) + Wash * 6.f;
+		PPS.AutoExposureBias = (1.3f + 0.4f * Batt) + Wash * 2.f;
+		PPS.bOverride_ColorGammaShadows = true;
+		PPS.ColorGammaShadows = FVector4(1.2f, 1.2f, 1.2f, 1.f);
+		PPS.bOverride_ColorGainShadows = true;
+		PPS.ColorGainShadows = FVector4(1.35f, 1.35f, 1.35f, 1.f);
+		PPS.bOverride_ColorOffset = true;
+		PPS.ColorOffset = FVector4(0.0f, 0.004f, 0.0f, 0.f);
 		PPS.bOverride_BloomIntensity = true;
-		PPS.BloomIntensity = 1.8f + Wash * 10.f;
+		PPS.BloomIntensity = 1.2f + Wash * 8.f;
 		PPS.bOverride_VignetteIntensity = true;
-		PPS.VignetteIntensity = 0.55f;
+		PPS.VignetteIntensity = 0.95f;
 		PPS.bOverride_FilmGrainIntensity = true;
-		PPS.FilmGrainIntensity = 0.28f + (1.f - Batt) * 0.25f;
+		PPS.FilmGrainIntensity = 0.3f + (1.f - Batt) * 0.2f;
 
 		if (bModeChanged)
 		{
@@ -3895,6 +4067,103 @@ void AShooterCharacter::Multicast_NotifyBloodyFeet_Implementation()
 }
 
 
+
+void AShooterCharacter::PlayBloodHitFX(FVector ImpactPoint, FVector ImpactNormal)
+{
+	SpawnBloodImpactFX(this, ImpactPoint, ImpactNormal, this);
+}
+
+void AShooterCharacter::SpawnBloodImpactFX(UObject* WorldContext, FVector ImpactPoint, FVector ImpactNormal, AActor* IgnoreActor)
+{
+	UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	// Resolve optional soft refs from the hit character if present.
+	UNiagaraSystem* Niagara = nullptr;
+	UMaterialInterface* DecalMat = nullptr;
+	float DecalSize = 48.f;
+	float DecalLife = 22.f;
+	if (const AShooterCharacter* AsChar = Cast<AShooterCharacter>(IgnoreActor))
+	{
+		if (!AsChar->BloodHitNiagara.IsNull())
+		{
+			Niagara = AsChar->BloodHitNiagara.LoadSynchronous();
+		}
+		if (!AsChar->BloodHitDecal.IsNull())
+		{
+			DecalMat = AsChar->BloodHitDecal.LoadSynchronous();
+		}
+		DecalSize = AsChar->BloodHitDecalSize;
+		DecalLife = AsChar->BloodHitDecalLifeSpan;
+	}
+	if (!Niagara)
+	{
+		Niagara = LoadObject<UNiagaraSystem>(nullptr,
+			TEXT("/Game/DEFINITIVE_FPS_KIT/Niagara_VFX/Niagara/Impact/Impact_Blood.Impact_Blood"));
+	}
+	if (!Niagara)
+	{
+		Niagara = LoadObject<UNiagaraSystem>(nullptr,
+			TEXT("/Game/DEFINITIVE_FPS_KIT/Niagara_VFX/Niagara/Blood/Blood_Splat.Blood_Splat"));
+	}
+	if (!DecalMat)
+	{
+		DecalMat = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat"));
+	}
+
+	const FVector N = ImpactNormal.GetSafeNormal().IsNearlyZero() ? FVector::UpVector : ImpactNormal.GetSafeNormal();
+
+	if (Niagara)
+	{
+		const FRotator SprayRot = FRotationMatrix::MakeFromX(N).Rotator();
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			World, Niagara, ImpactPoint + N * 2.f, SprayRot, FVector(1.f), true, true, ENCPoolMethod::AutoRelease);
+	}
+
+	if (!DecalMat)
+	{
+		return;
+	}
+
+	auto SpawnBloodDecal = [&](const FVector& Loc, const FVector& Normal, float SizeScale)
+	{
+		const FVector Nn = Normal.GetSafeNormal().IsNearlyZero() ? FVector::UpVector : Normal.GetSafeNormal();
+		const FRotator DecalRot = FRotationMatrix::MakeFromZX(Nn, FVector::ForwardVector).Rotator();
+		const float S = DecalSize * SizeScale;
+		UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(
+			World, DecalMat, FVector(S * 0.35f, S, S), Loc + Nn * 1.5f, DecalRot, DecalLife);
+		if (IsValid(Decal))
+		{
+			Decal->SetFadeScreenSize(0.001f);
+			Decal->SetFadeOut(DecalLife * 0.55f, DecalLife * 0.45f, false);
+		}
+	};
+
+	// Small splat on the hit surface (body / wall behind).
+	SpawnBloodDecal(ImpactPoint, N, 0.55f);
+
+	// Larger stain on the floor under the hit.
+	FHitResult FloorHit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BloodHitFloor), false, IgnoreActor);
+	const FVector FloorStart = ImpactPoint + FVector(0.f, 0.f, 8.f);
+	const FVector FloorEnd = ImpactPoint - FVector(0.f, 0.f, 280.f);
+	bool bFloor = World->LineTraceSingleByChannel(FloorHit, FloorStart, FloorEnd, ECC_Visibility, Params);
+	if (!bFloor)
+	{
+		FCollisionObjectQueryParams Obj;
+		Obj.AddObjectTypesToQuery(ECC_WorldStatic);
+		Obj.AddObjectTypesToQuery(ECC_WorldDynamic);
+		bFloor = World->LineTraceSingleByObjectType(FloorHit, FloorStart, FloorEnd, Obj, Params);
+	}
+	if (bFloor)
+	{
+		SpawnBloodDecal(FloorHit.ImpactPoint, FloorHit.ImpactNormal, 1.f);
+	}
+}
 void AShooterCharacter::MarkBloodyFeet(int32 ExtraSteps)
 {
 	if (GetNetMode() == NM_DedicatedServer) return;
@@ -3953,144 +4222,440 @@ void AShooterCharacter::SpawnBloodFootprint()
 	}
 }
 
-void AShooterCharacter::EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkeletalMesh* SourceMesh)
-{
-	if (!IsValid(Mesh1P) || !IsValid(ArmsMesh)) return;
 
-	static const FName SocketNames[] = {
+namespace
+{
+	// Session-only grip copies for the Bandits faction meshes.
+	// An authored socket keeps its parent bone, so RAR SOCKET_Weapon stays on ik_hand_gun
+	// and follows the arm anim. A mesh socket is removed when the target has that bone,
+	// so it cannot freeze an animated bone (weapon_r). Orphan bones (Simple weapon_r,
+	// parent none) are not captured. SOCKET_Weapon is never aliased from weapon_r.
+	struct FGripSocketCopy
+	{
+		FName Name;
+		FName BoneName;
+		FVector RelLoc = FVector::ZeroVector;
+		FRotator RelRot = FRotator::ZeroRotator;
+		FVector RelScale = FVector::OneVector;
+		bool bWrite = false;
+		bool bUseBone = false;
+		const TCHAR* Kind = TEXT("authored");
+	};
+
+	static const FName GGripSocketNames[] = {
 		TEXT("weapon_r"), TEXT("WeaponSocket"), TEXT("weapon_mount"), TEXT("SOCKET_Weapon"),
 		TEXT("RifleSocket"), TEXT("RifleSocketak"), TEXT("RifleSocketMCX"), TEXT("RifleSocketPCC"),
 		TEXT("PistolSocket"), TEXT("PistolSocketDeagle"), TEXT("PistolSocketX24"),
 		TEXT("GrenadeSocket"), TEXT("HandGrip_R")
 	};
 
-	struct FCopiedSocket
+	USkeletalMeshSocket* FindSourceGripSocket(USkeletalMesh* Mesh, FName Name)
 	{
-		FName Name;
-		FName BoneName;
-		FVector RelLoc;
-		FRotator RelRot;
-		FVector RelScale;
-	};
-	TArray<FCopiedSocket> Copied;
-
-	auto HasAttach = [](const USkeletalMeshComponent* Comp, FName Name) -> bool
-	{
-		if (!IsValid(Comp) || Name.IsNone()) return false;
-		if (Comp->GetSocketByName(Name) != nullptr) return true;
-		return Comp->GetBoneIndex(Name) != INDEX_NONE;
-	};
-
-	auto FindAuthoredSocket = [](USkeletalMesh* InMesh, FName Name) -> USkeletalMeshSocket*
-	{
-		if (!IsValid(InMesh) || Name.IsNone()) return nullptr;
-		if (USkeletalMeshSocket* S = InMesh->FindSocket(Name)) return S;
-		if (USkeleton* Sk = InMesh->GetSkeleton())
+		if (!IsValid(Mesh) || Name.IsNone())
 		{
-			for (USkeletalMeshSocket* S : Sk->Sockets)
-			{
-				if (IsValid(S) && S->SocketName == Name) return S;
-			}
+			return nullptr;
 		}
-		return nullptr;
-	};
+		// Same lookup the gun uses: a mesh socket overrides a skeleton socket.
+		return Mesh->FindSocket(Name);
+	}
 
-	const bool bSrcHasHand = HasAttach(Mesh1P, TEXT("hand_r"));
-	const bool bMeshStillSource = IsValid(SourceMesh) && Mesh1P->GetSkeletalMeshAsset() == SourceMesh;
-	if (bSrcHasHand && bMeshStillSource)
+	int32 RemoveMeshOnlyGripSocket(USkeletalMesh* Mesh, FName Name)
 	{
-		const FTransform HandWorld = Mesh1P->GetSocketTransform(TEXT("hand_r"), RTS_World);
-		for (const FName Name : SocketNames)
+		if (!IsValid(Mesh) || Name.IsNone())
 		{
-			if (!HasAttach(Mesh1P, Name)) continue;
-			const FTransform AttachWorld = Mesh1P->GetSocketTransform(Name, RTS_World);
-			const FTransform Rel = AttachWorld.GetRelativeTransform(HandWorld);
-			FCopiedSocket Entry;
+			return 0;
+		}
+		TArray<TObjectPtr<USkeletalMeshSocket>>& Sockets = Mesh->GetMeshOnlySocketList();
+		return Sockets.RemoveAll([Mesh, Name](const TObjectPtr<USkeletalMeshSocket>& Socket)
+		{
+			return IsValid(Socket) && Socket->SocketName == Name && Socket->GetOuter() == Mesh;
+		});
+	}
+
+	bool IsUsableSourceBone(const FReferenceSkeleton& Ref, int32 BoneIndex, FName& OutParent, FTransform& OutLocal)
+	{
+		if (!Ref.IsValidIndex(BoneIndex) || BoneIndex == 0)
+		{
+			return false;
+		}
+		const FMeshBoneInfo& Info = Ref.GetRefBoneInfo()[BoneIndex];
+		if (!Ref.IsValidIndex(Info.ParentIndex))
+		{
+			return false;
+		}
+		OutParent = Ref.GetBoneName(Info.ParentIndex);
+		OutLocal = Ref.GetRefBonePose()[BoneIndex];
+		return !OutParent.IsNone();
+	}
+
+	FGripSocketCopy* FindGripCopy(TArray<FGripSocketCopy>& Copies, FName Name)
+	{
+		return Copies.FindByPredicate([Name](const FGripSocketCopy& Entry) { return Entry.Name == Name; });
+	}
+
+	void CaptureGripSockets(
+		USkeletalMesh* Target,
+		USkeletalMesh* Source,
+		USkeletalMeshComponent* LiveComp,
+		bool bBakeMissingBones,
+		TArray<FGripSocketCopy>& OutCopies)
+	{
+		if (!IsValid(Target) || !IsValid(Source) || Target == Source)
+		{
+			return;
+		}
+
+		const FReferenceSkeleton& SourceRef = Source->GetRefSkeleton();
+		const FReferenceSkeleton& TargetRef = Target->GetRefSkeleton();
+
+		const bool bLiveReady = bBakeMissingBones
+			&& IsValid(LiveComp)
+			&& LiveComp->IsRegistered()
+			&& LiveComp->GetSkeletalMeshAsset() == Source;
+		TArray<FTransform> LivePose;
+		if (bLiveReady)
+		{
+			LiveComp->RefreshBoneTransforms();
+			LivePose = LiveComp->GetBoneSpaceTransforms();
+		}
+
+		for (const FName Name : GGripSocketNames)
+		{
+			if (FGripSocketCopy* Existing = FindGripCopy(OutCopies, Name))
+			{
+				if (Existing->bWrite || Existing->bUseBone)
+				{
+					continue;
+				}
+			}
+
+			FGripSocketCopy Entry;
 			Entry.Name = Name;
-			Entry.BoneName = TEXT("hand_r");
-			Entry.RelLoc = Rel.GetLocation();
-			Entry.RelRot = Rel.Rotator();
-			Entry.RelScale = Rel.GetScale3D();
-			Copied.Add(Entry);
-		}
-	}
 
-	USkeletalMesh* IronMesh = SourceMesh;
-	if (!IsValid(IronMesh) || IronMesh == ArmsMesh)
-	{
-		IronMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/FirstPersonBPIronbelly/Arms/SK_FPSArms.SK_FPSArms"));
-	}
-	if (IsValid(IronMesh))
-	{
-		for (const FName Name : SocketNames)
-		{
-			if (Copied.ContainsByPredicate([&](const FCopiedSocket& E) { return E.Name == Name; })) continue;
-			if (USkeletalMeshSocket* Src = FindAuthoredSocket(IronMesh, Name))
+			if (USkeletalMeshSocket* SrcSocket = FindSourceGripSocket(Source, Name))
 			{
-				FCopiedSocket Entry;
-				Entry.Name = Name;
-				Entry.BoneName = Src->BoneName.IsNone() ? FName(TEXT("hand_r")) : Src->BoneName;
-				Entry.RelLoc = Src->RelativeLocation;
-				Entry.RelRot = Src->RelativeRotation;
-				Entry.RelScale = Src->RelativeScale;
-				Copied.Add(Entry);
+				const FName ParentBone = SrcSocket->BoneName;
+				if (!ParentBone.IsNone() && TargetRef.FindBoneIndex(ParentBone) != INDEX_NONE)
+				{
+					const int32 TargetBone = TargetRef.FindBoneIndex(Name);
+					FName IgnoredParent;
+					FTransform IgnoredLocal;
+					if (TargetBone != INDEX_NONE && IsUsableSourceBone(TargetRef, TargetBone, IgnoredParent, IgnoredLocal))
+					{
+						Entry.bUseBone = true;
+					}
+					else
+					{
+						Entry.bWrite = true;
+						Entry.BoneName = ParentBone;
+						Entry.RelLoc = SrcSocket->RelativeLocation;
+						Entry.RelRot = SrcSocket->RelativeRotation;
+						Entry.RelScale = SrcSocket->RelativeScale.IsNearlyZero() ? FVector::OneVector : SrcSocket->RelativeScale;
+						Entry.Kind = TEXT("authored");
+					}
+				}
+			}
+
+			if (!Entry.bWrite && !Entry.bUseBone && bBakeMissingBones)
+			{
+				const int32 SourceBone = SourceRef.FindBoneIndex(Name);
+				FName ParentBone;
+				FTransform Local = FTransform::Identity;
+				if (IsUsableSourceBone(SourceRef, SourceBone, ParentBone, Local)
+					&& TargetRef.FindBoneIndex(ParentBone) != INDEX_NONE)
+				{
+					const int32 TargetBone = TargetRef.FindBoneIndex(Name);
+					FName TargetParent;
+					FTransform TargetLocal;
+					if (TargetBone != INDEX_NONE && IsUsableSourceBone(TargetRef, TargetBone, TargetParent, TargetLocal))
+					{
+						Entry.bUseBone = true;
+					}
+					else
+					{
+						const int32 CompBone = bLiveReady ? LiveComp->GetBoneIndex(Name) : INDEX_NONE;
+						if (bLiveReady && CompBone == SourceBone && LivePose.IsValidIndex(CompBone))
+						{
+							const FTransform& LiveLocal = LivePose[CompBone];
+							const float LocDelta = FVector::Dist(LiveLocal.GetLocation(), Local.GetLocation());
+							const float RotDeltaDeg = FMath::RadiansToDegrees(
+								LiveLocal.GetRotation().AngularDistance(Local.GetRotation()));
+							if (LocDelta > 0.5f || RotDeltaDeg > 2.f)
+							{
+								Local = LiveLocal;
+								Entry.Kind = TEXT("live");
+							}
+							else
+							{
+								Entry.Kind = TEXT("ref");
+							}
+						}
+						else
+						{
+							Entry.Kind = TEXT("ref");
+						}
+
+						Entry.bWrite = true;
+						Entry.BoneName = ParentBone;
+						Entry.RelLoc = Local.GetLocation();
+						Entry.RelRot = Local.Rotator();
+						Entry.RelScale = Local.GetScale3D().IsNearlyZero() ? FVector::OneVector : Local.GetScale3D();
+					}
+				}
+			}
+
+			if (!Entry.bWrite && !Entry.bUseBone)
+			{
+				continue;
+			}
+
+			if (FGripSocketCopy* Existing = FindGripCopy(OutCopies, Name))
+			{
+				*Existing = Entry;
+			}
+			else
+			{
+				OutCopies.Add(Entry);
 			}
 		}
 	}
 
-	auto EnsureNamed = [&](FName Name)
+	void AliasSocketWeapon(TArray<FGripSocketCopy>& Copies)
 	{
-		if (Copied.ContainsByPredicate([&](const FCopiedSocket& E) { return E.Name == Name; })) return;
-		FCopiedSocket Entry;
-		Entry.Name = Name;
-		Entry.BoneName = TEXT("hand_r");
-		Entry.RelLoc = FVector::ZeroVector;
-		Entry.RelRot = FRotator::ZeroRotator;
-		Entry.RelScale = FVector::OneVector;
-		Copied.Add(Entry);
+		if (FGripSocketCopy* Existing = FindGripCopy(Copies, TEXT("SOCKET_Weapon")))
+		{
+			if (Existing->bWrite || Existing->bUseBone)
+			{
+				return;
+			}
+		}
+
+		// RAR 3P on Manny has no SOCKET_Weapon and falls back to RifleSocketak.
+		// Never take weapon_r: on Simple that bone is an orphan at the mesh root.
+		static const FName Sources[] = {
+			TEXT("RifleSocketak"), TEXT("RifleSocket"), TEXT("WeaponSocket"), TEXT("weapon_mount")
+		};
+		for (const FName SourceName : Sources)
+		{
+			FGripSocketCopy* Src = FindGripCopy(Copies, SourceName);
+			if (!Src || !Src->bWrite)
+			{
+				continue;
+			}
+			FGripSocketCopy Alias = *Src;
+			Alias.Name = TEXT("SOCKET_Weapon");
+			Alias.Kind = TEXT("alias");
+			if (FGripSocketCopy* Existing = FindGripCopy(Copies, TEXT("SOCKET_Weapon")))
+			{
+				*Existing = Alias;
+			}
+			else
+			{
+				Copies.Add(Alias);
+			}
+			return;
+		}
+	}
+
+	void ApplyGripSocketCopies(USkeletalMesh* Target, const TArray<FGripSocketCopy>& Copies, const TCHAR* Label, const TCHAR* SourceName)
+	{
+		if (!IsValid(Target))
+		{
+			return;
+		}
+
+		UPackage* Package = Target->GetOutermost();
+		const bool bDirtyBefore = Package && Package->IsDirty();
+
+		int32 Written = 0;
+		int32 Dropped = 0;
+		for (const FGripSocketCopy& Entry : Copies)
+		{
+			if (Entry.bUseBone)
+			{
+				const int32 Removed = RemoveMeshOnlyGripSocket(Target, Entry.Name);
+				if (Removed > 0)
+				{
+					Dropped += Removed;
+					UE_LOG(LogTemp, Log, TEXT("[Look] socket %s drop mesh override on %s (use bone)"),
+						*Entry.Name.ToString(), *GetNameSafe(Target));
+				}
+				continue;
+			}
+			if (!Entry.bWrite || Entry.BoneName.IsNone())
+			{
+				continue;
+			}
+			if (Target->GetRefSkeleton().FindBoneIndex(Entry.BoneName) == INDEX_NONE)
+			{
+				continue;
+			}
+
+			TArray<TObjectPtr<USkeletalMeshSocket>>& Sockets = Target->GetMeshOnlySocketList();
+			USkeletalMeshSocket* Keep = nullptr;
+			for (int32 Index = Sockets.Num() - 1; Index >= 0; --Index)
+			{
+				USkeletalMeshSocket* Socket = Sockets[Index];
+				if (!IsValid(Socket) || Socket->SocketName != Entry.Name || Socket->GetOuter() != Target)
+				{
+					continue;
+				}
+				if (!Keep)
+				{
+					Keep = Socket;
+				}
+				else
+				{
+					Sockets.RemoveAt(Index);
+				}
+			}
+			if (!Keep)
+			{
+				Keep = NewObject<USkeletalMeshSocket>(Target);
+				Keep->SocketName = Entry.Name;
+				Sockets.Add(Keep);
+			}
+			Keep->BoneName = Entry.BoneName;
+			Keep->RelativeLocation = Entry.RelLoc;
+			Keep->RelativeRotation = Entry.RelRot;
+			Keep->RelativeScale = Entry.RelScale.IsNearlyZero() ? FVector::OneVector : Entry.RelScale;
+			++Written;
+			UE_LOG(LogTemp, Log, TEXT("[Look] socket %s -> %s loc=(%.2f,%.2f,%.2f) rot=(p%.1f,y%.1f,r%.1f) %s on %s"),
+				*Entry.Name.ToString(), *Entry.BoneName.ToString(),
+				Entry.RelLoc.X, Entry.RelLoc.Y, Entry.RelLoc.Z,
+				Entry.RelRot.Pitch, Entry.RelRot.Yaw, Entry.RelRot.Roll,
+				Entry.Kind, *GetNameSafe(Target));
+		}
+
+		// A stale runtime weapon_r / SOCKET_Weapon must not beat RifleSocketak in ResolveAttachPoint.
+		auto DropIfUnwritten = [&](FName Name)
+		{
+			const FGripSocketCopy* Entry = nullptr;
+			for (const FGripSocketCopy& Copy : Copies)
+			{
+				if (Copy.Name == Name)
+				{
+					Entry = &Copy;
+					break;
+				}
+			}
+			if (Entry && (Entry->bWrite || Entry->bUseBone))
+			{
+				return;
+			}
+			const int32 Removed = RemoveMeshOnlyGripSocket(Target, Name);
+			if (Removed > 0)
+			{
+				Dropped += Removed;
+				UE_LOG(LogTemp, Log, TEXT("[Look] socket %s drop stale mesh socket on %s"),
+					*Name.ToString(), *GetNameSafe(Target));
+			}
+		};
+		DropIfUnwritten(TEXT("weapon_r"));
+		DropIfUnwritten(TEXT("SOCKET_Weapon"));
+
+		Target->RebuildSocketMap();
+
+		if (Package && Package->IsDirty() && !bDirtyBefore)
+		{
+			Package->ClearDirtyFlag();
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[Look] %s sockets upsert=%d drop=%d on %s (src=%s)"),
+			Label, Written, Dropped, *GetNameSafe(Target), SourceName);
+	}
+}
+
+void AShooterCharacter::EnsureMesh3PGripSockets(USkeletalMesh* BodyMesh, USkeletalMesh* SourceMesh, USkeletalMeshComponent* LiveSourceComp)
+{
+	if (!IsValid(BodyMesh))
+	{
+		return;
+	}
+
+	USkeletalMesh* MannyMesh = SourceMesh;
+	const bool bSourceOk = IsValid(MannyMesh)
+		&& MannyMesh != BodyMesh
+		&& !MannyMesh->GetPathName().Contains(TEXT("Bandit"));
+	if (!bSourceOk)
+	{
+		MannyMesh = nullptr;
+	}
+
+	auto HasRifleSocketAk = [](USkeletalMesh* GripMesh) -> bool
+	{
+		return FindSourceGripSocket(GripMesh, TEXT("RifleSocketak")) != nullptr;
 	};
-	EnsureNamed(TEXT("weapon_r"));
-	EnsureNamed(TEXT("WeaponSocket"));
-	EnsureNamed(TEXT("SOCKET_Weapon"));
-	EnsureNamed(TEXT("RifleSocket"));
-	EnsureNamed(TEXT("RifleSocketak"));
-	EnsureNamed(TEXT("PistolSocket"));
-	EnsureNamed(TEXT("GrenadeSocket"));
-
-	const FReferenceSkeleton& RefSkel = ArmsMesh->GetRefSkeleton();
-	int32 Added = 0;
-	for (const FCopiedSocket& Entry : Copied)
+	if (!HasRifleSocketAk(MannyMesh))
 	{
-		if (FindAuthoredSocket(ArmsMesh, Entry.Name) != nullptr) continue;
-
-		FName BoneName = Entry.BoneName;
-		FVector RelLoc = Entry.RelLoc;
-		FRotator RelRot = Entry.RelRot;
-		FVector RelScale = Entry.RelScale.IsNearlyZero() ? FVector::OneVector : Entry.RelScale;
-		if (RefSkel.FindBoneIndex(BoneName) == INDEX_NONE)
+		static const TCHAR* MannyPaths[] = {
+			TEXT("/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"),
+			TEXT("/Game/FPS_Controller/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"),
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"),
+			TEXT("/Game/FPS_Controller/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"),
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+		};
+		for (const TCHAR* Path : MannyPaths)
 		{
-			BoneName = TEXT("hand_r");
-			if (RefSkel.FindBoneIndex(BoneName) == INDEX_NONE) continue;
-			if (Entry.BoneName != BoneName)
+			if (USkeletalMesh* Loaded = LoadObject<USkeletalMesh>(nullptr, Path))
 			{
-				RelLoc = FVector::ZeroVector;
-				RelRot = FRotator::ZeroRotator;
-				RelScale = FVector::OneVector;
+				if (HasRifleSocketAk(Loaded))
+				{
+					MannyMesh = Loaded;
+					break;
+				}
+				if (!IsValid(MannyMesh))
+				{
+					MannyMesh = Loaded;
+				}
 			}
 		}
-
-		USkeletalMeshSocket* NewSock = NewObject<USkeletalMeshSocket>(ArmsMesh);
-		NewSock->SocketName = Entry.Name;
-		NewSock->BoneName = BoneName;
-		NewSock->RelativeLocation = RelLoc;
-		NewSock->RelativeRotation = RelRot;
-		NewSock->RelativeScale = RelScale;
-		ArmsMesh->AddSocket(NewSock);
-		++Added;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[Look] Arms1P sockets+=%d (wanted %d) on %s"),
-		Added, Copied.Num(), *GetNameSafe(ArmsMesh));
+	TArray<FGripSocketCopy> Copies;
+	// 3P does not bake weapon_r. RAR uses the RifleSocketak alias; AK requests RifleSocketak.
+	CaptureGripSockets(BodyMesh, MannyMesh, LiveSourceComp, false, Copies);
+	AliasSocketWeapon(Copies);
+	ApplyGripSocketCopies(BodyMesh, Copies, TEXT("Mesh3P"), *GetNameSafe(MannyMesh));
+}
+
+void AShooterCharacter::EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkeletalMesh* SourceMesh)
+{
+	if (!IsValid(Mesh1P) || !IsValid(ArmsMesh))
+	{
+		return;
+	}
+
+	USkeletalMesh* ArmsSource = SourceMesh;
+	const bool bSourceOk = IsValid(ArmsSource)
+		&& ArmsSource != ArmsMesh
+		&& !ArmsSource->GetPathName().Contains(TEXT("Bandit"));
+	if (!bSourceOk)
+	{
+		ArmsSource = LoadObject<USkeletalMesh>(nullptr,
+			TEXT("/Game/FirstPersonRifleAnimations/Demo/FirstPersonArms/Character/Mesh/SK_Mannequin_Arms.SK_Mannequin_Arms"));
+	}
+	if (!IsValid(ArmsSource))
+	{
+		ArmsSource = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/FirstPersonBPIronbelly/Arms/SK_FPSArms.SK_FPSArms"));
+	}
+
+	TArray<FGripSocketCopy> Copies;
+	// Old Mesh1P is still the mannequin arms here. Bake weapon_r only when the new mesh lacks that bone.
+	CaptureGripSockets(ArmsMesh, ArmsSource, Mesh1P, true, Copies);
+	if (FindGripCopy(Copies, TEXT("SOCKET_Weapon")) == nullptr)
+	{
+		if (USkeletalMesh* MannequinArms = LoadObject<USkeletalMesh>(nullptr,
+			TEXT("/Game/FirstPersonRifleAnimations/Demo/FirstPersonArms/Character/Mesh/SK_Mannequin_Arms.SK_Mannequin_Arms")))
+		{
+			if (MannequinArms != ArmsSource)
+			{
+				CaptureGripSockets(ArmsMesh, MannequinArms, Mesh1P, true, Copies);
+			}
+		}
+	}
+	AliasSocketWeapon(Copies);
+	ApplyGripSocketCopies(ArmsMesh, Copies, TEXT("Arms1P"), *GetNameSafe(ArmsSource));
 }
 
 void AShooterCharacter::ApplyFactionArms1P()
@@ -4156,6 +4721,12 @@ void AShooterCharacter::ApplyFactionArms1P()
 #endif
 
 	const bool bAlready = (Mesh1P->GetSkeletalMeshAsset() == WantMesh);
+	// Mesh1P BP carries OverrideMaterials from Ironbelly arms (slot 0 = skin/sleeve). Gloves slot was not
+	// overridden so it looked right while forearms kept the old material. Clear overrides for Bandits arms.
+	if (bBanditsTarget && Mesh1P->OverrideMaterials.Num() > 0)
+	{
+		Mesh1P->EmptyOverrideMaterials();
+	}
 	if (!bAlready)
 	{
 		const TSubclassOf<UAnimInstance> KeepAnim = Mesh1P->GetAnimClass();
@@ -4181,4 +4752,99 @@ void AShooterCharacter::ApplyFactionArms1P()
 
 	UE_LOG(LogTemp, Warning, TEXT("[Look] Mesh1P -> %s FactionLook=%d already=%d"),
 		*GetNameSafe(WantMesh), static_cast<int32>(FactionLook), bAlready ? 1 : 0);
+
+	ApplyFactionSleeves1P();
 }
+void AShooterCharacter::ApplyFactionSleeves1P()
+{
+	if (!IsValid(Mesh1P_Sleeves) || !IsValid(Mesh1P))
+	{
+		return;
+	}
+
+	auto ClearSleeves = [this]()
+	{
+		Mesh1P_Sleeves->SetLeaderPoseComponent(nullptr);
+		Mesh1P_Sleeves->SetSkeletalMesh(nullptr);
+		Mesh1P_Sleeves->EmptyOverrideMaterials();
+		Mesh1P_Sleeves->SetVisibility(false);
+	};
+
+	if (!bUseBanditsArms1P || !bUseBanditsSleeves1P)
+	{
+		ClearSleeves();
+		return;
+	}
+
+	EnsureFactionLookDefaults();
+
+	USkeletalMesh* WantSleeve = nullptr;
+	UMaterialInterface* WantMat = nullptr;
+	switch (FactionLook)
+	{
+	case ECharacterLookFaction::Criminal:
+		WantSleeve = LoadSoftMesh(CriminalSleeveMesh1P);
+		WantMat = LoadSoftMaterial(CriminalSleeveMaterial);
+		break;
+	case ECharacterLookFaction::Police:
+		WantSleeve = LoadSoftMesh(PoliceSleeveMesh1P);
+		break;
+	default:
+		ClearSleeves();
+		return;
+	}
+
+	if (!IsValid(WantSleeve))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Look] Sleeves1P mesh missing FactionLook=%d"), static_cast<int32>(FactionLook));
+		ClearSleeves();
+		return;
+	}
+
+	const bool bAlready = (Mesh1P_Sleeves->GetSkeletalMeshAsset() == WantSleeve);
+	if (!bAlready)
+	{
+		Mesh1P_Sleeves->SetLeaderPoseComponent(nullptr);
+		Mesh1P_Sleeves->SetSkeletalMesh(WantSleeve, true);
+	}
+
+	Mesh1P_Sleeves->SetLeaderPoseComponent(Mesh1P);
+	Mesh1P_Sleeves->EmptyOverrideMaterials();
+	if (IsValid(WantMat))
+	{
+		// Bomber brown etc. — apply to all slots so sleeve color matches 3P preset.
+		const int32 NumMats = Mesh1P_Sleeves->GetNumMaterials();
+		for (int32 i = 0; i < NumMats; ++i)
+		{
+			Mesh1P_Sleeves->SetMaterial(i, WantMat);
+		}
+	}
+
+	// Hide legs/head so FP mainly shows jacket sleeves (torso may still peek — Bandits has no sleeve-only mesh).
+	static const FName HideBones[] = {
+		TEXT("thigh_l"), TEXT("thigh_r"),
+		TEXT("calf_l"), TEXT("calf_r"),
+		TEXT("foot_l"), TEXT("foot_r"),
+		TEXT("ball_l"), TEXT("ball_r"),
+		TEXT("neck_01"), TEXT("neck_02"),
+		TEXT("head"),
+		TEXT("ik_foot_l"), TEXT("ik_foot_r"),
+		TEXT("ik_foot_root"),
+	};
+	for (const FName BoneName : HideBones)
+	{
+		if (Mesh1P_Sleeves->GetBoneIndex(BoneName) != INDEX_NONE)
+		{
+			Mesh1P_Sleeves->HideBoneByName(BoneName, EPhysBodyOp::PBO_None);
+		}
+	}
+
+	Mesh1P_Sleeves->bOnlyOwnerSee = true;
+	Mesh1P_Sleeves->SetVisibility(Mesh1P->IsVisible());
+	Mesh1P_Sleeves->SetHiddenInGame(Mesh1P->bHiddenInGame);
+
+	UE_LOG(LogTemp, Warning, TEXT("[Look] Sleeves1P -> %s mat=%s FactionLook=%d already=%d leader=%s"),
+		*GetNameSafe(WantSleeve), *GetNameSafe(WantMat), static_cast<int32>(FactionLook),
+		bAlready ? 1 : 0, *GetNameSafe(Mesh1P));
+}
+

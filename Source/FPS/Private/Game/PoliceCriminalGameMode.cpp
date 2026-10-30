@@ -7,6 +7,8 @@
 #include "ShooterGameInstance.h"
 #include "CombatComponent.h"
 #include "Weapon/Weapon.h"
+#include "Weapon/WeaponFlash.h"
+#include "Weapon/WeaponMolotov.h"
 #include "Loadout/LoadoutTypes.h"
 #include "ShooterType/ShooterType.h"
 #include "GameFramework/PlayerStart.h"
@@ -16,23 +18,44 @@
 #include "UObject/SoftObjectPath.h"
 #include "Engine/Engine.h"
 
+namespace
+{
+	// MvpRound: 服务器进程内跨 ServerTravel 保存配装（面包车/军械库关卡 -> 对局图）。key = 房间玩家 key
+	struct FPCTravelLoadout { FLoadoutPreset Loadout; bool bStrip = false; };
+	TMap<FString, FPCTravelLoadout>& PCTravelLoadouts()
+	{
+		static TMap<FString, FPCTravelLoadout> Map;
+		return Map;
+	}
+}
+
 APoliceCriminalGameMode::APoliceCriminalGameMode()
 {
 	GameStateClass = APoliceCriminalGameState::StaticClass();
 	PlayerStateClass = AShooterPlayerState::StaticClass();
 	RespawnDelay = 0.f;
+	// Temp test match map = range; swap to CQB later via BP Class Defaults
+	MatchMap = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/FPS/Level/Lvl_Range.Lvl_Range")));
 
+	// MVP catalogs only — Deagle/PCC/knife stripped.
 	CriminalVanWeapons = {
 		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/BP_Weapon_AK.BP_Weapon_AK_C"))),
 		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/BP_Pistol.BP_Pistol_C"))),
-		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/Kit/BP_Weapon_Deagle.BP_Weapon_Deagle_C"))),
-		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/BP_Weapon_PCC.BP_Weapon_PCC_C"))),
 	};
 	PoliceArmoryWeapons = {
 		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/RAR/BP_FPS_RAR.BP_FPS_RAR_C"))),
 		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/BP_Weapon_X24.BP_Weapon_X24_C"))),
 	};
-	SharedMeleeWeapon = TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/BP_Knife.BP_Knife_C")));
+	PoliceThrowables = {
+		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Script/FPS.WeaponFlash"))),
+		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/Throwable/BP_Weapon_Grenade.BP_Weapon_Grenade_C"))),
+	};
+	CriminalThrowables = {
+		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Script/FPS.WeaponMolotov"))),
+		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/Throwable/BP_Weapon_Grenade.BP_Weapon_Grenade_C"))),
+	};
+	SharedMeleeWeapon = nullptr; // MVP: no knife
+	PoliceDefaultArmorLevel = 1;
 }
 
 void APoliceCriminalGameMode::InitGameState()
@@ -49,27 +72,85 @@ void APoliceCriminalGameMode::StartPlay()
 	BeginWaitingOrSetup();
 }
 
+static void FPS_ResolveSoftWeaponList(const TArray<TSoftClassPtr<AWeapon>>& SoftList, TArray<TSubclassOf<AWeapon>>& Out)
+{
+	Out.Reset();
+	for (const TSoftClassPtr<AWeapon>& Soft : SoftList)
+	{
+		if (UClass* C = Soft.LoadSynchronous())
+		{
+			Out.AddUnique(C);
+		}
+	}
+}
+
+static TSubclassOf<AWeapon> FPS_FindWeaponByKind(const TArray<TSubclassOf<AWeapon>>& List, EWeaponKind Kind)
+{
+	for (TSubclassOf<AWeapon> C : List)
+	{
+		if (C && C->GetDefaultObject<AWeapon>()->WeaponKind == Kind)
+		{
+			return C;
+		}
+	}
+	return nullptr;
+}
+
 void APoliceCriminalGameMode::ResolveWeaponCatalogs()
 {
-	ResolvedCriminalWeapons.Reset();
-	for (const TSoftClassPtr<AWeapon>& Soft : CriminalVanWeapons)
+	FPS_ResolveSoftWeaponList(CriminalVanWeapons, ResolvedCriminalWeapons);
+	FPS_ResolveSoftWeaponList(PoliceArmoryWeapons, ResolvedPoliceWeapons);
+	FPS_ResolveSoftWeaponList(PoliceThrowables, ResolvedPoliceThrowables);
+	FPS_ResolveSoftWeaponList(CriminalThrowables, ResolvedCriminalThrowables);
+	ResolvedMelee = SharedMeleeWeapon.IsNull() ? nullptr : SharedMeleeWeapon.LoadSynchronous();
+
+	// Ensure flash + HE for police, molotov + HE for criminal (native fallbacks if soft missing).
 	{
-		if (UClass* C = Soft.LoadSynchronous())
+		bool bHasFlash = false;
+		for (TSubclassOf<AWeapon> C : ResolvedPoliceThrowables)
 		{
-			ResolvedCriminalWeapons.Add(C);
+			if (C && (C == AWeaponFlash::StaticClass() || C->IsChildOf(AWeaponFlash::StaticClass()))) bHasFlash = true;
+		}
+		if (!bHasFlash) ResolvedPoliceThrowables.Insert(AWeaponFlash::StaticClass(), 0);
+		TArray<TSubclassOf<AWeapon>> Ordered;
+		for (TSubclassOf<AWeapon> C : ResolvedPoliceThrowables)
+		{
+			if (C && (C == AWeaponFlash::StaticClass() || C->IsChildOf(AWeaponFlash::StaticClass()))) Ordered.AddUnique(C);
+		}
+		for (TSubclassOf<AWeapon> C : ResolvedPoliceThrowables) Ordered.AddUnique(C);
+		ResolvedPoliceThrowables = Ordered;
+	}
+	{
+		bool bHasMolo = false;
+		for (TSubclassOf<AWeapon> C : ResolvedCriminalThrowables)
+		{
+			if (C && (C == AWeaponMolotov::StaticClass() || C->IsChildOf(AWeaponMolotov::StaticClass()))) bHasMolo = true;
+		}
+		if (!bHasMolo) ResolvedCriminalThrowables.Insert(AWeaponMolotov::StaticClass(), 0);
+		TArray<TSubclassOf<AWeapon>> Ordered;
+		for (TSubclassOf<AWeapon> C : ResolvedCriminalThrowables)
+		{
+			if (C && (C == AWeaponMolotov::StaticClass() || C->IsChildOf(AWeaponMolotov::StaticClass()))) Ordered.AddUnique(C);
+		}
+		for (TSubclassOf<AWeapon> C : ResolvedCriminalThrowables) Ordered.AddUnique(C);
+		ResolvedCriminalThrowables = Ordered;
+	}
+
+		// Ensure HE grenade present on both sides when soft path resolves.
+	{
+		TSubclassOf<AWeapon> Grenade = nullptr;
+		const FSoftObjectPath GrenadePath(TEXT("/Game/FPS/Weapon/Throwable/BP_Weapon_Grenade.BP_Weapon_Grenade_C"));
+		if (UClass* GC = Cast<UClass>(GrenadePath.TryLoad())) Grenade = GC;
+		if (Grenade)
+		{
+			ResolvedPoliceThrowables.AddUnique(Grenade);
+			ResolvedCriminalThrowables.AddUnique(Grenade);
 		}
 	}
-	ResolvedPoliceWeapons.Reset();
-	for (const TSoftClassPtr<AWeapon>& Soft : PoliceArmoryWeapons)
-	{
-		if (UClass* C = Soft.LoadSynchronous())
-		{
-			ResolvedPoliceWeapons.Add(C);
-		}
-	}
-	ResolvedMelee = SharedMeleeWeapon.LoadSynchronous();
-	UE_LOG(LogTemp, Log, TEXT("[PCMode] Catalog criminal=%d police=%d melee=%s"),
-		ResolvedCriminalWeapons.Num(), ResolvedPoliceWeapons.Num(), *GetNameSafe(ResolvedMelee));
+
+	UE_LOG(LogTemp, Log, TEXT("[PCMode] MVP catalog criminal=%d police=%d throwP=%d throwC=%d melee=%s"),
+		ResolvedCriminalWeapons.Num(), ResolvedPoliceWeapons.Num(),
+		ResolvedPoliceThrowables.Num(), ResolvedCriminalThrowables.Num(), *GetNameSafe(ResolvedMelee));
 }
 
 void APoliceCriminalGameMode::ApplyMatchRules()
@@ -146,13 +227,14 @@ void APoliceCriminalGameMode::TickPhaseTimers()
 	}
 	if (GS->GetPhase() == EPoliceCriminalPhase::Assault)
 	{
+		ValidateSpectators();
 		if (MatchType == EPoliceCriminalMatchType::Elimination)
 		{
 			CheckEliminationWin();
 		}
 		if (AssaultDuration > 0.f && GS->GetRemainingTime() <= 0.f)
 		{
-			EndMatch(PoliceCriminalTeams::Criminal);
+			EndMatch(TimeoutWinningTeam, EPoliceCriminalWinReason::Timeout);
 		}
 	}
 }
@@ -164,9 +246,21 @@ void APoliceCriminalGameMode::CheckEliminationWin()
 	GS->RefreshTeamAliveCounts();
 	const int32 CriminalAlive = GS->GetTeamAliveCount(PoliceCriminalTeams::Criminal);
 	const int32 CriminalPlayers = GS->GetTeamPlayerCount(PoliceCriminalTeams::Criminal);
-	if (CriminalPlayers > 0 && CriminalAlive <= 0)
+	const int32 PoliceAlive = GS->GetTeamAliveCount(PoliceCriminalTeams::Police);
+	const int32 PolicePlayers = GS->GetTeamPlayerCount(PoliceCriminalTeams::Police);
+	const bool bCriminalsOut = CriminalPlayers > 0 && CriminalAlive <= 0;
+	const bool bPoliceOut = PolicePlayers > 0 && PoliceAlive <= 0;
+	if (bCriminalsOut && bPoliceOut)
 	{
-		EndMatch(PoliceCriminalTeams::Police);
+		EndMatch(AShooterPlayerState::NoTeam, EPoliceCriminalWinReason::Draw); // 同归于尽 = 平局
+	}
+	else if (bCriminalsOut)
+	{
+		EndMatch(PoliceCriminalTeams::Police, EPoliceCriminalWinReason::Elimination);
+	}
+	else if (bPoliceOut)
+	{
+		EndMatch(PoliceCriminalTeams::Criminal, EPoliceCriminalWinReason::Elimination);
 	}
 }
 
@@ -174,10 +268,26 @@ void APoliceCriminalGameMode::HandleStartingNewPlayer_Implementation(APlayerCont
 {
 	AssignShortPlayerName(NewPlayer);
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+	RestoreLoadoutAfterTravel(NewPlayer);
+	ApplyFactionLookForController(NewPlayer);
+	if (const APoliceCriminalGameState* JoinGS = GetGameState<APoliceCriminalGameState>())
+	{
+		if (JoinGS->GetPhase() == EPoliceCriminalPhase::Assault || JoinGS->GetPhase() == EPoliceCriminalPhase::PostMatch)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[PCMode] %s joined mid-round -> spectate"), *GetNameSafe(NewPlayer));
+			if (APawn* P = NewPlayer->GetPawn())
+			{
+				if (UCombatComponent* Combat = P->FindComponentByClass<UCombatComponent>()) Combat->DestroyInventory();
+				NewPlayer->UnPossess();
+				P->Destroy();
+			}
+			ScheduleSpectate(NewPlayer, 0.5f);
+		}
+	}
 	if (GEngine && IsValid(NewPlayer) && NewPlayer->IsLocalController())
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 12.f, FColor::Cyan,
-			TEXT("警匪: PickFaction 0/1 | VanPick | ArmoryPick | SkipSetup | PlaceTripwire/PlaceGasCan | SpawnTripwire/SpawnGasCan | SpawnTestHostage"));
+			TEXT("警匪MVP: PickFaction 0/1(=满配) | VanPick/ArmoryPick mvp | 1主2副3投掷循环 | SkipSetup"));
 	}
 }
 
@@ -186,7 +296,7 @@ AActor* APoliceCriminalGameMode::FindTaggedStart(FName Tag) const
 	TArray<APlayerStart*> Free, Any;
 	for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It)
 	{
-		if (It->PlayerStartTag != Tag) continue;
+		if (It->PlayerStartTag != Tag && !It->Tags.Contains(Tag)) continue;
 		Any.Add(*It);
 		bool bOccupied = false;
 		for (TActorIterator<APawn> PawnIt(GetWorld()); PawnIt; ++PawnIt)
@@ -211,6 +321,8 @@ AActor* APoliceCriminalGameMode::ChoosePlayerStart_Implementation(AController* P
 	{
 		const FName Tag = PS->GetTeamId() == PoliceCriminalTeams::Police ? PoliceStartTag : CriminalStartTag;
 		if (AActor* Start = FindTaggedStart(Tag)) return Start;
+		const FName Alt = PS->GetTeamId() == PoliceCriminalTeams::Police ? PoliceStartTagAlt : CriminalStartTagAlt;
+		if (AActor* Start = FindTaggedStart(Alt)) return Start;
 		UE_LOG(LogTemp, Warning, TEXT("[PCMode] No PlayerStart tagged '%s'"), *Tag.ToString());
 	}
 	return Super::ChoosePlayerStart_Implementation(Player);
@@ -243,6 +355,10 @@ void APoliceCriminalGameMode::ScoreKill(AShooterPlayerState* KillerPS, AShooterP
 void APoliceCriminalGameMode::OnPlayerKilled(AController* KillerController, AController* VictimController)
 {
 	Super::OnPlayerKilled(KillerController, VictimController);
+	if (const APoliceCriminalGameState* KGS = GetGameState<APoliceCriminalGameState>())
+	{
+		if (KGS->GetPhase() != EPoliceCriminalPhase::PostMatch) ScheduleSpectate(VictimController, SpectateDelay);
+	}
 	if (MatchType == EPoliceCriminalMatchType::Elimination)
 	{
 		CheckEliminationWin();
@@ -251,7 +367,7 @@ void APoliceCriminalGameMode::OnPlayerKilled(AController* KillerController, ACon
 
 void APoliceCriminalGameMode::HandleTeamForfeit(uint8 WinningTeam)
 {
-	EndMatch(WinningTeam);
+	EndMatch(WinningTeam, EPoliceCriminalWinReason::Forfeit);
 }
 
 void APoliceCriminalGameMode::ApplyFactionLookForController(AController* Controller)
@@ -282,95 +398,153 @@ bool APoliceCriminalGameMode::Auth_AssignFaction(APlayerController* PC, EPoliceC
 		}
 	}
 	UE_LOG(LogTemp, Log, TEXT("[PCMode] %s -> faction %d team %d"), *PS->GetPlayerName(), (int32)Faction, Team);
+
+	// MVP: auto full kit on faction pick (guns + throwables; no knife).
+	Auth_ApplyMvpLoadout(PC);
+
 	if (GEngine)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan,
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan,
 			Faction == EPoliceCriminalFaction::Police
-				? TEXT("已选警察 — ArmoryPick RAR|X24 + Armor/Vision；外观=警察")
-				: TEXT("已选匪徒 — VanPick AK|Glock|Deagle|PCC；外观=匪"));
+				? TEXT("已选警察 MVP：1=RAR 2=X24 3=闪光↔手雷（轻甲）")
+				: TEXT("已选匪徒 MVP：1=AK 2=手枪 3=燃烧瓶↔手雷（无甲更快）"));
 	}
 	return true;
 }
 
+bool APoliceCriminalGameMode::Auth_ApplyMvpLoadout(APlayerController* PC)
+{
+	if (!HasAuthority() || !IsValid(PC)) return false;
+	AShooterPlayerState* PS = PC->GetPlayerState<AShooterPlayerState>();
+	if (!PS || !PS->HasTeam()) return false;
+	if (PS->GetTeamId() == PoliceCriminalTeams::Police)
+	{
+		TSubclassOf<AWeapon> Primary = FPS_FindWeaponByKind(ResolvedPoliceWeapons, EWeaponKind::LongGun);
+		if (!Primary && ResolvedPoliceWeapons.Num() > 0) Primary = ResolvedPoliceWeapons[0];
+		return Auth_ApplyArmoryLoadout(PC, Primary, true);
+	}
+	TSubclassOf<AWeapon> Primary = FPS_FindWeaponByKind(ResolvedCriminalWeapons, EWeaponKind::LongGun);
+	if (!Primary && ResolvedCriminalWeapons.Num() > 0) Primary = ResolvedCriminalWeapons[0];
+	return Auth_ApplyVanLoadout(PC, Primary);
+}
+
 bool APoliceCriminalGameMode::Auth_ApplyVanLoadout(APlayerController* PC, TSubclassOf<AWeapon> PrimaryOrPistol)
 {
-	if (!HasAuthority() || !IsValid(PC) || !PrimaryOrPistol) return false;
+	if (!HasAuthority() || !IsValid(PC)) return false;
 	AShooterPlayerState* PS = PC->GetPlayerState<AShooterPlayerState>();
 	if (!PS || PS->GetTeamId() != PoliceCriminalTeams::Criminal)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PCMode] VanLoadout denied: not criminal"));
 		return false;
 	}
-	if (!ResolvedCriminalWeapons.Contains(PrimaryOrPistol))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[PCMode] VanLoadout denied: weapon not in van catalog"));
-		return false;
-	}
 	AShooterPlayerController* SPC = Cast<AShooterPlayerController>(PC);
 	if (!SPC) return false;
 
-	FLoadoutPreset Loadout;
-	Loadout.Name = FText::FromString(TEXT("Van"));
-	FWeaponPreset Main;
-	Main.WeaponClass = PrimaryOrPistol;
-	Loadout.Weapons.Add(Main);
-	if (ResolvedMelee)
+	TSubclassOf<AWeapon> Primary = FPS_FindWeaponByKind(ResolvedCriminalWeapons, EWeaponKind::LongGun);
+	TSubclassOf<AWeapon> Pistol = FPS_FindWeaponByKind(ResolvedCriminalWeapons, EWeaponKind::Pistol);
+	if (PrimaryOrPistol)
 	{
-		FWeaponPreset Knife;
-		Knife.WeaponClass = ResolvedMelee;
-		Loadout.Weapons.Add(Knife);
+		const EWeaponKind Kind = PrimaryOrPistol->GetDefaultObject<AWeapon>()->WeaponKind;
+		if (Kind == EWeaponKind::LongGun) Primary = PrimaryOrPistol;
+		else if (Kind == EWeaponKind::Pistol) Pistol = PrimaryOrPistol;
 	}
+	if (!Primary) Primary = PrimaryOrPistol;
+
+	FLoadoutPreset Loadout;
+	Loadout.Name = FText::FromString(TEXT("VanMVP"));
+	if (Primary)
+	{
+		FWeaponPreset Main; Main.WeaponClass = Primary; Loadout.Weapons.Add(Main);
+	}
+	if (Pistol)
+	{
+		FWeaponPreset Side; Side.WeaponClass = Pistol; Loadout.Weapons.Add(Side);
+	}
+	for (TSubclassOf<AWeapon> T : ResolvedCriminalThrowables)
+	{
+		if (!T) continue;
+		FWeaponPreset Throw; Throw.WeaponClass = T; Loadout.Weapons.Add(Throw);
+	}
+	// MVP: no knife (ResolvedMelee ignored)
+
 	SPC->Auth_SetSubmittedLoadout(Loadout, true);
-	UE_LOG(LogTemp, Log, TEXT("[PCMode] Van loadout %s"), *GetNameSafe(PrimaryOrPistol));
-	return true;
+	if (AShooterCharacter* Char = Cast<AShooterCharacter>(PC->GetPawn()))
+	{
+		Char->SetBodyArmorLocal(EBodyArmorType::None);
+	}
+	SaveLoadoutForTravel(PC);
+	UE_LOG(LogTemp, Log, TEXT("[PCMode] Van MVP primary=%s pistol=%s throws=%d"),
+		*GetNameSafe(Primary), *GetNameSafe(Pistol), ResolvedCriminalThrowables.Num());
+	return Loadout.Weapons.Num() > 0;
 }
 
 bool APoliceCriminalGameMode::Auth_ApplyArmoryLoadout(APlayerController* PC, TSubclassOf<AWeapon> WeaponClass, bool bAllowAttachments)
 {
-	if (!HasAuthority() || !IsValid(PC) || !WeaponClass) return false;
+	if (!HasAuthority() || !IsValid(PC)) return false;
 	AShooterPlayerState* PS = PC->GetPlayerState<AShooterPlayerState>();
 	if (!PS || PS->GetTeamId() != PoliceCriminalTeams::Police)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PCMode] Armory denied: not police"));
 		return false;
 	}
-	if (!ResolvedPoliceWeapons.Contains(WeaponClass) && WeaponClass != ResolvedMelee)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[PCMode] Armory denied: weapon not in police catalog"));
-		return false;
-	}
 	AShooterPlayerController* SPC = Cast<AShooterPlayerController>(PC);
 	if (!SPC) return false;
 
-	FLoadoutPreset Loadout;
-	Loadout.Name = FText::FromString(TEXT("Armory"));
-	FWeaponPreset Main;
-	Main.WeaponClass = WeaponClass;
-	if (bAllowAttachments)
+	TSubclassOf<AWeapon> Primary = FPS_FindWeaponByKind(ResolvedPoliceWeapons, EWeaponKind::LongGun);
+	TSubclassOf<AWeapon> Pistol = FPS_FindWeaponByKind(ResolvedPoliceWeapons, EWeaponKind::Pistol);
+	if (WeaponClass)
 	{
-		if (const UShooterGameInstance* GI = Cast<UShooterGameInstance>(GetGameInstance()))
+		const EWeaponKind Kind = WeaponClass->GetDefaultObject<AWeapon>()->WeaponKind;
+		if (Kind == EWeaponKind::LongGun) Primary = WeaponClass;
+		else if (Kind == EWeaponKind::Pistol) Pistol = WeaponClass;
+	}
+	if (!Primary) Primary = WeaponClass;
+
+	FLoadoutPreset Loadout;
+	Loadout.Name = FText::FromString(TEXT("ArmoryMVP"));
+	if (Primary)
+	{
+		FWeaponPreset Main;
+		Main.WeaponClass = Primary;
+		if (bAllowAttachments)
 		{
-			const FLoadoutPreset Saved = GI->GetCurrentLoadout();
-			for (const FWeaponPreset& P : Saved.Weapons)
+			if (const UShooterGameInstance* GI = Cast<UShooterGameInstance>(GetGameInstance()))
 			{
-				if (P.WeaponClass == WeaponClass)
+				const FLoadoutPreset Saved = GI->GetCurrentLoadout();
+				for (const FWeaponPreset& P : Saved.Weapons)
 				{
-					Main.Attachments = P.Attachments;
-					break;
+					if (P.WeaponClass == Primary)
+					{
+						Main.Attachments = P.Attachments;
+						break;
+					}
 				}
 			}
 		}
+		Loadout.Weapons.Add(Main);
 	}
-	Loadout.Weapons.Add(Main);
-	if (ResolvedMelee)
+	if (Pistol)
 	{
-		FWeaponPreset Knife;
-		Knife.WeaponClass = ResolvedMelee;
-		Loadout.Weapons.Add(Knife);
+		FWeaponPreset Side; Side.WeaponClass = Pistol; Loadout.Weapons.Add(Side);
 	}
+	for (TSubclassOf<AWeapon> T : ResolvedPoliceThrowables)
+	{
+		if (!T) continue;
+		FWeaponPreset Throw; Throw.WeaponClass = T; Loadout.Weapons.Add(Throw);
+	}
+
 	SPC->Auth_SetSubmittedLoadout(Loadout, false);
-	UE_LOG(LogTemp, Log, TEXT("[PCMode] Armory loadout %s atts=%d"), *GetNameSafe(WeaponClass), Main.Attachments.Num());
-	return true;
+	if (AShooterCharacter* Char = Cast<AShooterCharacter>(PC->GetPawn()))
+	{
+		EBodyArmorType Armor = EBodyArmorType::None;
+		if (PoliceDefaultArmorLevel == 1) Armor = EBodyArmorType::Light;
+		else if (PoliceDefaultArmorLevel >= 2) Armor = EBodyArmorType::Heavy;
+		Char->SetBodyArmorLocal(Armor);
+	}
+	SaveLoadoutForTravel(PC);
+	UE_LOG(LogTemp, Log, TEXT("[PCMode] Armory MVP primary=%s pistol=%s throws=%d armor=%d"),
+		*GetNameSafe(Primary), *GetNameSafe(Pistol), ResolvedPoliceThrowables.Num(), PoliceDefaultArmorLevel);
+	return Loadout.Weapons.Num() > 0;
 }
 
 void APoliceCriminalGameMode::Auth_SkipSetup()
@@ -381,16 +555,22 @@ void APoliceCriminalGameMode::Auth_SkipSetup()
 	StartAssault();
 }
 
-void APoliceCriminalGameMode::EndMatch(uint8 WinningTeam)
+void APoliceCriminalGameMode::EndMatch(uint8 WinningTeam, EPoliceCriminalWinReason Reason)
 {
 	APoliceCriminalGameState* GS = GetGameState<APoliceCriminalGameState>();
 	if (!GS || GS->GetPhase() == EPoliceCriminalPhase::PostMatch) return;
 	GetWorldTimerManager().ClearTimer(PhaseTimer);
 	ClearRespawnTimers();
+	if (WinningTeam == AShooterPlayerState::NoTeam && Reason == EPoliceCriminalWinReason::Elimination)
+	{
+		Reason = EPoliceCriminalWinReason::Draw;
+	}
+	GS->SetLastWinReason(Reason);
 	GS->SetWinningTeam(WinningTeam);
+	PCTravelLoadouts().Reset();
 	GS->SetPhase(EPoliceCriminalPhase::PostMatch);
 	GS->SetMatchState(EShooterMatchState::PostMatch);
-	UE_LOG(LogTemp, Log, TEXT("[PCMode] Match ended. Winner team=%d (0=Police 1=Criminal)"), WinningTeam);
+	UE_LOG(LogTemp, Log, TEXT("[PCMode] Match ended. Winner team=%d Reason=%d (0=Police 1=Criminal)"), WinningTeam, (int32)Reason);
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(It->Get()))
@@ -403,6 +583,12 @@ void APoliceCriminalGameMode::EndMatch(uint8 WinningTeam)
 
 void APoliceCriminalGameMode::ReturnAllToMainMenu()
 {
+	if (bRestartMapAfterMatch && GetWorld())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[PCMode] Restart map"));
+		GetWorld()->ServerTravel(TEXT("?restart"));
+		return;
+	}
 	if (ReturnToRoomLobby()) return;
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
@@ -421,4 +607,109 @@ void APoliceCriminalGameMode::ReturnAllToMainMenu()
 			GI->GoToMainMenu();
 		}
 	}), 0.35f, false);
+}
+
+// ---------------- MvpRound ----------------
+
+void APoliceCriminalGameMode::ScheduleSpectate(AController* Controller, float Delay)
+{
+	AShooterPlayerController* SPC = Cast<AShooterPlayerController>(Controller);
+	if (!IsValid(SPC)) return;
+	TWeakObjectPtr<AShooterPlayerController> WeakPC = SPC;
+	FTimerHandle H;
+	GetWorldTimerManager().SetTimer(H, FTimerDelegate::CreateWeakLambda(this, [this, WeakPC]()
+	{
+		const APoliceCriminalGameState* GS = GetGameState<APoliceCriminalGameState>();
+		if (!WeakPC.IsValid() || !GS || GS->GetPhase() == EPoliceCriminalPhase::PostMatch) return;
+		WeakPC->Auth_StartSpectating();
+	}), FMath::Max(Delay, 0.05f), false);
+}
+
+void APoliceCriminalGameMode::ValidateSpectators()
+{
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		AShooterPlayerController* SPC = Cast<AShooterPlayerController>(It->Get());
+		if (IsValid(SPC) && SPC->IsSpectating()) SPC->Auth_SpectateNext(true);
+	}
+}
+
+void APoliceCriminalGameMode::SaveLoadoutForTravel(APlayerController* PC)
+{
+	const AShooterPlayerController* SPC = Cast<AShooterPlayerController>(PC);
+	const FLoadoutPreset* L = SPC ? SPC->GetSubmittedLoadout() : nullptr;
+	if (!L || !PC->PlayerState) return;
+	const FString Key = UShooterGameInstance::GetRoomKey(PC->PlayerState);
+	if (Key.IsEmpty()) return;
+	const AShooterPlayerState* PS = PC->GetPlayerState<AShooterPlayerState>();
+	FPCTravelLoadout& Entry = PCTravelLoadouts().FindOrAdd(Key);
+	Entry.Loadout = *L;
+	Entry.bStrip = PS && PS->GetTeamId() == PoliceCriminalTeams::Criminal;
+}
+
+void APoliceCriminalGameMode::RestoreLoadoutAfterTravel(APlayerController* PC)
+{
+	AShooterPlayerController* SPC = Cast<AShooterPlayerController>(PC);
+	if (!SPC || !PC->PlayerState || SPC->GetSubmittedLoadout()) return;
+	const FString Key = UShooterGameInstance::GetRoomKey(PC->PlayerState);
+	if (const FPCTravelLoadout* Entry = PCTravelLoadouts().Find(Key))
+	{
+		SPC->Auth_SetSubmittedLoadout(Entry->Loadout, Entry->bStrip);
+		UE_LOG(LogTemp, Log, TEXT("[PCMode] Restored travel loadout for %s (%d weapons)"), *Key, Entry->Loadout.Weapons.Num());
+	}
+}
+
+void APoliceCriminalGameMode::Auth_DebugForceWin(uint8 WinningTeam)
+{
+	if (!HasAuthority()) return;
+	EndMatch(WinningTeam > 1 ? AShooterPlayerState::NoTeam : WinningTeam,
+		WinningTeam > 1 ? EPoliceCriminalWinReason::Draw : EPoliceCriminalWinReason::Elimination);
+}
+
+void APoliceCriminalGameMode::Auth_DebugSetRemaining(float Seconds)
+{
+	APoliceCriminalGameState* GS = GetGameState<APoliceCriminalGameState>();
+	if (!HasAuthority() || !GS) return;
+	const float Now = GS->GetServerWorldTimeSeconds();
+	if (GS->GetPhase() == EPoliceCriminalPhase::CriminalSetup) GS->SetSetupEndServerTime(Now + Seconds);
+	else if (GS->GetPhase() == EPoliceCriminalPhase::Assault) GS->SetAssaultEndServerTime(Now + Seconds);
+}
+
+void APoliceCriminalGameMode::Auth_DebugKill(AController* Controller)
+{
+	AShooterCharacter* Char = IsValid(Controller) ? Cast<AShooterCharacter>(Controller->GetPawn()) : nullptr;
+	if (!HasAuthority() || !Char) return;
+	const APoliceCriminalGameState* GS = GetGameState<APoliceCriminalGameState>();
+	if (GS && GS->GetPhase() != EPoliceCriminalPhase::Assault)
+	{
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("KillSelf 只在突击阶段有效（先 SkipSetup）"));
+		return;
+	}
+	Char->DoDamage_Implementation(100000.f, Char);
+}
+
+bool APoliceCriminalGameMode::Auth_TravelToMatchMap(const FString& MapOverride)
+{
+	if (!HasAuthority() || !GetWorld()) return false;
+	FString MapPath = MapOverride;
+	if (MapPath.IsEmpty())
+	{
+		if (!MatchMap.IsNull())
+		{
+			MapPath = MatchMap.ToSoftObjectPath().GetLongPackageName();
+		}
+	}
+	MapPath.TrimStartAndEndInline();
+	if (MapPath.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PCMode] TravelToMatch: set MatchMap on GameMode or pass map name (e.g. /Game/FPS/Maps/CQB)"));
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Red, TEXT("TravelToMatch 失败：先填 GameMode.MatchMap 或命令带地图路径"));
+		return false;
+	}
+	// Accept short names like CQB -> leave as-is for ServerTravel (UE resolves /Game/... if absolute)
+	bUseSeamlessTravel = bSeamlessTravelToMatch;
+	UE_LOG(LogTemp, Log, TEXT("[PCMode] ServerTravel -> %s (seamless=%d)"), *MapPath, bUseSeamlessTravel ? 1 : 0);
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan, FString::Printf(TEXT("切图到对局: %s"), *MapPath));
+	GetWorld()->ServerTravel(MapPath);
+	return true;
 }

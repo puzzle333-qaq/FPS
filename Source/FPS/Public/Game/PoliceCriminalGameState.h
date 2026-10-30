@@ -33,6 +33,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|PoliceCriminal")
 	bool IsAssaultLive() const { return Phase == EPoliceCriminalPhase::Assault; }
 
+	UFUNCTION(BlueprintPure, Category = "FPS|PoliceCriminal")
+	EPoliceCriminalWinReason GetLastWinReason() const { return LastWinReason; }
+
 	/** Police locked during criminal setup; both free in assault. */
 	UFUNCTION(BlueprintPure, Category = "FPS|PoliceCriminal")
 	bool IsFactionLocked(uint8 TeamId) const;
@@ -45,6 +48,7 @@ public:
 	void SetMatchType(EPoliceCriminalMatchType Type);
 	void SetSetupEndServerTime(float ServerTime);
 	void SetAssaultEndServerTime(float ServerTime);
+	void SetLastWinReason(EPoliceCriminalWinReason Reason);
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_Phase)
@@ -58,6 +62,9 @@ protected:
 
 	UPROPERTY(Replicated)
 	float AssaultEndServerTime = 0.f;
+
+	UPROPERTY(Replicated)
+	EPoliceCriminalWinReason LastWinReason = EPoliceCriminalWinReason::None;
 
 	UFUNCTION()
 	void OnRep_Phase();

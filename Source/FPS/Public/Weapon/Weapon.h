@@ -369,6 +369,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sequences")
 	TObjectPtr<UAnimSequence> WeaponFireSequence;
 
+	// 枪身没有蒙太奇槽时的开火序列。非空则随机播一条，用 PlayAnimation，停在最后一帧。
+	// 和 WeaponFireSequence 分开：那条是 Combat 在有 AnimBP 时的蒙太奇回退。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sequences")
+	TArray<TObjectPtr<UAnimSequence>> WeaponFireSequences;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sequences")
 	TObjectPtr<UAnimSequence> WeaponReloadEmptySequence;
 
@@ -383,6 +388,9 @@ public:
 
 	/** Gun mesh without a real AnimBP: PlayAnimation. With AnimBP: dynamic montage. */
 	static void PlayWeaponSequence(USkeletalMeshComponent* WeaponMesh, UAnimSequence* Sequence);
+
+	/** PlayAnimation on the gun mesh. Dedicated servers skip it. The clip holds its last frame. */
+	static void PlayBodySequence(USkeletalMeshComponent* WeaponMesh, UAnimSequence* Sequence);
 
 	// 第 8 步：腰射时手臂/枪的位置偏移（厘米，相对角色 Mesh1P 默认位置，在相机空间里）。
 	// X 负数 = 往后拉近镜头，Y = 左右，Z = 上下。开镜时会平滑过渡到瞄准位置，这个偏移只影响腰射。
@@ -496,7 +504,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Recoil", meta = (ClampMin = "0"))
 	float AimRecoilMultiplier;
 
-	// 腰射散布基础值（度，半锥角）。每把枪在自己的 BP 默认值里设
+	// 腰射散布基础值（度，半锥角）。BP 可设；BeginPlay [NoHipSpread] 会把 RosterHipfire 刻意加大的值压回原小默认
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Spread", meta = (ClampMin = "0", ClampMax = "30"))
 	float HipFireSpread = 3.f;
 

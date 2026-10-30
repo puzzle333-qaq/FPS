@@ -1,4 +1,5 @@
 #include "Weapon/ThrownProjectile.h"
+#include "ShooterCharacter.h"
 #include "ShooterGameModeBase.h"
 
 #include "Interface/PlayerInterface.h"
@@ -172,8 +173,45 @@ void AThrownProjectile::ApplyThrownEffect()
 	case EThrownEffect::Frag:
 		ApplyFragDamage();
 		break;
+	case EThrownEffect::Molotov:
+		// MVP stand-in: one-shot burn radius (full fire pool later).
+		ApplyFragDamage();
+		break;
+	case EThrownEffect::Flash:
+		ApplyFlashWash();
+		break;
 	default:
 		break;
+	}
+}
+
+void AThrownProjectile::ApplyFlashWash()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World)) return;
+
+	const FVector Origin = GetActorLocation();
+	const float Radius = FMath::Max(DamageRadius, 600.f);
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ThrownFlash), false, this);
+	QueryParams.AddIgnoredActor(this);
+	FCollisionObjectQueryParams ObjectQuery;
+	ObjectQuery.AddObjectTypesToQuery(ECC_Pawn);
+	World->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, ObjectQuery, FCollisionShape::MakeSphere(Radius), QueryParams);
+
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AShooterCharacter* Char = Cast<AShooterCharacter>(Overlap.GetActor());
+		if (!IsValid(Char)) continue;
+		const float Dist = FVector::Dist(Origin, Char->GetActorLocation());
+		if (Dist > Radius) continue;
+		float Amount = 2.5f;
+		if (Dist > InnerRadius)
+		{
+			const float Range = FMath::Max(1.f, Radius - InnerRadius);
+			Amount *= 1.f - (Dist - InnerRadius) / Range;
+		}
+		Char->AddVisionFlashWash(FMath::Max(0.4f, Amount));
 	}
 }
 
@@ -243,4 +281,27 @@ void AThrownProjectile::ApplyFragDamage()
 		IPlayerInterface::Execute_DoDamage(Actor, Applied, GetInstigator());
 		if (DamageGM) DamageGM->ClearPendingDamageIcon();
 	}
+}
+
+AThrownFlash::AThrownFlash()
+{
+	EffectType = EThrownEffect::Flash;
+	FuseTime = 1.4f;
+	bDetonateOnImpact = false;
+	Damage = 0.f;
+	InnerRadius = 200.f;
+	DamageRadius = 900.f;
+	bRequireLineOfSight = true;
+}
+
+AThrownMolotov::AThrownMolotov()
+{
+	EffectType = EThrownEffect::Molotov;
+	FuseTime = 10.f;
+	bDetonateOnImpact = true;
+	Damage = 40.f;
+	InnerRadius = 90.f;
+	DamageRadius = 260.f;
+	bRequireLineOfSight = false;
+	bShouldBounce = false;
 }

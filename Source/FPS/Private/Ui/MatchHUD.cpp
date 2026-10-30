@@ -7,6 +7,8 @@
 #include "Ui/RadarWidget.h"
 #include "Game/ShooterPlayerState.h"
 #include "Game/SearchDestroyGameState.h"
+#include "Game/PoliceCriminalGameState.h"
+#include "Game/PoliceCriminalTypes.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/PanelWidget.h"
 #include "Components/NamedSlot.h"
@@ -31,6 +33,10 @@ FText UMatchHUD::FormatMatchTime(float Seconds)
 void UMatchHUD::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// [AdsHudYaw] MatchHUD disabled — collapse immediately if still spawned from BP.
+	SetVisibility(ESlateVisibility::Collapsed);
+	return;
+#if 0 // dead: MatchHUD disabled
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	if (!HeaderHost) HeaderHost = GetWidgetFromName(TEXT("HeaderHost"));
@@ -67,6 +73,7 @@ void UMatchHUD::NativeConstruct()
 		World->GameStateSetEvent.AddUObject(this, &ThisClass::HandleGameStateSet);
 		World->GetTimerManager().SetTimer(RespawnTimer, this, &ThisClass::RefreshRespawn, 0.1f, true);
 	}
+#endif
 }
 
 void UMatchHUD::NativeDestruct()
@@ -160,6 +167,10 @@ TSubclassOf<UMatchHeaderWidget> UMatchHUD::ResolveHeaderClass(EShooterGameMode M
 	case EShooterGameMode::SearchDestroy:
 		if (SDHeaderClass) return SDHeaderClass;
 		return USDHeaderWidget::StaticClass();
+	case EShooterGameMode::PoliceCriminal:
+		// Reuse Valorant-style TDM top bar (timer / scores / alive).
+		if (TDMHeaderClass) return TDMHeaderClass;
+		return UTDMHeaderWidget::StaticClass();
 	default:
 		return nullptr;
 	}
@@ -188,6 +199,7 @@ UMatchHeaderWidget* UMatchHUD::FindPlacedHeader() const
 
 void UMatchHUD::RebuildHeader()
 {
+	// [AdsHudYaw] Top match header permanently disabled (user request).
 	if (IsValid(ActiveHeader))
 	{
 		ActiveHeader->UnbindMatch();
@@ -198,6 +210,8 @@ void UMatchHUD::RebuildHeader()
 		ActiveHeader = nullptr;
 		bSpawnedHeader = false;
 	}
+	return;
+#if 0 // dead: header disabled
 
 	AShooterGameState* GS = BoundGameState.Get();
 	if (!IsValid(GS)) return;
@@ -228,6 +242,7 @@ void UMatchHUD::RebuildHeader()
 	bSpawnedHeader = true;
 	ActiveHeader->BindMatch(GS);
 	OnHeaderSpawned(ActiveHeader, Mode);
+#endif
 }
 
 void UMatchHUD::PlaceHeader(UMatchHeaderWidget* Header)
@@ -463,25 +478,73 @@ void UMatchHUD::ShowMatchResult(uint8 WinningTeam)
 	const bool bDraw = WinningTeam == AShooterPlayerState::NoTeam;
 	const bool bWon = !bDraw && LocalTeam != AShooterPlayerState::NoTeam && LocalTeam == WinningTeam;
 
+	APoliceCriminalGameState* PCGS = Cast<APoliceCriminalGameState>(BoundGameState.Get());
+
 	if (Text_MatchResult)
 	{
-		Text_MatchResult->SetText(bDraw ? DrawText : (bWon ? VictoryText : DefeatText));
+		if (PCGS)
+		{
+			// 剿匪：主标题直接写「警察胜利 / 匪徒胜利 / 平局」，本地胜负用颜色区分
+			if (bDraw)
+			{
+				Text_MatchResult->SetText(DrawText);
+			}
+			else if (WinningTeam == PoliceCriminalTeams::Police)
+			{
+				Text_MatchResult->SetText(PoliceWinText);
+			}
+			else
+			{
+				Text_MatchResult->SetText(CriminalWinText);
+			}
+		}
+		else
+		{
+			Text_MatchResult->SetText(bDraw ? DrawText : (bWon ? VictoryText : DefeatText));
+		}
 	}
 
 	FText Detail = FText::GetEmpty();
-	if (BoundGameState.IsValid())
+	if (PCGS)
+	{
+		FText ReasonTxt;
+		switch (PCGS->GetLastWinReason())
+		{
+		case EPoliceCriminalWinReason::Timeout: ReasonTxt = PcReasonTimeoutText; break;
+		case EPoliceCriminalWinReason::Forfeit: ReasonTxt = PcReasonForfeitText; break;
+		case EPoliceCriminalWinReason::Draw: ReasonTxt = PcReasonDrawText; break;
+		case EPoliceCriminalWinReason::Elimination: ReasonTxt = PcReasonElimText; break;
+		default: ReasonTxt = PcReasonElimText; break;
+		}
+		const FText LocalSide = bDraw
+			? FText::GetEmpty()
+			: (bWon
+				? NSLOCTEXT("MatchHUD", "YouWon", "你方获胜")
+				: NSLOCTEXT("MatchHUD", "YouLost", "你方战败"));
+		if (LocalSide.IsEmpty())
+		{
+			Detail = ReasonTxt;
+		}
+		else
+		{
+			Detail = FText::Format(NSLOCTEXT("MatchHUD", "PcDetailCombo", "{0}  ·  {1}"), ReasonTxt, LocalSide);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[MatchHUD] PC result winner=%d reason=%d localWon=%d"),
+			WinningTeam, (int32)PCGS->GetLastWinReason(), bWon ? 1 : 0);
+	}
+	else if (BoundGameState.IsValid())
 	{
 		Detail = FText::Format(MatchScoreFormat,
 			FText::AsNumber(BoundGameState->GetTeamScore(0)),
 			FText::AsNumber(BoundGameState->GetTeamScore(1)));
-	}
-	// 爆破终局也带上最后一回合原因
-	if (ASearchDestroyGameState* SDGS = Cast<ASearchDestroyGameState>(BoundGameState.Get()))
-	{
-		const FText Reason = ReasonToText(SDGS->GetLastWinReason());
-		if (!Reason.IsEmpty())
+		// 爆破终局也带上最后一回合原因
+		if (ASearchDestroyGameState* SDGS = Cast<ASearchDestroyGameState>(BoundGameState.Get()))
 		{
-			Detail = FText::Format(NSLOCTEXT("MatchHUD", "MatchDetailCombo", "{0}  ·  {1}"), Detail, Reason);
+			const FText Reason = ReasonToText(SDGS->GetLastWinReason());
+			if (!Reason.IsEmpty())
+			{
+				Detail = FText::Format(NSLOCTEXT("MatchHUD", "MatchDetailCombo", "{0}  ·  {1}"), Detail, Reason);
+			}
 		}
 	}
 	if (Text_ResultDetail)

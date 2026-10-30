@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -25,6 +25,7 @@ class USoundBase;
 class USoundAttenuation;
 class USkeletalMesh;
 class UMaterialInterface;
+class UNiagaraSystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
 // 第 10 步：侧瞄开/关（只在本地）
@@ -289,6 +290,13 @@ public:
 	// Bloody footprints (local decals). Auto on HP drop; console MarkBlood.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Blood")
 	void MarkBloodyFeet(int32 ExtraSteps = -1);
+
+	// Hit spray + floor blood stain (Niagara + decal). Call on every machine that saw the hit.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Blood")
+	void PlayBloodHitFX(FVector ImpactPoint, FVector ImpactNormal);
+
+	// Same FX for dummies / any hit location (no character required).
+	static void SpawnBloodImpactFX(UObject* WorldContext, FVector ImpactPoint, FVector ImpactNormal, AActor* IgnoreActor = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Obstacle")
 	void SetDebugWeaponObstacle(bool bEnable);
@@ -582,11 +590,18 @@ public:
 	bool IsMuzzleDipped() const { return MuzzleDipAlpha > 0.35f; }
 	bool IsArmInjured() const { return bArmInjured; }
 	bool IsLegInjured() const { return bLegInjured; }
+	/** HUD: head/torso marked after hit; arm/leg also true while injured. */
+	bool IsHitZoneMarked(EHitZone Zone) const;
 	bool IsBandaging() const { return bIsBandaging; }
 	EBodyArmorType GetBodyArmor() const { return BodyArmor; }
 
 	// Authority: apply arm/leg injury from hit zone (server).
 	void Auth_ApplyHitZoneInjury(EHitZone Zone);
+
+	UFUNCTION(Client, Unreliable)
+	void Client_FlashHitZone(EHitZone Zone);
+
+	void ClearHitZoneMarks();
 
 	// Scale ballistic torso damage by armor. Explosives/fire should call DoDamage directly (no armor).
 	float ScaleDamageByArmor(float Damage, EHitZone Zone, bool bPistolOrShotgun) const;
@@ -615,6 +630,10 @@ public:
 	bool bArmInjured = false;
 	UPROPERTY(ReplicatedUsing = OnRep_LegInjured, BlueprintReadOnly, Category = "FPS|Injury")
 	bool bLegInjured = false;
+
+	/** Local/owner HUD marks for head/torso (set by Client_FlashHitZone). */
+	bool bHeadHitMarked = false;
+	bool bTorsoHitMarked = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Injury")
 	float LegInjurySpeedMultiplier = 0.45f;
@@ -650,6 +669,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood")
 	TSoftObjectPtr<UMaterialInterface> BloodFootprintDecal;
 
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood")
+	TSoftObjectPtr<UMaterialInterface> BloodHitDecal;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood")
+	TSoftObjectPtr<UNiagaraSystem> BloodHitNiagara;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood", meta = (ClampMin = "8"))
+	float BloodHitDecalSize = 48.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood", meta = (ClampMin = "1"))
+	float BloodHitDecalLifeSpan = 22.f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Blood", meta = (ClampMin = "4"))
 	float BloodFootprintSize = 18.f;
 
@@ -672,11 +703,14 @@ public:
 	float HeavyArmorPistolShotgunTorsoMultiplier = 0.25f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.2", ClampMax = "1"))
 	float HeavyArmorMoveSpeedMultiplier = 0.78f;
+	/** Criminals with no armor run faster than armored police (MVP). Applied in GetArmorSpeedMultiplier. */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "1.0", ClampMax = "1.5"))
+	float UnarmoredCriminalSpeedMultiplier = 1.12f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "1"))
 	float HeavyArmorAdsTimeMultiplier = 1.45f;
 
 	// ===== 3P faction look + optional Bandits 1P arms =====
-	// Criminal = Bandits Preset_05. Police = Bandits Preset_02 (blue tactical). CharGen soft refs kept unused by default.
+	// Criminal = Bandits Preset_05. Police = Bandits Preset_13 (arms SKM_Arms_Gloves_Black). CharGen soft refs kept unused by default.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_FactionLook, Category = "FPS|Look")
 	ECharacterLookFaction FactionLook = ECharacterLookFaction::Default;
 
@@ -722,6 +756,22 @@ public:
 	/** Police 1P arms (green gloves). */
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
 	TSoftObjectPtr<USkeletalMesh> PoliceArmsMesh1P;
+
+	/** When true, attach Bandits cloth as Mesh1P LeaderPose sleeves (Preset_05 bomber / Preset_13 gorka). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Look")
+	bool bUseBanditsSleeves1P = true;
+
+	/** Criminal 1P sleeve cloth (Bomber matching Preset_05). */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> CriminalSleeveMesh1P;
+
+	/** Optional material override for criminal sleeves (Bomber brown). */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<UMaterialInterface> CriminalSleeveMaterial;
+
+	/** Police 1P sleeve cloth (Gorka beige matching Preset_13). */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
+	TSoftObjectPtr<USkeletalMesh> PoliceSleeveMesh1P;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
 	float WeaponBlockRaisePitch = 28.f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
@@ -1152,7 +1202,10 @@ private:
 
 	void ApplyFactionLookMeshes();
 	void ApplyFactionArms1P();
+	void ApplyFactionSleeves1P();
 	void EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkeletalMesh* SourceMesh);
+	/** Copy Manny/default Mesh3P grip sockets onto Bandits body (weapon_r / RifleSocket* / PistolSocket*). */
+	void EnsureMesh3PGripSockets(USkeletalMesh* BodyMesh, USkeletalMesh* SourceMesh, USkeletalMeshComponent* LiveSourceComp = nullptr);
 	void EnsureFactionLookDefaults();
 	void SetModularLookVisible(bool bVisible);
 	USkeletalMesh* LoadSoftMesh(const TSoftObjectPtr<USkeletalMesh>& Soft) const;
@@ -1206,6 +1259,10 @@ private:
 	//1st preson view(arms)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Mesh", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USkeletalMeshComponent> Mesh1P;
+
+	/** Bandits jacket/bomber MasterPose follower for FP sleeves (OnlyOwnerSee). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Mesh", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> Mesh1P_Sleeves;
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USpringArmComponent> SpringArm;

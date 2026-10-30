@@ -1,4 +1,5 @@
-#include "CombatComponent.h"
+﻿#include "CombatComponent.h"
+#include "FPSTraceChannels.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "Animation/FirstPersonAnimInstance.h"
@@ -31,10 +32,12 @@
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Game/ShooterGameState.h"
+#include "Game/PoliceCriminalGameMode.h"
 #include "Game/SearchDestroyGameState.h"
 #include "Game/ShooterPlayerState.h"
 #include "Game/BombWeapon.h"
 #include "Range/TargetDummy.h"
+#include "Ui/HudBodyMarks.h"
 #include "Weapon/ThrownProjectile.h"
 #include "Loadout/LoadoutTypes.h"
 
@@ -241,10 +244,11 @@ void UCombatComponent::SpawnInventory()
 	SpawnPresets.Init(nullptr, SpawnClasses.Num());
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
 		const AShooterPlayerController* LoadoutPC = IsValid(OwnerPawn) ? Cast<AShooterPlayerController>(OwnerPawn->GetController()) : nullptr;
-	const bool bPoliceCriminalMode = ModeGS && ModeGS->GetMatchMode() == EShooterGameMode::PoliceCriminal;
-	if (bPoliceCriminalMode && IsValid(LoadoutPC) && LoadoutPC->GetSubmittedLoadout())
+	const bool bPoliceCriminalMode = (ModeGS && ModeGS->GetMatchMode() == EShooterGameMode::PoliceCriminal) || (GetWorld() && GetWorld()->GetAuthGameMode() && GetWorld()->GetAuthGameMode()->IsA(APoliceCriminalGameMode::StaticClass()));
+	if (bPoliceCriminalMode)
 	{
-		// 警匪：只用水印/面包车提交的枪，不用角色默认大图鉴
+		// 警匪：永远不用角色 DefaultWeaponClass（否则一直是旧刀/旧枪）。
+		// 未 PickFaction 前为空包；选阵营后只发 SubmittedLoadout 的 MVP 套装。
 		SpawnClasses.Reset();
 		SpawnPresets.Reset();
 	}
@@ -255,12 +259,16 @@ void UCombatComponent::SpawnInventory()
 			if (!Preset.WeaponClass) continue;
 			const EWeaponKind Kind = Preset.WeaponClass->GetDefaultObject<AWeapon>()->WeaponKind;
 			int32 Slot = INDEX_NONE;
-			for (int32 i = 0; i < SpawnClasses.Num(); ++i)
+			// Throwables: always append so flash+HE / molotov+HE both spawn.
+			if (Kind != EWeaponKind::Throwable)
 			{
-				if (!SpawnPresets[i] && SpawnClasses[i] && SpawnClasses[i]->GetDefaultObject<AWeapon>()->WeaponKind == Kind)
+				for (int32 i = 0; i < SpawnClasses.Num(); ++i)
 				{
-					Slot = i;
-					break;
+					if (!SpawnPresets[i] && SpawnClasses[i] && SpawnClasses[i]->GetDefaultObject<AWeapon>()->WeaponKind == Kind)
+					{
+						Slot = i;
+						break;
+					}
 				}
 			}
 			if (Slot == INDEX_NONE)
@@ -277,6 +285,8 @@ void UCombatComponent::SpawnInventory()
 	const bool bExtraction = !GS || !GS->HasMatchHeader() || GS->GetMatchMode() == EShooterGameMode::Extraction;
 	const int32 MaxLong = bExtraction ? 2 : 1;
 	const bool bAllowThrowable = !GS || !GS->HasMatchHeader() || GS->GetMatchMode() != EShooterGameMode::Extraction;
+	const bool bPoliceCriminalModeSpawn = (GS && GS->GetMatchMode() == EShooterGameMode::PoliceCriminal) || (GetWorld() && GetWorld()->GetAuthGameMode() && GetWorld()->GetAuthGameMode()->IsA(APoliceCriminalGameMode::StaticClass()));
+	const int32 MaxThrowables = bPoliceCriminalModeSpawn ? 4 : 1;
 	bool bLoadoutHasLong = false;
 	for (const FWeaponPreset* Preset : SpawnPresets)
 	{
@@ -302,7 +312,7 @@ void UCombatComponent::SpawnInventory()
 		}
 		if (CDO->WeaponKind == EWeaponKind::Pistol && PistolCount >= 1) continue;
 		if (CDO->WeaponKind == EWeaponKind::Melee && MeleeCount >= 1) continue;
-		if (CDO->WeaponKind == EWeaponKind::Throwable && (!bAllowThrowable || ThrowableCount >= 1)) continue;
+		if (CDO->WeaponKind == EWeaponKind::Throwable && (!bAllowThrowable || ThrowableCount >= MaxThrowables)) continue;
 
 		AWeapon* Weapon = SpawnWeapon(SpawnClasses[SpawnIndex]);
 		if (!IsValid(Weapon)) continue;
@@ -424,6 +434,7 @@ void UCombatComponent::InitializeWeaponWidget()
 void UCombatComponent::NotifyAmmoChanged()
 {
 	if (!IsValid(CurrentWeapon)) return;
+	SyncSpareMagRoundsForHud();
 	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 }
 
@@ -522,25 +533,9 @@ void UCombatComponent::ApplyFireRecoil()
 	SecondsSinceRecoilShot = 0.f;
 	++RecoilShotIndex;
 
-	// 枪身视觉后坐只推模型和手臂。开镜时装了瞄具时准心在模型上，不能再踢，否则线会跟着后坐往上爬。
-	// 镜头后坐仍然在，子弹还是跟着镜头中心。
-	if (AShooterCharacter* Shooter = Cast<AShooterCharacter>(OwningPawn))
-	{
-		const bool bSightStaysPut = bAiming && IsValid(CurrentWeapon->GetOpticAttachment());
-		const float AimVisual = bSightStaysPut ? 0.f : (bAiming ? FMath::Max(0.f, CurrentWeapon->VisualRecoilAimMultiplier) : 1.f);
-		const FVector& L = CurrentWeapon->VisualRecoilLocation;
-		const FRotator& R = CurrentWeapon->VisualRecoilRotation;
-		const FVector KickLocation(
-			-L.X * Scale.Pitch,
-			FMath::FRandRange(-L.Y, L.Y) * Scale.Yaw,
-			L.Z * Scale.Pitch);
-		const FRotator KickRotation(
-			Step.Pitch * R.Pitch * Scale.Pitch,
-			Step.Yaw * R.Yaw * Scale.Yaw,
-			FMath::FRandRange(-R.Roll, R.Roll));
-		Shooter->AddVisualRecoil(KickLocation * AimVisual, KickRotation * AimVisual);
-	}
+	// Mesh Loc kick kept OFF (no AddVisualRecoil). View recoil uses original COD pattern above.
 }
+
 
 void UCombatComponent::TickRecoil(float DeltaTime)
 {
@@ -607,6 +602,7 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME_CONDITION(UCombatComponent, bAiming, COND_SkipOwner);
 
 	DOREPLIFETIME_CONDITION(UCombatComponent, CurrentReserveAmmo, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(UCombatComponent, SpareMagRounds, COND_OwnerOnly);
 }
 
 void UCombatComponent::Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson)
@@ -661,12 +657,23 @@ void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
 	CacheDefaultFirstPersonArms();
 	if (!bCachedDefaultArms) return;
 
+	// Bandits faction look owns Mesh1P gloves + patched grip sockets. Do not let weapon OverrideArms
+	// swap back to Ironbelly/pack arms (that drops sockets and breaks RAR/AK 1P mount).
+	bool bLockBanditsFactionArms = false;
+	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(Owner))
+	{
+		const ECharacterLookFaction Look = Shooter->GetFactionLook();
+		bLockBanditsFactionArms = Shooter->bUseBanditsArms1P
+			&& (Look == ECharacterLookFaction::Police || Look == ECharacterLookFaction::Criminal);
+	}
+
 	// Only swap mesh / AnimBP when weapon sets OverrideArms*. Null = keep character Mesh1P (Ironbelly).
 	// Do NOT touch relative location or rotation (user requirement).
 	// Only PSR keeps pack OverrideArms; knife_viper / cg_pas always share default arms.
 	const FString WeaponTypeStr = IsValid(Weapon) ? Weapon->WeaponType.ToString() : FString();
 	const bool bForceDefaultArms =
-		WeaponTypeStr.Contains(TEXT("knife_viper"), ESearchCase::IgnoreCase)
+		bLockBanditsFactionArms
+		|| WeaponTypeStr.Contains(TEXT("knife_viper"), ESearchCase::IgnoreCase)
 		|| WeaponTypeStr.Contains(TEXT("cg_pas"), ESearchCase::IgnoreCase);
 
 	USkeletalMesh* WantMesh = (!bForceDefaultArms && IsValid(Weapon) && IsValid(Weapon->OverrideArmsMesh1P))
@@ -729,6 +736,8 @@ void UCombatComponent::RefreshAnimsAfterMesh3PSwap()
 {
 	if (IsValid(CurrentWeapon))
 	{
+		// Mesh3P skeletal asset just changed (Bandits) — rebind gun before anim push.
+		CurrentWeapon->AttachToOwingPawn();
 		ApplyEquippedWeaponAnim(CurrentWeapon);
 	}
 }
@@ -759,19 +768,10 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 		{
 			AnimCopy.Strafe_Standing = AnimCopy.Strafe_Walking;
 		}
-		// SprintAnim 未填：RAR 用 Infima 冲刺循环（与 Idle Pose 同套）；其它枪先 Idle 保握点，避免通用 Anim_fp_sprint 扯枪。
-		if (!IsValid(AnimCopy.SprintAnim))
+		// SprintAnim 未填时用 Idle，避免空引用。冲刺动画填在 DA_WeaponData 的 FirstPersonAnims / ThirdPersonAnims。
+		if (!IsValid(AnimCopy.SprintAnim) && IsValid(AnimCopy.IdleAnim))
 		{
-			const FString TypeStr = CurrentWeapon->WeaponType.ToString();
-			if (TypeStr.Equals(TEXT("Weapon.type.rar"), ESearchCase::IgnoreCase))
-			{
-				static const TCHAR* RarSprintPath = TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Movement/A_RAR_FP_PCH_AssaultRifle_Sprint_F_Loop.A_RAR_FP_PCH_AssaultRifle_Sprint_F_Loop");
-				AnimCopy.SprintAnim = LoadObject<UAnimSequence>(nullptr, RarSprintPath);
-			}
-			if (!IsValid(AnimCopy.SprintAnim) && IsValid(AnimCopy.IdleAnim))
-			{
-				AnimCopy.SprintAnim = AnimCopy.IdleAnim;
-			}
+			AnimCopy.SprintAnim = AnimCopy.IdleAnim;
 		}
 
 		// Grip hold style: Cradle vs Grab — same source as ResolveReloadMontage(GetGripHoldStyle()).
@@ -926,16 +926,13 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 	}
 	EquipMontage = PlayedEquip;
 
-	// X24 枪身没有对得上的蒙太奇。拔枪时直接播套筒序列。
-	if (Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_X24))
+	// 枪身没有蒙太奇槽时，Weapon Equip Sequence 直接播在这一侧的枪上，停在最后一帧。
+	bool bPlayedBodyEquip = false;
+	if (IsValid(Weapon->WeaponEquipSequence))
 	{
-		if (USkeletalMeshComponent* GunMesh = bFirstPerson ? Weapon->GetMesh1P() : Weapon->GetMesh3P())
-		{
-			if (UAnimSequence* EquipSequence = LoadObject<UAnimSequence>(nullptr, TEXT("/Game/FPS_Controller/Animations/WeaponsAnims/Pistol_X24/A_X24_Body_First_Equip.A_X24_Body_First_Equip")))
-			{
-				GunMesh->PlayAnimation(EquipSequence, false);
-			}
-		}
+		USkeletalMeshComponent* GunMesh = bFirstPerson ? Weapon->GetMesh1P() : Weapon->GetMesh3P();
+		AWeapon::PlayBodySequence(GunMesh, Weapon->WeaponEquipSequence);
+		bPlayedBodyEquip = true;
 	}
 
 	// 第一人称拔枪时，枪身蒙太奇跟手臂一起播。手臂已经有 Equip 时，WeaponMontages 不会当替补，所以这里单独播。
@@ -961,7 +958,7 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 				}
 			}
 		}
-		if (!bPlayedWeaponEquip && IsValid(Weapon->WeaponEquipSequence))
+		if (!bPlayedWeaponEquip && !bPlayedBodyEquip && IsValid(Weapon->WeaponEquipSequence))
 		{
 			AWeapon::PlayWeaponSequence(Weapon->GetMesh1P(), Weapon->WeaponEquipSequence);
 		}
@@ -1333,11 +1330,23 @@ void UCombatComponent::Local_FireWeapon()
 		const FHitResult& Hit = Hits[0];
 		EPhysicalSurface ImpactSurfaceType = Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType2;
 		CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, true, true);
+		if (IsValid(Hit.GetActor()) && (Cast<AShooterCharacter>(Hit.GetActor()) || Cast<ATargetDummy>(Hit.GetActor())))
+		{
+			AShooterCharacter::SpawnBloodImpactFX(this, Hit.ImpactPoint, Hit.ImpactNormal, Hit.GetActor());
+		}
 	}
 	if (Hits.Num() > 1)
 	{
 		// 每颗弹丸都留弹孔 + 命中特效
 		CurrentWeapon->SpawnPelletImpacts(Hits);
+		for (int32 PelletIdx = 1; PelletIdx < Hits.Num(); ++PelletIdx)
+		{
+			if (!IsValid(Hits[PelletIdx].GetActor())) continue;
+			if (Cast<AShooterCharacter>(Hits[PelletIdx].GetActor()) || Cast<ATargetDummy>(Hits[PelletIdx].GetActor()))
+			{
+				AShooterCharacter::SpawnBloodImpactFX(this, Hits[PelletIdx].ImpactPoint, Hits[PelletIdx].ImpactNormal, Hits[PelletIdx].GetActor());
+			}
+		}
 	}
 	OnWeaponFired.Broadcast();
 	ApplyFireRecoil();
@@ -1357,6 +1366,60 @@ void UCombatComponent::Local_FireWeapon()
 }
 
 void UCombatComponent::OnRep_CurrentReserveAmmo()
+{
+	if (IsValid(CurrentWeapon))
+	{
+		OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
+	}
+}
+
+void UCombatComponent::SyncSpareMagRoundsForHud()
+{
+	if (GetOwnerRole() != ROLE_Authority) return;
+	SpareMagRounds.Reset();
+	if (!IsValid(CurrentWeapon) || !CurrentWeapon->UsesAmmo()) return;
+	EnsureMagQueueForWeapon(CurrentWeapon);
+	if (const TArray<int32>* Q = MagQueues.Find(CurrentWeapon->WeaponType))
+	{
+		SpareMagRounds = *Q;
+	}
+}
+
+void UCombatComponent::GetHudMagazineFills(TArray<float>& OutFills) const
+{
+	OutFills.Reset();
+	if (!IsValid(CurrentWeapon) || !CurrentWeapon->UsesAmmo()) return;
+	const float Cap = static_cast<float>(FMath::Max(1, CurrentWeapon->MagCapacity));
+	OutFills.Add(FMath::Clamp(static_cast<float>(CurrentWeapon->Ammo) / Cap, 0.f, 1.f));
+
+	if (SpareMagRounds.Num() > 0)
+	{
+		for (int32 Rounds : SpareMagRounds)
+		{
+			OutFills.Add(FMath::Clamp(static_cast<float>(Rounds) / Cap, 0.f, 1.f));
+		}
+		return;
+	}
+
+	if (GetOwnerRole() == ROLE_Authority)
+	{
+		if (const TArray<int32>* Q = MagQueues.Find(CurrentWeapon->WeaponType))
+		{
+			for (int32 Rounds : *Q)
+			{
+				OutFills.Add(FMath::Clamp(static_cast<float>(Rounds) / Cap, 0.f, 1.f));
+			}
+			return;
+		}
+	}
+
+	for (int32 i = 0; i < FMath::Max(0, CurrentReserveAmmo); ++i)
+	{
+		OutFills.Add(1.f);
+	}
+}
+
+void UCombatComponent::OnRep_SpareMagRounds()
 {
 	if (IsValid(CurrentWeapon))
 	{
@@ -1403,6 +1466,95 @@ void UCombatComponent::FireTimerFinished()
 }
 
 
+// [RealisticRifle] Server-only wall penetration / ricochet. One extra segment per bullet, rifles+pistols only.
+namespace FPSBallistics
+{
+	static void BuildSecondaryHits(UWorld* World, AActor* Owner, AWeapon* W, const FHitResult& In, TArray<FHitResult>& OutHits, TArray<float>& OutScale)
+	{
+		if (!World || !IsValid(W) || W->PelletsPerShot > 1) return;
+		if (W->WeaponKind != EWeaponKind::LongGun && W->WeaponKind != EWeaponKind::Pistol) return;
+		AActor* HitActor = In.GetActor();
+		if (!In.bBlockingHit || !IsValid(HitActor) || HitActor->Implements<UPlayerInterface>()) return;
+		if (Cast<ATargetDummy>(HitActor)) return;
+
+		FVector Dir = (In.TraceEnd - In.TraceStart).GetSafeNormal();
+		if (Dir.IsNearlyZero())
+		{
+			const APawn* P = Cast<APawn>(Owner);
+			if (!P) return;
+			Dir = (FVector(In.ImpactPoint) - P->GetPawnViewLocation()).GetSafeNormal();
+			if (Dir.IsNearlyZero()) return;
+		}
+		const FVector N = In.ImpactNormal.GetSafeNormal();
+		const FVector Impact = In.ImpactPoint;
+
+		const FString Cls = W->GetClass()->GetName();
+		const bool bAK = Cls.Contains(TEXT("_AK"));
+		float MaxPen = W->WeaponKind == EWeaponKind::Pistol ? 8.f : (bAK ? 30.f : 22.f);   // cm through wood-equivalent
+		const float Keep = bAK ? 0.65f : 0.55f;
+
+		const EPhysicalSurface Surf = In.PhysMaterial.IsValid() ? In.PhysMaterial->SurfaceType.GetValue() : SurfaceType_Default;
+		bool bCanRicochet = true;
+		switch (Surf)
+		{
+		case SurfaceType2: MaxPen *= 0.35f; break;                       // Concrete: only thin partitions
+		case SurfaceType3: MaxPen *= 2.0f; bCanRicochet = false; break;  // Glass
+		case SurfaceType4: MaxPen *= 1.3f; bCanRicochet = false; break;  // Wood
+		case SurfaceType5: MaxPen *= 0.4f; break;                        // Metal
+		default:           MaxPen *= 0.6f; break;                        // unassigned = treat like drywall/brick
+		}
+
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(FPSBallistics), false);
+		Q.bReturnPhysicalMaterial = true;
+		Q.AddIgnoredActor(Owner);
+		Q.AddIgnoredActor(W);
+		FCollisionResponseParams R;
+		R.CollisionResponse.SetAllChannels(ECR_Ignore);
+		R.CollisionResponse.SetResponse(ECC_Pawn, ECR_Block);
+		R.CollisionResponse.SetResponse(ECC_WorldStatic, ECR_Block);
+		R.CollisionResponse.SetResponse(ECC_WorldDynamic, ECR_Block);
+		R.CollisionResponse.SetResponse(ECC_PhysicsBody, ECR_Block);
+		const FCollisionShape Shape = FCollisionShape::MakeSphere(FMath::Max(1.f, W->TraceRadius));
+
+		auto Shoot = [&](const FVector& S, const FVector& D, float Len, float Scale)
+		{
+			FHitResult H;
+			const FVector E = S + D * Len;
+			if (!World->SweepSingleByChannel(H, S, E, FQuat::Identity, FPSTraceChannels::ECC_Weapon, Shape, Q, R))
+			{
+				return;
+			}
+			OutHits.Add(H);
+			OutScale.Add(Scale);
+		};
+
+		// Ricochet: grazing hit (< ~15 deg from surface) glances off.
+		const float CosInc = FMath::Abs(FVector::DotProduct(Dir, N));
+		if (bCanRicochet && CosInc < 0.26f)
+		{
+			FVector Out = Dir.MirrorByVector(N);
+			Out = FMath::VRandCone(Out, FMath::DegreesToRadians(4.f)).GetSafeNormal();
+			if (FVector::DotProduct(Out, N) < 0.02f) Out = (Out + N * 0.05f).GetSafeNormal();
+			Shoot(Impact + N * 2.f, Out, 4000.f, 0.35f);
+			return;
+		}
+
+		// Penetration: look for the exit face by tracing back from MaxPen deep.
+		const FVector Probe = Impact + Dir * MaxPen;
+		FHitResult Back;
+		FCollisionQueryParams BQ(SCENE_QUERY_STAT(FPSBallisticsBack), false);
+		BQ.AddIgnoredActor(Owner);
+		BQ.AddIgnoredActor(W);
+		if (!World->LineTraceSingleByChannel(Back, Probe, Impact - Dir * 0.5f, FPSTraceChannels::ECC_Weapon, BQ, R)) return;
+		if (Back.bStartPenetrating || Back.GetActor() != HitActor) return;   // still inside / thicker than MaxPen
+		const float Thickness = FVector::Dist(Impact, FVector(Back.ImpactPoint));
+		if (Thickness >= MaxPen) return;
+		const float Scale = Keep * (1.f - 0.6f * Thickness / MaxPen);
+		Q.AddIgnoredComponent(In.GetComponent());
+		Shoot(FVector(Back.ImpactPoint) + Dir * 1.f, Dir, 8000.f, Scale);
+	}
+}
+
 void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>& Hits)
 {
 	if (!IsValid(CurrentWeapon)) return;
@@ -1424,9 +1576,14 @@ void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>
 
 	const int32 MaxPellets = FMath::Clamp(CurrentWeapon->PelletsPerShot, 1, 32);
 	const int32 ApplyCount = FMath::Clamp(Hits.Num(), 0, MaxPellets);
-	for (int32 i = 0; i < ApplyCount; ++i)
+	TArray<FHitResult> DmgHits;
+	TArray<float> DmgScale;
+	for (int32 i = 0; i < ApplyCount; ++i) { DmgHits.Add(Hits[i]); DmgScale.Add(1.f); }
+	const int32 PrimaryCount = DmgHits.Num();
+	for (int32 i = 0; i < PrimaryCount; ++i) FPSBallistics::BuildSecondaryHits(GetWorld(), GetOwner(), CurrentWeapon, Hits[i], DmgHits, DmgScale);
+	for (int32 i = 0; i < DmgHits.Num(); ++i)
 	{
-		const FHitResult& Hit = Hits[i];
+		const FHitResult& Hit = DmgHits[i];
 		if (IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>())
 		{
 			FName Bone = ResolveDamageBone(Hit);
@@ -1445,6 +1602,7 @@ void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>
 			if (ShooterSelf) ShooterSelf->bPendingHeadshotHit = Zone == EHitZone::Head;
 			if (AShooterCharacter* Victim = Cast<AShooterCharacter>(Hit.GetActor()))
 			{
+				HudBodyMarks::AddHit(Victim, Zone, HudBodyMarks::SideFromBone(Bone));
 				Victim->Auth_ApplyHitZoneInjury(Zone);
 				const bool bPistolOrShotgun = CurrentWeapon->WeaponKind == EWeaponKind::Pistol
 					|| CurrentWeapon->PelletsPerShot > 1
@@ -1457,6 +1615,7 @@ void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>
 				*UEnum::GetValueAsString(Zone),
 				Damage,
 				i);
+			Damage *= DmgScale[i];   // [RealisticRifle] penetration / ricochet falloff
 			IPlayerInterface::Execute_DoDamage(Hit.GetActor(), Damage, GetOwner());
 			if (ShooterSelf) ShooterSelf->bPendingHeadshotHit = false;
 			if (DamageGM) DamageGM->ClearPendingDamageIcon();
@@ -1473,12 +1632,23 @@ void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>
 
 	TArray<FHitResult> FxHits;
 	FxHits.Append(Hits.GetData(), FMath::Min(Hits.Num(), MaxPellets));
+	for (int32 i = PrimaryCount; i < DmgHits.Num(); ++i) FxHits.Add(DmgHits[i]);   // exit holes / ricochet marks for remote viewers
 	Multicast_FireWeapon(FxHits, CurrentWeapon->Ammo);
 }
 
 void UCombatComponent::Multicast_FireWeapon_Implementation(const TArray<FHitResult>& Hits, int32 AuthAmmo)
 {
 	if (!IsValid(CurrentWeapon)) return;
+
+	// BoneName is on the replicated hit, so the player who got shot can color that limb.
+	for (const FHitResult& OneHit : Hits)
+	{
+		AShooterCharacter* Victim = Cast<AShooterCharacter>(OneHit.GetActor());
+		if (!IsValid(Victim) || !Victim->IsLocallyControlled()) continue;
+		const FName Bone = ResolveDamageBone(OneHit);
+		HudBodyMarks::AddHit(Victim, ResolveHitZone(Bone), HudBodyMarks::SideFromBone(Bone));
+	}
+
 	const FHitResult Hit = Hits.Num() > 0 ? Hits[0] : FHitResult();
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
@@ -1499,9 +1669,21 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const TArray<FHitResu
 
 	EPhysicalSurface ImpactSurfaceType = Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType2;
 	CurrentWeapon->Local_Fire(Hit.ImpactPoint, Hit.ImpactNormal, ImpactSurfaceType, false);
+	if (IsValid(Hit.GetActor()) && (Cast<AShooterCharacter>(Hit.GetActor()) || Cast<ATargetDummy>(Hit.GetActor())))
+	{
+		AShooterCharacter::SpawnBloodImpactFX(this, Hit.ImpactPoint, Hit.ImpactNormal, Hit.GetActor());
+	}
 	if (Hits.Num() > 1)
 	{
 		CurrentWeapon->SpawnPelletImpacts(Hits);
+		for (int32 PelletIdx = 1; PelletIdx < Hits.Num(); ++PelletIdx)
+		{
+			if (!IsValid(Hits[PelletIdx].GetActor())) continue;
+			if (Cast<AShooterCharacter>(Hits[PelletIdx].GetActor()) || Cast<ATargetDummy>(Hits[PelletIdx].GetActor()))
+			{
+				AShooterCharacter::SpawnBloodImpactFX(this, Hits[PelletIdx].ImpactPoint, Hits[PelletIdx].ImpactNormal, Hits[PelletIdx].GetActor());
+			}
+		}
 	}
 
 	if (const FMontageData* MontageData = WeaponData->ThirdPersonMontages.Find(CurrentWeapon->WeaponType))
@@ -1776,7 +1958,12 @@ bool UCombatComponent::PlayReloadSequences(bool bFirstPerson, EReloadType Reload
 		}
 		if (IsValid(WeaponSeq))
 		{
-			AWeapon::PlayWeaponSequence(CurrentWeapon->GetMesh1P(), WeaponSeq);
+			// 空仓枪身序列由 PlayMagazineReload 用 PlayAnimation 播到 1P 和 3P，这里再播会叠一层。
+			const bool bEmptyBody = Resolved == EReloadType::Empty && WeaponSeq == CurrentWeapon->WeaponReloadEmptySequence;
+			if (!bEmptyBody)
+			{
+				AWeapon::PlayWeaponSequence(CurrentWeapon->GetMesh1P(), WeaponSeq);
+			}
 		}
 		CurrentWeapon->PlayMagazineReload(Resolved);
 	}
@@ -1859,6 +2046,7 @@ void UCombatComponent::OnReloadMontageEnded(UAnimMontage* Montage, bool bInterru
 	if (IsValid(CurrentWeapon))
 	{
 		CurrentWeapon->AttachToOwingPawn();
+		CurrentWeapon->FinishMagazineReloadVisuals();
 	}
 	if (!IsValid(Montage) || !IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Reloading) return;
@@ -2795,6 +2983,44 @@ void UCombatComponent::Initiate_EquipThrowableWeapon()
 	Initiate_EquipSlot(EWeaponSlot::Throwable);
 }
 
+void UCombatComponent::Initiate_EquipOrCycleThrowable()
+{
+	CancelInspect();
+	if (bThrowInProgress) return;
+
+	TArray<AWeapon*> Throws;
+	for (AWeapon* Weapon : Inventory)
+	{
+		if (!IsValid(Weapon) || Weapon->WeaponKind != EWeaponKind::Throwable) continue;
+		if (Weapon->Ammo <= 0) continue;
+		Throws.Add(Weapon);
+	}
+	if (Throws.Num() == 0)
+	{
+		// Allow viewing empty throwable if any remain with 0 ammo? skip.
+		return;
+	}
+
+	AWeapon* Target = Throws[0];
+	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponKind == EWeaponKind::Throwable)
+	{
+		const int32 Idx = Throws.IndexOfByKey(CurrentWeapon);
+		const int32 Next = (Idx == INDEX_NONE) ? 0 : (Idx + 1) % Throws.Num();
+		Target = Throws[Next];
+		if (Target == CurrentWeapon && Throws.Num() == 1)
+		{
+			return; // already holding the only throwable
+		}
+	}
+
+	const int32 WeaponIndex = Inventory.IndexOfByKey(Target);
+	if (!Inventory.IsValidIndex(WeaponIndex)) return;
+	StopAimForWeaponSwitch();
+	LocalWeaponIndex = WeaponIndex;
+	Local_CycleWeapon(WeaponIndex, true);
+	Server_CycleWeapon(WeaponIndex);
+}
+
 void UCombatComponent::Initiate_EquipBombWeapon()
 {
 	Initiate_EquipSlot(EWeaponSlot::Bomb);
@@ -2821,8 +3047,18 @@ bool UCombatComponent::Initiate_Hotkey(int32 Hotkey)
 		Initiate_EquipSlot(bArena ? EWeaponSlot::Pistol : EWeaponSlot::Secondary);
 		return true;
 	case 3:
-		Initiate_EquipSlot(EWeaponSlot::Melee);
+	{
+		const bool bPoliceCriminal = GS && GS->GetMatchMode() == EShooterGameMode::PoliceCriminal;
+		if (bPoliceCriminal || !FindWeaponForSlot(EWeaponSlot::Melee))
+		{
+			Initiate_EquipOrCycleThrowable();
+		}
+		else
+		{
+			Initiate_EquipSlot(EWeaponSlot::Melee);
+		}
 		return true;
+	}
 	case 4:
 		Initiate_EquipSlot(bArena ? EWeaponSlot::Throwable : EWeaponSlot::Pistol);
 		return true;
@@ -3248,3 +3484,4 @@ void UCombatComponent::PlaySpectated1PReload(EReloadType ReloadType)
 		if (IsValid(WeaponReload)) AWeapon::PlayWeaponMontageOrSequence(WeaponMesh, WeaponReload);
 	}
 }
+

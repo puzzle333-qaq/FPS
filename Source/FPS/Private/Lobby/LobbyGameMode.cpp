@@ -28,6 +28,11 @@ ALobbyGameState* ALobbyGameMode::GetLobbyState() const
 void ALobbyGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
+	// BP Class Defaults may omit PoliceCriminal; keep it available for logic-test rooms.
+	if (!AllowedModes.Contains(EShooterGameMode::PoliceCriminal))
+	{
+		AllowedModes.Add(EShooterGameMode::PoliceCriminal);
+	}
 	UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
 	if (GI && !GI->Room.bActive)
 	{

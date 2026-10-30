@@ -41,6 +41,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
 	void StartPractice(EShooterGameMode Mode);
 
+	/** Console (~): MenuStartPoliceCriminal — jump to range test map with PoliceCriminal GM (no room). */
+	UFUNCTION(Exec, BlueprintCallable, Category = "FPS|Menu")
+	void MenuStartPoliceCriminal();
+
+	/** Console: MenuHostPoliceCriminal — listen-server on test map (second client: fps.LocalJoin). */
+	UFUNCTION(Exec, BlueprintCallable, Category = "FPS|LocalMP")
+	void MenuHostPoliceCriminal();
+
 	// 本机双人测试（无需 EOS）：listen 开靶场/团战/大厅
 	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
 	void HostLocalListenTest(FString Target);
@@ -76,6 +84,10 @@ protected:
 	TObjectPtr<UGunsmithComponent> Gunsmith;
 
 private:
+	void BindOptionalPoliceCriminalButtons();
+	UFUNCTION() void HandleBtnPoliceCriminalPractice();
+	UFUNCTION() void HandleBtnPoliceCriminalRoom();
+
 	UPROPERTY()
 	TObjectPtr<UUserWidget> MainMenuWidget;
 

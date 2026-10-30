@@ -15,6 +15,48 @@ extern bool GFPS_SessionJoinInProgress;
 #include "Online/ShooterSessionSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Ui/ShooterLoadingScreen.h"
+#include "UObject/SoftObjectPath.h"
+
+
+namespace
+{
+	static const TCHAR* GPCTestMapPath = TEXT("/Game/FPS/Level/Lvl_Range.Lvl_Range");
+	static const TCHAR* GPCGameModePath = TEXT("/Script/FPS.PoliceCriminalGameMode");
+
+	/** Fill PoliceCriminal Modes entry so main menu / lobby / practice can open the range as test map. */
+	void EnsurePoliceCriminalTestDefaults(UShooterGameInstance* GI)
+	{
+		if (!GI) return;
+		FShooterModeInfo& Info = GI->Modes.FindOrAdd(EShooterGameMode::PoliceCriminal);
+		if (Info.DisplayName.IsEmpty())
+		{
+			Info.DisplayName = FText::FromString(TEXT("警匪战术"));
+		}
+		if (Info.Map.IsNull())
+		{
+			if (!GI->RangeMap.IsNull())
+			{
+				Info.Map = GI->RangeMap;
+			}
+			else
+			{
+				Info.Map = TSoftObjectPtr<UWorld>(FSoftObjectPath(GPCTestMapPath));
+			}
+		}
+		if (Info.GameModeClass.IsNull())
+		{
+			Info.GameModeClass = TSoftClassPtr<AGameModeBase>(FSoftObjectPath(GPCGameModePath));
+		}
+		if (Info.MaxPlayers < 1)
+		{
+			Info.MaxPlayers = 10;
+		}
+		Info.bImplemented = true;
+		UE_LOG(LogTemp, Log, TEXT("[Menu] PoliceCriminal test map -> %s game=%s"),
+			*Info.Map.ToSoftObjectPath().ToString(),
+			*Info.GameModeClass.ToSoftObjectPath().ToString());
+	}
+}
 
 UShooterGameInstance::UShooterGameInstance()
 {
@@ -39,6 +81,7 @@ void UShooterGameInstance::Init()
 	Super::Init();
 	ShooterLoadingScreen::Register(this);
 	LoadLoadout();
+	EnsurePoliceCriminalTestDefaults(this);
 
 	if (GEngine)
 	{
@@ -107,6 +150,10 @@ bool UShooterGameInstance::TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSo
 
 bool UShooterGameInstance::HostRoom(EShooterGameMode Mode)
 {
+	if (Mode == EShooterGameMode::PoliceCriminal)
+	{
+		EnsurePoliceCriminalTestDefaults(this);
+	}
 	if (!IsModeAvailable(Mode))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Menu] Mode %d is not implemented or has no map."), static_cast<int32>(Mode));
@@ -140,6 +187,10 @@ bool UShooterGameInstance::OpenRange()
 
 bool UShooterGameInstance::StartPractice(EShooterGameMode Mode)
 {
+	if (Mode == EShooterGameMode::PoliceCriminal)
+	{
+		EnsurePoliceCriminalTestDefaults(this);
+	}
 	if (!IsModeAvailable(Mode))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Practice] Mode %d is not implemented or has no map."), static_cast<int32>(Mode));
@@ -393,6 +444,21 @@ void UShooterGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDr
 	ShooterLoadingScreen::Hide();
 	SetLastOnlineError(FString::Printf(TEXT("网络错误（%s）：%s"), ENetworkFailure::ToString(FailureType), *ErrorString));
 	GFPS_SessionJoinInProgress = false;
+
+	// PIE / local listen: EOS NetDriver often cannot bind (no local user). Do NOT tear down into main menu —
+	// that leaves Client 1 black with PC=NULL. Use IpNetDriver (fps.OnlineUseNull 1) instead.
+	if (World && World->WorldType == EWorldType::PIE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Online] NetworkFailure in PIE ignored (no GoToMainMenu): %s - %s"),
+			ENetworkFailure::ToString(FailureType), *ErrorString);
+		return;
+	}
+	if (FailureType == ENetworkFailure::NetDriverListenFailure)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Online] NetDriverListenFailure ignored (try fps.OnlineUseNull 1): %s"), *ErrorString);
+		return;
+	}
+
 	// 对局中掉线 / 房主关服：自动回主菜单，避免卡在空图
 	if (World && !MainMenuMap.IsNull())
 	{
@@ -425,6 +491,10 @@ void UShooterGameInstance::HandleTravelFailure(UWorld* World, ETravelFailure::Ty
 
 bool UShooterGameInstance::CreateRoom(EShooterGameMode Mode)
 {
+	if (Mode == EShooterGameMode::PoliceCriminal)
+	{
+		EnsurePoliceCriminalTestDefaults(this);
+	}
 	// EOS NetDriver 需要已登录的本地用户才能 Listen；没登录就别跳图
 	if (UShooterSessionSubsystem* Sessions = GetSubsystem<UShooterSessionSubsystem>())
 	{
@@ -574,7 +644,26 @@ bool UShooterGameInstance::HostLocalListen(FString Target)
 		return TravelTo(Info.Map, Info.GameModeClass, true);
 	}
 
-	if (RangeMap.IsNull())
+if (Key.Contains(TEXT("pc")) || Key.Contains(TEXT("police")) || Key.Contains(TEXT("criminal")) || Key.Contains(TEXT("jingfei")))
+	{
+		EnsurePoliceCriminalTestDefaults(this);
+		if (!IsModeAvailable(EShooterGameMode::PoliceCriminal))
+		{
+			SetLastOnlineError(TEXT("PoliceCriminal map not configured"));
+			UE_LOG(LogTemp, Warning, TEXT("[LocalMP] PoliceCriminal mode map missing"));
+			return false;
+		}
+		SelectedMode = EShooterGameMode::PoliceCriminal;
+		const FShooterModeInfo& Info = Modes.FindChecked(EShooterGameMode::PoliceCriminal);
+		UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> PoliceCriminal listen"));
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("[LocalMP] PoliceCriminal listen (test map). Other window: fps.LocalJoin"));
+		}
+		return TravelTo(Info.Map, Info.GameModeClass, true);
+	}
+
+		if (RangeMap.IsNull())
 	{
 		SetLastOnlineError(TEXT("RangeMap 未配置"));
 		UE_LOG(LogTemp, Warning, TEXT("[LocalMP] RangeMap not set"));
@@ -605,9 +694,36 @@ bool UShooterGameInstance::JoinLocalhost(FString Address)
 }
 
 // 控制台：fps.LocalHost range|tdm|bomb|lobby
+
+// Console: fps.StartPractice [pc|tdm|bomb] — main-menu logic test, no room
+static FAutoConsoleCommandWithWorldAndArgs GFPSStartPracticeCmd(
+	TEXT("fps.StartPractice"),
+	TEXT("Solo practice travel (no room). Usage: fps.StartPractice [pc|PoliceCriminal|tdm|bomb]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World) return;
+		UShooterGameInstance* GI = Cast<UShooterGameInstance>(World->GetGameInstance());
+		if (!GI)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Practice] No ShooterGameInstance"));
+			return;
+		}
+		EnsurePoliceCriminalTestDefaults(GI);
+		FString Key = Args.Num() > 0 ? Args[0].TrimStartAndEnd().ToLower() : TEXT("pc");
+		EShooterGameMode Mode = EShooterGameMode::PoliceCriminal;
+		if (Key.Contains(TEXT("tdm")) || Key.Contains(TEXT("team"))) Mode = EShooterGameMode::TDM;
+		else if (Key.Contains(TEXT("bomb")) || Key.Contains(TEXT("sd")) || Key.Contains(TEXT("bdm"))) Mode = EShooterGameMode::SearchDestroy;
+		else Mode = EShooterGameMode::PoliceCriminal;
+		if (!GI->StartPractice(Mode))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Practice] StartPractice failed mode=%d err=%s"), (int32)Mode, *GI->GetLastOnlineError());
+			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 6.f, FColor::Orange, TEXT("[Practice] failed: check Modes map / GameMode"));
+		}
+	}));
+
 static FAutoConsoleCommandWithWorldAndArgs GFPSLocalHostCmd(
 	TEXT("fps.LocalHost"),
-	TEXT("Local listen-server test (forces Null/IpNet). Usage: fps.LocalHost range|tdm|bomb|lobby"),
+	TEXT("Local listen-server test (forces Null/IpNet). Usage: fps.LocalHost range|tdm|bomb|lobby|pc"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 	{
 		if (!World) return;

@@ -1,4 +1,4 @@
-#include "ShooterPlayerController.h"
+﻿#include "ShooterPlayerController.h"
 #include "Game/PoliceCriminalGameMode.h"
 #include "Game/PoliceCriminalGameState.h"
 #include "Game/HostageActor.h"
@@ -25,6 +25,8 @@
 #include "Ui/ModeHudWidget.h"
 #include "Ui/BuyShopScreen.h"
 #include "Ui/MatchHUD.h"
+#include "Ui/CombatHudKeepAlive.h"
+#include "Ui/CombatStatusHud.h"
 #include "Weapon/Weapon.h"
 #include "Weapon/AttachmentData.h"
 #include "Game/ShooterGameState.h"
@@ -139,6 +141,7 @@ void AShooterPlayerController::BeginPlay()
 			Hud->bShowHUD = true;
 		}
 		EnsureMatchHUD();
+		EnsureCombatHudKeepAlive();
 		if (GetNetMode() == NM_Client)
 		{
 			RequestServerTimeSync();
@@ -512,7 +515,7 @@ void AShooterPlayerController::Input_Jump()
 	UCharacterMovementComponent* CMC = GetCharacter()->GetCharacterMovement();
 	if (!IsValid(CMC)) return;
 
-	// TacticalTrim: no jump (climb/vault later). Space still stands from prone/slide.
+	// TacticalTrim: no jump. Space still stands from prone/slide.
 	if (AShooterCharacter* SlideShooter = Cast<AShooterCharacter>(GetCharacter()); IsValid(SlideShooter) && SlideShooter->IsSliding())
 	{
 		SlideShooter->CancelSlideToStand();
@@ -529,6 +532,8 @@ void AShooterPlayerController::Input_Jump()
 		ProneShooter->RequestSetProne(false, false);
 		return;
 	}
+
+	// RemoveVault: Space no longer vaults/climbs/ladders; jump stays disabled.
 }
 
 void AShooterPlayerController::Input_Sprint()
@@ -872,16 +877,49 @@ void AShooterPlayerController::EnsurePauseInput()
 
 void AShooterPlayerController::EnsureMatchHUD()
 {
-	if (!IsLocalController() || IsValid(MatchHUD)) return;
-	if (!MatchHUDClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[MatchHUD] MatchHUDClass is not set on %s. Assign WBP_MatchHUD."), *GetClass()->GetName());
-		return;
-	}
-	MatchHUD = CreateWidget<UMatchHUD>(this, MatchHUDClass);
+	// [AdsHudYaw] User: MatchHUD fully disabled (top score/timer header + match chrome).
+	// Do not create or show WBP_MatchHUD. Combat ammo/health stay on WBP_ShooterOverlay.
 	if (IsValid(MatchHUD))
 	{
-		MatchHUD->AddToViewport(5);
+		MatchHUD->RemoveFromParent();
+		MatchHUD = nullptr;
+	}
+	EnsureCombatHudKeepAlive();
+}
+
+void AShooterPlayerController::EnsureCombatHudKeepAlive()
+{
+	if (!IsLocalController())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[HUD] EnsureCombatHudKeepAlive skipped (not local) PC=%s"), *GetName());
+		return;
+	}
+
+	if (!IsValid(CombatHudKeepAlive))
+	{
+		CombatHudKeepAlive = CreateWidget<UCombatHudKeepAlive>(this, UCombatHudKeepAlive::StaticClass());
+		if (IsValid(CombatHudKeepAlive))
+		{
+			CombatHudKeepAlive->SetVisibility(ESlateVisibility::HitTestInvisible);
+			CombatHudKeepAlive->AddToViewport(199);
+			UE_LOG(LogTemp, Warning, TEXT("[HUD] PATH=PC.Ensure CombatHudKeepAlive CREATED+AddToViewport(199)"));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[HUD] CombatHudKeepAlive CreateWidget FAILED"));
+		}
+	}
+	else if (!CombatHudKeepAlive->IsInViewport())
+	{
+		CombatHudKeepAlive->AddToViewport(199);
+		UE_LOG(LogTemp, Warning, TEXT("[HUD] PATH=PC.Ensure CombatHudKeepAlive re-AddToViewport"));
+	}
+
+	// RoN CombatStatusHud removed by request: never create; tear down if present.
+	if (IsValid(CombatStatusHud))
+	{
+		CombatStatusHud->RemoveFromParent();
+		CombatStatusHud = nullptr;
 	}
 }
 
@@ -961,6 +999,7 @@ void AShooterPlayerController::OnPossess(APawn* InPawn)
 		bPawnAlive = true;
 	}
 	ApplyControlSettings();
+	EnsureCombatHudKeepAlive();
 }
 
 void AShooterPlayerController::AcknowledgePossession(APawn* P)
@@ -973,6 +1012,7 @@ void AShooterPlayerController::AcknowledgePossession(APawn* P)
 		PlayerCameraManager->SetManualCameraFade(0.f, FLinearColor::Black, false);
 	}
 	ApplyControlSettings();
+	EnsureCombatHudKeepAlive();
 	// 客户端收到新角色（复活）时恢复可操作
 	if (!bMatchOver)
 	{
@@ -1644,7 +1684,18 @@ void AShooterPlayerController::Auth_StopSpectating()
 
 void AShooterPlayerController::Auth_SpectateNext(bool bOnlyIfInvalid)
 {
+	Auth_SpectateCycle(+1, bOnlyIfInvalid);
+}
+
+void AShooterPlayerController::Auth_SpectatePrev(bool bOnlyIfInvalid)
+{
+	Auth_SpectateCycle(-1, bOnlyIfInvalid);
+}
+
+void AShooterPlayerController::Auth_SpectateCycle(int32 Direction, bool bOnlyIfInvalid)
+{
 	if (!HasAuthority() || !bSpectating || !GetWorld()) return;
+	const int32 Step = Direction < 0 ? -1 : +1;
 
 	auto TargetPawnOf = [](APlayerState* PS) -> APawn*
 	{
@@ -1674,7 +1725,9 @@ void AShooterPlayerController::Auth_SpectateNext(bool bOnlyIfInvalid)
 	if (Pool.Num() > 0)
 	{
 		const int32 Cur = Pool.IndexOfByKey(SpectateTarget.Get());
-		NewTarget = Pool[(Cur + 1) % Pool.Num()];
+		const int32 N = Pool.Num();
+		const int32 Next = (Cur < 0) ? 0 : ((Cur + Step) % N + N) % N;
+		NewTarget = Pool[Next];
 	}
 	SpectateTarget = NewTarget;
 
@@ -1694,8 +1747,8 @@ void AShooterPlayerController::Auth_SpectateNext(bool bOnlyIfInvalid)
 	}
 	ApplySpectateLocal();
 	ForceNetUpdate();
-	UE_LOG(LogTemp, Log, TEXT("[Spectate] %s -> %s"), PlayerState ? *PlayerState->GetPlayerName() : TEXT("?"),
-		NewTarget ? *NewTarget->GetPlayerName() : TEXT("<fixed>"));
+	UE_LOG(LogTemp, Log, TEXT("[Spectate] %s -> %s (dir=%d)"), PlayerState ? *PlayerState->GetPlayerName() : TEXT("?"),
+		NewTarget ? *NewTarget->GetPlayerName() : TEXT("<fixed>"), Step);
 }
 
 void AShooterPlayerController::OnRep_Spectate()
@@ -1736,9 +1789,19 @@ void AShooterPlayerController::Server_SpectateNext_Implementation()
 	Auth_SpectateNext(false);
 }
 
+void AShooterPlayerController::Server_SpectatePrev_Implementation()
+{
+	Auth_SpectatePrev(false);
+}
+
 void AShooterPlayerController::Input_SpectateNext()
 {
 	if (bSpectating) Server_SpectateNext();
+}
+
+void AShooterPlayerController::Input_SpectatePrev()
+{
+	if (bSpectating) Server_SpectatePrev();
 }
 
 void AShooterPlayerController::EnsureSpectateInput()
@@ -1750,8 +1813,14 @@ void AShooterPlayerController::EnsureSpectateInput()
 		SpectateNextAction->ValueType = EInputActionValueType::Boolean;
 		// 不吞键：左键开火照常工作
 		SpectateNextAction->bConsumeInput = false;
+		SpectatePrevAction = NewObject<UInputAction>(this, TEXT("IA_SpectatePrev_Runtime"));
+		SpectatePrevAction->ValueType = EInputActionValueType::Boolean;
+		SpectatePrevAction->bConsumeInput = false;
 		SpectateIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Spectate_Runtime"));
 		SpectateIMC->MapKey(SpectateNextAction, EKeys::LeftMouseButton);
+		// 上一个目标：右键 或 Q（观战中才有效；不吞键）
+		SpectateIMC->MapKey(SpectatePrevAction, EKeys::RightMouseButton);
+		SpectateIMC->MapKey(SpectatePrevAction, EKeys::Q);
 	}
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
 	if (IsValid(Subsystem) && SpectateIMC && !Subsystem->HasMappingContext(SpectateIMC))
@@ -1763,6 +1832,7 @@ void AShooterPlayerController::EnsureSpectateInput()
 		if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
 		{
 			EIC->BindAction(SpectateNextAction, ETriggerEvent::Started, this, &ThisClass::Input_SpectateNext);
+			EIC->BindAction(SpectatePrevAction, ETriggerEvent::Started, this, &ThisClass::Input_SpectatePrev);
 			bSpectateBound = true;
 		}
 	}
@@ -2201,15 +2271,22 @@ void AShooterPlayerController::Server_VanPickByName_Implementation(const FString
 		UE_LOG(LogTemp, Warning, TEXT("[PCMode] VanPick needs PoliceCriminalGameMode"));
 		return;
 	}
+	const FString Key = WeaponName.TrimStartAndEnd().ToLower();
+	if (Key.IsEmpty() || Key == TEXT("mvp") || Key == TEXT("kit") || Key == TEXT("default"))
+	{
+		GM->Auth_ApplyMvpLoadout(this);
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, TEXT("面包车 MVP：AK+手枪+燃烧瓶/手雷"));
+		return;
+	}
 	TSubclassOf<AWeapon> W = FPS_ResolveNamedWeapon(GM->GetResolvedCriminalWeapons(), WeaponName);
 	if (!W)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PCMode] VanPick unknown '%s'"), *WeaponName);
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, FString::Printf(TEXT("VanPick 未知: %s (AK/Glock/Deagle/PCC)"), *WeaponName));
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, FString::Printf(TEXT("VanPick 未知: %s (AK/Pistol 或 mvp)"), *WeaponName));
 		return;
 	}
 	GM->Auth_ApplyVanLoadout(this, W);
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("面包车选枪: %s（无改装）"), *W->GetName()));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, TEXT("面包车 MVP 配装已应用（含副武器+投掷）"));
 }
 
 void AShooterPlayerController::ArmoryPick(FString WeaponName)
@@ -2225,15 +2302,22 @@ void AShooterPlayerController::Server_ArmoryPickByName_Implementation(const FStr
 		UE_LOG(LogTemp, Warning, TEXT("[PCMode] ArmoryPick needs PoliceCriminalGameMode"));
 		return;
 	}
+	const FString Key = WeaponName.TrimStartAndEnd().ToLower();
+	if (Key.IsEmpty() || Key == TEXT("mvp") || Key == TEXT("kit") || Key == TEXT("default"))
+	{
+		GM->Auth_ApplyMvpLoadout(this);
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, TEXT("军械库 MVP：RAR+X24+闪光/手雷"));
+		return;
+	}
 	TSubclassOf<AWeapon> W = FPS_ResolveNamedWeapon(GM->GetResolvedPoliceWeapons(), WeaponName);
 	if (!W)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PCMode] ArmoryPick unknown '%s'"), *WeaponName);
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, FString::Printf(TEXT("ArmoryPick 未知: %s (RAR/X24)"), *WeaponName));
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, FString::Printf(TEXT("ArmoryPick 未知: %s (RAR/X24 或 mvp)"), *WeaponName));
 		return;
 	}
 	GM->Auth_ApplyArmoryLoadout(this, W, true);
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, FString::Printf(TEXT("军械库选枪: %s（可带改枪台配件）"), *W->GetName()));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, TEXT("军械库 MVP 配装已应用（含副武器+投掷）"));
 }
 
 void AShooterPlayerController::SkipSetup()
@@ -2353,4 +2437,33 @@ void AShooterPlayerController::MarkBlood(int32 Steps)
 	}
 }
 
+
+
+// ---------------- MvpRound debug ----------------
+void AShooterPlayerController::KillSelf() { Server_MvpDebug(0, 0.f); }
+void AShooterPlayerController::ForceWin(int32 Team) { Server_MvpDebug(1, (float)Team); }
+void AShooterPlayerController::SetRoundTime(float Seconds) { Server_MvpDebug(2, Seconds); }
+
+void AShooterPlayerController::Server_MvpDebug_Implementation(int32 Op, float Value)
+{
+	APoliceCriminalGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<APoliceCriminalGameMode>() : nullptr;
+	if (!GM) return;
+	if (Op == 0) GM->Auth_DebugKill(this);
+	else if (Op == 1) GM->Auth_DebugForceWin((uint8)FMath::Clamp((int32)Value, 0, 255));
+	else if (Op == 2) GM->Auth_DebugSetRemaining(FMath::Max(Value, 1.f));
+}
+void AShooterPlayerController::TravelToMatch(FString MapName)
+{
+	Server_TravelToMatch(MapName);
+}
+
+void AShooterPlayerController::Server_TravelToMatch_Implementation(const FString& MapName)
+{
+	if (APoliceCriminalGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<APoliceCriminalGameMode>() : nullptr)
+	{
+		GM->Auth_TravelToMatchMap(MapName);
+		return;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[PCMode] TravelToMatch needs PoliceCriminalGameMode"));
+}
 

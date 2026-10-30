@@ -28,6 +28,17 @@ enum class EPoliceCriminalMatchType : uint8
 	HostageRescue UMETA(DisplayName = "解救人质")
 };
 
+// 剿匪结算副标题用：歼灭 / 超时 / 掉线认输 / 平局
+UENUM(BlueprintType)
+enum class EPoliceCriminalWinReason : uint8
+{
+	None        UMETA(DisplayName = "无"),
+	Elimination UMETA(DisplayName = "歼灭"),
+	Timeout     UMETA(DisplayName = "时间到"),
+	Forfeit     UMETA(DisplayName = "对方掉线"),
+	Draw        UMETA(DisplayName = "平局")
+};
+
 namespace PoliceCriminalTeams
 {
 	constexpr uint8 Police = 0;
