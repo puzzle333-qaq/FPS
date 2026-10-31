@@ -6,11 +6,58 @@
 #include "WeaponData.h"
 #include "ShooterGamePlayTags.h"
 #include "UObject/UnrealType.h"
+#include "Animation/AnimSequence.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Weapon/AttachmentData.h"
 
 namespace GripHoldAnim_Private
 {
 	static const FName NAME_DefaultSlot(TEXT("DefaultSlot"));
 	static constexpr float GrabIdleMaxSpeedXY = 40.f;
+}
+
+namespace RarGripAimPose_Private
+{
+	static const TCHAR* PoseDir = TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Poses/");
+
+	static bool IsRAR(const AWeapon* Weapon)
+	{
+		if (Weapon->GetClass()->GetPathName().Contains(TEXT("RealisticAssaultRifle"))) return true;
+		TInlineComponentArray<USkeletalMeshComponent*> Meshes(Weapon);
+		for (const USkeletalMeshComponent* M : Meshes)
+		{
+			if (M && M->GetSkeletalMeshAsset() && M->GetSkeletalMeshAsset()->GetPathName().Contains(TEXT("RealisticAssaultRifle"))) return true;
+		}
+		return false;
+	}
+
+	static UAnimSequence* LoadPose(const TCHAR* Name)
+	{
+		const FString Path = FString::Printf(TEXT("%s%s.%s"), PoseDir, Name, Name);
+		return LoadObject<UAnimSequence>(nullptr, *Path);
+	}
+
+	// Discrete, no blending: Vertical / Angled / Angled_Canted. Null = no grip -> keep DA aim idle.
+	static UAnimSequence* Resolve(const AWeapon* Weapon)
+	{
+		static TObjectPtr<UAnimSequence> Angled, Canted, Vertical;
+		const UAttachmentData* Grip = Weapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip);
+		if (!IsValid(Grip)) return nullptr;
+		const FString GripName = Grip->GetName();
+		if (GripName.Contains(TEXT("Cant")))
+		{
+			if (!Canted) { Canted = LoadPose(TEXT("A_RAR_FP_PCH_AssaultRifle_Aim_Pose_Grip_Angled_Canted")); }
+			return Canted;
+		}
+		if (Grip->GripHoldStyle == EGripHoldStyle::Grab || GripName.Contains(TEXT("Vert")))
+		{
+			if (!Vertical) { Vertical = LoadPose(TEXT("A_RAR_FP_PCH_AssaultRifle_Aim_Pose_Grip_Vertical")); }
+			return Vertical;
+		}
+		if (!Angled) { Angled = LoadPose(TEXT("A_RAR_FP_PCH_AssaultRifle_Aim_Pose_Grip_Angled")); }
+		return Angled;
+	}
 }
 
 void UFirstPersonAnimInstance::ForceShotgunRawPose1P()
@@ -98,6 +145,14 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	bUseLeftHandHoldPose = IsValid(LeftHandHoldPose);
 	ActiveIdleAnim = DesiredIdle;
 
+	if (RarGripAimPose_Private::IsRAR(Combat->CurrentWeapon))
+	{
+		if (UAnimSequence* RarAim = RarGripAimPose_Private::Resolve(Combat->CurrentWeapon))
+		{
+			DesiredAimIdle = RarAim;
+		}
+	}
+
 	if (FStructProperty* AnimProperty = FindFProperty<FStructProperty>(GetClass(), TEXT("CurrenrAnim")))
 	{
 		if (AnimProperty->Struct == FPlayerAnim::StaticStruct())
@@ -158,3 +213,4 @@ void UFirstPersonAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSecond
 			*GetNameSafe(ActiveIdleAnim), bUseLeftHandHoldPose ? 1 : 0);
 	}
 }
+

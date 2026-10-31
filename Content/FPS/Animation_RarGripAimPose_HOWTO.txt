@@ -1,0 +1,7 @@
+﻿RAR grip aim poses (discrete, no blend). Code: Source/FPS/Private/Animation/FirstPersonAnimInstance.cpp (RarGripAimPose_Private).
+Only when weapon is RAR (path contains RealisticAssaultRifle) and a Grip attachment is installed, AimIdleAnim is replaced:
+- grip DataAsset name contains 'Cant' -> A_RAR_FP_PCH_AssaultRifle_Aim_Pose_Grip_Angled_Canted
+- GripHoldStyle=Grab or name contains 'Vert' -> ..._Grip_Vertical
+- otherwise -> ..._Grip_Angled
+No grip -> WeaponData default aim idle. Test: equip RAR, swap grip in Gunsmith, hold ADS.
+Backup: Saved/CodeBackup_20261031_004500_RarGripAimPose
