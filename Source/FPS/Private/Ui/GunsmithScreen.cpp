@@ -109,25 +109,17 @@ void UGunsmithScreen::NativeConstruct()
 	if (UGunsmithComponent* Gunsmith = GetGunsmith())
 	{
 		Gunsmith->OnPreviewChanged.AddUniqueDynamic(this, &ThisClass::HandlePreviewChanged);
-		// 蓝图没调 ShowWeapon 时自己挑一把：已装备的主长枪 -> 可选列表第一把
+		// 蓝图没调 ShowWeapon 时自己挑一把（若已 OpenForKind 则按过滤）
 		if (!IsValid(Gunsmith->GetPreviewWeapon()))
 		{
-			TSubclassOf<AWeapon> WeaponClass;
-			if (const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>())
-			{
-				WeaponClass = GI->GetPrimaryLongGun();
-			}
-			if (!WeaponClass && Gunsmith->AvailableWeapons.Num() > 0)
-			{
-				WeaponClass = Gunsmith->AvailableWeapons[0];
-			}
+			TSubclassOf<AWeapon> WeaponClass = PickDefaultWeaponForFilter();
 			if (WeaponClass)
 			{
 				Gunsmith->SetPreviewWeapon(WeaponClass); // 内部会广播 OnPreviewChanged
 			}
 			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[Gunsmith] %s: no weapon to preview (no primary long gun, AvailableWeapons empty)."), *GetName());
+				UE_LOG(LogTemp, Warning, TEXT("[Gunsmith] %s: no weapon to preview (filter/AvailableWeapons empty)."), *GetName());
 			}
 		}
 		else
@@ -153,6 +145,13 @@ void UGunsmithScreen::NativeDestruct()
 
 void UGunsmithScreen::ShowWeapon(TSubclassOf<AWeapon> WeaponClass)
 {
+	if (!WeaponClass) return;
+	if (bFilterByKind && GetWeaponClassKind(WeaponClass) != KindFilter)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Gunsmith] ShowWeapon rejected %s (filter=%d)"),
+			*GetNameSafe(WeaponClass.Get()), static_cast<int32>(KindFilter));
+		return;
+	}
 	if (UGunsmithComponent* Gunsmith = GetGunsmith())
 	{
 		SelectedSlot = FGameplayTag(); // 换枪后槽位表不同，回到第一个槽
@@ -201,6 +200,7 @@ bool UGunsmithScreen::Equip()
 void UGunsmithScreen::HandleBack()
 {
 	OnBackRequested();
+	OnClosed.Broadcast();
 }
 
 void UGunsmithScreen::HandleSave()
@@ -255,19 +255,91 @@ void UGunsmithScreen::RebuildCategories()
 	}
 }
 
+EWeaponKind UGunsmithScreen::GetWeaponClassKind(TSubclassOf<AWeapon> WeaponClass)
+{
+	if (!WeaponClass) return EWeaponKind::LongGun;
+	if (const AWeapon* CDO = WeaponClass->GetDefaultObject<AWeapon>())
+	{
+		return CDO->WeaponKind;
+	}
+	return EWeaponKind::LongGun;
+}
+
+TSubclassOf<AWeapon> UGunsmithScreen::PickDefaultWeaponForFilter() const
+{
+	const TArray<TSubclassOf<AWeapon>> List = GetGunsmithWeapons();
+	if (const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>())
+	{
+		for (const FWeaponPreset& Preset : GI->GetCurrentLoadout().Weapons)
+		{
+			if (!Preset.WeaponClass) continue;
+			const EWeaponKind Kind = GetWeaponClassKind(Preset.WeaponClass);
+			if (bFilterByKind && Kind != KindFilter) continue;
+			return Preset.WeaponClass;
+		}
+	}
+	return List.Num() > 0 ? List[0] : TSubclassOf<AWeapon>();
+}
+
+void UGunsmithScreen::OpenForKind(EWeaponKind Kind)
+{
+	bFilterByKind = true;
+	KindFilter = Kind;
+	if (TSubclassOf<AWeapon> Pick = PickDefaultWeaponForFilter())
+	{
+		ShowWeapon(Pick);
+	}
+	else if (UGunsmithComponent* Gunsmith = GetGunsmith())
+	{
+		Gunsmith->ClearPreview();
+		UE_LOG(LogTemp, Warning, TEXT("[Gunsmith] OpenForKind(%d): no weapons in AvailableWeapons for this slot."),
+			static_cast<int32>(Kind));
+	}
+	RebuildWeaponList();
+	RebuildExtraSlotButtons();
+	RebuildCategories();
+	RebuildAttachmentList();
+	RebuildPartNames();
+	RefreshStats();
+	HandlePreviewChanged();
+}
+
+void UGunsmithScreen::ClearKindFilter()
+{
+	bFilterByKind = false;
+	RebuildWeaponList();
+}
+
 TArray<TSubclassOf<AWeapon>> UGunsmithScreen::GetGunsmithWeapons() const
 {
 	TArray<TSubclassOf<AWeapon>> Result;
+	auto Accept = [this](TSubclassOf<AWeapon> W) -> bool
+	{
+		if (!W) return false;
+		if (!bFilterByKind) return true;
+		return GetWeaponClassKind(W) == KindFilter;
+	};
+
 	if (const UGunsmithComponent* Gunsmith = GetGunsmith())
 	{
 		for (const TSubclassOf<AWeapon>& W : Gunsmith->AvailableWeapons)
 		{
-			if (W) Result.AddUnique(W);
+			if (Accept(W)) Result.AddUnique(W);
 		}
 	}
 	if (const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>())
 	{
-		if (TSubclassOf<AWeapon> Primary = GI->GetPrimaryLongGun()) Result.AddUnique(Primary);
+		for (const FWeaponPreset& Preset : GI->GetCurrentLoadout().Weapons)
+		{
+			if (Accept(Preset.WeaponClass)) Result.AddUnique(Preset.WeaponClass);
+		}
+		if (!bFilterByKind || KindFilter == EWeaponKind::LongGun)
+		{
+			if (TSubclassOf<AWeapon> Primary = GI->GetPrimaryLongGun())
+			{
+				if (Accept(Primary)) Result.AddUnique(Primary);
+			}
+		}
 	}
 	return Result;
 }

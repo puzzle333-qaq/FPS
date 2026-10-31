@@ -1,0 +1,46 @@
+﻿Gunsmith 中间实时枪模（LoadoutPreviewRig）
+========================================
+
+做什么
+------
+WBP_Gunsmith 正中间显示实时 3D 枪（Scene Capture → Render Target → Image），
+不是烘焙贴图。换枪/换配件立刻刷新；打开时每帧捕获，关掉停止。
+槽位过滤不变：Loadout 点主武器 = 长枪；点手枪 = 手枪。
+
+链路
+----
+1. MainMenuPlayerController 上有 GunsmithComponent
+2. GunsmithComponent 生成 ALoadoutPreviewRig，把预览枪画进 RT
+3. UGunsmithScreen 把 RT 赋给中间 Image（优先名 Image_Preview）
+4. Loadout 点槽位 → OpenGunsmithForKind(LongGun|Pistol)
+
+WBP_Gunsmith 要求（不大改现有 UI）
+--------------------------------
+1. 父类 = GunsmithScreen
+2. 中间放一个 Image，命名任选：
+   Image_Preview / PreviewImage / Img_Preview / WeaponPreview / Image_Weapon / GunPreview / RT_Preview / Preview
+   （名字含 Preview / WeaponMesh / GunMesh 也会被找到）
+3. 其它按钮/列表保持原样（Panel_Weapons、Btn_Slot*、Button_Back 等）
+
+WBP_Loadout
+-----------
+父类 LoadoutMeshThumbnails；Btn_MainWeapon / Btn_Pistol 点开 Gunsmith。
+
+测
+--
+主菜单 → Loadout → 点主武器行 → 中间应看到实时步枪，可拖拽旋转、滚轮缩放。
+点手枪 → 中间换成手枪，列表只有手枪。
+Back 关掉。Output Log 有：
+  [Gunsmith] Center preview Image: ...
+  [Loadout] Opened Gunsmith for Kind=...
+
+若中间空白
+----------
+- 确认 Image 名字在上面列表里
+- PC 是否 MainMenuPlayerController（有 GunsmithComponent）
+- AvailableWeapons / 枪的 WeaponKind 是否填对
+- 看 Warning：[Gunsmith] no center preview Image...
+
+备份
+----
+Saved\CodeBackup_20261030_233112_GunsmithLivePreview

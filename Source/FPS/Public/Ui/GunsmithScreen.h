@@ -62,6 +62,8 @@ public:
 	void HandleClicked();
 };
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGunsmithClosed);
+
 // 改枪台界面的 C++ 父类（可选）。WBP_Gunsmith 选它当父类，控件按名字自动绑定，全部是可选的。
 UCLASS()
 class FPS_API UGunsmithScreen : public UUserWidget
@@ -75,6 +77,23 @@ public:
 	// 打开改枪台时调用：换预览枪并刷新贴图
 	UFUNCTION(BlueprintCallable, Category = "FPS|Gunsmith")
 	void ShowWeapon(TSubclassOf<AWeapon> WeaponClass);
+
+	/** 按槽位打开：只列出该 Kind（MainWeapon=LongGun，Pistol=Pistol）。会换预览枪并刷新列表。 */
+	UFUNCTION(BlueprintCallable, Category = "FPS|Gunsmith")
+	void OpenForKind(EWeaponKind Kind);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Gunsmith")
+	void ClearKindFilter();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Gunsmith")
+	bool IsKindFilterActive() const { return bFilterByKind; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Gunsmith")
+	EWeaponKind GetKindFilter() const { return KindFilter; }
+
+	/** Back 按钮：蓝图 OnBackRequested 之后广播，Loadout 用来关掉 Gunsmith。 */
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Gunsmith")
+	FGunsmithClosed OnClosed;
 
 	// 槽位按钮点了以后：记下当前槽位，并通知蓝图打开配件列表
 	UFUNCTION(BlueprintCallable, Category = "FPS|Gunsmith")
@@ -159,7 +178,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Gunsmith|Widgets")
 	TSubclassOf<UGunsmithWeaponItem> WeaponItemClass;
 
-	// 改枪台可选的枪：GunsmithComponent.AvailableWeapons，再补上当前主长枪（去重）
+	// 改枪台可选的枪：AvailableWeapons（可按 KindFilter 过滤）+ 当前配装里同 Kind 的枪（去重）
 	UFUNCTION(BlueprintPure, Category = "FPS|Gunsmith")
 	TArray<TSubclassOf<AWeapon>> GetGunsmithWeapons() const;
 
@@ -229,6 +248,12 @@ private:
 	void HandlePreviewChanged();
 
 	FGameplayTag SelectedSlot;
+
+	bool bFilterByKind = false;
+	EWeaponKind KindFilter = EWeaponKind::LongGun;
+
+	TSubclassOf<AWeapon> PickDefaultWeaponForFilter() const;
+	static EWeaponKind GetWeaponClassKind(TSubclassOf<AWeapon> WeaponClass);
 
 	void RebuildExtraSlotButtons();
 	void RebuildCategories();
