@@ -1,0 +1,66 @@
+# MVP Loadout — minimal playable kits (警匪)
+
+Backup: `Saved\CodeBackup_20261029_040150_MvpLoadout`
+
+## Kits
+
+### Police (PickFaction 0)
+| Key | Item | Class |
+|-----|------|-------|
+| 1 | RAR primary | `/Game/FPS/Weapon/RAR/BP_FPS_RAR` |
+| 2 | X24 pistol | `/Game/FPS/Weapon/BP_Weapon_X24` |
+| 3 | Cycle throwables | Flash (`/Script/FPS.WeaponFlash`) ↔ HE (`BP_Weapon_Grenade`) |
+| — | Knife | **removed** |
+| — | Armor | Light by default (`PoliceDefaultArmorLevel=1`) |
+
+### Criminal (PickFaction 1)
+| Key | Item | Class |
+|-----|------|-------|
+| 1 | AK primary | `/Game/FPS/Weapon/BP_Weapon_AK` |
+| 2 | Pistol | `/Game/FPS/Weapon/BP_Pistol` |
+| 3 | Cycle throwables | Molotov (`/Script/FPS.WeaponMolotov`) ↔ HE (`BP_Weapon_Grenade`) |
+| — | Knife | **removed** |
+| — | Armor | None |
+
+Deagle / PCC / other guns stripped from van/armory catalogs.
+
+## Movement speeds (tunable)
+
+Base (ShooterPlayerController):
+- RunSpeed = **220**
+- SprintSpeed = **320**
+
+Modifiers (`AShooterCharacter::GetArmorSpeedMultiplier`):
+- Police Light armor: **×1.00** (no slow; torso damage reduced)
+- Police Heavy armor: **×0.78** (`HeavyArmorMoveSpeedMultiplier`)
+- Criminal, no armor: **×1.12** (`UnarmoredCriminalSpeedMultiplier`)
+
+Effective criminal unarmored: Run ≈ **246**, Sprint ≈ **358**.
+Effective police light: Run **220**, Sprint **320**.
+Effective police heavy: Run ≈ **172**, Sprint ≈ **250**.
+
+## Key 3 throwable cycle
+
+In `PoliceCriminal` mode, key **3** equips a throwable; pressing again cycles:
+- Police: Flash → Grenade → Flash …
+- Criminal: Molotov → Grenade → Molotov …
+
+Flash washes vision (`AddVisionFlashWash`). Molotov is impact burn stand-in (radial damage); full fire pool later.
+Optional editor polish: create BP children of `WeaponFlash` / `WeaponMolotov` under `Content/FPS/Weapon/Throwable/` and put those soft paths in GameMode Class Defaults.
+
+## PIE test
+
+1. Testmap + GameMode Override `PoliceCriminalGameMode` (or project default).
+2. Listen Server, 1–2 players. Live Coding / restart editor after this change (new UCLASS).
+3. Console:
+   - `PickFaction 0` — police full MVP kit + light armor
+   - `PickFaction 1` — criminal full MVP kit + speed bonus
+   - Or re-apply: `ArmoryPick mvp` / `VanPick mvp`
+   - `SkipSetup` to start assault
+4. Keys: **1** main, **2** pistol, **3** cycle throwables. No knife.
+5. Optional: `Armor 0|1|2`, `Vision 0|1|2`.
+
+## Notes
+
+- Jump still disabled; vault removed.
+- No commit/push from this change.

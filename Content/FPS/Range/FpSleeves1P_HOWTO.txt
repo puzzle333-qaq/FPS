@@ -1,0 +1,30 @@
+﻿FpSleeves1P — Bandits 第一人称袖子（LeaderPose）
+Backup: Saved/CodeBackup_20261030_083600_FpSleeves
+
+【背景】
+Bandits 的 SKM_Arms_Gloves_* 只有裸胳膊+手套，没有专用 sleeve mesh。
+衣服袖子在 Cloth 夹克/Bomber 上，与手臂同骨架 SKM_Bandit_Skeleton，可 SetLeaderPoseComponent(Mesh1P)。
+
+【资产】
+- 匪 Criminal (Preset_05):
+  Mesh  /Game/Bandits/Mesh/Cloth/Bomber/SKM_Bomber_Bege
+  Mat   /Game/Bandits/Materials/Cloth/Bomber/M_Bomber_Brown
+- 警 Police (Preset_13):
+  Mesh  /Game/Bandits/Mesh/Cloth/Jacket_Gorka/SKM_Jacket_Gorka_Bege
+- 手臂仍用 SKM_Arms_Gloves_Black（警匪同）
+
+【代码】
+- 新组件 Mesh1P_Sleeves（挂在 Mesh1P 下，OnlyOwnerSee）
+- ApplyFactionArms1P 末尾调用 ApplyFactionSleeves1P
+- bUseBanditsSleeves1P 默认 true；关则清掉袖子
+- 隐藏腿/头骨骼，减少 FP 看到下半身；躯干几何仍可能略露（包里没有袖子-only mesh）
+
+【测】
+1. 关 UE 后编过再开（或本 HOWTO 写明已编）
+2. Testmap Listen → PickFaction 0 警察：1P 应见米/卡其 Gorka 袖
+3. PickFaction 1 匪：1P 应见棕色 Bomber 袖
+4. 日志：[Look] Sleeves1P -> SKM_Jacket_Gorka_Bege / SKM_Bomber_Bege
+5. 若躯干挡镜：可把袖子 mesh 换成更瘦的，或再藏 spine 相关（会伤袖形）
+
+【BP 可调】
+ShooterCharacter：CriminalSleeveMesh1P / PoliceSleeveMesh1P / CriminalSleeveMaterial / bUseBanditsSleeves1P

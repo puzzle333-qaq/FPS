@@ -1,0 +1,46 @@
+AttachOrientFix — RAR 1P 左转90° + RAR/AK 3P FABRIK
+=====================================================
+Backup: Saved\CodeBackup_20261029_070024_AttachOrientFix
+
+Root causes
+-----------
+1) RAR Mesh1P yaw ~90° left on Bandits FP arms:
+   Grip sockets were copied from Ironbelly onto Bandits hand_r. Ironbelly vs
+   Epic/Bandits hand_r bone axes differ; RAR (Weapon.type.rifle) Mesh1P then
+   sits yawed left. Pistol/X24 not reported.
+
+2) RAR/AK Mesh3P FABRIK wrong:
+   PoliceAttachFix made GetFabrikWorldTransform fall back to Barrel/Muzzle/"Grip"
+   and still set FABRIK_Alpha=1, so the left hand IK chased a bad effector.
+   Also EnsureMesh3PGripSockets could remap a socket authored on a missing bone
+   (e.g. weapon_r) onto hand_r while keeping that bone's RelRot — warping gun /
+   LeftHandSocket world pose.
+
+Fixes (.cpp only)
+-----------------
+- Weapon.cpp ApplyMeshAttachRelative: if 1P parent mesh path contains "Bandit"
+  and WeaponType is Rifle, multiply relative rot by yaw +90°.
+- Weapon.cpp GetFabrikWorldTransform: authored sockets only
+  (FABRIK / LeftHandSocket / lefthand / IK_Hand_L / hand_l_socket). Removed
+  Grip + Barrel/Muzzle approximations.
+- ShooterCharacter.cpp EnsureMesh3PGripSockets + EnsureArms1PGripSockets Upsert:
+  if source BoneName is missing on Bandits and is not hand_r, skip (no bad remap).
+
+PIE
+---
+1. UE closed → VS rebuild FPS (Development Editor). No Live Coding.
+2. Testmap, Listen Server, 2 players.
+3. Host: PickFaction 0 → equip 1 (RAR). Own 1P: barrel should face forward (not 90° left).
+4. Client: PickFaction 1 → equip 1 (AK). Look at other player's 3P: left hand on forend /
+   LeftHandSocket (not floating to muzzle/barrel). Same check host watching client's RAR 3P.
+5. Optional: ToggleThirdPerson on self to inspect own 3P FABRIK.
+6. Log: [WeaponAttach] ... ok=1; no BAD attach. FABRIK Verbose only if log verbosity raised.
+
+If RAR 1P still 90° off the other way
+------------------------------------
+Flip the yaw sign in ApplyMeshAttachRelative (90 → -90) and rebuild.
+
+If 3P left hand still wrong but gun looks fine
+---------------------------------------------
+Weapon mesh may lack LeftHandSocket — FABRIK alpha stays 0 (anim pose). Paste
+whether Mesh3P has socket FABRIK/LeftHandSocket on BP_FPS_RAR / BP_Weapon_AK.

@@ -1,0 +1,31 @@
+BloodFX — hit spray / floor stain / footprints
+Backup: Saved/CodeBackup_20261028_233522_BloodFX
+
+【原因】
+- 打人原先只走 Weapon FireEffect 的物理表面类型；角色网格几乎没有 Flesh PhysMat，所以无喷血。
+- 地上溅血贴花以前没接。
+- 血脚印（MarkBloodyFeet / M_blood_decal_Mat）PolishHud 已有：受伤会 Multicast 标记，走路留脚印。
+
+【改动】
+1) 命中 AShooterCharacter / ATargetDummy：本机 Local_Fire 与远端 Multicast_Fire 都会调 SpawnBloodImpactFX
+   - Niagara: Impact_Blood（缺则 Blood_Splat）
+   - 命中点小血贴花 + 向下射线大血印（M_blood_decal_Mat）
+2) 脚印逻辑未删：受伤仍 Multicast_NotifyBloodyFeet；控制台 MarkBlood 仍可用
+3) BP 可覆盖：BloodHitNiagara / BloodHitDecal / BloodHitDecalSize / BloodHitDecalLifeSpan
+
+【编译】
+编辑器 Ctrl+Alt+F11 Live Coding（改了 .h，若失败请重启编辑器再编）。不要强杀 UE。
+
+【PIE 验证】
+1. Testmap，Listen Server，1～2 人
+2. 打另一个角色 / 靶场 TargetDummy / 控制台 Kill 前先互相开枪
+3. 应看到：命中点喷血、脚下/地上血印
+4. 被打后走路：血脚印；或 MarkBlood 10 再走
+5. 两客户端都应看见喷血与地上血印（各端本地生成）
+
+【资源路径】
+- /Game/DEFINITIVE_FPS_KIT/Niagara_VFX/Niagara/Impact/Impact_Blood
+- /Game/DEFINITIVE_FPS_KIT/Niagara_VFX/Niagara/Blood/Blood_Splat
+- /Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat
+
+未改准星 / 翻越。

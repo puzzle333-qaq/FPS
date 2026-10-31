@@ -1,0 +1,58 @@
+﻿MvpRound —— 剿匪最小可玩单局逻辑（2026-10-28）
+备份：Saved\CodeBackup_20261028_112015_MvpRound（整份 Source + HOWTO）
+
+一、出生点怎么打标签
+  在对局图里放 PlayerStart，选中后在 Details 里：
+  - 警察：Player Start Tag 填 TeamA（或 Police）
+  - 匪徒：Player Start Tag 填 TeamB（或 Criminal）
+  也可以在 Actor 的 Tags 数组里加 Police / Criminal，一样认。
+  每边建议放 >= 人数个，相距 > 1.5 米（会优先挑没人站的）。
+  找不到对应标签：日志 "[PCMode] No PlayerStart tagged ..."，退回引擎默认出生点（随便一个 PlayerStart）。
+  关卡 World Settings -> GameMode Override 设成 PoliceCriminal 模式的 GameMode（BP 或 C++ APoliceCriminalGameMode）。
+
+二、一局流程
+  选阵营 PickFaction 0(警)/1(匪) → 匪 VanPick / 警 ArmoryPick → 布置阶段（默认 60s，警察打不了伤害）
+  → 突击 10 分钟 → 结束 → PostMatchDelay(8s) 后回房间大厅/主菜单（或重开本图）。
+  - 不复活。死后 SpectateDelay(3s) 自动观战队友，左键切下一个；队友死光就看敌方存活玩家，没人可看就固定镜头。
+  - 回合中途进来的人直接观战。
+  - 胜负：匪全灭→警胜；警全灭→匪胜；同时全灭→平局；时间到→TimeoutWinningTeam（默认 1=匪胜）。
+  - 掉线：算死亡（不计存活）；一方全掉线→另一方胜。
+
+三、可调参数（GameMode BP 的 Class Defaults，FPS|PoliceCriminal）
+  CriminalSetupDuration 布置秒数 / AssaultDuration 突击秒数(600) / PostMatchDelay 结算停留
+  TimeoutWinningTeam 0警 1匪 / SpectateDelay / bRestartMapAfterMatch（勾上=结束后 ServerTravel ?restart 重开本图）
+  PoliceStartTag/CriminalStartTag(+Alt) 出生点标签
+
+四、测试控制台命令（~ 打开）
+  PickFaction 0|1        选警/匪
+  VanPick AK|Glock|Deagle|PCC   匪配装
+  ArmoryPick RAR|X24     警配装
+  SkipSetup              跳过布置，直接突击
+  SetRoundTime 15        把当前阶段剩余时间设成 15 秒（布置或突击都行，测超时）
+  KillSelf               自杀（仅突击阶段），测观战/全灭判定
+  ForceWin 0|1|2         强制结束：0警胜 1匪胜 2平局
+  左键                   观战时切换目标
+
+五、面包车/军械库单独关卡
+  现在 VanPick/ArmoryPick 是在对局图里用命令选的。以后做成单独关卡时：
+  - 阵营：PlayerState.CopyProperties 带队伍，无缝切图（bUseSeamlessTravel）保留。
+  - 配装：服务器在选枪时按玩家房间 key 记住配装，进对局图 HandleStartingNewPlayer 自动恢复（日志 "[PCMode] Restored travel loadout"）。
+  - 要求：面包车/军械库关卡也用 PoliceCriminal GameMode，并且用 ServerTravel（不是各自 OpenLevel）进对局图。
+
+六、专用服务器 + 2 客户端检查表
+  PIE：Play 下拉 → Number of Players 2，Net Mode = Play As Client（会自动起专用服务器）。
+  [ ] 客户端1 PickFaction 0 + ArmoryPick RAR；客户端2 PickFaction 1 + VanPick AK
+  [ ] 两人分别出现在 TeamA / TeamB 的出生点，外观对（警蓝/匪）
+  [ ] 布置阶段互相打不掉血；顶栏倒计时正确
+  [ ] SkipSetup → 突击开始，能互相伤害
+  [ ] 一方被打死：3 秒后进入观战（2 人局会看对方），没有复活
+  [ ] 结算画面两端都弹出，胜负显示正确（死的那边输）
+  [ ] 8 秒后两端都回大厅/主菜单（或勾 bRestartMapAfterMatch 重开）
+  [ ] 再来一局：SetRoundTime 10 等超时 → 匪胜
+  [ ] 再来一局：突击中关掉一个客户端 → 另一方胜
+  [ ] ForceWin 2 → 平局画面
+  [ ] 回归：绊雷/汽油桶、看表 Alt+T、血脚印、Bandits 1P/3P、SpawnTestHostage 正常
+
+已知限制：同时全灭判平局；人质规则未接入胜负。
+观战反向切 / TravelToMatch / 结算文案见 MvpRound2_HOWTO.txt。
+观战：LMB 下一个，RMB 或 Q 上一个。

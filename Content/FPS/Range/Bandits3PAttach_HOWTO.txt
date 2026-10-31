@@ -1,0 +1,27 @@
+Bandits3PAttach — 换 Bandits 身子后 3P 枪挂回正确插槽
+Backup: Saved\CodeBackup_20261029_044031_Bandits3PAttach
+
+Root cause
+- AttachToOwingPawn 用 GripPoints（多为 weapon_r）/ AK 用 RifleSocketak
+- Bandits Preset_05/02 没有这些 socket，ResolveAttachPoint 掉到 hand_r
+- Mesh3PAttachRelative* 是按 weapon_r / RifleSocket 写的，挂手骨就歪
+- 1P 早已 EnsureArms1PGripSockets；3P 之前只 re-Attach，没补 socket
+
+Fix
+1) EnsureMesh3PGripSockets：换身前从当前 Manny Mesh3P（或 SKM_Manny）把
+   weapon_r / RifleSocket* / PistolSocket* 等拷到 Bandits mesh（相对 hand_r）
+2) Criminal/Police ApplyFactionLookMeshes 里 SetSkeletalMesh 前调用
+3) 换身后立即 + 下一帧再 AttachToOwingPawn（CurrentWeapon）
+4) Weapon ResolveAttachPoint fallback 增加 weapon_r / PistolSocket*（仍优先真实 socket）
+
+PIE
+1. Live Coding / 重启编译
+2. Testmap Listen Server，Players=2
+3. 各窗：PickFaction 0|1 → SkipSetup（会套 Bandits 外观）
+4. 看另一客户端手里的 3P 枪：应对齐手，不应浮空/穿掌
+5. Output Log：
+   [Look] Mesh3P sockets+=N ...
+   [WeaponAttach] ... -> 3P sock=weapon_r 或 RifleSocketak（不应再是 hand_r）
+6. 若仍歪：把 [WeaponAttach] 的 3P sock= 和枪名发回，再微调相对 hand_r
+
+Not touched: vault / mantle / ladder

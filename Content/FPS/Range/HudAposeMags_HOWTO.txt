@@ -1,0 +1,27 @@
+Combat HUD visibility fix — A-pose + mags bottom-left
+Backup: Saved/CodeBackup_20261030_054146_CombatHudVisible
+
+【根因】
+1) BeginPlay 时 GetViewportSize 经常是 0，旧代码用 Y=max(120,Vy-28) 把 HUD 钉到屏幕上方，
+   玩家看左下角会以为“没显示”。
+2) 纯 C++ UUserWidget 未开 bHasScriptImplementedTick，NativeTick 不跑，无法纠正位置/绑定。
+3) 健康色/弹匣填充过暗，深色场景里几乎看不见。
+
+【修复】
+- PinBottomLeft：Anchors(0,1)-(0,1) + Alignment(0,1) + Position(36,-36)，与分辨率无关
+- ZOrder 50；半透明深色底板 + 更大身体/弹匣；无枪时也显示 3 个空弹匣管
+- KeepAlive / OnPossess / AcknowledgePossession 反复 Ensure；不在视口则重新 AddToViewport
+- MatchHUD 仍关闭
+
+【怎么测】
+1. 关掉 Unreal Editor
+2. VS 编 FPS（或本机代编 -MaxParallelActions=1）
+3. Testmap Listen Server → PickFaction 0
+4. 左下角应有明显深色面板：白色 A-pose、红血条、MAGS 字样 + 弹匣格
+5. 开镜后仍在；打中部位变红
+
+【相关】
+- Source/FPS/Private/Ui/CombatStatusHud.cpp
+- Source/FPS/Private/Ui/CombatHudKeepAlive.cpp
+- Source/FPS/Private/ShooterPlayerController.cpp
+- Content/FPS/UI/T_BodyApose.uasset

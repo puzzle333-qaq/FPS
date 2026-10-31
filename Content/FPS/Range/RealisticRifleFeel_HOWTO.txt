@@ -1,0 +1,16 @@
+﻿步枪后坐力已还原 + 穿墙/跳弹保留
+备份(还原前): Saved\CodeBackup_20261029_113835_RevertRecoil
+对照源: CodeBackup_20261029_090101_RealisticRifle (RealisticRifle 改动前)
+
+本次还原 (Weapon.cpp / CombatComponent.cpp):
+- 去掉 BeginPlay 里 [RealisticRifle]/[RoNRecoil]/[RecoilFeel2] 对 RAR/AK 的 FireTime/Damage/HipFireSpread/RecoilPattern/Scale 覆盖 → 恢复蓝图/C++ 构造默认
+- 去掉 ApplyFireRecoil 的 SprayHeat 随机左右抖 → 恢复原 COD 式 pattern 视角后坐
+- ADS 单发散布恢复为 0 (霰弹仍 0.35×)
+- 枪身 Mesh Loc/Rot kick 仍关闭: ctor VisualRecoil=0, 不调用 AddVisualRecoil, ShooterCharacter::AddVisualRecoil 仍清空
+- 穿墙/跳弹代码未动 (CombatComponent 里 [RealisticRifle] pen/ricochet)
+
+PIE: 关 UE → VS 编 FPS → Testmap 半自动/全自动对照还原前手感; 枪身不应往后缩; 薄墙穿透仍可用.
+
+----
+2026-10-30 NoHipSpread: BeginPlay 压回 RosterHipfire 前小腰射默认（见 NoHipSpread_HOWTO.txt）。后坐力仍保持本文件还原状态，未重开。
+

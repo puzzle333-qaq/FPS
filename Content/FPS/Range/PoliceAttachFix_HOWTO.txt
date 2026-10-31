@@ -1,0 +1,48 @@
+﻿Police / Criminal weapon attach fix (1P + 3P + left hand)
+=========================================================
+Backup: Saved\CodeBackup_20261029_063214_PoliceAttachFix
+
+Root causes
+-----------
+1) Bandits body/arms have hand_r but NO weapon_r / RifleSocket* / WeaponSocket.
+2) Previous Ensure*GripSockets wrote identity (zero) stubs for weapon_r etc.
+   ResolveAttachPoint preferred those stubs over real Ironbelly WeaponSocket /
+   Manny RifleSocket* copies -> gun sat at hand pivot (1P wrong) or looked unmounted (3P).
+3) Ensure skipped writing when a skeleton socket of the same name existed (never
+   overrode with mesh-level sockets).
+4) Weapon OverrideArms could swap Mesh1P off Bandits gloves after faction look,
+   dropping the patched sockets (RAR/AK 1P both factions).
+5) Left hand: many RAR/AK meshes have no FABRIK socket -> FABRIK_Alpha stayed 0.
+
+What changed (.cpp only)
+------------------------
+- ShooterCharacter: EnsureMesh3PGripSockets / EnsureArms1PGripSockets upsert
+  mesh-level sockets from live Manny / SK_Mannequin / Ironbelly; alias
+  weapon_r/RifleSocketak/etc from best real source; NEVER write empty stubs.
+- ShooterCharacter: CalculateFABRIKSocket blends alpha, respects reload +
+  DisableLHandIK curve.
+- Weapon: GetFabrikWorldTransform also tries LeftHandSocket/Grip and Root->Muzzle
+  lerp for rifles; AttachToOwingPawn logs parent/socket ok + BAD attach warning.
+- CombatComponent: while FactionLook Police/Criminal + bUseBanditsArms1P, lock
+  Mesh1P to Bandits (ignore OverrideArms mesh).
+
+PIE checklist
+-------------
+1) Live Coding / restart editor if headers somehow dirty (this change is .cpp).
+2) Testmap, Listen Server, 2 players, Use currently opened Asset.
+3) Host: PickFaction 0  (police RAR+X24, Bandits02 + green arms)
+   Client: PickFaction 1 (criminal AK+pistol, Bandits05 + black arms)
+4) SkipSetup if needed. Equip 1 (rifle) then 2 (pistol).
+5) Look at OWN 1P: rifle grip should sit in right hand (not floating at wrist/camera).
+6) Look at OTHER client 3P: gun on right hand; left hand should reach forend (FABRIK).
+7) Log lines to confirm:
+   [Look] Mesh3P sockets upsert=...
+   [Look] Arms1P sockets upsert=...
+   [WeaponAttach] ... 1P sock=... ok=1 | 3P sock=... ok=1
+   No [WeaponAttach] BAD attach
+8) FactionLook 0 (Manny/Ironbelly): 1P should still use Ironbelly path; OverrideArms
+   still allowed when not Bandits faction.
+
+If still wrong
+--------------
+Paste [Look] upsert lines + [WeaponAttach] lines for RAR and AK.

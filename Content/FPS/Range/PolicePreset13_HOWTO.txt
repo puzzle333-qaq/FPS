@@ -1,0 +1,8 @@
+﻿Police look = Bandits Preset_13 (2026-10-29)
+3P body: /Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_13
+1P arms: /Game/Bandits/Mesh/Arms/Arms_Gloves/SKM_Arms_Gloves_Black
+  (Preset_13 itself references M_Arms_Gloves_Black -> same set)
+Criminal unchanged: Preset_05 + SKM_Arms_Gloves_Black.
+Code: ShooterCharacter.cpp (defaults block ~line 3066 / 3106). Police arms now forced; Preset_02 in BP is auto-replaced.
+Backup: Saved\CodeBackup_20261029_082633_PolicePreset13
+Test: close UE, build FPS in VS, open Testmap Listen Server, console PickFaction 0, check 3P body and 1P arms.

@@ -1,0 +1,5 @@
+1P arms: Mesh1P is set to /Game/Bandits/Mesh/Arms/Arms_Gloves/SKM_Arms_Gloves_Green (Police) / SKM_Arms_Gloves_Black (Criminal) in ShooterCharacter::ApplyFactionArms1P.
+Bug: BP Mesh1P had OverrideMaterials from Ironbelly arms -> forearm slot kept old material, gloves slot OK.
+Fix: EmptyOverrideMaterials() when swapping to Bandits arms. Backup: Saved\CodeBackup_20261029_082107_FpArmsMaterials
+Editor alternative: BP_ShooterCharacter > Mesh1P > Materials -> reset each element to default (yellow arrow).
+Verify: PIE Listen, PickFaction 0 / 1, look at forearms; log '[Look] Mesh1P -> SKM_Arms_Gloves_*'.

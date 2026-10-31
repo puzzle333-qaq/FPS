@@ -1,0 +1,5 @@
+﻿NVGTube (20261029_084202) - backup Saved\CodeBackup_20261029_084202_NVGTube
+NVG = 管式绿夜视: Saturation 0.05(近灰度) + Tint(0.35,1,0.40) + Contrast 1.12 + Vignette 0.95 + Grain 0.30 + ExposureBias 1.3~1.7 (Histogram, Min -1.5 Max 1.5), 去掉 ColorGamma 全局提亮。
+关 NV 时 ClearTacticalVisionEffects 清除所有覆盖。
+测试: 关 UE -> VS 编 FPS -> Testmap 暗处按住 Alt+K（或控制台 Vision 1 / Vision 0）。
+后续: 圆形管筒遮罩需要 PP 材质（NVGPostProcessMaterial 目前项目里没有 NVG 资产），做好后填到角色 NVGPostProcessMaterial 即自动挂到相机 Blendables。

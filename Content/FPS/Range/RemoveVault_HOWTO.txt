@@ -1,0 +1,22 @@
+RemoveVault — vault / mantle / ladder disconnected
+================================================
+
+Date: 2026-10-28 (America/New_York)
+Backup: Saved\CodeBackup_20261028_232255_RemoveVault
+
+What changed
+- ShooterCharacter no longer creates UTraversalComponent.
+- Fire / ADS no longer gated by Traversal IsBusy.
+- Space (Input_Jump) no longer calls TryTraversal / ladder attach.
+- Jump stays DISABLED (JumpZVelocity=0, CanJump returns false).
+- Space still: cancel slide to stand, or stand up from prone.
+- TraversalComponent.cpp / Ladder.cpp left on disk but unused (not deleted).
+- FreeAnimationLibrary assets NOT deleted.
+
+Live Coding
+- Ctrl+Alt+F11 after these .cpp edits.
+- If character Blueprint still shows an orphaned Traversal component, open BP_ShooterCharacter (or your pawn BP), remove the stale Traversal component if present, compile BP.
+
+PIE check
+- Space does not vault/climb/ladder.
+- No Traversal component on spawned character (World Outliner / Details).

@@ -1,0 +1,52 @@
+﻿MainMenuTestMap — reconnect main menu -> range test map (2026-10-28)
+Backup: Saved\CodeBackup_20261028_215819_MainMenuTestMap
+
+What changed (C++)
+1) UShooterGameInstance::Init auto-fills Modes[PoliceCriminal]:
+   Map = RangeMap (/Game/FPS/Level/Lvl_Range)
+   GameMode = /Script/FPS.PoliceCriminalGameMode
+   bImplemented = true
+2) Lobby AllowedModes includes PoliceCriminal (and InitGame re-adds if BP omitted it)
+3) APoliceCriminalGameMode::MatchMap default = Lvl_Range (TravelToMatch)
+4) Console / menu shortcuts (靶场 Btn_Range unchanged = OpenRange, still uses map's own GM)
+
+How to enter the test map from main menu
+A) Fastest (no new button): open Lvl_MainMenu (PIE or Standalone), press ~ :
+   fps.StartPractice pc
+   or MenuStartPoliceCriminal
+   -> solo into Lvl_Range with PoliceCriminalGameMode
+
+B) Listen 2-client on test map:
+   Window1 (main menu): fps.LocalHost pc   (or MenuHostPoliceCriminal)
+   Window2: fps.LocalJoin
+   (forces Null/IpNet, skips EOS)
+
+C) Optional Blueprint button (auto-binds by name if present):
+   In WBP_MainMenu add a Button named exactly one of:
+   Btn_PoliceCriminal / Button_PoliceCriminal / Btn_PC / Btn_JingFei
+   -> StartPractice PoliceCriminal (no room)
+   Or Btn_PoliceCriminalRoom -> ShowRoomBrowser(PoliceCriminal) then Create / LocalHost
+
+D) Full room path (needs 1 player per team ready):
+   ShowRoomBrowser(PoliceCriminal) -> Create Room / Local Host -> lobby -> Start
+   Lobby still requires both teams >=1 (or add bots when re-enabled)
+
+Project Settings check (already set in DefaultEngine.ini)
+- Game Default Map / Editor Startup Map = /Game/FPS/Level/MainMenu/Lvl_MainMenu
+- Game Instance Class = BP_ShooterGameInstance
+
+PIE checklist
+[ ] From main menu: fps.StartPractice pc -> lands Lvl_Range
+[ ] Log: [Menu] PoliceCriminal test map -> ...Lvl_Range ... PoliceCriminalGameMode
+[ ] Log: [Menu] OpenLevel /Game/FPS/Level/Lvl_Range ?game=/Script/FPS.PoliceCriminalGameMode
+[ ] ~ PickFaction 0 / 1 ; ArmoryPick RAR / VanPick AK ; SkipSetup
+[ ] Vault / climb / ladder ; KillSelf spectate ; ForceWin
+[ ] Btn_Range still opens 靶场 with original ShooterGameMode (not PC)
+[ ] Optional: tag PlayerStarts TeamA/Police and TeamB/Criminal on Lvl_Range (currently none)
+
+Compile
+Editor was closed when this landed. Rebuild FPS module (or open editor and Live Coding).
+If paging-file OOM: close editor, build with -MaxParallelActions=1.
+
+Rollback
+Copy Source from Saved\CodeBackup_20261028_215819_MainMenuTestMap back over Source\FPS

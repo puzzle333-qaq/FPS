@@ -1,0 +1,26 @@
+NoHipSpread — 去掉刻意加大的腰射散布
+Backup: Saved\CodeBackup_20261030_122009_NoHipSpread
+Date: 2026-10-30 (Asia/Shanghai)
+
+【原因】
+2026-10-28 RosterHipfire 把蓝图 HipFireSpread 刻意加大（半锥角°）：
+  RAR 3→12, AK 5→14, base CDO 3→10, 手枪约 1→4+, 喷子 6→12
+用户反馈：去掉准星已经够劝退乱腰射，没必要再强制大散布锥。
+
+【改动】
+Source/FPS/Private/Weapon/Weapon.cpp — AWeapon::BeginPlay
+- [NoHipSpread] 按 WeaponType / 类名把 HipFireSpread 压回 RosterHipfire 之前的小默认
+- 只缩小、不放大（原本就更紧的枪保持原值）
+- 对照还原：RAR 3, AK 5, PCC 3.5, 步枪基线 3, 喷子 6, X24 1.2, 手枪/Deagle 1, 刀/投掷 0
+- GetHipFireSpread 逻辑未改：开镜单发仍 0；喷子开镜仍 0.35×；枪管顶墙 BlockedHipFireExtra 仍在
+- 不重开后坐力覆盖（RealisticRifle / RoN / RecoilFeel2 仍保持还原状态）
+
+【未改】
+蓝图 .uasset 里的 HipFireSpread 数字仍可能是加大后的值；运行时 BeginPlay 会盖掉。
+若以后要永久改 BP，可在编辑器把 RAR/AK 等调回上表。
+
+【编译 / 测】
+关 UE → VS 生成 FPS（内存紧用 -MaxParallelActions=1）→ Testmap
+1. 腰射打远靶：应接近原来小散布，不再「刻意打飞」
+2. 开镜仍应基本贴准（单发 ADS=0）
+3. 后坐力手感应与还原后一致，无额外加强

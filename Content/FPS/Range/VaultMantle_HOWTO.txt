@@ -1,0 +1,37 @@
+翻越 / 攀爬 / 梯子（VaultMantle）
+备份：Saved\CodeBackup_20261028_134440_VaultMantle
+代码：Source\FPS\Public|Private\World\TraversalComponent.*、World\Ladder.*
+      ShooterCharacter.cpp（构造里加 Traversal 组件；移动中禁开火/开镜）
+      ShooterPlayerController.cpp（Input_Jump 末尾调用 TryTraversal）
+
+按键：空格（还是没有自由跳跃）
+- 障碍物顶部高度（从脚底算）40~100cm：翻越到另一边；对面落不下（太厚>110cm/被堵）就爬到顶上
+- 100~165cm：攀爬上去
+- <40cm 直接走上去；>165cm 无反应
+- 站在梯子触发框里、面朝梯子按空格：上梯子；W 上 S 下；爬到顶自动翻上去；S 到底自动下来；梯子上再按空格松手掉下
+- 翻越/攀爬/梯子期间不能开火、不能开镜
+
+参数（角色 BP 里选 Traversal 组件可改）：
+MinObstacleHeight 40, WaistHeight 100, EyeHeight 165, MaxReach 75（胶囊外伸手距离）,
+MaxVaultDepth 110, VaultDuration 0.55, MantleDurationLow/High 0.6/1.0,
+LadderSpeed 150, LadderTopExitDuration 0.7, VaultNoiseLoudness 1.0（MakeNoise）
+
+调试：控制台 DebugVault 1 → 画射线/胶囊（绿=能放下，红=被挡），日志 [Vault]
+
+联机：客户端先预测动，服务器用同样射线复核；服务器判不行会把客户端拉回原位。
+移动中角色用 Flying + 速度 0，位置由组件插值，期间服务器接受客户端位置（防橡皮筋），结束 0.5 秒后恢复校正。
+
+梯子摆放：
+1. 内容浏览器 C++ Classes > FPS > Ladder，拖进关卡（或建 BP 子类加自己的梯子模型，关掉 bShowPlaceholderMesh）
+2. 原点放在梯子脚下、靠玩家这一侧；红色箭头 X 指向墙（玩家爬时面朝的方向）
+3. Height = 墙顶高度（梯子顶部必须和平台顶面一样高），Width 宽度，StandOff 玩家离梯子距离 45
+4. TopExitForward 60：爬到顶后落在梯子往前 60cm 的平台上，那里要有地面且没东西挡
+
+测试（Play 2 人 / Play As Client，靶场或空图）：
+摆几个 Cube 当障碍：顶高 30（膝下，应直接走过）、70（膝/腰，翻过去）、100（腰，翻过去）、
+140（胸，爬上去）、165（眼，爬上去）、200（头上，无反应）；再摆一个 70 高但 300 厚的（应爬到顶上而不是翻过去）。
+两个客户端互相看对方翻越是否平滑；翻越中按左键/右键应无效。
+梯子：按上面摆一面 300 高墙+Ladder，测上、下、顶部翻出、中途空格松手。
+
+已知限制：3P 动画见 VaultAnims_HOWTO（FreeAnimationLibrary）；没有音效（只有 AI 噪音）；
+按住开火进入翻越不会自动停火；蹲下会被自动站起；梯子上下没有过渡动作；移动平台上翻越未测。

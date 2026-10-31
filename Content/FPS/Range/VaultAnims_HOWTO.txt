@@ -1,0 +1,33 @@
+翻越 / 攀爬 / 梯子动画（VaultAnims）
+备份：Saved\CodeBackup_20261028_223335_VaultAnims
+代码：Source\FPS\Public|Private\World\TraversalComponent.*
+
+已接到 FreeAnimationLibrary（UE5 Mannequin 骨架）的 3P 动作：
+- Vault 翻越：/Game/FreeAnimationLibrary/Animations/Vault/anim_Vault
+- Mantle 矮（<130cm）：.../Mantle/anim_Mantle_1M_R
+- Mantle 高（>=130cm）：.../Mantle/anim_Mantle_2M_R
+- Ladder：.../Ladder/anim_Ladder_Up | _Down | _Idle
+- 梯子顶部翻出：.../LedgeClimb/anim_LedgeClimb_ClimbUp（没有则回落 Mantle 1M）
+
+播放方式（与滑铲 SlideAnim 相同）：
+- 3P Mesh 的 ABP_ThirdPerson 插槽 BodySlot
+- PlaySlotAnimationAsDynamicMontage；播率按 Duration 拉伸，位置仍由组件插值
+- 遍历期间 IgnoreRootMotion，避免根运动和插值叠加速度
+- BeginPlay 里对角色骨架 AddCompatibleSkeletonSoft(FreeAnim SK_Mannequin)，避免两份 SK_Mannequin 不兼容
+
+第一人称手臂：库里没有对应 FP Vault/Mantle，1P 不播动作，镜头/位移逻辑不变。
+
+Live Coding：打开工程后 Ctrl+Alt+F11 编 FPS 模块（或重启编辑器）。不要关编辑器硬编大并行。
+
+测试：
+1. DebugVault 1，日志应有 [Vault] play anim_Vault / anim_Mantle_...
+2. 第三人称或第二客户端看翻越/攀爬是否有动作（不是 T 姿滑过去）
+3. 梯子：静止 Idle，W Up，S Down，到顶 ClimbUp
+4. 若动作不播：内容浏览器打开
+   /Game/Characters/Mannequins/Meshes/SK_Mannequin
+   Compatible Skeletons 里手动加
+   /Game/FreeAnimationLibrary/Demo/Characters/Mannequins/Meshes/SK_Mannequin
+   保存；Bandits 骨架若单独用也加同样一条。Slide 已用同一库，一般已能播。
+5. BP 可改 Traversal 组件 Traversal|Anim 下的软引用/插槽名
+
+已知限制：无 FP 手臂翻越动画；无音效；壁攀（Climbing_Animations / LedgeClimb 左右）未接，只要梯子与翻越攀爬。

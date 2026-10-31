@@ -1,0 +1,9 @@
+﻿夜视修复 (NVGFix)
+开关: Alt+K (按住 Alt 再按 K)。控制台: Vision 1 = 夜视, Vision 0 = 关, RefillVision 充电池。
+电池 60 秒, 用完自动关, 屏幕左上会提示。
+原因: 原来只加 AutoExposureBias(+~2.8EV) + 绿色调 + 加对比度; 关卡里的 PostProcessVolume 固定/限制了曝光范围, 暗处几乎是纯黑, 乘以偏移仍是黑, 对比度还把暗部压得更死。
+修改: 夜视时强制 Histogram 自动曝光 + 宽亮度范围(-10~20), 偏移 +3~5EV, 提亮 Gamma/暗部增益, 加一点绿色底光(ColorOffset), 对比度降到 1.05。关夜视会全部清除。
+测试: VS 编译(UE 关闭) -> 打开 Testmap -> Listen Server -> PickFaction 0 -> 走到暗处 -> Alt+K, 应看到绿色、明显变亮能看清人影; 再 Alt+K 恢复。
+备份: Saved\CodeBackup_*_NVGFix
+
+See NVGTube_HOWTO.txt (20261029_084202) for tube look.

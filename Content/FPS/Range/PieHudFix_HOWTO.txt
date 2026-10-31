@@ -1,0 +1,24 @@
+﻿PieHudFix (2026-10-28)
+Backup: Saved\CodeBackup_20261028_222642_PieHudFix
+
+Root causes (from Saved\Logs\FPS.log):
+1) Client 1 black: NetDriverEOS Listen failed ("Could not bind local address" / no local EOS user), then [Online] NetworkFailure -> GoToMainMenu tore down listen; Client browse to 127.0.0.1:17777 had PC=NULL.
+2) Match top bar missing: [MatchHUD] No header widget for mode 6 (PoliceCriminal). ResolveHeaderClass had no case.
+
+Fixes (.cpp only):
+- MatchHUD.cpp: PoliceCriminal -> UTDMHeaderWidget (same top bar as TDM)
+- ShooterGameInstance.cpp: ignore NetworkFailure GoToMainMenu in PIE / NetDriverListenFailure
+- ShooterSessionSubsystem.cpp: WITH_EDITOR auto fps.OnlineUseNull=1 -> IpNetDriver
+
+Retest:
+1. Live Coding compile FPS (or restart editor). Do NOT kill editor from outside.
+2. Open Testmap. Play: Listen Server, Players=2, Use currently opened Asset.
+3. Expected logs:
+   [Online] Editor: fps.OnlineUseNull=1 (IpNetDriver for local PIE)
+   [Online] GameNetDriver=IpNetDriver (Null=1)
+   NO "NetDriverListenFailure" / "NetworkFailure -> GoToMainMenu"
+   NO spam "No header widget for mode 6"
+4. Host + Client 1 both see world + top MatchHUD bar.
+5. Single-player: Players=1 still fine.
+
+If Client still black after compile: console `fps.OnlineUseNull 1` then stop PIE and Play again.

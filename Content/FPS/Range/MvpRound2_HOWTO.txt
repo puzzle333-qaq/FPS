@@ -1,0 +1,40 @@
+MvpRound2 —— 观战反向切 / 切图助手 / 剿匪结算文案（2026-10-28）
+备份：Saved\CodeBackup_20261028_114639_MvpRound2
+
+一、观战切人
+  死后 SpectateDelay(默认 3s) 进观战。
+  - 左键 LMB = 下一个目标
+  - 右键 RMB 或 Q = 上一个目标
+  优先队友；队友死光看存活敌人。IMC 运行时绑定，不吞键。
+  日志：[Spectate] name -> target (dir=+1/-1)
+
+二、面包车 / 军械库 → 对局图
+  工程里还没有单独的 Van/Armory umap。配装跨图已用服务器内存表保存（VanPick/ArmoryPick 时 Save，对局 HandleStartingNewPlayer Restore）。
+  切图助手（服务器）：
+  1) 在 PoliceCriminal GameMode BP Class Defaults 填 MatchMap = 对局 umap 软引用
+  2) 面包车/军械库关卡也用 PoliceCriminal GameMode
+  3) 选完枪后控制台：TravelToMatch
+     或 TravelToMatch /Game/你的路径/对局图名
+  4) bSeamlessTravelToMatch 默认 true（保留队伍/PlayerState）
+  要求用 ServerTravel（命令走的就是），不要客户端各自 OpenLevel。
+  日志成功：[PCMode] ServerTravel -> ... / Restored travel loadout
+
+三、剿匪结算 HUD
+  MatchHUD 终局主标题：
+  - 警察胜利 / 匪徒胜利 / 平局
+  副标题：
+  - 歼灭 · 你方获胜|你方战败
+  - 时间到 · ...
+  - 对方掉线 · ...
+  - 同归于尽（平局）
+  本地胜负用绿/红颜色。ForceWin / KillSelf / SetRoundTime 测法同 MvpRound_HOWTO。
+
+四、PIE 检查表（接 MvpRound）
+  [ ] 2 人局互相打死：死者 3s 后观战；LMB 下一个、RMB/Q 上一个
+  [ ] ForceWin 0 → 「警察胜利」+ 歼灭
+  [ ] SetRoundTime 5 等超时 → 「匪徒胜利」+ 时间到（TimeoutWinningTeam=1）
+  [ ] ForceWin 2 → 「平局」+ 同归于尽
+  [ ]（有配装图时）VanPick/ArmoryPick → TravelToMatch → 对局图有枪，日志 Restored travel loadout
+
+五、回滚
+  从 Saved\CodeBackup_20261028_114639_MvpRound2 拷回 Source 与 HOWTO。
