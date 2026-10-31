@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -612,13 +612,17 @@ public:
 	UFUNCTION(Server, Reliable)
 	void Server_SetBodyArmor(EBodyArmorType NewArmor);
 
-	// PIE/debug: 0=DefaultManny 1=Criminal(Bandits05) 2=Police(Bandits02). Mesh1P FP arms untouched.
+	// PIE: PickFaction 0 = Police (default spawn), 1 = Criminal. 1P Bandits gloves stay locked across weapon swaps.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Look")
 	void SetFactionLookLocal(ECharacterLookFaction NewLook);
 	UFUNCTION(Server, Reliable)
 	void Server_SetFactionLook(ECharacterLookFaction NewLook);
 	UFUNCTION(BlueprintPure, Category = "FPS|Look")
 	ECharacterLookFaction GetFactionLook() const { return FactionLook; }
+
+	/** True when 1P should stay on Bandits gloves (spawn default Police, PickFaction, or Mesh1P already Bandits). */
+	UFUNCTION(BlueprintPure, Category = "FPS|Look")
+	bool IsUsingBanditsFirstPersonArms() const;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Movement|Landing")
 	float LandingSlowDuration = 0.35f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Movement|Landing", meta = (ClampMin = "0.1", ClampMax = "1.0"))
@@ -710,9 +714,9 @@ public:
 	float HeavyArmorAdsTimeMultiplier = 1.45f;
 
 	// ===== 3P faction look + optional Bandits 1P arms =====
-	// Criminal = Bandits Preset_05. Police = Bandits Preset_13 (arms SKM_Arms_Gloves_Black). CharGen soft refs kept unused by default.
+	// Default spawn = Police (Bandits Preset_13 + black gloves + gorka sleeves). Criminal = Preset_05. SetFactionLookLocal / PickFaction still override.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_FactionLook, Category = "FPS|Look")
-	ECharacterLookFaction FactionLook = ECharacterLookFaction::Default;
+	ECharacterLookFaction FactionLook = ECharacterLookFaction::Police; // default Bandits Preset_13 + 1P arms; customization can override
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
 	TSoftObjectPtr<USkeletalMesh> CriminalMesh3P;

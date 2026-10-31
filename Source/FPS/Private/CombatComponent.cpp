@@ -1,4 +1,9 @@
+﻿#include "CombatComponent.h"
+
+
+
 #include "CombatComponent.h"
+#include "Game/AINoiseEvent.h"
 #include "FPSTraceChannels.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
@@ -608,13 +613,11 @@ void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
 	if (!bCachedDefaultArms) return;
 
 	// Bandits faction look owns Mesh1P gloves + patched grip sockets. Do not let weapon OverrideArms
-	// swap back to Ironbelly/pack arms (that drops sockets and breaks RAR/AK 1P mount).
+	// swap back to Ironbelly/pack arms (that drops sockets and breaks rifle/pistol 1P mount).
 	bool bLockBanditsFactionArms = false;
 	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(Owner))
 	{
-		const ECharacterLookFaction Look = Shooter->GetFactionLook();
-		bLockBanditsFactionArms = Shooter->bUseBanditsArms1P
-			&& (Look == ECharacterLookFaction::Police || Look == ECharacterLookFaction::Criminal);
+		bLockBanditsFactionArms = Shooter->IsUsingBanditsFirstPersonArms();
 	}
 
 	// Only swap mesh / AnimBP when weapon sets OverrideArms*. Null = keep character Mesh1P (Ironbelly).
@@ -1583,6 +1586,12 @@ void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>
 	TArray<FHitResult> FxHits;
 	FxHits.Append(Hits.GetData(), FMath::Min(Hits.Num(), MaxPellets));
 	for (int32 i = PrimaryCount; i < DmgHits.Num(); ++i) FxHits.Add(DmgHits[i]);   // exit holes / ricochet marks for remote viewers
+	// CQB AI hear gunshot (authority).
+	if (AActor* OwnerActor = GetOwner())
+	{
+		AINoiseEvent::Report(GetWorld(), OwnerActor->GetActorLocation(), 1.f, OwnerActor, AINoiseEvent::EKind::Gunshot);
+	}
+
 	Multicast_FireWeapon(FxHits, CurrentWeapon->Ammo);
 }
 
@@ -3372,4 +3381,5 @@ void UCombatComponent::PlaySpectated1PReload(EReloadType ReloadType)
 		if (IsValid(WeaponReload)) AWeapon::PlayWeaponMontageOrSequence(WeaponMesh, WeaponReload);
 	}
 }
+
 

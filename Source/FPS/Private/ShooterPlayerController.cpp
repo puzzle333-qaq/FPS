@@ -24,6 +24,8 @@
 #include "Ui/MatchHUD.h"
 #include "Ui/CombatHudKeepAlive.h"
 #include "Ui/CombatStatusHud.h"
+#include "Ui/BodyInjuryHud.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Weapon/Weapon.h"
 #include "Weapon/AttachmentData.h"
 #include "Game/ShooterGameState.h"
@@ -679,6 +681,28 @@ void AShooterPlayerController::EnsureCombatHudKeepAlive()
 	{
 		CombatHudKeepAlive->AddToViewport(199);
 		UE_LOG(LogTemp, Warning, TEXT("[HUD] PATH=PC.Ensure CombatHudKeepAlive re-AddToViewport"));
+	}
+
+	// Auto-create BodyInjuryHud (bottom-left) if no WBP/instance of it is on screen.
+	{
+		TArray<UUserWidget*> Found;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Found, UBodyInjuryHud::StaticClass(), false);
+		bool bOnScreen = false;
+		for (UUserWidget* W : Found) { if (W && W->IsInViewport()) { bOnScreen = true; break; } }
+		UE_LOG(LogTemp, Warning, TEXT("[BodyInjury] found=%d onScreen=%d"), Found.Num(), bOnScreen ? 1 : 0);
+		if (!bOnScreen)
+		{
+			if (UBodyInjuryHud* BI = CreateWidget<UBodyInjuryHud>(this, UBodyInjuryHud::StaticClass()))
+			{
+				BI->SetVisibility(ESlateVisibility::HitTestInvisible);
+				BI->AddToViewport(198);
+				BI->SetAnchorsInViewport(FAnchors(0.f, 1.f));
+				BI->SetAlignmentInViewport(FVector2D(0.f, 1.f));
+				BI->SetPositionInViewport(FVector2D(30.f, -30.f), false);
+				BI->SetDesiredSizeInViewport(FVector2D(180.f, 180.f));
+				UE_LOG(LogTemp, Warning, TEXT("[BodyInjury] auto-created, tex=%s"), BI->BodyTexture ? *BI->BodyTexture->GetName() : TEXT("NULL"));
+			}
+		}
 	}
 
 	// RoN CombatStatusHud removed by request: never create; tear down if present.

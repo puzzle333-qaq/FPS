@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "ShooterCharacter.h"
@@ -77,6 +77,65 @@ namespace
 		}
 
 		return Property->ContainerPtrToValuePtr<T>(Object);
+	}
+
+	bool IsBanditsSkelMesh(const USkeletalMesh* Mesh)
+	{
+		if (!IsValid(Mesh))
+		{
+			return false;
+		}
+		const FString Path = Mesh->GetPathName();
+		return Path.Contains(TEXT("Bandit")) || Path.Contains(TEXT("Arms_Gloves"));
+	}
+
+	USkeletalMesh* LoadCanonicalArms1PSource()
+	{
+		static const TCHAR* Paths[] = {
+			TEXT("/Game/FirstPersonBPIronbelly/Arms/SK_FPSArms.SK_FPSArms"),
+			TEXT("/Game/FirstPersonRifleAnimations/Demo/FirstPersonArms/Character/Mesh/SK_Mannequin_Arms.SK_Mannequin_Arms"),
+		};
+		for (const TCHAR* Path : Paths)
+		{
+			if (USkeletalMesh* Loaded = LoadObject<USkeletalMesh>(nullptr, Path))
+			{
+				if (!IsBanditsSkelMesh(Loaded))
+				{
+					return Loaded;
+				}
+			}
+		}
+		return nullptr;
+	}
+
+	USkeletalMesh* LoadCanonicalMesh3PSource()
+	{
+		static const TCHAR* Paths[] = {
+			TEXT("/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"),
+			TEXT("/Game/FPS_Controller/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"),
+			TEXT("/Game/FPS_Controller/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"),
+			TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"),
+		};
+		USkeletalMesh* Fallback = nullptr;
+		for (const TCHAR* Path : Paths)
+		{
+			if (USkeletalMesh* Loaded = LoadObject<USkeletalMesh>(nullptr, Path))
+			{
+				if (IsBanditsSkelMesh(Loaded))
+				{
+					continue;
+				}
+				if (Loaded->FindSocket(TEXT("RifleSocketak")) || Loaded->FindSocket(TEXT("SOCKET_Weapon")))
+				{
+					return Loaded;
+				}
+				if (!Fallback)
+				{
+					Fallback = Loaded;
+				}
+			}
+		}
+		return Fallback;
 	}
 }
 
@@ -242,10 +301,21 @@ void AShooterCharacter::BeginPlay()
 	}
 
 	EnsureFactionLookDefaults();
+	// Spawn default: Bandits police look (3P Preset_13 + matching 1P arms/sleeves). BP may still serialize Default.
+	// Future loadout UI / PickFaction can call SetFactionLookLocal to change this.
+	if (FactionLook == ECharacterLookFaction::Default)
+	{
+		FactionLook = ECharacterLookFaction::Police;
+	}
 	if (!bCapturedDefaultMesh3P && IsValid(GetMesh()))
 	{
-		DefaultMesh3PAsset = GetMesh()->GetSkeletalMeshAsset();
+		USkeletalMesh* CurBody = GetMesh()->GetSkeletalMeshAsset();
 		DefaultMesh3PAnimClass = GetMesh()->GetAnimClass();
+		DefaultMesh3PAsset = IsBanditsSkelMesh(CurBody) ? LoadCanonicalMesh3PSource() : CurBody;
+		if (!IsValid(DefaultMesh3PAsset))
+		{
+			DefaultMesh3PAsset = CurBody;
+		}
 		bCapturedDefaultMesh3P = true;
 	}
 	ApplyFactionLookMeshes();
@@ -1019,6 +1089,12 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 	ClearHitZoneMarks();
+	// Swap to Police/Bandits meshes + copy Ironbelly/Manny grip sockets BEFORE guns attach.
+	if (FactionLook == ECharacterLookFaction::Default)
+	{
+		FactionLook = ECharacterLookFaction::Police;
+	}
+	ApplyFactionLookMeshes();
 	if (IsValid(Combat))
 	{
 		Combat->SpawnInventory();
@@ -3136,6 +3212,19 @@ void AShooterCharacter::SetModularLookVisible(bool bVisible)
 	SetOne(Mesh3P_Jacket);
 }
 
+bool AShooterCharacter::IsUsingBanditsFirstPersonArms() const
+{
+	if (!bUseBanditsArms1P)
+	{
+		return false;
+	}
+	if (FactionLook == ECharacterLookFaction::Police || FactionLook == ECharacterLookFaction::Criminal)
+	{
+		return true;
+	}
+	return IsValid(Mesh1P) && IsBanditsSkelMesh(Mesh1P->GetSkeletalMeshAsset());
+}
+
 void AShooterCharacter::SetFactionLookLocal(ECharacterLookFaction NewLook)
 {
 	if (HasAuthority())
@@ -3172,8 +3261,13 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 	ApplyFactionArms1P();
 	if (!bCapturedDefaultMesh3P)
 	{
-		DefaultMesh3PAsset = Body->GetSkeletalMeshAsset();
+		USkeletalMesh* CurBody = Body->GetSkeletalMeshAsset();
 		DefaultMesh3PAnimClass = Body->GetAnimClass();
+		DefaultMesh3PAsset = IsBanditsSkelMesh(CurBody) ? LoadCanonicalMesh3PSource() : CurBody;
+		if (!IsValid(DefaultMesh3PAsset))
+		{
+			DefaultMesh3PAsset = CurBody;
+		}
 		bCapturedDefaultMesh3P = true;
 	}
 
@@ -3195,8 +3289,13 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 		if (!IsValid(Body) || !IsValid(MeshAsset)) return;
 		if (!bCapturedDefaultMesh3P)
 		{
-			DefaultMesh3PAsset = Body->GetSkeletalMeshAsset();
+			USkeletalMesh* CurBody = Body->GetSkeletalMeshAsset();
 			DefaultMesh3PAnimClass = Body->GetAnimClass();
+			DefaultMesh3PAsset = IsBanditsSkelMesh(CurBody) ? LoadCanonicalMesh3PSource() : CurBody;
+			if (!IsValid(DefaultMesh3PAsset))
+			{
+				DefaultMesh3PAsset = CurBody;
+			}
 			bCapturedDefaultMesh3P = true;
 		}
 
@@ -3445,6 +3544,7 @@ void AShooterCharacter::Client_FlashHitZone_Implementation(EHitZone Zone)
 	case EHitZone::Leg: break;
 	default: break;
 	}
+	UE_LOG(LogTemp, Warning, TEXT("[BodyInjury] FlashHitZone %d on %s local=%d"), (int32)Zone, *GetName(), IsLocallyControlled() ? 1 : 0);
 	// Remote clients don't get the bone side. NoteZone keeps a side the host already set.
 	HudBodyMarks::NoteZone(this, Zone);
 }
@@ -4544,10 +4644,10 @@ void AShooterCharacter::EnsureMesh3PGripSockets(USkeletalMesh* BodyMesh, USkelet
 	USkeletalMesh* MannyMesh = SourceMesh;
 	const bool bSourceOk = IsValid(MannyMesh)
 		&& MannyMesh != BodyMesh
-		&& !MannyMesh->GetPathName().Contains(TEXT("Bandit"));
+		&& !IsBanditsSkelMesh(MannyMesh);
 	if (!bSourceOk)
 	{
-		MannyMesh = nullptr;
+		MannyMesh = LoadCanonicalMesh3PSource();
 	}
 
 	auto HasRifleSocketAk = [](USkeletalMesh* GripMesh) -> bool
@@ -4597,15 +4697,10 @@ void AShooterCharacter::EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkelet
 	USkeletalMesh* ArmsSource = SourceMesh;
 	const bool bSourceOk = IsValid(ArmsSource)
 		&& ArmsSource != ArmsMesh
-		&& !ArmsSource->GetPathName().Contains(TEXT("Bandit"));
+		&& !IsBanditsSkelMesh(ArmsSource);
 	if (!bSourceOk)
 	{
-		ArmsSource = LoadObject<USkeletalMesh>(nullptr,
-			TEXT("/Game/FirstPersonRifleAnimations/Demo/FirstPersonArms/Character/Mesh/SK_Mannequin_Arms.SK_Mannequin_Arms"));
-	}
-	if (!IsValid(ArmsSource))
-	{
-		ArmsSource = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/FirstPersonBPIronbelly/Arms/SK_FPSArms.SK_FPSArms"));
+		ArmsSource = LoadCanonicalArms1PSource();
 	}
 
 	TArray<FGripSocketCopy> Copies;
@@ -4635,7 +4730,12 @@ void AShooterCharacter::ApplyFactionArms1P()
 
 	if (!bCapturedDefaultArms1P)
 	{
-		DefaultArmsMesh1PAsset = Mesh1P->GetSkeletalMeshAsset();
+		USkeletalMesh* CurArms = Mesh1P->GetSkeletalMeshAsset();
+		DefaultArmsMesh1PAsset = IsBanditsSkelMesh(CurArms) ? LoadCanonicalArms1PSource() : CurArms;
+		if (!IsValid(DefaultArmsMesh1PAsset))
+		{
+			DefaultArmsMesh1PAsset = CurArms;
+		}
 		bCapturedDefaultArms1P = true;
 	}
 
@@ -4662,9 +4762,9 @@ void AShooterCharacter::ApplyFactionArms1P()
 	}
 
 	USkeletalMesh* SourceForSockets = DefaultArmsMesh1PAsset.Get();
-	if (!IsValid(SourceForSockets))
+	if (!IsValid(SourceForSockets) || IsBanditsSkelMesh(SourceForSockets))
 	{
-		SourceForSockets = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/FirstPersonBPIronbelly/Arms/SK_FPSArms.SK_FPSArms"));
+		SourceForSockets = LoadCanonicalArms1PSource();
 	}
 
 	const bool bBanditsTarget = (FactionLook == ECharacterLookFaction::Criminal || FactionLook == ECharacterLookFaction::Police);

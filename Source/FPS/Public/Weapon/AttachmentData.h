@@ -13,7 +13,7 @@ class UTexture2D;
 class UMaterialInterface;
 
 // 瞄具类型：决定开镜时怎么显示
-// Grip hold style: Cradle = angled/triangular/default; Grab = vertical. Pose from anims, not FABRIK.
+// Grip hold style: None = no grip; Cradle = angled/triangular/default; Grab = vertical. Pose from anims, not FABRIK.
 UENUM(BlueprintType)
 enum class EGripHoldStyle : uint8
 {

@@ -30,7 +30,7 @@ enum class EBodyArmorType : uint8
 	Heavy UMETA(DisplayName = "Heavy")
 };
 
-// 3P appearance for PIE / future faction spawn. Default = stock Mannequin from character BP.
+// 3P appearance. Spawn defaults to Police (Bandits). DefaultManny kept for debug FactionLook 0.
 UENUM(BlueprintType)
 enum class ECharacterLookFaction : uint8
 {
