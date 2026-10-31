@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Interface/Interactable.h"
 #include "Interface/PlayerInterface.h"
+#include "Game/CoopCqbTypes.h"
 #include "BreakableDoor.generated.h"
 
 class USceneComponent;
@@ -13,8 +14,7 @@ class USoundBase;
 
 /**
  * Interactive door: F to open/close (IInteractable), optional HP for wooden doors.
- * Bullets damage via IPlayerInterface::DoDamage (same path as TargetDummy).
- * Skip true hole-cutting; at 0 HP hide leaf + spawn simple debris.
+ * Aim zones (CQB): Upper=gentle push, Handle=normal open/close, Bottom=kick open.
  */
 UCLASS()
 class FPS_API ABreakableDoor : public AActor, public IInteractable, public IPlayerInterface
@@ -38,6 +38,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Door")
 	void Auth_SetOpen(bool bNewOpen);
 
+	UFUNCTION(BlueprintCallable, Category = "FPS|Door")
+	void Auth_GentlePush(APawn* InstigatorPawn);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Door")
+	void Auth_KickOpen(APawn* InstigatorPawn);
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Door")
 	bool IsOpen() const { return bOpen; }
 
@@ -46,6 +52,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Door")
 	float GetHealth() const { return Health; }
+
+	/** Resolve aim zone from pawn camera vs door leaf height. */
+	UFUNCTION(BlueprintPure, Category = "FPS|Door")
+	EDoorAimZone ResolveAimZone(APawn* InteractingPawn) const;
 
 	/** Spawn a test door in front of Pawn (PIE). Returns spawned actor or null. */
 	static ABreakableDoor* SpawnInFrontOf(APawn* Pawn, float DistCm = 180.f);
@@ -70,12 +80,29 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open")
 	float OpenAngleDegrees = 90.f;
 
+	/** Partial open for gentle push (degrees). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "5", ClampMax = "60"))
+	float GentlePushAngleDegrees = 25.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "1"))
 	float OpenInterpSpeed = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "1"))
+	float KickInterpSpeed = 14.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "0.1"))
+	float GentleInterpSpeed = 2.5f;
 
 	/** +1 or -1 for swing direction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open")
 	float OpenDirection = 1.f;
+
+	/** Relative Z on leaf (cm from leaf origin) separating bottom / handle / upper. Leaf ~220 tall. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Aim")
+	float BottomZoneMaxZ = 70.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Aim")
+	float UpperZoneMinZ = 150.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Break")
 	bool bCanBreak = true;
@@ -107,8 +134,15 @@ protected:
 	UPROPERTY(Replicated)
 	float Health = 150.f;
 
+	/** Current target open angle (degrees * direction). Gentle push may be partial. */
+	UPROPERTY(ReplicatedUsing = OnRep_TargetOpen)
+	float TargetOpenDegrees = 0.f;
+
 	UFUNCTION()
 	void OnRep_Open();
+
+	UFUNCTION()
+	void OnRep_TargetOpen();
 
 	UFUNCTION()
 	void OnRep_Destroyed();
@@ -117,7 +151,9 @@ protected:
 	void ApplyDestroyedVisual(bool bSpawnDebris);
 	void Auth_DestroyDoor(AActor* InstigatorActor);
 	void SpawnDebrisLocal();
+	void Auth_SetTargetOpen(float DegreesAbs, float InterpSpeed);
 
 	float CurrentYaw = 0.f;
 	float TargetYaw = 0.f;
+	float ActiveInterpSpeed = 6.f;
 };

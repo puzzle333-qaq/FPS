@@ -1,0 +1,46 @@
+﻿Coop CQB PVE — logic HOWTO (UI later)
+=====================================
+
+Classes
+-------
+- ACoopCqbGameMode / ACoopCqbGameState
+- ABreakableDoor (aim zones)
+- AHostileAICharacter + AHostileAIController
+- AHostileSpawner
+
+World Settings (graybox map)
+----------------------------
+1. Open your graybox level.
+2. World Settings → GameMode Override = CoopCqbGameMode (C++ class /Script/FPS.CoopCqbGameMode).
+3. Place PlayerStart actors. Tag them TeamA or Police (Player Start Tag).
+4. Place AHostileSpawner where enemies should appear. Set Count (default 1).
+5. Place ABreakableDoor (or BP child) in doorways. Hinge on frame edge.
+6. Build Navigation Mesh (Modes → RecastNavMesh) so hostiles can path.
+
+Mission flow
+------------
+- BriefingDuration (default 2s) → InProgress.
+- Objective ClearEnemies: when all hostiles dead → win.
+- All operators dead → fail.
+- One life (no respawn) for now.
+- Operators auto team 0, police Bandits look + MVP police kit (RAR/X24/throwables).
+
+Door aim zones (press F)
+------------------------
+Aim at door leaf:
+- Upper third  → gentle push (ajar ~25°, slow)
+- Middle/handle → normal open / close
+- Bottom third → kick open (fast full swing)
+
+Tune BottomZoneMaxZ / UpperZoneMinZ on the door if mesh pivot differs.
+
+Debug / fallback
+----------------
+- GameMode FallbackHostileCount > 0: if no spawners, spawn that many near TeamA start.
+- Console later: can set World Settings only for PIE of this map; keep GlobalDefault as PoliceCriminal if you want.
+
+Not in this batch
+-----------------
+Prep UI, custom loadout, hostages, AI teammates.
+Hostile AI hear/cover/crouch: see HostileAI_HOWTO.txt.
+

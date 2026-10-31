@@ -1,0 +1,46 @@
+﻿Coop CQB — Hostile AI logic (MVP)
+=================================
+
+Behavior (AHostileAIController)
+-------------------------------
+States: Idle → Investigate → Combat → TakeCover
+
+1) Pathfinding
+   - Uses NavMesh FindPathToLocationSynchronously + AddMovementInput along path.
+   - Goals: seen player, last-known position, noise investigate point, cover/peek points.
+   - Bake RecastNavMesh on the map or AI will walk in straight segments only.
+
+2) Hearing
+   - Gunshots: CombatComponent Server_FireWeapon → AINoiseEvent::Report (loud, ~4500cm * loudness).
+   - Footsteps: AI samples nearby player speed every 0.35s (sprint louder, crouch quieter, stand/creep ignored).
+   - Heard noise → Investigate that point (unless already in combat with clear LOS).
+
+3) Cover
+   - On taking damage, or mid-combat (random prefer + under fire): 12-direction WorldStatic traces.
+   - Picks a point just before a wall that blocks crouch-height LOS to the threat; projects to NavMesh.
+   - TakeCover: crouch at cover → peek toward threat → shoot → duck back.
+
+4) Crouch
+   - Enabled on HostileAICharacter (NavAgent bCanCrouch).
+   - Crouches while under fire, in cover, or holding cover; stands to peek/shoot lane.
+
+Tune on controller defaults / Details
+-------------------------------------
+HearGunshotRange, HearFootstepRange, CoverSearchRadius,
+LoseSightGrace, InvestigateTimeout, UnderFireDuration,
+CoverHoldMin, PeekInterval, CombatPreferCoverChance
+
+Character: SightRange, ShootRange, FireInterval, ShotDamage, MaxHealth
+
+Debug tips
+----------
+- Empty graybox with no walls → cover search fails → stays in Combat (expected).
+- No NavMesh → still moves toward goals but paths poorly.
+- Log: [Hostile] death lines still fire; add temporary UE_LOG in SetState if needed.
+
+Files
+-----
+Source/FPS/Public|Private/Game/HostileAIController.*
+Source/FPS/Public|Private/Game/HostileAICharacter.*
+Source/FPS/Public|Private/Game/AINoiseEvent.*
+CombatComponent.cpp (gunshot Report)
