@@ -1,0 +1,9 @@
+﻿BodyInjuryHud (受伤部位变红人像)
+1. 编译: 关 UE 后编译 (或 UE 里 Ctrl+Alt+F11 Live Coding)。
+2. 新建 Widget Blueprint -> 父类选 BodyInjuryHud (或已有 WBP 用 Class Settings 改父类)，命名 WBP_BodyInjury。
+   BodyTexture 默认 /Game/FPS/T_Body，大小设成正方形 (如 160x160，和 T_Body 比例一致)。
+3. 把 WBP_BodyInjury 拖进你的 HUD WBP 左下角。
+4. 它每帧读角色 IsHitZoneMarked: 头/躯干/手臂/腿 受伤即红 (手臂两只一起红, 腿两条一起红)。
+5. 调区域: Details -> BodyInjury|Zones，每个区域是若干四边形(0~1 归一化坐标)。
+   勾 bPreviewAllInjured 可在设计器里全红看切分效果，调好再取消。
+6. 颜色: HealthyColor / InjuredColor。蓝图可调 SetZoneOverride 手动点亮。
