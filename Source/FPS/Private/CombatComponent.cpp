@@ -14,16 +14,31 @@
 #include "ShooterGamePlayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/Weapon.h"
+
 #include "WeaponData.h"
+
 #include "Engine/SkeletalMesh.h"
+
+#include "Animation/Skeleton.h"
+
 #include "Animation/AnimSequence.h"
+
 #include "Animation/AnimSingleNodeInstance.h"
+
 #include "Interface/PlayerInterface.h"
+
 #include "Animation/AnimInstance.h"
+
 #include "Animation/AnimMontage.h"
+
+#include "Misc/PackageName.h"
+
 #include "Animation/AnimSequence.h"
+
 #include "Components/SkeletalMeshComponent.h"
+
 #include "UObject/UnrealType.h"
+
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -31,11 +46,19 @@
 #include "Loadout/LoadoutTypes.h"
 #include "Weapon/AttachmentData.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+
 #include "ShooterType/ShooterType.h"
+
 #include "Interface/RecoilModifierInterface.h"
+
+#include "GameFramework/Actor.h"
+
 #include "GameFramework/Pawn.h"
+
 #include "GameFramework/PlayerController.h"
+
 #include "Camera/PlayerCameraManager.h"
+
 #include "Game/ShooterGameState.h"
 #include "Game/PoliceCriminalGameMode.h"
 #include "Game/ShooterPlayerState.h"
@@ -380,14 +403,27 @@ void UCombatComponent::DestroyInventory()
 {
 	for (AWeapon* Weapon : Inventory)
 	{
+
 		if (IsValid(Weapon))
+
 		{
+
+			Weapon->DetachFromPawn();
+
 			Weapon->Destroy();
+
 		}
+
 	}
+
+	Inventory.Reset();
+
 }
 
+
+
 void UCombatComponent::InitializeWeaponWidget()
+
 {
 	if (!IsValid(CurrentWeapon)) return;
 
@@ -396,11 +432,19 @@ void UCombatComponent::InitializeWeaponWidget()
 }
 
 void UCombatComponent::NotifyAmmoChanged()
+
 {
+
 	if (!IsValid(CurrentWeapon)) return;
+
+	CurrentWeapon->UpdateMagazineAmmoVisuals();
+
 	SyncSpareMagRoundsForHud();
+
 	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
+
 }
+
 
 void UCombatComponent::BeginPlay()
 {
@@ -637,11 +681,19 @@ void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
 	CacheDefaultFirstPersonArms();
 	if (!bCachedDefaultArms) return;
 
+
 	// Bandits faction look owns Mesh1P gloves + patched grip sockets. Do not let weapon OverrideArms
+
 	// swap back to Ironbelly/pack arms (that drops sockets and breaks rifle/pistol 1P mount).
+
+	// Pack guns stay on the shared RAR/AK arms ABP; set anim sequences on the weapon BP instead.
+
 	bool bLockBanditsFactionArms = false;
+
 	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(Owner))
+
 	{
+
 		bLockBanditsFactionArms = Shooter->IsUsingBanditsFirstPersonArms();
 	}
 
@@ -667,18 +719,77 @@ void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
 		|| WantAnimName.Contains(TEXT("AnimBP_Arms"))))
 	{
 		WantAnim = UPSRArmsAnimInstance::StaticClass();
+
 	}
 
-	if (Arms->GetSkeletalMeshAsset() != WantMesh)
+
+
+	if (IsValid(WantMesh) && Arms->GetSkeletalMeshAsset() && WantMesh->GetSkeleton() && Arms->GetSkeletalMeshAsset()->GetSkeleton())
+
 	{
-		Arms->SetSkeletalMesh(WantMesh);
+
+		USkeleton* WantSkel = WantMesh->GetSkeleton();
+
+		USkeleton* CurSkel = Arms->GetSkeletalMeshAsset()->GetSkeleton();
+
+		if (WantSkel != CurSkel)
+
+		{
+
+			WantSkel->AddCompatibleSkeletonSoft(CurSkel);
+
+			CurSkel->AddCompatibleSkeletonSoft(WantSkel);
+
+		}
+
 	}
+
+
+
+	const bool bMeshChanged = Arms->GetSkeletalMeshAsset() != WantMesh;
+
+	if (bMeshChanged && IsValid(WantMesh))
+
+	{
+
+		Arms->SetSkeletalMesh(WantMesh, true);
+
+	}
+
 	if (Arms->GetAnimClass() != WantAnim)
+
 	{
+
 		Arms->SetAnimInstanceClass(WantAnim);
+
+		if (UAnimInstance* AnimInst = Arms->GetAnimInstance())
+
+		{
+
+			AnimInst->InitializeAnimation(true);
+
+		}
+
 	}
+
+	else if (bMeshChanged)
+
+	{
+
+		if (UAnimInstance* AnimInst = Arms->GetAnimInstance())
+
+		{
+
+			AnimInst->InitializeAnimation(true);
+
+		}
+
+	}
+
 }
+
 void UCombatComponent::ApplyEquippedWeaponAnim(AWeapon* Weapon)
+
 {
 	if (!IsValid(Weapon) || !IsValid(WeaponData)) return;
 
@@ -736,14 +847,47 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 
 		const TMap<FGameplayTag, FPlayerAnim>& Anims = bFirstPerson
 			? WeaponData->FirstPersonAnims
-			: WeaponData->ThirdPersonAnims;
-		const FPlayerAnim* WeaponAnim = Anims.Find(CurrentWeapon->WeaponType);
-		if (!WeaponAnim) return;
 
-		FPlayerAnim AnimCopy = *WeaponAnim;
-		// 站立 Locomotion 绑的是 Strafe_Standing；慢走时换成 Walk BS，避免继续采 Jog 造成小碎步
-		if (bUseWalkGait && IsValid(AnimCopy.Strafe_Walking))
+			: WeaponData->ThirdPersonAnims;
+
+		const FPlayerAnim* WeaponAnim = Anims.Find(CurrentWeapon->WeaponType);
+
+		FPlayerAnim AnimCopy;
+
+		if (WeaponAnim)
+
 		{
+
+			AnimCopy = *WeaponAnim;
+
+		}
+
+		CurrentWeapon->ApplyAuthoredArmAnims(AnimCopy);
+
+		if (!IsValid(AnimCopy.IdleAnim))
+
+		{
+
+			if (bFirstPerson)
+
+			{
+
+				UE_LOG(LogTemp, Warning, TEXT("[Anim] %s WeaponType=%s has no FirstPerson Idle (DA row missing, ArmsIdleSequence empty)"),
+
+					*GetNameSafe(CurrentWeapon), *CurrentWeapon->WeaponType.ToString());
+
+			}
+
+			return;
+
+		}
+
+		// 站立 Locomotion 绑的是 Strafe_Standing；慢走时换成 Walk BS，避免继续采 Jog 造成小碎步
+
+		if (bUseWalkGait && IsValid(AnimCopy.Strafe_Walking))
+
+		{
+
 			AnimCopy.Strafe_Standing = AnimCopy.Strafe_Walking;
 		}
 		// SprintAnim 未填时用 Idle，避免空引用。冲刺动画填在 DA_WeaponData 的 FirstPersonAnims / ThirdPersonAnims。
@@ -769,17 +913,37 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 		}
 
 
-		// Shotgun FPSTP anims are authored as full arm poses. ABP AimOffset / Strafe / left-hand Layered
-		// blend deform them in-game (Persona preview has none of those). Strip for Weapon.type.shotgun 1P.
+
+
+
+		// First person is parented to the camera, so look pitch is already in the view.
+
+		// Aim offset stays on Mesh3P only.
+
 		const bool bShotgunRaw1P = bFirstPerson
+
 			&& CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun);
-		if (bShotgunRaw1P)
+
+		if (bFirstPerson)
+
 		{
+
 			AnimCopy.AimOffset_Hip = nullptr;
+
 			AnimCopy.AimOffset_Aim = nullptr;
+
+		}
+
+		if (bShotgunRaw1P)
+
+		{
+
 			AnimCopy.Strafe_Standing = nullptr;
+
 			AnimCopy.Strafe_Crouching = nullptr;
+
 			AnimCopy.Strafe_Walking = nullptr;
+
 			AnimCopy.LeftHandHoldPose_Cradle = nullptr;
 			AnimCopy.LeftHandHoldPose_Grab = nullptr;
 			AnimCopy.IdleAnim_Grab = nullptr;
@@ -1808,30 +1972,66 @@ void UCombatComponent::Initiate_ReloadWeapon(bool bFastDrop)
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Reloading;
 	CurrentWeapon->bHasReloadedOnce = true;
 	ResetRecoilPattern();
+
 	Server_ReloadWeapon(ReloadType, bFastDrop);
+
 	bool bPlayed = false;
-	if (bHasMontage)
+
+	// KIN soft-wired ArmsReload* sequences must win over shared RAR WeaponData montages,
+
+	// otherwise Mesh1P gets a RAR WEP montage (wrong skeleton) and Mag stays glued.
+
+	if (bHasSeq)
+
 	{
-		bPlayed = PlayReloadMontage(true, ReloadType);
-	}
-	if (!bPlayed)
-	{
+
 		bPlayed = PlayReloadSequences(true, ReloadType);
+
 	}
-	if (!bPlayed)
+
+	if (!bPlayed && bHasMontage)
+
 	{
+
+		bPlayed = PlayReloadMontage(true, ReloadType);
+
+	}
+
+	if (!bPlayed)
+
+	{
+
 		CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 		Server_EndReload(false);
 	}
 	else
+
 	{
+
 		// Multicast_Reload skips owner — drive Mesh3P reload for ToggleThirdPerson / body view.
-		if (!PlayReloadMontage(false, ReloadType))
+
+		bool bPlayed3P = false;
+
+		if (bHasSeq)
+
 		{
-			PlayReloadSequences(false, ReloadType);
+
+			bPlayed3P = PlayReloadSequences(false, ReloadType);
+
 		}
+
+		if (!bPlayed3P)
+
+		{
+
+			PlayReloadMontage(false, ReloadType);
+
+		}
+
 	}
+
 }
+
 
 bool UCombatComponent::ApplyReload()
 {
@@ -1945,19 +2145,18 @@ bool UCombatComponent::PlayReloadSequences(bool bFirstPerson, EReloadType Reload
 		{
 			WeaponSeq = IsValid(CurrentWeapon->WeaponReloadEmptySequence)
 				? CurrentWeapon->WeaponReloadEmptySequence.Get()
+
 				: CurrentWeapon->WeaponReloadTacticalSequence.Get();
+
 		}
-		if (IsValid(WeaponSeq))
-		{
-			// 空仓枪身序列由 PlayMagazineReload 用 PlayAnimation 播到 1P 和 3P，这里再播会叠一层。
-			const bool bEmptyBody = Resolved == EReloadType::Empty && WeaponSeq == CurrentWeapon->WeaponReloadEmptySequence;
-			if (!bEmptyBody)
-			{
-				AWeapon::PlayWeaponSequence(CurrentWeapon->GetMesh1P(), WeaponSeq);
-			}
-		}
+
+		// Body Mag socket/bone motion is owned by PlayMagazineReload (Empty + Tactical).
+
 		CurrentWeapon->PlayMagazineReload(Resolved);
+
 	}
+
+
 
 	FOnMontageEnded EndDelegate;
 	if (bFirstPerson)
@@ -3043,40 +3242,379 @@ bool UCombatComponent::Initiate_Hotkey(int32 Hotkey)
 
 
 
-void UCombatComponent::Initiate_VersionWeapon()
+
+
+
+// Prefer MagCheck montage. No MagCheck asset => no-op (free inspect removed).
+
+static UAnimMontage* ResolveKinMagCheckMontage(AWeapon* Weapon, bool bWeaponMesh)
+
 {
-	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
-	// 只有空闲时能检视：不在换弹、拉栓、切枪、开火、开镜
-	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Idle) return;
-	if (IsReloading()) return;   // 换弹期间禁止检视（与 Idle 检查双保险）
-	if (bAiming || bTriggerPressed) return;
-	if (IsInspecting()) return;   // 正在检视就不重新开始
 
-	const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType);
-	UAnimMontage* InspectMontage = MontageData ? MontageData->InspectMontage1P.Get() : nullptr;
-	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
-	UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
-	if (!IsValid(InspectMontage) || !IsValid(AnimInstance)) return;
-	if (AnimInstance->Montage_Play(InspectMontage) <= 0.f) return;
+	if (!IsValid(Weapon)) return nullptr;
 
-	ActiveInspectMontage = InspectMontage;
-	InspectWeapon = CurrentWeapon;
-	ActiveInspectWeaponMontage = nullptr;
+	const FString Cls = Weapon->GetClass() ? Weapon->GetClass()->GetName() : FString();
 
-	// 枪身检视（可选）：WeaponMontages 里也填了就同时播
-	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+	struct FKinMagCheck { const TCHAR* Match; const TCHAR* ArmsMontage; const TCHAR* ArmsSeq; const TCHAR* WpnMontage; const TCHAR* WpnSeq; };
+
+	static const FKinMagCheck Table[] = {
+
+		{ TEXT("Weapon_TR15"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/TR15/AM_RT_A_FP_TR15_Mag_Check.AM_RT_A_FP_TR15_Mag_Check"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/TR15/RT_A_FP_TR15_Mag_Check.RT_A_FP_TR15_Mag_Check"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Weapon/AM_W_TR15_Mag_Check.AM_W_TR15_Mag_Check"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Weapon/A_W_TR15_Mag_Check.A_W_TR15_Mag_Check") },
+
+		{ TEXT("Weapon_AK105"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/AK105/AM_RT_A_FP_AK105_MagCheck.AM_RT_A_FP_AK105_MagCheck"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/AK105/RT_A_FP_AK105_MagCheck.RT_A_FP_AK105_MagCheck"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/AK105/Weapon/AM_W_AK105_MagCheck.AM_W_AK105_MagCheck"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/AK105/Weapon/A_W_AK105_MagCheck.A_W_AK105_MagCheck") },
+
+		{ TEXT("Weapon_Mk14"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Mk14EBR/AM_RT_A_FP_Mk14EBR_MagCheck.AM_RT_A_FP_Mk14EBR_MagCheck"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Mk14EBR/RT_A_FP_Mk14EBR_MagCheck.RT_A_FP_Mk14EBR_MagCheck"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Mk14EBR/Weapon/AM_W_Mk14EBR_MagCheck.AM_W_Mk14EBR_MagCheck"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Mk14EBR/Weapon/A_W_Mk14EBR_MagCheck.A_W_Mk14EBR_MagCheck") },
+
+		{ TEXT("Weapon_MKR9"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MKR9/AM_RT_A_FP_MKR9_Mag_Check.AM_RT_A_FP_MKR9_Mag_Check"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MKR9/RT_A_FP_MKR9_Mag_Check.RT_A_FP_MKR9_Mag_Check"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MKR9/Weapon/AM_W_MKR9_Mag_Check.AM_W_MKR9_Mag_Check"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MKR9/Weapon/A_W_MKR9_Mag_Check.A_W_MKR9_Mag_Check") },
+
+		{ TEXT("Weapon_SRM12"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/AM_RT_A_FP_SRM-12_FP_Mag_Check.AM_RT_A_FP_SRM-12_FP_Mag_Check"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/RT_A_FP_SRM-12_FP_Mag_Check.RT_A_FP_SRM-12_FP_Mag_Check"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/SRM-12/Weapon/AM_W_SRM-12_Mag_Check.AM_W_SRM-12_Mag_Check"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/SRM-12/Weapon/A_W_SRM-12_Mag_Check.A_W_SRM-12_Mag_Check") },
+
+		{ TEXT("Weapon_Viper"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/AM_RT_A_FP_WK-11_Viper_Mag_Check.AM_RT_A_FP_WK-11_Viper_Mag_Check"),
+
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/RT_A_FP_WK-11_Viper_Mag_Check.RT_A_FP_WK-11_Viper_Mag_Check"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/WK-11_Viper/Weapon/AM_W_WK-11_Viper_Mag_Check.AM_W_WK-11_Viper_Mag_Check"),
+
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/WK-11_Viper/Weapon/A_W_WK-11_Viper_Mag_Check.A_W_WK-11_Viper_Mag_Check") },
+
+	};
+
+	for (const FKinMagCheck& Row : Table)
+
 	{
-		USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
-		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
-		if (IsValid(WeaponMontageData->InspectMontage1P) && IsValid(WeaponAnim)
-			&& WeaponAnim->Montage_Play(WeaponMontageData->InspectMontage1P) > 0.f)
+
+		if (!Cls.Contains(Row.Match)) continue;
+
+		const TCHAR* MontPath = bWeaponMesh ? Row.WpnMontage : Row.ArmsMontage;
+
+		const TCHAR* SeqPath = bWeaponMesh ? Row.WpnSeq : Row.ArmsSeq;
+
+		if (MontPath)
+
 		{
-			ActiveInspectWeaponMontage = WeaponMontageData->InspectMontage1P;
+
+			if (UAnimMontage* M = LoadObject<UAnimMontage>(nullptr, MontPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+
+			{
+
+				return M;
+
+			}
+
 		}
+
+		if (SeqPath)
+
+		{
+
+			if (UAnimSequence* Seq = LoadObject<UAnimSequence>(nullptr, SeqPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+
+			{
+
+				if (UAnimMontage* Dyn = UAnimMontage::CreateSlotAnimationAsDynamicMontage(Seq, FName(TEXT("DefaultSlot")), 0.15f, 0.15f))
+
+				{
+
+					Dyn->AddToRoot();
+
+					return Dyn;
+
+				}
+
+			}
+
+		}
+
+		break;
+
 	}
+
+	return nullptr;
+
 }
 
+
+
+static UAnimMontage* ResolveMagCheckMontage(UAnimMontage* InspectMontage, bool bWeaponMesh)
+
+{
+
+	TArray<FString> Candidates;
+
+	if (IsValid(InspectMontage))
+
+	{
+
+		const FString Pkg = FPackageName::GetLongPackagePath(InspectMontage->GetOutermost()->GetName());
+
+		const FString Name = InspectMontage->GetName();
+
+		if (Name.Contains(TEXT("Inspect")))
+
+		{
+
+			const FString MagName = Name.Replace(TEXT("Inspect"), TEXT("MagCheck"));
+
+			Candidates.AddUnique(Pkg / MagName + TEXT(".") + MagName);
+
+		}
+
+		if (Name.Contains(TEXT("RAR")) || Name.Contains(TEXT("AssaultRifle")))
+
+		{
+
+			Candidates.AddUnique(bWeaponMesh
+
+				? FString(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Weapon/Animations/AM_RAR_FP_WEP_AssaultRifle_MagCheck.AM_RAR_FP_WEP_AssaultRifle_MagCheck"))
+
+				: FString(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/AM_RAR_FP_PCH_AssaultRifle_MagCheck.AM_RAR_FP_PCH_AssaultRifle_MagCheck")));
+
+		}
+
+	}
+
+	else if (!bWeaponMesh)
+
+	{
+
+		Candidates.AddUnique(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/AM_RAR_FP_PCH_AssaultRifle_MagCheck.AM_RAR_FP_PCH_AssaultRifle_MagCheck"));
+
+	}
+
+
+
+	for (const FString& Path : Candidates)
+
+	{
+
+		if (UAnimMontage* M = LoadObject<UAnimMontage>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet))
+
+		{
+
+			return M;
+
+		}
+
+	}
+
+
+
+	// Character MagCheck may only exist as AnimSequence — wrap with inspect slot if possible.
+
+	if (!bWeaponMesh)
+
+	{
+
+		const FString SeqPath = TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/A_RAR_FP_PCH_AssaultRifle_MagCheck.A_RAR_FP_PCH_AssaultRifle_MagCheck");
+
+		if (UAnimSequence* Seq = LoadObject<UAnimSequence>(nullptr, *SeqPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+
+		{
+
+			const FName Slot = (IsValid(InspectMontage) && InspectMontage->SlotAnimTracks.Num() > 0)
+
+				? InspectMontage->SlotAnimTracks[0].SlotName
+
+				: FName(TEXT("DefaultSlot"));
+
+			const float InBlend = IsValid(InspectMontage) ? InspectMontage->BlendIn.GetBlendTime() : 0.15f;
+
+			const float OutBlend = IsValid(InspectMontage) ? InspectMontage->BlendOut.GetBlendTime() : 0.15f;
+
+			if (UAnimMontage* Dyn = UAnimMontage::CreateSlotAnimationAsDynamicMontage(Seq, Slot, InBlend, OutBlend))
+
+			{
+
+				Dyn->AddToRoot();
+
+				return Dyn;
+
+			}
+
+		}
+
+	}
+
+	return nullptr;
+
+}
+
+
+
+void UCombatComponent::Initiate_VersionWeapon()
+
+{
+
+	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
+
+	// Mag check only while idle (hold-R). Free inspect key removed.
+
+	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Idle) return;
+
+	if (IsReloading()) return;
+
+	if (bAiming || bTriggerPressed) return;
+
+	if (IsInspecting()) return;
+
+
+
+	const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType);
+
+	UAnimMontage* InspectMontage = MontageData ? MontageData->InspectMontage1P.Get() : nullptr;
+
+	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+
+	UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+
+	if (!IsValid(AnimInstance)) return;
+
+
+
+	// KIN retargeted Mag_Check on shared arms DefaultSlot first; RAR Inspect/MagCheck fallback second.
+
+	UAnimMontage* MagCheckMontage = ResolveKinMagCheckMontage(CurrentWeapon, false);
+
+	if (!IsValid(MagCheckMontage))
+
+	{
+
+		MagCheckMontage = ResolveMagCheckMontage(InspectMontage, false);
+
+	}
+
+	if (!IsValid(MagCheckMontage))
+
+	{
+
+		UE_LOG(LogTemp, Log, TEXT("[MagCheck] no MagCheck montage for %s"), *GetNameSafe(CurrentWeapon));
+
+		return;
+
+	}
+
+	const float Played = AnimInstance->Montage_Play(MagCheckMontage);
+
+	if (Played <= 0.f)
+
+	{
+
+		UE_LOG(LogTemp, Warning, TEXT("[MagCheck] Montage_Play failed for %s (slot/skeleton?). mont=%s"),
+
+			*GetNameSafe(CurrentWeapon), *MagCheckMontage->GetName());
+
+		return;
+
+	}
+
+
+
+	CurrentWeapon->UpdateMagazineAmmoVisuals();
+
+	ActiveInspectMontage = MagCheckMontage;
+
+	InspectWeapon = CurrentWeapon;
+
+	ActiveInspectWeaponMontage = nullptr;
+
+
+
+	{
+
+		// RAR-like: drive Mesh1P Mag socket/bone; Mag DA stays attached (no hand reparent).
+
+		// Use PlayWeaponMontageOrSequence so guns without AnimBP still PlayAnimation the sequence.
+
+		USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
+
+		UAnimMontage* WeaponMagCheck = ResolveKinMagCheckMontage(CurrentWeapon, true);
+
+		if (!IsValid(WeaponMagCheck))
+
+		{
+
+			if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+
+			{
+
+				WeaponMagCheck = ResolveMagCheckMontage(WeaponMontageData->InspectMontage1P.Get(), true);
+
+			}
+
+		}
+
+		if (IsValid(WeaponMagCheck) && IsValid(WeaponMesh))
+
+		{
+
+			AWeapon::PlayWeaponMontageOrSequence(WeaponMesh, WeaponMagCheck);
+
+			ActiveInspectWeaponMontage = WeaponMagCheck;
+
+			UE_LOG(LogTemp, Log, TEXT("[MagCheck] weapon mesh playing %s"), *WeaponMagCheck->GetName());
+
+		}
+
+		else
+
+		{
+
+			UE_LOG(LogTemp, Warning, TEXT("[MagCheck] no weapon MagCheck anim for %s"), *GetNameSafe(CurrentWeapon));
+
+		}
+
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[MagCheck] playing %s (%.2fs)"), *MagCheckMontage->GetName(), Played);
+
+}
+
+
+
 bool UCombatComponent::IsInspecting() const
+
 {
 	UAnimMontage* Montage = ActiveInspectMontage.Get();
 	if (!IsValid(Montage)) return false;

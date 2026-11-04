@@ -56,6 +56,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
 	TObjectPtr<UStaticMesh> Mesh;
 
+	// RAR-style: when Ammo==0 swap magazine static mesh to this (Empty). Leave null to keep Full mesh.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Magazine")
+	TObjectPtr<UStaticMesh> MagEmptyMesh;
+
 	// 倒下形态。填了之后，瞄具槽有配件时用这个模型，没镜子时用上面的 Mesh（竖起）。
 	// RAR 前后机瞄：Mesh = 竖起，FoldedMesh = 旁边那套倒下 StaticMesh。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
@@ -115,13 +119,22 @@ public:
 	FTransform MeshOffset = FTransform::Identity;
 
 	// 握把模型上的扶手点。装上后，第一人称和第三人称的左手 FABRIK 都跟这个 Socket。
-	// 握把没挂住，或模型上没有这个 Socket 时，用枪骨骼上的 FABRIK。
+	// 前握把常用 GripSocket。没填或模型上没有时，再试 GripSocket / FABRIK，最后退回枪骨骼。
 	// 在握把 StaticMesh 的 Socket Manager 里加同名 Socket，放在手应该握住的位置。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
 	FName FabrikSocketName = TEXT("FABRIK");
 
+	// 左手手指/持姿序列（如 F_GripPose）。空则继续用 WeaponData 的 Cradle/Grab hold。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
+	TObjectPtr<UAnimSequence> GripPoseAnim;
+
+	// true = SnapToTarget（相对变换 Identity），忽略 MeshOffset。
+	// 握把 Socket 已经在枪/握把模型上对准时勾上。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Visual")
+	bool bSnapToMountSocket = false;
+
 	// Grip slot only. Cradle=angled/default; Grab=vertical.
-	// 姿势只定手指和手腕。手的位置靠握把上的 FABRIK / grab 插槽。
+	// 姿势只定手指和手腕。手的位置靠握把上的 FABRIK / GripSocket。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
 	EGripHoldStyle GripHoldStyle = EGripHoldStyle::Cradle;
 

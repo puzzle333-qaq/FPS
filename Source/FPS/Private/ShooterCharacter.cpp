@@ -10,11 +10,19 @@
 #include "Engine/DecalActor.h"
 #include "Components/DecalComponent.h"
 
+
 #include "Camera/CameraComponent.h"
+
 #include "Components/SkeletalMeshComponent.h"
+
+#include "Engine/SkeletalMesh.h"
+
 #include "Engine/SkeletalMeshSocket.h"
+
 #include "Animation/AnimInstance.h"
+
 #include "Animation/Skeleton.h"
+
 #include "Animation/AnimMontage.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -417,11 +425,25 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateLocomotionGait(true);
 	UpdateFootsteps(DeltaTime);
 
+
 	CalculateTurnInPlaceParameters(DeltaTime);
+
 	CalculateFABRIKSocket(DeltaTime);
+
+	if (bWeaponAttachDebug)
+
+	{
+
+		DrawWeaponAttachDebug();
+
+	}
+
 	UpdateAimAlpha(DeltaTime);             // 开镜进度先推进，下面对准和 FOV 都用它
+
 	RemoveVisualRecoilFromMesh();          // 开镜对准要按没有后坐的位置算
+
 	UpdateAimSocketAlignment(DeltaTime);
+
 	UpdateWeaponObstacle(DeltaTime);       // 枪管顶墙：抬枪/收枪，拦开镜
 	UpdateMuzzleDip(DeltaTime);            // 近距离瞄队友/人质：枪口下压
 	UpdateWeaponSway(DeltaTime);           // 转视角拖拽 / 走路晃 / 落地下沉（和枪身后坐一起写进 Mesh1P）
@@ -597,15 +619,257 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 	}
 
 	const float Blend = FMath::Clamp(LeftHandIKBlendSpeed * DeltaTime, 0.f, 1.f);
+
 	FABRIK_Alpha = FMath::Lerp(FABRIK_Alpha, WantAlpha, Blend);
 
-	// First-person: permanently disable left-hand FABRIK.
-	// Grip alignment comes from per-weapon hold/equip animations on WeaponData tags.
-	FABRIK_SocketTransform1P = FTransform::Identity;
-	FABRIK_Alpha1P = 0.f;
+
+
+	// First-person: snap the left hand only when a foregrip is mounted.
+
+	// Pack idle poses often already place both hands; FABRIK without a grip can fight that pose.
+
+	FTransform SocketWorld1P;
+
+	float WantAlpha1P = 0.f;
+
+	const bool bWantGripSnap1P =
+
+		Combat->CurrentWeapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip) != nullptr;
+
+	if (bWantGripSnap1P && Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld1P) && IsValid(Mesh1P))
+
+	{
+
+		FABRIK_SocketTransform1P = SocketWorld1P.GetRelativeTransform(Mesh1P->GetComponentTransform());
+
+		WantAlpha1P = 1.f;
+
+	}
+
+	else
+
+	{
+
+		FABRIK_SocketTransform1P = FTransform::Identity;
+
+		WantAlpha1P = 0.f;
+
+	}
+
+
+
+	if (bDisableLeftHandIKDuringReload
+
+		&& Combat->CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
+
+	{
+
+		WantAlpha1P = 0.f;
+
+	}
+
+	if (!DisableLeftHandIKCurveName.IsNone() && IsValid(Mesh1P))
+
+	{
+
+		if (UAnimInstance* Anim1P = Mesh1P->GetAnimInstance())
+
+		{
+
+			const float DisableCurve = Anim1P->GetCurveValue(DisableLeftHandIKCurveName);
+
+			if (DisableCurve > 0.01f)
+
+			{
+
+				WantAlpha1P = 0.f;
+
+			}
+
+			const float MaskGrip = Anim1P->GetCurveValue(TEXT("Mask_Grip"));
+
+			if (MaskGrip > 0.01f)
+
+			{
+
+				WantAlpha1P *= FMath::Clamp(1.f - MaskGrip, 0.f, 1.f);
+
+			}
+
+		}
+
+	}
+
+
+
+	FABRIK_Alpha1P = FMath::Lerp(FABRIK_Alpha1P, WantAlpha1P, Blend);
+
 }
-void AShooterCharacter::ConfigureAimTickOrder()
+
+
+
+void AShooterCharacter::DrawWeaponAttachDebug() const
+
 {
+
+	UWorld* World = GetWorld();
+
+	AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+
+	USkeletalMeshComponent* Arms = Mesh1P;
+
+	if (!World)
+
+	{
+
+		return;
+
+	}
+
+
+
+	auto DrawAxis = [World](const FTransform& Xf, float Size, const FColor& Color)
+
+	{
+
+		const FVector Loc = Xf.GetLocation();
+
+		DrawDebugCoordinateSystem(World, Loc, Xf.Rotator(), Size, false, 0.f, 255);
+
+		DrawDebugSphere(World, Loc, 1.6f, 8, Color, false, 0.f, 255);
+
+	};
+
+
+
+	FString Line = TEXT("[WeaponDebug]\n");
+
+	if (!IsValid(Weapon) || !IsValid(Arms))
+
+	{
+
+		Line += TEXT("no weapon or Mesh1P");
+
+		if (GEngine) GEngine->AddOnScreenDebugMessage(0x57415431, 0.f, FColor::Red, Line);
+
+		return;
+
+	}
+
+
+
+	USkeletalMeshComponent* Gun = Weapon->GetMesh1P();
+
+	const FName Sock = IsValid(Gun) ? Gun->GetAttachSocketName() : NAME_None;
+
+	const USceneComponent* Parent = IsValid(Gun) ? Gun->GetAttachParent() : nullptr;
+
+	Line += FString::Printf(TEXT("gun=%s type=%s custom1P=%d\n"),
+
+		*GetNameSafe(Weapon), *Weapon->WeaponType.ToString(), Weapon->UsesCustomMesh1PAttach() ? 1 : 0);
+
+	Line += FString::Printf(TEXT("1P attach sock='%s' parent=%s\n"),
+
+		*Sock.ToString(), *GetNameSafe(Parent ? Parent->GetOwner() : nullptr));
+
+	Line += FString::Printf(TEXT("arms mesh=%s\n"), *GetNameSafe(Arms->GetSkeletalMeshAsset()));
+
+	Line += FString::Printf(TEXT("idle=%s aim=%s\n"),
+
+		*GetNameSafe(Weapon->ArmsIdleSequence), *GetNameSafe(Weapon->ArmsAimIdleSequence));
+
+	Line += FString::Printf(TEXT("FABRIK a1P=%.2f a3P=%.2f grip=%s\n"),
+
+		FABRIK_Alpha1P, FABRIK_Alpha, *GetNameSafe(Weapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip)));
+
+
+
+	if (IsValid(Gun))
+
+	{
+
+		DrawAxis(Gun->GetComponentTransform(), 8.f, FColor::Yellow);
+
+		static const FName Marks[] = {
+
+			TEXT("GripSocket"), TEXT("AimPoint"), TEXT("MuzzleSocket"), TEXT("FABRIK")
+
+		};
+
+		for (const FName Mark : Marks)
+
+		{
+
+			if (Gun->DoesSocketExist(Mark))
+
+			{
+
+				DrawAxis(Gun->GetSocketTransform(Mark), 6.f, FColor::Cyan);
+
+			}
+
+		}
+
+	}
+
+
+
+	if (!Sock.IsNone() && Arms->DoesSocketExist(Sock))
+
+	{
+
+		DrawAxis(Arms->GetSocketTransform(Sock), 10.f, FColor::Green);
+
+	}
+
+	else if (!Sock.IsNone() && Arms->GetBoneIndex(Sock) != INDEX_NONE)
+
+	{
+
+		DrawAxis(Arms->GetBoneTransform(Arms->GetBoneIndex(Sock)), 10.f, FColor::Green);
+
+	}
+
+
+
+	FTransform GripWorld;
+
+	if (Weapon->GetFabrikWorldTransform(true, GripWorld))
+
+	{
+
+		DrawAxis(GripWorld, 7.f, FColor::Magenta);
+
+		Line += TEXT("FABRIK target OK (magenta)\n");
+
+	}
+
+	else
+
+	{
+
+		Line += TEXT("FABRIK target MISSING\n");
+
+	}
+
+
+
+	Line += TEXT("Yel=gun origin  Grn=arm attach  Cyan=gun sockets  Mag=hand IK");
+
+	if (GEngine)
+
+	{
+
+		GEngine->AddOnScreenDebugMessage(0x57415431, 0.f, FColor::White, Line);
+
+	}
+
+}
+
+void AShooterCharacter::ConfigureAimTickOrder()
+
+{
+
 	// The aim socket follows the arm bones, so read it after Mesh1P animates.
 	if (IsValid(Mesh1P))
 	{
@@ -5381,20 +5645,116 @@ void AShooterCharacter::EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkelet
 			}
 		}
 	}
+
 	AliasSocketWeapon(Copies);
+
 	ApplyGripSocketCopies(ArmsMesh, Copies, TEXT("Arms1P"), *GetNameSafe(ArmsSource));
+
+	EnsureAnimatedGunAttachSockets(ArmsMesh);
+
 }
 
+
+
+void AShooterCharacter::EnsureAnimatedGunAttachSockets(USkeletalMesh* ArmsMesh)
+
+{
+
+	// NEVER promote ik_hand_gun (or VB pivots) to a same-named mesh socket.
+
+	// AttachToComponent prefers sockets over bones; a socket parented to ik_hand_root
+
+	// freezes the gun at rest pose while the animated bone (and RAR SOCKET_Weapon on
+
+	// that bone) keep moving — KINEMATION guns then look untunable.
+
+	// Strip any mesh-only shadow sockets left from older sessions.
+
+	if (!IsValid(ArmsMesh))
+
+	{
+
+		return;
+
+	}
+
+
+
+	TArray<TObjectPtr<USkeletalMeshSocket>>& Sockets = ArmsMesh->GetMeshOnlySocketList();
+
+	const int32 Removed = Sockets.RemoveAll([ArmsMesh](const TObjectPtr<USkeletalMeshSocket>& Socket)
+
+	{
+
+		if (!IsValid(Socket) || Socket->GetOuter() != ArmsMesh)
+
+		{
+
+			return false;
+
+		}
+
+		const FName N = Socket->SocketName;
+
+		if (N != FName(TEXT("ik_hand_gun"))
+
+			&& N != FName(TEXT("VB ik_hand_gun"))
+
+			&& N != FName(TEXT("VB ik_hand_gun_pivot")))
+
+		{
+
+			return false;
+
+		}
+
+		UE_LOG(LogTemp, Warning,
+
+			TEXT("[GunAttach] removed shadow socket '%s' on %s (was parent=%s) — attach must use the animated bone"),
+
+			*N.ToString(), *GetNameSafe(ArmsMesh), *Socket->BoneName.ToString());
+
+		return true;
+
+	});
+
+	if (Removed > 0)
+
+	{
+
+		UE_LOG(LogTemp, Warning, TEXT("[GunAttach] stripped %d shadow gun-attach socket(s) from %s"),
+
+			Removed, *GetNameSafe(ArmsMesh));
+
+	}
+
+}
+
+
+
 void AShooterCharacter::ApplyFactionArms1P()
+
 {
 	if (!bUseBanditsArms1P || !IsValid(Mesh1P))
 	{
 		return;
+
 	}
 
+
+
+	// Always finish the Bandits/arms swap; AttachToOwingPawn runs again at the end of this function.
+
+	// (An older early-out for UsesCustomMesh1PAttach skipped the swap and left guns on a bad attach target.)
+
+
+
 	if (!bCapturedDefaultArms1P)
+
 	{
+
 		USkeletalMesh* CurArms = Mesh1P->GetSkeletalMeshAsset();
+
 		DefaultArmsMesh1PAsset = IsBanditsSkelMesh(CurArms) ? LoadCanonicalArms1PSource() : CurArms;
 		if (!IsValid(DefaultArmsMesh1PAsset))
 		{
@@ -5434,11 +5794,25 @@ void AShooterCharacter::ApplyFactionArms1P()
 	const bool bBanditsTarget = (FactionLook == ECharacterLookFaction::Criminal || FactionLook == ECharacterLookFaction::Police);
 	if (bBanditsTarget)
 	{
+
 		EnsureArms1PGripSockets(WantMesh, SourceForSockets);
+
 	}
 
+	else
+
+	{
+
+		EnsureAnimatedGunAttachSockets(WantMesh);
+
+	}
+
+
+
 	USkeleton* WantSkel = WantMesh->GetSkeleton();
+
 	USkeleton* CurSkel = Mesh1P->GetSkeletalMeshAsset() ? Mesh1P->GetSkeletalMeshAsset()->GetSkeleton() : nullptr;
+
 #if WITH_EDITOR
 	if (IsValid(WantSkel) && IsValid(CurSkel) && WantSkel != CurSkel)
 	{

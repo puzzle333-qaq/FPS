@@ -137,15 +137,26 @@ public:
 
 
 	UPROPERTY(BlueprintReadOnly,Category = "FPS|FABRIK")
+
 	FTransform FABRIK_SocketTransform;
 
-	// First-person left-hand FABRIK target (runtime unused). C++ keeps Identity/Alpha=0; grip from hold anims.
+
+
+	// First-person left-hand FABRIK target in Mesh1P component space (GripSocket snap).
+
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
+
 	FTransform FABRIK_SocketTransform1P;
 
-	// First-person FABRIK alpha: always 0 (design: no 1P FABRIK; grip from per-weapon hold anims).
+
+
+	// First-person FABRIK alpha. 1 when a grip/weapon hand socket exists; 0 while reloading / melee.
+
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
+
 	float FABRIK_Alpha1P = 0.f;
+
+
 
 	// 第三人称左手 FABRIK 强度。近战为 0，ABP 的 FABRIK Alpha 应绑这个。
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
@@ -161,10 +172,22 @@ public:
 
 	// 左手 IK 淡入淡出速度（越大越快，10 大约 0.2~0.3 秒）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FABRIK", meta = (ClampMin = "0"))
+
 	float LeftHandIKBlendSpeed = 10.f;
 
+
+
+	void SetWeaponAttachDebug(bool bEnabled) { bWeaponAttachDebug = bEnabled; }
+
+	void DrawWeaponAttachDebug() const;
+
+
+
 	UFUNCTION(BlueprintCallable)
+
 	bool HasCurrentWeapon() const;
+
+
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void EquipMainWeapon();
@@ -1270,10 +1293,18 @@ private:
 	void UpdateAimSocketAlignment(float DeltaTime);
 	float GetAimTimelineAlpha(float DeltaTime);
 	// 本地玩家每帧把镜头 FOV 插值到开镜目标或默认值
+
 	void UpdateAimFieldOfView(float DeltaTime);
 
+
+
+	bool bWeaponAttachDebug = false;
+
 	bool bWeaponFirstReplicated;
+
 	FRotator StartingAimRotation;
+
+
 
 	float InterpAO_Yaw;
 	float AimAlignAlpha = 0.f;
@@ -1356,11 +1387,21 @@ private:
 
 	void ApplyFactionLookMeshes();
 	void ApplyFactionArms1P();
+
 	void ApplyFactionSleeves1P();
+
 	void EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkeletalMesh* SourceMesh);
+
+	/** Strip mesh-only sockets that shadow animated gun bones (ik_hand_gun). Never promote those bones. */
+
+	void EnsureAnimatedGunAttachSockets(USkeletalMesh* ArmsMesh);
+
 	/** Copy Manny/default Mesh3P grip sockets onto Bandits body (weapon_r / RifleSocket* / PistolSocket*). */
+
 	void EnsureMesh3PGripSockets(USkeletalMesh* BodyMesh, USkeletalMesh* SourceMesh, USkeletalMeshComponent* LiveSourceComp = nullptr);
+
 	void EnsureFactionLookDefaults();
+
 	void SetModularLookVisible(bool bVisible);
 	USkeletalMesh* LoadSoftMesh(const TSoftObjectPtr<USkeletalMesh>& Soft) const;
 	UMaterialInterface* LoadSoftMaterial(const TSoftObjectPtr<UMaterialInterface>& Soft) const;

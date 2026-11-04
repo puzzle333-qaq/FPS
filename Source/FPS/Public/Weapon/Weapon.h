@@ -7,10 +7,18 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Engine/Texture2D.h"
+
 #include "Interface/RecoilModifierInterface.h"
+
 #include "Weapon/AttachmentData.h"
+
+#include "WeaponData.h"
+
 #include "Animation/AnimNotifies/AnimNotify.h"
+
 #include "Weapon.generated.h"
+
+
 
 class UMaterialInstanceDynamic;
 class UStaticMeshComponent;
@@ -291,25 +299,71 @@ public:
 
 
 
+
 	void AttachToOwingPawn();
+
 	void AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName);
+
+
+
+	/** True when Mesh1PAttachSocket is set (data-driven 1P mount, not GripPoints). */
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Attach")
+
+	bool UsesCustomMesh1PAttach() const;
+
+
+
+	/** Resolve Mesh1PAttachSocket (or fallbacks) on the arms mesh. NAME_None if unused. */
+
+	FName ResolveMesh1PAttachPoint(const USkeletalMeshComponent* PawnMesh1P) const;
+
+
+
+	/** Grip attachment GripPoseAnim, or null. */
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment|Grip")
+
+	UAnimSequence* GetGripPoseAnim() const;
+
 	void DetachFromPawn();
+
 	void SetHiddenForHeal(bool bHideWeapon);
+
 	void WeaponTrace(FHitResult& OutHit, float TraceLength);
+
 
 	/** 近战：从刀刃/武器插槽做短距碰撞查询，不用镜头射线。 */
 	void WeaponMeleeHit(FHitResult& OutHit);
 
+
 	/** 弹匣骨骼配件：换弹时播 MagReloadAnim（与手臂 reload 同步）。 */
+
 	void PlayMagazineReload(EReloadType ReloadType);
-	/** Show SOCKET_Magazine_Reserve SM for the whole reload (Infima dual-hand look). */
+
+	/** Show reserve mag SM for the whole reload when ReserveMagazineSocketName exists. */
+
 	void ShowReserveMagazineForReload();
+
 	/** Hide reserve + clear reload dual-mag flag (reload end / re-attach). */
+
 	void FinishMagazineReloadVisuals();
+
 	USkeletalMeshComponent* GetMagazineSkelMesh1P() const;
 
+	/** Hide/show Ammo_* bones (KINEMATION) and swap Empty/Full mag SM (RAR) from Ammo. */
+
+	void UpdateMagazineAmmoVisuals();
+
+	/** Resolve double-mag: TR15 keeps body mag (drop Mag DA); Mag-DA guns hide body mag bones and keep Mag DA visible. */
+
+	void ResolveMagazineVisualDuplicates();
+
 	// 双管霰弹：手臂换弹蒙太奇的 Bullet1Spawn / Bullet1Delete / Bullet2Spawn / Bullet2Delete。
+
 	void HandleChamberShellNotify(FName NotifyName);
+
+
 
 	// 弹匣配件 MagazineCapacity > 0 时覆盖 MagCapacity，否则回到枪蓝图上的容量。
 	void ApplyMagazineCapacity();
@@ -348,11 +402,91 @@ public:
 	TObjectPtr<USkeletalMesh> OverrideArmsMesh1P;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Arms")
+
 	TSubclassOf<UAnimInstance> OverrideArmsAnimClass;
 
-	/** Mesh1P is RootComponent - BP RelativeRotation on root unreliable after AttachToComponent.
-	 *  When true, apply Mesh*AttachRelativeRotation/Location after attach (keeps Authored scale). */
+
+
+	/** 1P attach bone/socket on arms. NAME_None = GripPoints path (RAR/AK).
+
+	 *  Prefer SOCKET_Weapon (same as RAR) or the animated ik_hand_gun BONE (never a shadow socket).
+
+	 *  Default identity — KINEMATION meshes match ik_hand_gun / SOCKET_Weapon like RAR. */
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+
+	FName Mesh1PAttachSocket = NAME_None;
+
+
+
+	/** Relative correction after SnapToTarget onto Mesh1PAttachSocket (socket/bone space). */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+
+	FRotator Mesh1PAttachRotation = FRotator::ZeroRotator;
+
+
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+
+	FVector Mesh1PAttachLocation = FVector::ZeroVector;
+
+
+
+	/** When Mesh1PAttachSocket is set, bake rest offset from VB ik_hand_gun_pivot if that bone exists on arms. */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+
+	bool bMesh1PAttachUsePivotOffset = true;
+
+
+
+	/** Body muzzle socket when no muzzle/barrel attachment provides one. RAR default Muzzle; pack guns often MuzzleSocket. */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sockets")
+
+	FName MuzzleSocketName = TEXT("Muzzle");
+
+
+
+	/** Preferred left-hand FABRIK socket on the weapon body when no grip is mounted. */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sockets")
+
+	FName FabrikSocketName = NAME_None;
+
+
+
+	/** Optional magazine mount name used when AttachmentSlots Mag SocketName is empty. */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sockets")
+
+	FName MagazineSocketName = NAME_None;
+
+
+
+	/** KINEMATION mag skel bones Ammo_001..Ammo_N. Empty string disables bone sync. */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|MagazineVisual")
+
+	FName MagazineAmmoBonePrefix = TEXT("Ammo_");
+
+
+
+	/** Dual-mag reserve socket (Infima-style). Dual-mag visuals only run if this socket exists on Mesh1P. */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sockets")
+
+	FName ReserveMagazineSocketName = TEXT("SOCKET_Magazine_Reserve");
+
+
+
+	/** Mesh1P is RootComponent - BP RelativeRotation on root unreliable after AttachToComponent.
+
+	 *  When true, apply Mesh*AttachRelativeRotation/Location after attach (keeps Authored scale). */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+
 	bool bUseMeshAttachRelativeRotation = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach", meta = (EditCondition = "bUseMeshAttachRelativeRotation"))
@@ -371,12 +505,45 @@ public:
 	/** Re-apply authored + Mesh*AttachRelative* after AttachToComponent (Mesh1P is root). */
 	void ApplyMeshAttachRelative(USkeletalMeshComponent* WeaponMesh, bool bFirstPerson);
 
+
+
 	// Sequence fallbacks when DA montages are empty (PlaySlotAnimationAsDynamicMontage / PlayAnimation).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
-	TObjectPtr<UAnimSequence> ArmsFireSequence;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+
+	TObjectPtr<UAnimSequence> ArmsIdleSequence;
+
+
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+
+	TObjectPtr<UAnimSequence> ArmsAimIdleSequence;
+
+
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+
+	TObjectPtr<UAnimSequence> ArmsSprintSequence;
+
+
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+
+	TObjectPtr<UAnimSequence> ArmsFireSequence;
+
+
+
+	/** Overlay weapon-authored arm clips onto DA FPlayerAnim. Used when DA has no row for WeaponType. */
+
+	void ApplyAuthoredArmAnims(FPlayerAnim& InOut) const;
+
+
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+
 	TObjectPtr<UAnimSequence> ArmsFireAimSequence;
+
+
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
 	TObjectPtr<UAnimSequence> ArmsReloadEmptySequence;
@@ -687,10 +854,20 @@ protected:
 private:
 
 
+
+
 	void SetMeshVisibility(APawn* OwningPawn);
+
+	/** KIN pack: Body mesh swap + soft-load RT_ arms seqs when BP still points at Manny skeleton. */
+
+	void EnsureKinemationSharedArmsAssets();
+
 	void CaptureAuthoredMeshRelative();
 
+
+
 	// 双管霰弹弹壳。插槽挂在没蒙皮的 Bullet 骨上，不强制刷新的话运行时会停在绑定姿势。
+
 	void SetupChamberShells();
 	void ForceChamberSocketBones(USkeletalMeshComponent* Mesh) const;
 	void ApplyChamberShellVisibility() const;
@@ -782,12 +959,19 @@ private:
 	FTransform AuthoredMesh3PRelative = FTransform::Identity;
 	bool bCapturedAuthoredRelative = false;
 
+
 	int32 Sequence;
 
-	/** While true, SetMeshVisibility must not hide SOCKET_Magazine_Reserve (tactical dual-mag). */
+
+
+	/** While true, SetMeshVisibility must not hide the reserve mag (tactical dual-mag). */
+
 	bool bReloadReserveMagVisible = false;
 
+
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon", meta = (AllowPrivateAccess = "true"))
+
 	TObjectPtr<UMaterialInterface> ReticleMaterial;
 
 	UPROPERTY()

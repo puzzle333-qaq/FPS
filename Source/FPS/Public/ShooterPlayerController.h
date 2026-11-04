@@ -68,11 +68,25 @@ public:
 	float GetSprintToAdsDelay() const { return SprintToAdsDelay; }
 
 	UFUNCTION(BlueprintCallable)
+
 	void StopSprinting();
 
-	// PIE/debug: console `Armor 0|1|2` (None/Light/Heavy).
+
+
+	// PIE/debug: console `WeaponAttachDebug 1` — draw 1P attach / GripSocket / FABRIK and print pose/anim.
+
 	UFUNCTION(Exec)
+
+	void WeaponAttachDebug(int32 Enabled = 1);
+
+
+
+	// PIE/debug: console `Armor 0|1|2` (None/Light/Heavy).
+
+	UFUNCTION(Exec)
+
 	void Armor(int32 Level);
+
 
 	// PIE/debug: console `FactionLook 0|1|2` (DefaultManny/Criminal/Police).
 	UFUNCTION(Exec)
@@ -246,11 +260,18 @@ public:
 
 	// ---------- 局外配装 ----------
 	// 服务器上已校验的配装；SpawnInventory 读它。控制器跨重生存在，所以重生也会用
+
 	const FLoadoutPreset* GetSubmittedLoadout() const { return bHasSubmittedLoadout ? &SubmittedLoadout : nullptr; }
 
-	// 允许进局使用的枪（空 = 不限制）
+
+
+	// 允许进局使用的枪（空 = 不限制）。名单里没有的，只要类在 /Game/FPS/Weapon/ 下也会放行（改枪台新枪不用每次改这份名单）。
+
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Loadout")
+
 	TArray<TSubclassOf<AWeapon>> AllowedLoadoutWeapons;
+
+
 
 	UFUNCTION(Server, Reliable)
 	void Server_SubmitLoadout(const FLoadoutPreset& Loadout);

@@ -786,12 +786,35 @@ void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadou
 	const int32 MaxLong = 2;
 	for (const FWeaponPreset& Preset : Loadout.Weapons)
 	{
+
 		if (Clean.Weapons.Num() >= 4) break;
+
 		if (!Preset.WeaponClass || !Preset.WeaponClass->IsChildOf(AWeapon::StaticClass())) continue;
-		if (AllowedLoadoutWeapons.Num() > 0 && !AllowedLoadoutWeapons.Contains(Preset.WeaponClass)) continue;
+
+		const bool bOnAllowList = AllowedLoadoutWeapons.Num() == 0
+
+			|| AllowedLoadoutWeapons.Contains(Preset.WeaponClass)
+
+			|| Preset.WeaponClass->GetPathName().StartsWith(TEXT("/Game/FPS/Weapon/"));
+
+		if (!bOnAllowList)
+
+		{
+
+			UE_LOG(LogTemp, Warning, TEXT("[Loadout] rejected %s: not in AllowedLoadoutWeapons and outside /Game/FPS/Weapon/."),
+
+				*GetNameSafe(Preset.WeaponClass));
+
+			continue;
+
+		}
+
 		const AWeapon* CDO = Preset.WeaponClass->GetDefaultObject<AWeapon>();
+
 		if (CDO->WeaponKind == EWeaponKind::Bomb) continue;
+
 		if (CDO->WeaponKind == EWeaponKind::LongGun)
+
 		{
 			if (LongGunCount >= MaxLong) continue;
 			++LongGunCount;
@@ -1599,11 +1622,51 @@ void AShooterPlayerController::Armor(int32 Level)
 			FString::Printf(TEXT("BodyArmor -> %d (0=None 1=Light 2=Heavy)"), static_cast<int32>(Type)));
 	}
 	UE_LOG(LogTemp, Log, TEXT("[Armor] set to %d"), static_cast<int32>(Type));
+
 }
 
-void AShooterPlayerController::FactionLook(int32 Level)
+
+
+void AShooterPlayerController::WeaponAttachDebug(int32 Enabled)
+
 {
+
 	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+
+	if (!IsValid(Char))
+
+	{
+
+		UE_LOG(LogTemp, Warning, TEXT("[WeaponDebug] No ShooterCharacter pawn"));
+
+		return;
+
+	}
+
+	const bool bOn = Enabled != 0;
+
+	Char->SetWeaponAttachDebug(bOn);
+
+	if (GEngine)
+
+	{
+
+		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Green,
+
+			bOn ? TEXT("WeaponAttachDebug ON — 看挂点十字和左上角文字") : TEXT("WeaponAttachDebug OFF"));
+
+	}
+
+}
+
+
+
+void AShooterPlayerController::FactionLook(int32 Level)
+
+{
+
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+
 	if (!IsValid(Char))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Look] No ShooterCharacter pawn"));
