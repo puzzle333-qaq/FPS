@@ -1,7 +1,11 @@
-#include "ShooterPlayerController.h"
+﻿#include "ShooterPlayerController.h"
+
 #include "Game/PoliceCriminalGameMode.h"
+
 #include "Game/PoliceCriminalGameState.h"
+
 #include "Game/HostageActor.h"
+
 #include "Game/ShooterPlayerState.h"
 #include "ShooterCharacter.h"
 
@@ -164,38 +168,51 @@ void AShooterPlayerController::SetupInputComponent()
 	if (JumpAction)
 	{
 		ShooterInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ThisClass::Input_Jump);
-	}
-	EnsureCrouchInput();
-	// Legacy IA_Crouch (IMC_Shooter: Left Ctrl toggle) is NOT bound when the new C-toggle / Ctrl-hold actions exist,
-	// so Ctrl can never double-trigger a toggle. (Runtime IMC priority 2 also consumes Ctrl/C.)
-	if (CrouchAction && !CrouchToggleAction && !CrouchHoldAction)
-	{
-		// Legacy IA_Crouch (IMC_Shooter). Its key is consumed if it is C or Left Ctrl (runtime IMC priority 2).
-		ShooterInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &ThisClass::Input_Crouch);
-	}
-	if (CrouchToggleAction)
-	{
-		ShooterInputComponent->BindAction(CrouchToggleAction, ETriggerEvent::Started, this, &ThisClass::Input_Crouch);
-	}
-	if (CrouchHoldAction)
-	{
-		ShooterInputComponent->BindAction(CrouchHoldAction, ETriggerEvent::Started, this, &ThisClass::Input_CrouchHold_Started);
-		ShooterInputComponent->BindAction(CrouchHoldAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchHold_Completed);
-	}
-	if (SprintAction)
-	{
-		ShooterInputComponent->BindAction(SprintAction, ETriggerEvent::Started,this, &ThisClass::Input_Sprint);
-	}
-	if (WalkAction)
-	{
-		ShooterInputComponent->BindAction(WalkAction, ETriggerEvent::Started, this, &ThisClass::Input_Walk);
-	}
-	if (FlashlightAction)
-	{
-		ShooterInputComponent->BindAction(FlashlightAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFlashlight);
+
 	}
 
+	EnsureCrouchInput();
+
+	// C 切换蹲已去掉。只保留 Left Ctrl 按住蹲。旧 IA_Crouch / IA_Walk / I 键战术不再绑定。
+
+	if (CrouchHoldAction)
+
+	{
+
+		ShooterInputComponent->BindAction(CrouchHoldAction, ETriggerEvent::Started, this, &ThisClass::Input_CrouchHold_Started);
+
+		ShooterInputComponent->BindAction(CrouchHoldAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchHold_Completed);
+
+		ShooterInputComponent->BindAction(CrouchHoldAction, ETriggerEvent::Canceled, this, &ThisClass::Input_CrouchHold_Completed);
+
+	}
+
+	if (SprintAction)
+
+	{
+
+		ShooterInputComponent->BindAction(SprintAction, ETriggerEvent::Started,this, &ThisClass::Input_Sprint);
+
+	}
+
+	EnsureTacticalDeviceInput();
+
+	if (TacticalDeviceAction)
+
+	{
+
+		ShooterInputComponent->BindAction(TacticalDeviceAction, ETriggerEvent::Started, this, &ThisClass::Input_TacticalDevice_Started);
+
+		ShooterInputComponent->BindAction(TacticalDeviceAction, ETriggerEvent::Completed, this, &ThisClass::Input_TacticalDevice_Completed);
+
+		ShooterInputComponent->BindAction(TacticalDeviceAction, ETriggerEvent::Canceled, this, &ThisClass::Input_TacticalDevice_Completed);
+
+	}
+
+
+
 	EnsureNVGInput();
+
 	EnsureWatchInput();
 	if (NVGAction && !bNVGBound)
 	{
@@ -219,21 +236,147 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		ShooterInputComponent->BindAction(PauseMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_TogglePauseMenu);
 	}
+
 }
 
-void AShooterPlayerController::Input_ToggleFlashlight()
+
+
+void AShooterPlayerController::EnsureTacticalDeviceInput()
+
 {
-	if (!bPawnAlive)return;
-	// 控制器只管“按了键”，真正开关灯交给 CombatComponent -> 服务器 -> 当前武器
-	if (UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn()))
+
+	if (!IsLocalController()) return;
+
+	if (!TacticalDeviceAction)
+
 	{
-		Combat->Initiate_ToggleFlashlight();
+
+		TacticalDeviceAction = NewObject<UInputAction>(this, TEXT("IA_TacticalDevice_Runtime"));
+
+		TacticalDeviceAction->ValueType = EInputActionValueType::Boolean;
+
 	}
+
+	if (!TacticalDeviceIMC)
+
+	{
+
+		TacticalDeviceIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_TacticalDevice_Runtime"));
+
+		// 鼠标上侧键：靠前的侧键（Mouse Button 4）。点按开关当前设备，按住切换镭射/手电。
+
+		TacticalDeviceIMC->MapKey(TacticalDeviceAction, EKeys::ThumbMouseButton);
+
+	}
+
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+
+	if (IsValid(Subsystem) && TacticalDeviceIMC && !Subsystem->HasMappingContext(TacticalDeviceIMC))
+
+	{
+
+		Subsystem->AddMappingContext(TacticalDeviceIMC, 2);
+
+	}
+
 }
+
+
+
+void AShooterPlayerController::Input_TacticalDevice_Started()
+
+{
+
+	if (!bPawnAlive) return;
+
+	bTacticalDeviceHoldFired = false;
+
+	if (UWorld* World = GetWorld())
+
+	{
+
+		World->GetTimerManager().SetTimer(TacticalDeviceHoldTimer, this, &ThisClass::Input_TacticalDevice_Hold, 0.35f, false);
+
+	}
+
+}
+
+
+
+void AShooterPlayerController::Input_TacticalDevice_Completed()
+
+{
+
+	if (UWorld* World = GetWorld())
+
+	{
+
+		World->GetTimerManager().ClearTimer(TacticalDeviceHoldTimer);
+
+	}
+
+	if (bTacticalDeviceHoldFired || !bPawnAlive) return;
+
+
+
+	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
+
+	if (!IsValid(Combat)) return;
+
+	if (bTacticalDeviceIsLaser)
+
+	{
+
+		Combat->Initiate_ToggleLaser();
+
+	}
+
+	else
+
+	{
+
+		Combat->Initiate_ToggleFlashlight();
+
+	}
+
+}
+
+
+
+void AShooterPlayerController::Input_TacticalDevice_Hold()
+
+{
+
+	bTacticalDeviceHoldFired = true;
+
+	bTacticalDeviceIsLaser = !bTacticalDeviceIsLaser;
+
+	if (GEngine)
+
+	{
+
+		GEngine->AddOnScreenDebugMessage(
+
+			0x74AC,
+
+			1.2f,
+
+			FColor::Yellow,
+
+			bTacticalDeviceIsLaser ? TEXT("战术设备：镭射") : TEXT("战术设备：手电"));
+
+	}
+
+}
+
+
 
 void AShooterPlayerController::EnsureNVGInput()
+
 {
+
 	if (!IsLocalController()) return;
+
 	if (!NVGAction)
 	{
 		NVGAction = NewObject<UInputAction>(this, TEXT("IA_NVG_Runtime"));
@@ -269,31 +412,37 @@ void AShooterPlayerController::Input_ToggleNVG()
 
 
 void AShooterPlayerController::EnsureCrouchInput()
+
 {
+
 	if (!bPawnAlive)return;
-	const bool bNeedToggle = !CrouchToggleAction;
+
 	const bool bNeedHold = !CrouchHoldAction;
-	if (bNeedToggle || bNeedHold)
+
+	if (bNeedHold)
+
 	{
+
 		if (!CrouchRuntimeIMC)
+
 		{
+
 			CrouchRuntimeIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Crouch_Runtime"));
+
 		}
-		if (bNeedToggle)
-		{
-			CrouchToggleAction = NewObject<UInputAction>(this, TEXT("IA_CrouchToggle_Runtime"));
-			CrouchToggleAction->ValueType = EInputActionValueType::Boolean;
-			CrouchRuntimeIMC->MapKey(CrouchToggleAction, EKeys::C);
-		}
-		if (bNeedHold)
-		{
-			CrouchHoldAction = NewObject<UInputAction>(this, TEXT("IA_CrouchHold_Runtime"));
-			CrouchHoldAction->ValueType = EInputActionValueType::Boolean;
-			CrouchRuntimeIMC->MapKey(CrouchHoldAction, EKeys::LeftControl);
-		}
+
+		CrouchHoldAction = NewObject<UInputAction>(this, TEXT("IA_CrouchHold_Runtime"));
+
+		CrouchHoldAction->ValueType = EInputActionValueType::Boolean;
+
+		CrouchRuntimeIMC->MapKey(CrouchHoldAction, EKeys::LeftControl);
+
 	}
+
 	if (!CrouchRuntimeIMC) return;
+
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
+
 	if (IsValid(Subsystem) && !Subsystem->HasMappingContext(CrouchRuntimeIMC))
 	{
 		Subsystem->AddMappingContext(CrouchRuntimeIMC, 2);
@@ -344,11 +493,25 @@ void AShooterPlayerController::Input_CrouchHold_Started()
 void AShooterPlayerController::Input_CrouchHold_Completed()
 {
 	bCrouchHeld = false;
+
 	ACharacter* MyChar = GetCharacter();
+
 	if (!IsValid(MyChar)) return;
-	if (UCharacterMovementComponent* CMC = MyChar->GetCharacterMovement())
+
+	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(MyChar))
+
 	{
+
+		if (Shooter->IsAltPeekCrouching()) return;
+
+	}
+
+	if (UCharacterMovementComponent* CMC = MyChar->GetCharacterMovement())
+
+	{
+
 		// CMC keeps trying to uncrouch every tick and stays crouched while blocked overhead.
+
 		CMC->bWantsToCrouch = false;
 	}
 }
@@ -421,11 +584,23 @@ void AShooterPlayerController::Input_Walk()
 
 void AShooterPlayerController::Input_Move(const FInputActionValue& InputActionValue)
 {
+
 	if (!bPawnAlive)return;
+
 	if (IsMovementLocked()) return;
+
+	// Alt+A / Alt+D 是原地蹲探，不吃移动。
+
+	const bool bAlt = IsInputKeyDown(EKeys::LeftAlt) || IsInputKeyDown(EKeys::RightAlt);
+
+	if (bAlt && (IsInputKeyDown(EKeys::A) || IsInputKeyDown(EKeys::D))) return;
+
 	const FVector2D InputAxisVector = InputActionValue.Get<FVector2D>();
 
+
+
 	const FRotator Rotation = GetControlRotation();
+
 	const FRotator YawRotation(0.f, Rotation.Yaw, 0.f);
 
 	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
@@ -489,13 +664,21 @@ void AShooterPlayerController::ApplyMovementSpeed()
 	{
 		NoteSprintEnded();
 		bIsSprinting = false;
+
 	}
 
+
+
+	bIsWalking = false;
+
 	float Speed = bIsSprinting ? SprintSpeed : RunSpeed;
-	if (bIsWalking) Speed *= WalkSpeedMultiplier;
+
 	if (bAiming)    Speed *= AimSpeedMultiplier;
 
+
+
 	// 站立时角色用 MaxWalkSpeed，蹲下时用 MaxWalkSpeedCrouched，两个都设好
+
 	// 滑铲出口惯性：上限不低于保留速度，避免超速被刹车
 	if (const AShooterCharacter* CarryChar = Cast<AShooterCharacter>(MyCharacter))
 	{
@@ -510,12 +693,17 @@ void AShooterPlayerController::ApplyMovementSpeed()
 		if (LandChar->IsLegInjured() && bIsSprinting)
 		{
 			NoteSprintEnded();
+
 			bIsSprinting = false;
+
 			Speed = RunSpeed;
-			if (bIsWalking) Speed *= WalkSpeedMultiplier;
+
 			if (bAiming) Speed *= AimSpeedMultiplier;
+
 			Speed *= LandChar->GetLandingSpeedMultiplier();
+
 			Speed *= LandChar->GetInjurySpeedMultiplier();
+
 			Speed *= LandChar->GetBandageSpeedMultiplier();
 			Speed *= LandChar->GetArmorSpeedMultiplier();
 		}
@@ -559,11 +747,20 @@ void AShooterPlayerController::Server_SetMovementState_Implementation(bool bNewS
 	if (bNewSprinting && IsValid(Combat) && Combat->IsReloading())
 	{
 		bNewSprinting = false;
+
 	}
+
 	bIsSprinting = bNewSprinting;
-	bIsWalking = bNewWalking;
+
+	(void)bNewWalking;
+
+	bIsWalking = false;
+
 	UpdateMovementSpeed();
+
 }
+
+
 
 void AShooterPlayerController::Client_StopSprint_Implementation()
 {
@@ -1855,5 +2052,10 @@ void AShooterPlayerController::Server_TravelToMatch_Implementation(const FString
 		return;
 	}
 	UE_LOG(LogTemp, Warning, TEXT("[PCMode] TravelToMatch needs PoliceCriminalGameMode"));
+
 }
+
+
+
+
 

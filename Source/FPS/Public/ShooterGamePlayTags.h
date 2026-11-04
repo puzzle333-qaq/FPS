@@ -34,5 +34,7 @@ namespace ShooterTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Grip);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Stock);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Tactical);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Laser);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Flashlight);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Magazine);
 }

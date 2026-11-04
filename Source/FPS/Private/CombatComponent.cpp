@@ -1,4 +1,4 @@
-﻿#include "CombatComponent.h"
+#include "CombatComponent.h"
 
 
 
@@ -289,14 +289,23 @@ void UCombatComponent::SpawnInventory()
 		if (const FWeaponPreset* Preset = SpawnPresets[SpawnIndex])
 		{
 			// 预设里没有的槽先卸掉（必需槽 RemoveAttachment 会拒绝），再装预设里的；EquipAttachment 自己做白名单校验
+
 			for (const FWeaponAttachmentSlot& AttachSlot : Weapon->GetAttachmentSlots())
+
 			{
-				const bool bInPreset = Preset->Attachments.ContainsByPredicate([&AttachSlot](const UAttachmentData* A)
+
+				const bool bInPreset = Preset->Attachments.ContainsByPredicate([Weapon, &AttachSlot](const UAttachmentData* A)
+
 				{
-					return IsValid(A) && A->SlotTag == AttachSlot.SlotTag;
+
+					return IsValid(A) && IsValid(Weapon) && Weapon->GetEquipSlot(A) == AttachSlot.SlotTag;
+
 				});
+
 				if (!bInPreset) Weapon->RemoveAttachment(AttachSlot.SlotTag);
+
 			}
+
 			for (UAttachmentData* Data : Preset->Attachments)
 			{
 				if (IsValid(Data)) Weapon->EquipAttachment(Data);
@@ -429,11 +438,27 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 
 void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
+
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
 	TickRecoil(DeltaTime);
+
+	// MagCheck montage finished naturally — clear inspect state.
+
+	if (ActiveInspectMontage.IsValid() && !IsInspecting())
+
+	{
+
+		CancelInspect();
+
+	}
+
 }
 
+
+
 void UCombatComponent::ResetRecoilPattern()
+
 {
 	RecoilShotIndex = 0;
 }
@@ -1758,12 +1783,19 @@ void UCombatComponent::Initiate_ReloadWeapon(bool bFastDrop)
 		if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwnerPawn->GetController()))
 		{
 			PC->StopSprinting();
+
 		}
+
 	}
-	// 短按 R = EmptyReloadMontage（保留半匣）；长按 R = TacticalReloadMontage（丢匣）
+
+	// single R = Empty (keep mag); double R = Tactical (drop mag); hold R = MagCheck
+
 	const EReloadType ReloadType = bFastDrop ? EReloadType::Tactical : EReloadType::Empty;
 
+
+
 	UAnimMontage* ReloadMontage = nullptr;
+
 	UAnimInstance* AnimInstance = nullptr;
 	const bool bHasMontage = GetReloadMontage(true, ReloadType, ReloadMontage, AnimInstance);
 	const bool bHasSeq = IsValid(CurrentWeapon->ArmsReloadEmptySequence) || IsValid(CurrentWeapon->ArmsReloadTacticalSequence);

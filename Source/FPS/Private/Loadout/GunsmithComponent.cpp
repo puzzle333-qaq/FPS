@@ -56,9 +56,9 @@ bool UGunsmithComponent::SetPreviewWeapon(TSubclassOf<AWeapon> WeaponClass)
 		{
 			for (const FWeaponAttachmentSlot& Slot : PreviewWeapon->GetAttachmentSlots())
 			{
-				const bool bInPreset = Saved.Attachments.ContainsByPredicate([&Slot](const UAttachmentData* A)
+				const bool bInPreset = Saved.Attachments.ContainsByPredicate([this, &Slot](const UAttachmentData* A)
 				{
-					return IsValid(A) && A->SlotTag == Slot.SlotTag;
+					return IsValid(A) && IsValid(PreviewWeapon) && PreviewWeapon->GetEquipSlot(A) == Slot.SlotTag;
 				});
 				if (!bInPreset)
 				{

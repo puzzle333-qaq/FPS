@@ -413,15 +413,39 @@ public:
 	float LeanTarget = 0.f;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Lean")
+
 	float GetLeanAlpha() const { return LeanAlpha; }
 
-	// 1P 相机横移距离（cm）
+
+
+	// 1P 相机横移距离（cm）。Q/E 用这个距离，Alt+A/D 再乘 AltPeekLeanScale。侧倾角度两边一样。
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
+
 	float LeanCameraOffset = 30.f;
 
+
+
+	// Alt+A / Alt+D 往侧面跨出的距离倍数。不改变探头角度。
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean", meta = (ClampMin = "1.0"))
+
+	float AltPeekLeanScale = 2.f;
+
+
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Lean")
+
+	bool IsAltPeekCrouching() const { return bAltPeekCrouch; }
+
+
+
 	// 1P 相机侧倾角度（度）
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
+
 	float LeanRollDegrees = 12.f;
+
 
 	// 插值速度（越大越快）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
@@ -1064,26 +1088,79 @@ private:
 
 	// 当前按住/切换的方向：-1 左 0 无 1 右
 	int32 LeanInputDir = 0;
+
 	bool bLeanLeftHeld = false;
+
 	bool bLeanRightHeld = false;
+
+	bool bAltPeekCrouch = false;
+
+	int32 AltPeekDir = 0;
+
+	float LeanDistanceScale = 1.f;
+
+	double LastFireModeSwitchTime = -1.0;
+
+	void UpdateAltPeek();
+
 	FVector CameraBaseLocation = FVector::ZeroVector;
+
 	FRotator CameraBaseRotation = FRotator::ZeroRotator;
+
 	bool bCameraBaseCaptured = false;
 
+
+
 	UPROPERTY(Transient)
+
 	TObjectPtr<UInputMappingContext> LeanRuntimeIMC;
+
+
+
+	UPROPERTY(Transient)
+
+	TObjectPtr<UInputMappingContext> FireModeRuntimeIMC;
+
+	void EnsureFireModeInput(class UEnhancedInputComponent* InputComp);
+
 	void Input_ReloadWeapon_Started();
+
 	void Input_ReloadWeapon_Completed();
+
 	void Input_ReloadWeapon(); // legacy alias -> Started
+
 	void OnReloadHoldThreshold();
+
+	void OnReloadSingleClickTimeout();
+
+	void ClearReloadGestureTimers();
+
 	FTimerHandle ReloadHoldTimer;
+
+	FTimerHandle ReloadDoubleClickTimer;
+
 	bool bReloadKeyHeld = false;
+
 	bool bReloadHoldTriggered = false;
+
+	bool bReloadAwaitingDouble = false;
+
+	bool bReloadDoubleClick = false;
+
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Reload", meta = (ClampMin = "0.05"))
+
 	float ReloadHoldThreshold = 0.35f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Reload", meta = (ClampMin = "0.05"))
+
+	float ReloadDoubleClickWindow = 0.28f;
+
 	void Input_SwitchFireMode();
+
 	void Input_SwitchZoom();
+
 	// 第 12 步：侧瞄是切档循环里的一档（主镜各档 -> 侧瞄 -> 第一档），不再有单独按键
+
 	void SetCantedAim(bool bNewCanted);
 	// 侧瞄时 Mesh1P 的相对旋转和位置（让侧瞄插槽正对屏幕中心）。算不出返回 false
 	bool ComputeCantedMeshTransform(FQuat& OutRelRotation, FVector& OutRelLocation);

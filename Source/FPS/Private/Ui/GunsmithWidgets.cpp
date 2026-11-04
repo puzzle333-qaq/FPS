@@ -40,7 +40,7 @@ FText UGunsmithCategoryItem::GetSlotDisplayName(FGameplayTag Tag)
 		{TEXT("Barrel"), TEXT("枪管")}, {TEXT("Muzzle"), TEXT("枪口")}, {TEXT("Optic"), TEXT("瞄具")},
 		{TEXT("Stock"), TEXT("枪托")}, {TEXT("Grip"), TEXT("握把")}, {TEXT("Magazine"), TEXT("弹匣")},
 		{TEXT("Handguard"), TEXT("护木")}, {TEXT("Tactical"), TEXT("战术")}, {TEXT("Sight"), TEXT("机瞄")},
-		{TEXT("Underbarrel"), TEXT("下挂")}, {TEXT("Laser"), TEXT("激光")} };
+		{TEXT("Underbarrel"), TEXT("下挂")}, {TEXT("Laser"), TEXT("镭射")}, {TEXT("Flashlight"), TEXT("手电")} };
 	if (const FString* Found = Cn.Find(Name)) return FText::FromString(*Found);
 	return FText::FromString(Name);
 }

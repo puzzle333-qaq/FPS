@@ -1278,11 +1278,21 @@ void AWeapon::BeginPlay()
 	if (AuthoredMagCapacity <= 0)
 	{
 		AuthoredMagCapacity = MagCapacity;
+
 	}
 
+
+
+	EnsureDeviceSlots();
+
+
+
 	// 默认配件只由服务器装，客户端通过同步拿到
+
 	if (HasAuthority())
+
 	{
+
 		TSet<FGameplayTag> SeenSlots;
 		// 每个槽位装上自己的默认配件
 		for (const FWeaponAttachmentSlot& Slot : AttachmentSlots)
@@ -1335,16 +1345,27 @@ bool AWeapon::EquipAttachment(UAttachmentData* Attachment)
 		UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s rejected %s: no slot '%s', not in AllowedAttachments, or slot locked by %s."),
 			*GetName(), *GetNameSafe(Attachment), *Attachment->SlotTag.ToString(), *GetNameSafe(GetSlotBlocker(Attachment->SlotTag)));
 		return false;
+
 	}
 
-	// 同一个槽位只能有一个：先把旧的去掉
-	const FGameplayTag NewSlot = Attachment->SlotTag;
-	EquippedAttachments.RemoveAll([NewSlot](const UAttachmentData* Existing)
+
+
+	// 同一个槽位只能有一个：镭射/手电按拆开后的槽算，其它仍按 SlotTag
+
+	const FGameplayTag NewSlot = GetEquipSlot(Attachment);
+
+	EquippedAttachments.RemoveAll([this, NewSlot](const UAttachmentData* Existing)
+
 	{
-		return !IsValid(Existing) || Existing->SlotTag == NewSlot;
+
+		return !IsValid(Existing) || GetEquipSlot(Existing) == NewSlot;
+
 	});
+
 	// 新配件锁住的槽：已装的卸下（例：换短护木自动卸握把）
+
 	if (!Attachment->BlockedSlots.IsEmpty())
+
 	{
 		EquippedAttachments.RemoveAll([Attachment](const UAttachmentData* Existing)
 		{
@@ -1377,13 +1398,22 @@ bool AWeapon::RemoveAttachment(FGameplayTag SlotTag)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s: slot '%s' is required and cannot be emptied."), *GetName(), *SlotTag.ToString());
 		return false;
+
 	}
 
-	const int32 Removed = EquippedAttachments.RemoveAll([SlotTag](const UAttachmentData* Existing)
+
+
+	const int32 Removed = EquippedAttachments.RemoveAll([this, SlotTag](const UAttachmentData* Existing)
+
 	{
-		return !IsValid(Existing) || Existing->SlotTag == SlotTag;
+
+		return !IsValid(Existing) || GetEquipSlot(Existing) == SlotTag;
+
 	});
+
 	if (Removed == 0) return false;
+
+
 
 	if (!HasFlashlight())
 	{
@@ -1399,28 +1429,219 @@ bool AWeapon::RemoveAttachment(FGameplayTag SlotTag)
 	return true;
 }
 
-void AWeapon::ToggleFlashlight()
-{
-	// 第 12 步：战术键同时开关手电和激光（只有激光时也能开关激光）
-	const bool bHasLight = HasFlashlight();
-	const bool bHasLaser = HasLaser();
-	if (!HasAuthority() || (!bHasLight && !bHasLaser)) return;
 
-	const bool bNewOn = !(bHasLight ? bFlashlightOn : bLaserOn);
-	if (bHasLight)
-	{
-		bFlashlightOn = bNewOn;
-		OnRep_FlashlightOn();   // 服务器自己也要亮灯
-	}
-	if (bHasLaser)
-	{
-		bLaserOn = bNewOn;
-		OnRep_LaserOn();
-	}
+void AWeapon::ToggleFlashlight()
+
+{
+
+	if (!HasAuthority() || !HasFlashlight()) return;
+
+
+
+	bFlashlightOn = !bFlashlightOn;
+
+	OnRep_FlashlightOn();
+
 	ForceNetUpdate();
+
 }
 
+
+
+void AWeapon::EnsureDeviceSlots()
+
+{
+
+	OpticTrimT1025::ConfigureOpticsAndTrimAllowlists();
+
+
+
+	if (bDeviceSlotsReady) return;
+
+	bDeviceSlotsReady = true;
+
+
+
+	const int32 TacIndex = AttachmentSlots.IndexOfByPredicate([](const FWeaponAttachmentSlot& Slot)
+
+	{
+
+		return Slot.SlotTag.MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Tactical);
+
+	});
+
+	if (TacIndex == INDEX_NONE) return;
+
+	if (FindSlot(ShooterTags::Tag_Attachment_Slot_Laser) || FindSlot(ShooterTags::Tag_Attachment_Slot_Flashlight))
+
+	{
+
+		return;
+
+	}
+
+
+
+	const FWeaponAttachmentSlot Tac = AttachmentSlots[TacIndex];
+
+	FWeaponAttachmentSlot LaserSlot;
+
+	FWeaponAttachmentSlot LightSlot;
+
+	FWeaponAttachmentSlot OtherSlot = Tac;
+
+	LaserSlot.SlotTag = ShooterTags::Tag_Attachment_Slot_Laser;
+
+	LightSlot.SlotTag = ShooterTags::Tag_Attachment_Slot_Flashlight;
+
+	LaserSlot.SocketName = Tac.SocketName;
+
+	LightSlot.SocketName = Tac.SocketName;
+
+	OtherSlot.AllowedAttachments.Reset();
+
+	OtherSlot.DefaultAttachment = nullptr;
+
+
+
+	for (UAttachmentData* Attachment : Tac.AllowedAttachments)
+
+	{
+
+		if (!IsValid(Attachment)) continue;
+
+		if (Attachment->bProvidesLaser && !Attachment->bProvidesFlashlight)
+
+		{
+
+			LaserSlot.AllowedAttachments.Add(Attachment);
+
+		}
+
+		else if (Attachment->bProvidesFlashlight)
+
+		{
+
+			LightSlot.AllowedAttachments.Add(Attachment);
+
+		}
+
+		else
+
+		{
+
+			OtherSlot.AllowedAttachments.Add(Attachment);
+
+		}
+
+	}
+
+
+
+	if (UAttachmentData* DefaultAttachment = Tac.DefaultAttachment)
+
+	{
+
+		auto AddUnique = [](FWeaponAttachmentSlot& Slot, UAttachmentData* Data)
+
+		{
+
+			if (!Slot.AllowedAttachments.Contains(Data))
+
+			{
+
+				Slot.AllowedAttachments.Add(Data);
+
+			}
+
+		};
+
+		if (DefaultAttachment->bProvidesLaser && !DefaultAttachment->bProvidesFlashlight)
+
+		{
+
+			LaserSlot.DefaultAttachment = DefaultAttachment;
+
+			AddUnique(LaserSlot, DefaultAttachment);
+
+		}
+
+		else if (DefaultAttachment->bProvidesFlashlight)
+
+		{
+
+			LightSlot.DefaultAttachment = DefaultAttachment;
+
+			AddUnique(LightSlot, DefaultAttachment);
+
+		}
+
+		else
+
+		{
+
+			OtherSlot.DefaultAttachment = DefaultAttachment;
+
+			AddUnique(OtherSlot, DefaultAttachment);
+
+		}
+
+	}
+
+
+
+	AttachmentSlots.RemoveAt(TacIndex);
+
+	AttachmentSlots.Insert(LaserSlot, TacIndex);
+
+	AttachmentSlots.Insert(LightSlot, TacIndex + 1);
+
+	if (OtherSlot.AllowedAttachments.Num() > 0 || IsValid(OtherSlot.DefaultAttachment))
+
+	{
+
+		AttachmentSlots.Insert(OtherSlot, TacIndex + 2);
+
+	}
+
+}
+
+
+
+FGameplayTag AWeapon::GetEquipSlot(const UAttachmentData* Attachment) const
+
+{
+
+	if (!IsValid(Attachment)) return FGameplayTag();
+
+	const bool bLaser = Attachment->bProvidesLaser;
+
+	const bool bLight = Attachment->bProvidesFlashlight;
+
+	if (bLaser && !bLight && FindSlot(ShooterTags::Tag_Attachment_Slot_Laser))
+
+	{
+
+		return ShooterTags::Tag_Attachment_Slot_Laser;
+
+	}
+
+	if (bLight && FindSlot(ShooterTags::Tag_Attachment_Slot_Flashlight))
+
+	{
+
+		return ShooterTags::Tag_Attachment_Slot_Flashlight;
+
+	}
+
+	return Attachment->SlotTag;
+
+}
+
+
+
 const FWeaponAttachmentSlot* AWeapon::FindSlot(const FGameplayTag& SlotTag) const
+
 {
 	if (!SlotTag.IsValid()) return nullptr;
 	// MatchesTagExact：必须完全相同，Attachment.Slot.Barrel 不会匹配父标签 Attachment.Slot
@@ -1500,19 +1721,47 @@ TArray<UAttachmentData*> AWeapon::GetAllowedAttachmentsForSlot(FGameplayTag Slot
 
 bool AWeapon::CanEquipAttachment(const UAttachmentData* Attachment) const
 {
+
 	if (!IsValid(Attachment)) return false;
 
-	const FWeaponAttachmentSlot* Slot = FindSlot(Attachment->SlotTag);
+
+
+	const FGameplayTag EquipSlot = GetEquipSlot(Attachment);
+
+	const FWeaponAttachmentSlot* Slot = FindSlot(EquipSlot);
+
 	if (!Slot) return false;   // 这把枪没有这种槽位
 
+
+
 	// 白名单里有它才行
+
 	if (!Slot->AllowedAttachments.Contains(Attachment)) return false;
 
+	if (OpticTrimT1025::IsKinLongGun(this)
+
+		&& EquipSlot.ToString().Contains(TEXT("Optic"))
+
+		&& !OpticTrimT1025::IsKeptKinOptic(Attachment))
+
+	{
+
+		return false;
+
+	}
+
+
+
 	// 槽被别的已装配件锁住（例：短护木锁握把）
-	if (GetSlotBlocker(Attachment->SlotTag)) return false;
+
+	if (GetSlotBlocker(EquipSlot)) return false;
+
+
 
 	// 自己会锁住必选槽的配件不能装
+
 	for (const FGameplayTag& Blocked : Attachment->BlockedSlots)
+
 	{
 		const FWeaponAttachmentSlot* BlockedSlot = FindSlot(Blocked);
 		if (BlockedSlot && BlockedSlot->bRequired) return false;
@@ -1523,12 +1772,27 @@ bool AWeapon::CanEquipAttachment(const UAttachmentData* Attachment) const
 UAttachmentData* AWeapon::GetSlotBlocker(FGameplayTag SlotTag) const
 {
 	if (!SlotTag.IsValid()) return nullptr;
+
 	for (UAttachmentData* Equipped : EquippedAttachments)
+
 	{
-		if (IsValid(Equipped) && !Equipped->SlotTag.MatchesTagExact(SlotTag) && Equipped->BlockedSlots.HasTagExact(SlotTag))
+
+		if (!IsValid(Equipped) || GetEquipSlot(Equipped).MatchesTagExact(SlotTag)) continue;
+
+		const bool bBlocksDevice = (SlotTag.MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Laser)
+
+				|| SlotTag.MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Flashlight))
+
+			&& Equipped->BlockedSlots.HasTagExact(ShooterTags::Tag_Attachment_Slot_Tactical);
+
+		if (Equipped->BlockedSlots.HasTagExact(SlotTag) || bBlocksDevice)
+
 		{
+
 			return Equipped;
+
 		}
+
 	}
 	return nullptr;
 }
@@ -1544,12 +1808,19 @@ EGripHoldStyle AWeapon::GetGripHoldStyle() const
 }
 UAttachmentData* AWeapon::GetAttachmentInSlot(FGameplayTag SlotTag) const
 {
+
 	for (UAttachmentData* Attachment : EquippedAttachments)
+
 	{
-		if (IsValid(Attachment) && Attachment->SlotTag == SlotTag)
+
+		if (IsValid(Attachment) && GetEquipSlot(Attachment) == SlotTag)
+
 		{
+
 			return Attachment;
+
 		}
+
 	}
 	return nullptr;
 }
@@ -1914,12 +2185,21 @@ void AWeapon::UpdateLaserAttachment()
 }
 
 void AWeapon::ApplyLaserState()
+
 {
+
 	const bool bActive = bLaserOn && IsValid(LaserBeam) && GetNetMode() != NM_DedicatedServer;
-	SetActorTickEnabled(bActive);
+
+	float MagCheckTime = -1.f;
+
+	SetActorTickEnabled(bActive || ActorHasKinSecondaryMag(this) || Srm12MagCheckTime(this, MagCheckTime));
+
 	if (bActive)
+
 	{
+
 		UpdateLaser();
+
 		return;
 	}
 	if (IsValid(LaserBeam))
@@ -1936,11 +2216,67 @@ void AWeapon::ApplyLaserState()
 
 void AWeapon::Tick(float DeltaSeconds)
 {
+
 	Super::Tick(DeltaSeconds);
+
 	UpdateLaser();
+
+	const bool bSrm12MagCheck = UpdateSrm12MagCheckHand(this);
+
+	if (!bSrm12MagCheck && !ActorHasKinSecondaryMag(this) && !bLaserOn)
+
+	{
+
+		SetActorTickEnabled(false);
+
+	}
+
+
+
+	if (!ActorHasKinSecondaryMag(this)) return;
+
+	const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine);
+
+	TArray<USkeletalMeshComponent*> Comps;
+
+	GetComponents<USkeletalMeshComponent>(Comps);
+
+	for (USkeletalMeshComponent* Comp : Comps)
+
+	{
+
+		if (!IsValid(Comp) || !Comp->GetName().Contains(TEXT("KinMagSecondary"))) continue;
+
+		USkeletalMeshComponent* WeaponMesh = Cast<USkeletalMeshComponent>(Comp->GetAttachParent());
+
+		USceneComponent* Primary = nullptr;
+
+		if (Mag)
+
+		{
+
+			Primary = (WeaponMesh == Mesh1P) ? static_cast<USceneComponent*>(Mag->SkelMesh1P.Get()) : static_cast<USceneComponent*>(Mag->SkelMesh3P.Get());
+
+			if (!IsValid(Primary))
+
+			{
+
+				Primary = (WeaponMesh == Mesh1P) ? static_cast<USceneComponent*>(Mag->Mesh1P.Get()) : static_cast<USceneComponent*>(Mag->Mesh3P.Get());
+
+			}
+
+		}
+
+		UpdateKinSecondaryMag(WeaponMesh, Primary, Comp);
+
+	}
+
 }
 
+
+
 void AWeapon::UpdateLaser()
+
 {
 	auto HideAll = [this]()
 	{
@@ -2066,18 +2402,169 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 	Comp->SetStaticMesh(VisualMesh);
 	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Comp->bReceivesDecals = false;
+
 	Comp->CastShadow = !bFirstPerson;   // 和枪一样：1P 不投影，3P 投影
+
 	Comp->SetupAttachment(Mount, SocketName);
-	Comp->SetRelativeTransform(Data->MeshOffset);
+
+	// SnapToTarget loc/rot onto the rail socket (GripSocket). MeshOffset is an extra tweak.
+
+	Comp->SetRelativeTransform(Data->bSnapToMountSocket ? FTransform::Identity : Data->MeshOffset);
+
+	if (GetEquipSlot(Data).MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Flashlight))
+
+	{
+
+		if (const UAttachmentData* LaserData = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Laser))
+
+		{
+
+			if (ResolveAttachmentSocket(Data) == ResolveAttachmentSocket(LaserData))
+
+			{
+
+				FTransform Rel = Comp->GetRelativeTransform();
+
+				Rel.AddToTranslation(FVector(6.f, 0.f, 0.f));
+
+				Comp->SetRelativeTransform(Rel);
+
+			}
+
+		}
+
+	}
+
 	Comp->RegisterComponent();
 
-	// 第一人称换弹要两只弹夹。装回去的那只挂在备用骨上，动画把它送进弹仓。
-	if (bFirstPerson
-		&& Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine
-		&& Parent->DoesSocketExist(ReserveMagazineSocket))
+
+
+	// FPSTP Holo/Reflex: pack BP mounts a separate Reticle plane; DA only spawns body mesh.
+
 	{
+
+		const FString AttName = Data->GetName();
+
+		const bool bHolo = AttName.Contains(TEXT("FPSTP_Holographic"));
+
+		const bool bReflex = AttName.Contains(TEXT("FPSTP_Reflex"));
+
+		if (bFirstPerson && (bHolo || bReflex))
+
+		{
+
+			static UStaticMesh* ScopePlane = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/FPSTP/Content/Weapons/Attachments/Param/StaticMesh/SM_ScopePlane.SM_ScopePlane"));
+
+			UMaterialInterface* ReticleMI = nullptr;
+
+			if (bHolo)
+
+			{
+
+				ReticleMI = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/FPSTP/Content/Weapons/Attachments/AttachmentsList/Sight/Holographic/Materials/MI_HolographicReticle_Var1.MI_HolographicReticle_Var1"));
+
+			}
+
+			else
+
+			{
+
+				ReticleMI = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/FPSTP/Content/Weapons/Attachments/AttachmentsList/Sight/Reflex/Materials/MI_ReflexSightReticleVar1.MI_ReflexSightReticleVar1"));
+
+				if (!IsValid(ReticleMI))
+
+				{
+
+					ReticleMI = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/FPSTP/Content/Weapons/Attachments/AttachmentsList/Sight/Reflex/Materials/MI_ReflexSightReticleVar2.MI_ReflexSightReticleVar2"));
+
+				}
+
+			}
+
+			if (IsValid(ScopePlane) && IsValid(ReticleMI))
+
+			{
+
+				FName PlaneSocket = NAME_None;
+
+				const FName Cands[] = { Data->SightSocketName, FName(TEXT("AimPoint")), FName(TEXT("SightSocket")) };
+
+				for (const FName Cand : Cands)
+
+				{
+
+					if (!Cand.IsNone() && Comp->DoesSocketExist(Cand)) { PlaneSocket = Cand; break; }
+
+				}
+
+				UStaticMeshComponent* Plane = NewObject<UStaticMeshComponent>(this);
+
+				Plane->SetMobility(EComponentMobility::Movable);
+
+				Plane->SetStaticMesh(ScopePlane);
+
+				Plane->SetMaterial(0, ReticleMI);
+
+				Plane->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+				Plane->bReceivesDecals = false;
+
+				Plane->CastShadow = false;
+
+				if (!PlaneSocket.IsNone())
+
+				{
+
+					Plane->SetupAttachment(Comp, PlaneSocket);
+
+				}
+
+				else
+
+				{
+
+					Plane->SetupAttachment(Comp);
+
+				}
+
+				Plane->SetRelativeTransform(FTransform::Identity);
+
+				Plane->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.04f));
+
+				Plane->RegisterComponent();
+
+				UE_LOG(LogTemp, Log, TEXT("[OpticReticle] %s socket=%s"), *AttName, *PlaneSocket.ToString());
+
+			}
+
+			else
+
+			{
+
+				UE_LOG(LogTemp, Warning, TEXT("[OpticReticle] missing assets for %s"), *AttName);
+
+			}
+
+		}
+
+	}
+
+
+
+	// 第一人称换弹要两只弹夹。装回去的那只挂在备用骨上，动画把它送进弹仓。
+
+	if (bFirstPerson
+
+		&& Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine
+
+		&& Parent->DoesSocketExist(ReserveMagazineSocketName))
+
+	{
+
 		UStaticMeshComponent* Reserve = NewObject<UStaticMeshComponent>(this);
+
 		Reserve->SetMobility(EComponentMobility::Movable);
+
 		Reserve->SetStaticMesh(Data->Mesh);
 		Reserve->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Reserve->bReceivesDecals = false;
@@ -2112,12 +2599,43 @@ USkeletalMeshComponent* AWeapon::SpawnAttachmentSkelMesh(USkeletalMeshComponent*
 	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Comp->bReceivesDecals = false;
 	Comp->CastShadow = !bFirstPerson;
+
 	Comp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
 	Comp->SetupAttachment(Mount, SocketName);
-	Comp->SetRelativeTransform(Data->MeshOffset);
+
+	Comp->SetRelativeTransform(Data->bSnapToMountSocket ? FTransform::Identity : Data->MeshOffset);
+
+	if (GetEquipSlot(Data).MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Flashlight))
+
+	{
+
+		if (const UAttachmentData* LaserData = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Laser))
+
+		{
+
+			if (ResolveAttachmentSocket(Data) == ResolveAttachmentSocket(LaserData))
+
+			{
+
+				FTransform Rel = Comp->GetRelativeTransform();
+
+				Rel.AddToTranslation(FVector(6.f, 0.f, 0.f));
+
+				Comp->SetRelativeTransform(Rel);
+
+			}
+
+		}
+
+	}
+
 	Comp->RegisterComponent();
+
 	// Mag Armature rest pose is offset from root; park on MagReloadAnim frame 0.
+
 	if (UAnimSequence* RestPose = Data->MagReloadAnim.Get())
+
 	{
 		Comp->PlayAnimation(RestPose, false);
 		if (UAnimSingleNodeInstance* Node = Comp->GetSingleNodeInstance())
@@ -2347,11 +2865,23 @@ void AWeapon::RebuildAttachmentVisuals()
 			Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);
 			Visual.Mesh3P = SpawnAttachmentMesh(Mesh3P, Attachment, false);
 		}
+
 	}
 
+
+
+	// KIN: TR15 keeps body mag; Mag-DA guns keep Mag DA on mag socket (RAR-like) and hide body mag bones.
+
+	ResolveMagazineVisualDuplicates();
+
+
+
 	// 3. Dual flashlights: 1P for local view, 3P so other clients see the beam.
+
 	if (HasFlashlight())
+
 	{
+
 		if (!IsValid(Flashlight1P))
 		{
 			Flashlight1P = CreateFlashlightLight(Mesh1P);

@@ -29,5 +29,7 @@ namespace ShooterTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Grip, "Attachment.Slot.Grip", "Attachment slot: Grip");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Stock, "Attachment.Slot.Stock", "Attachment slot: Stock");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Tactical, "Attachment.Slot.Tactical", "Attachment slot: Tactical");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Laser, "Attachment.Slot.Laser", "Attachment slot: Laser");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Flashlight, "Attachment.Slot.Flashlight", "Attachment slot: Flashlight");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Magazine, "Attachment.Slot.Magazine", "Attachment slot: Magazine");
 }

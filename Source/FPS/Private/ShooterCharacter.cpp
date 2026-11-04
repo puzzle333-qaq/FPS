@@ -409,10 +409,18 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateWeaponSway(DeltaTime);           // 转视角拖拽 / 走路晃 / 落地下沉（和枪身后坐一起写进 Mesh1P）
 	ApplyVisualRecoilToMesh(DeltaTime);    // 算完再把枪身后坐叠回去
 	UpdateBandage(DeltaTime);              // 长按包扎进度
+
 	UpdateTacticalVision(DeltaTime);       // NVG / Thermal PP + battery
+
 	UpdateAimFieldOfView(DeltaTime);
+
+	UpdateAltPeek();
+
 	UpdateLean(DeltaTime);
+
 	UpdateMomentumCarry(DeltaTime);
+
+
 
 	if (UOpticScopeComponent* OpticScope = FindComponentByClass<UOpticScopeComponent>())
 	{
@@ -1048,10 +1056,18 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 	UEnhancedInputComponent* ShooterInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
 
+
+
 	EnsureLeanInput(ShooterInputComponent);
+
+	EnsureFireModeInput(ShooterInputComponent);
+
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanLeft_Started);
+
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanLeft_Completed);
+
 	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanRight_Started);
+
 	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanRight_Completed);
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_FireWeapon_Pressed);
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_FireWeapon_Released);
@@ -1076,14 +1092,20 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	}
 	if (SwitchFireModeAction)
 	{
+
 		ShooterInputComponent->BindAction(SwitchFireModeAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchFireMode);
-	}
-	if (VersionWeaponAction)
-	{
-		ShooterInputComponent->BindAction(VersionWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_VersionWeapon);
+
 	}
 
+	// Free inspect removed: mag check is hold-R (see Input_ReloadWeapon_*).
+
+	// VersionWeaponAction intentionally unbound.
+
+
+
 }
+
+
 
 void AShooterCharacter::PossessedBy(AController* NewController)
 {
@@ -1783,10 +1805,168 @@ void AShooterCharacter::UpdateSlide(float DeltaTime)
 	}
 }
 
+
+
 // ===== 左右探头 =====
-void AShooterCharacter::EnsureLeanInput(UEnhancedInputComponent* InputComp)
+
+void AShooterCharacter::EnsureFireModeInput(UEnhancedInputComponent* InputComp)
+
 {
+
+	(void)InputComp;
+
+	if (!IsLocallyControlled()) return;
+
+	if (!SwitchFireModeAction)
+
+	{
+
+		SwitchFireModeAction = NewObject<UInputAction>(this, TEXT("IA_SwitchFireMode_Runtime"));
+
+		SwitchFireModeAction->ValueType = EInputActionValueType::Boolean;
+
+	}
+
+	if (!FireModeRuntimeIMC)
+
+	{
+
+		FireModeRuntimeIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_FireMode_Runtime"));
+
+		FireModeRuntimeIMC->MapKey(SwitchFireModeAction, EKeys::X);
+
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+
+	{
+
+		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+
+		{
+
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+
+			{
+
+				if (!Subsystem->HasMappingContext(FireModeRuntimeIMC))
+
+				{
+
+					Subsystem->AddMappingContext(FireModeRuntimeIMC, 2);
+
+				}
+
+			}
+
+		}
+
+	}
+
+}
+
+
+
+void AShooterCharacter::UpdateAltPeek()
+
+{
+
+	const bool bWasPeek = bAltPeekCrouch;
+
+	bAltPeekCrouch = false;
+
+	AltPeekDir = 0;
+
+	if (!IsLocallyControlled() || bIsProne || bIsSliding) 
+
+	{
+
+		// fall through to release crouch if a peek was active
+
+	}
+
+	else if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
+
+	{
+
+		const bool bAlt = PC->IsInputKeyDown(EKeys::LeftAlt) || PC->IsInputKeyDown(EKeys::RightAlt);
+
+		if (PC->bPawnAlive && !PC->IsControlMovementLocked())
+
+		{
+
+			const bool bA = PC->IsInputKeyDown(EKeys::A);
+
+			const bool bD = PC->IsInputKeyDown(EKeys::D);
+
+			if (bAlt && (bA || bD))
+
+			{
+
+				bAltPeekCrouch = true;
+
+				if (bA && !bD) AltPeekDir = -1;
+
+				else if (bD && !bA) AltPeekDir = 1;
+
+				PC->StopSprinting();
+
+			}
+
+		}
+
+	}
+
+
+
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+
+	if (!IsValid(CMC) || !IsLocallyControlled()) return;
+
+	if (bAltPeekCrouch)
+
+	{
+
+		CMC->bWantsToCrouch = true;
+
+		ConsumeMovementInputVector();
+
+		FVector Vel = CMC->Velocity;
+
+		Vel.X = 0.f;
+
+		Vel.Y = 0.f;
+
+		CMC->Velocity = Vel;
+
+	}
+
+	else if (bWasPeek && !bIsProne && !bIsSliding)
+
+	{
+
+		const AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController());
+
+		if (!PC || !PC->IsCrouchHeld())
+
+		{
+
+			CMC->bWantsToCrouch = false;
+
+		}
+
+	}
+
+}
+
+
+
+void AShooterCharacter::EnsureLeanInput(UEnhancedInputComponent* InputComp)
+
+{
+
 	const bool bNeedLeft = !LeanLeftAction;
+
 	const bool bNeedRight = !LeanRightAction;
 	if (!bNeedLeft && !bNeedRight) return;
 
@@ -1860,19 +2040,69 @@ bool AShooterCharacter::IsLeanBlocked() const
 	return bIsProne || bIsSliding;   // no leaning while lying down / sliding
 }
 
+
 void AShooterCharacter::Server_SetLeanTarget_Implementation(float NewTarget)
+
 {
-	LeanTarget = FMath::Clamp(FMath::RoundToFloat(NewTarget), -1.f, 1.f);
+
+	LeanTarget = FMath::Clamp(NewTarget, -1.f, 1.f);
+
 }
 
+
+
 void AShooterCharacter::UpdateLean(float DeltaTime)
+
 {
+
 	if (IsLocallyControlled())
+
 	{
-		const float Desired = IsLeanBlocked() ? 0.f : static_cast<float>(LeanInputDir);
-		if (!FMath::IsNearlyEqual(Desired, LeanTarget))
+
+		float Desired = 0.f;
+
+		const bool bWideStep = bAltPeekCrouch && AltPeekDir != 0 && !IsLeanBlocked();
+
+		if (bWideStep)
+
 		{
+
+			Desired = static_cast<float>(AltPeekDir);
+
+			LeanDistanceScale = FMath::Max(1.f, AltPeekLeanScale);
+
+		}
+
+		else if (!IsLeanBlocked())
+
+		{
+
+			Desired = static_cast<float>(LeanInputDir);
+
+			if (LeanInputDir != 0)
+
+			{
+
+				LeanDistanceScale = 1.f;
+
+			}
+
+		}
+
+		if (!bWideStep && LeanInputDir == 0 && FMath::Abs(LeanAlpha) < 0.02f)
+
+		{
+
+			LeanDistanceScale = 1.f;
+
+		}
+
+		if (!FMath::IsNearlyEqual(Desired, LeanTarget))
+
+		{
+
 			LeanTarget = Desired;
+
 			if (!HasAuthority())
 			{
 				Server_SetLeanTarget(Desired);
@@ -1892,22 +2122,36 @@ void AShooterCharacter::UpdateLean(float DeltaTime)
 	if (FMath::Abs(LeanAlpha) > KINDA_SMALL_NUMBER)
 	{
 		const USceneComponent* Parent = FirstPersonCamera->GetAttachParent();
+
 		const FTransform ParentXf = IsValid(Parent) ? FirstPersonCamera->GetAttachParent()->GetSocketTransform(FirstPersonCamera->GetAttachSocketName()) : GetActorTransform();
+
 		const FVector Start = ParentXf.TransformPosition(CameraBaseLocation);
-		const FVector End = ParentXf.TransformPosition(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset, 0.f));
+
+		const FVector End = ParentXf.TransformPosition(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * LeanDistanceScale, 0.f));
+
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(LeanProbe), false, this);
+
 		if (IsValid(Combat) && IsValid(Combat->CurrentWeapon)) Params.AddIgnoredActor(Combat->CurrentWeapon);
+
 		FHitResult Hit;
+
 		if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(LeanWallProbeRadius), Params))
 		{
 			OffsetScale = Hit.Time;
 		}
+
 	}
 
-	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * OffsetScale, 0.f));
+
+
+	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * LeanDistanceScale * OffsetScale, 0.f));
+
 	// 侧倾手感保留：开镜时收到 SlideCameraRollAds，不整段清零
+
 	const float SlideRoll = SlideAlpha * FMath::Lerp(SlideCameraRoll, SlideCameraRollAds, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
+
 	FirstPersonCamera->SetRelativeRotation(CameraBaseRotation + FRotator(0.f, 0.f, LeanAlpha * LeanRollDegrees + SlideRoll));
+
 }
 
 void AShooterCharacter::Input_SwitchZoom()
@@ -2005,21 +2249,95 @@ bool AShooterCharacter::ComputeCantedMeshTransform(FQuat& OutRelRotation, FVecto
 	return !OutRelLocation.ContainsNaN() && !OutRelRotation.ContainsNaN();
 }
 
+
 void AShooterCharacter::Input_SwitchFireMode()
+
 {
+
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+
+	if (!PC || !PC->IsInputKeyDown(EKeys::X)) return;
+
+	const UWorld* World = GetWorld();
+
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+
+	if (Now - LastFireModeSwitchTime < 0.05) return;
+
+	LastFireModeSwitchTime = Now;
+
 	if (IsValid(Combat)) Combat->Initiate_SwitchFireMode();
+
 }
+
+
 
 void AShooterCharacter::Input_ReloadWeapon()
 {
 	Input_ReloadWeapon_Started();
+
 }
 
-void AShooterCharacter::Input_ReloadWeapon_Started()
+
+
+void AShooterCharacter::ClearReloadGestureTimers()
+
 {
-	bReloadKeyHeld = true;
-	bReloadHoldTriggered = false;
+
 	if (UWorld* World = GetWorld())
+
+	{
+
+		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
+
+		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+
+	}
+
+}
+
+
+
+void AShooterCharacter::Input_ReloadWeapon_Started()
+
+{
+
+	// Second press inside the double-click window -> mark double (tactical on release).
+
+	if (bReloadAwaitingDouble)
+
+	{
+
+		bReloadAwaitingDouble = false;
+
+		bReloadDoubleClick = true;
+
+		if (UWorld* World = GetWorld())
+
+		{
+
+			World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+
+		}
+
+	}
+
+	else
+
+	{
+
+		bReloadDoubleClick = false;
+
+	}
+
+
+
+	bReloadKeyHeld = true;
+
+	bReloadHoldTriggered = false;
+
+	if (UWorld* World = GetWorld())
+
 	{
 		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
 		World->GetTimerManager().SetTimer(
@@ -2030,13 +2348,49 @@ void AShooterCharacter::Input_ReloadWeapon_Started()
 
 void AShooterCharacter::OnReloadHoldThreshold()
 {
+
 	if (!bReloadKeyHeld || bReloadHoldTriggered) return;
+
 	bReloadHoldTriggered = true;
-	// HOLD R = tactical reload montage + drop mag
-	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(true);
+
+	bReloadAwaitingDouble = false;
+
+	bReloadDoubleClick = false;
+
+	if (UWorld* World = GetWorld())
+
+	{
+
+		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+
+	}
+
+	// HOLD R = mag check (no free inspect key)
+
+	if (IsValid(Combat)) Combat->Initiate_VersionWeapon();
+
 }
 
+
+
+void AShooterCharacter::OnReloadSingleClickTimeout()
+
+{
+
+	if (bReloadKeyHeld || bReloadHoldTriggered || bReloadDoubleClick) return;
+
+	bReloadAwaitingDouble = false;
+
+	// SINGLE R = reload (keep partial mag / Empty montage)
+
+	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(false);
+
+}
+
+
+
 void AShooterCharacter::Input_ReloadWeapon_Completed()
+
 {
 	bReloadKeyHeld = false;
 	if (UWorld* World = GetWorld())
@@ -2044,15 +2398,71 @@ void AShooterCharacter::Input_ReloadWeapon_Completed()
 		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
 	}
 	if (bReloadHoldTriggered)
+
 	{
+
 		bReloadHoldTriggered = false;
-		return; // already started fast reload
+
+		return; // hold already fired mag check
+
 	}
-	// TAP R = empty reload montage + keep partial mag in queue
-	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(false);
+
+	if (bReloadDoubleClick)
+
+	{
+
+		bReloadDoubleClick = false;
+
+		bReloadAwaitingDouble = false;
+
+		if (UWorld* World = GetWorld())
+
+		{
+
+			World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+
+		}
+
+		// DOUBLE R = tactical reload (drop mag / Tactical montage)
+
+		if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(true);
+
+		return;
+
+	}
+
+	// Wait briefly for a possible second tap before committing single reload.
+
+	bReloadAwaitingDouble = true;
+
+	if (UWorld* World = GetWorld())
+
+	{
+
+		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+
+		World->GetTimerManager().SetTimer(
+
+			ReloadDoubleClickTimer, this, &AShooterCharacter::OnReloadSingleClickTimeout,
+
+			FMath::Max(0.05f, ReloadDoubleClickWindow), false);
+
+	}
+
+	else if (IsValid(Combat))
+
+	{
+
+		Combat->Initiate_ReloadWeapon(false);
+
+	}
+
 }
 
+
+
 void AShooterCharacter::Input_FireWeapon_Pressed()
+
 {
 	// 配件菜单打开时鼠标留给界面。Enhanced Input 仍会收到左键，这里不要再开枪。
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -2343,12 +2753,19 @@ void AShooterCharacter::Input_Heal()
 	HealPlayer(HealAmout);
 }
 
+
 void AShooterCharacter::Input_VersionWeapon()
+
 {
-	VersionWeapon();   // 第 9 步：检视武器
+
+	// Free inspect disabled. Mag check is hold-R.
+
 }
 
+
+
 void AShooterCharacter::OnDeathStarted()
+
 {
 	ClearHitZoneMarks();
 	if (GetNetMode() != NM_DedicatedServer)

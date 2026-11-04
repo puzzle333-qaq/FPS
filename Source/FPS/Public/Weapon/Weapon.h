@@ -173,18 +173,39 @@ public:
 	UAttachmentData* GetSlotBlocker(FGameplayTag SlotTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+
 	bool HasAttachmentSlot(FGameplayTag SlotTag) const { return FindSlot(SlotTag) != nullptr; }
 
-	// 只在服务器调用：开/关手电和激光（第 12 步：两者一起；都没有时无效）
+
+
+	// 只在服务器调用：开/关手电（没有手电配件时无效）。镭射用 ToggleLaser。
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
+
 	void ToggleFlashlight();
 
+
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+
 	UAttachmentData* GetAttachmentInSlot(FGameplayTag SlotTag) const;
 
+
+
+	// 镭射/手电从旧的 Tactical 槽拆开后，用这个槽位身份去装、卸、查。其它配件仍是自己的 SlotTag。
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+
+	FGameplayTag GetEquipSlot(const UAttachmentData* Attachment) const;
+
+
+
 	/** Cradle if no grip or grip DA says Cradle; Grab for vertical grips. */
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment|Grip")
+
 	EGripHoldStyle GetGripHoldStyle() const;
+
 
 
 
@@ -738,10 +759,20 @@ private:
 
 	float LaserBeamLength = 100.f;
 
+
+
 	const UAttachmentData* GetLaserData() const;
+
+	void EnsureDeviceSlots();
+
+	bool bDeviceSlotsReady = false;
+
 	void RebuildLaser();
+
 	void UpdateLaserAttachment();
+
 	void ApplyLaserState();
+
 	void UpdateLaser();
 
 

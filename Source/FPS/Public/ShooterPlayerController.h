@@ -33,10 +33,20 @@ public:
 	AShooterPlayerController();
 
 	// 只按当前状态重新算速度（不发 RPC），角色在开镜/下蹲变化时调用
+
 	void RefreshMovementSpeed() { ApplyMovementSpeed(); }
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement") bool IsSprinting() const { return bIsSprinting; }
 
+	bool IsCrouchHeld() const { return bCrouchHeld; }
+
+	bool IsControlMovementLocked() const { return IsMovementLocked(); }
+
+
+
 	float GetSprintToFireDelay() const { return SprintToFireDelay; }
+
+
 
 	// 冲刺后摇：要再等这么久才能开镜（Combat 预输入复用）
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
@@ -286,16 +296,55 @@ private:
 	TObjectPtr<UInputAction>SprintAction;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+
 	TObjectPtr<UInputAction>WalkAction;
 
-	// 战术配件开关（例如 F 键）：手电和激光一起开关（第 12 步）
+
+
+	// 旧的 I 键战术开关。不再绑定；镭射/手电改由鼠标上侧键控制。
+
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+
 	TObjectPtr<UInputAction> FlashlightAction;
 
-	void Input_ToggleFlashlight();
+
+
+	void EnsureTacticalDeviceInput();
+
+	void Input_TacticalDevice_Started();
+
+	void Input_TacticalDevice_Completed();
+
+	void Input_TacticalDevice_Hold();
+
+
+
+	UPROPERTY(Transient)
+
+	TObjectPtr<UInputAction> TacticalDeviceAction;
+
+
+
+	UPROPERTY(Transient)
+
+	TObjectPtr<UInputMappingContext> TacticalDeviceIMC;
+
+
+
+	FTimerHandle TacticalDeviceHoldTimer;
+
+	bool bTacticalDeviceHoldFired = false;
+
+	// false = 手电槽，true = 镭射槽。点按开关当前槽，按住在两个槽之间换。
+
+	bool bTacticalDeviceIsLaser = false;
+
+
 
 	// NVG toggle (runtime Alt+K). Default Off; Thermal remains console-only for now.
+
 	void EnsureNVGInput();
+
 	void EnsureWatchInput();
 	void Input_CheckWatch();
 	void Input_ToggleNVG();

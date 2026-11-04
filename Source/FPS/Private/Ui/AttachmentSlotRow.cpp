@@ -1,22 +1,16 @@
 ﻿#include "Ui/AttachmentSlotRow.h"
 
 #include "Ui/AttachmentOptionEntry.h"
+#include "Ui/GunsmithWidgets.h"
 #include "Weapon/Weapon.h"
 #include "Components/TextBlock.h"
 #include "Components/PanelWidget.h"
 
 void UAttachmentSlotRow::Setup(AWeapon* Weapon, const FWeaponAttachmentSlot& SlotInfo)
 {
-	// 槽位名：取 Tag 最后一段，Attachment.SlotInfo.Barrel -> Barrel
 	if (IsValid(Text_SlotName))
 	{
-		FString TagName = SlotInfo.SlotTag.ToString();
-		int32 DotIndex;
-		if (TagName.FindLastChar(TEXT('.'), DotIndex))
-		{
-			TagName = TagName.RightChop(DotIndex + 1);
-		}
-		Text_SlotName->SetText(FText::FromString(TagName));
+		Text_SlotName->SetText(UGunsmithCategoryItem::GetSlotDisplayName(SlotInfo.SlotTag));
 	}
 
 	if (!IsValid(EntryContainer) || !IsValid(Weapon) || !EntryClass) return;
