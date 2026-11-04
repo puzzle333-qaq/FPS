@@ -1762,12 +1762,19 @@ void AShooterPlayerController::Server_SpawnTestDoor_Implementation()
 	}
 	ABreakableDoor* Door = ABreakableDoor::SpawnInFrontOf(MyPawn, 180.f);
 	if (GEngine)
+
 	{
+
 		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan,
-			Door ? TEXT("Spawned BreakableDoor ahead (F open/close, shoot to break)")
+
+			Door ? TEXT("Spawned BreakableDoor ahead (look-up F=push, look-down F=kick)")
+
 			     : TEXT("Failed to spawn BreakableDoor"));
+
 	}
+
 }
+
 
 
 void AShooterPlayerController::SpawnTripwire()

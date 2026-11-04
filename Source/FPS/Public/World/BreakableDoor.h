@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -11,10 +11,15 @@ class USceneComponent;
 class UStaticMeshComponent;
 class UBoxComponent;
 class USoundBase;
+class UStaticMesh;
 
 /**
- * Interactive door: F to open/close (IInteractable), optional HP for wooden doors.
- * Aim zones (CQB): Upper=gentle push, Handle=normal open/close, Bottom=kick open.
+ * Reusable CQB door for doorframes (Lvl_boat etc).
+ * - Swap DoorLeafMesh in Details (any static mesh).
+ * - Look up + F = slow quiet push open.
+ * - Look down + F = fast loud kick open.
+ * - Always swings away from the interacting player (two-way).
+ * Optional HP break (shoot to shatter) still supported.
  */
 UCLASS()
 class FPS_API ABreakableDoor : public AActor, public IInteractable, public IPlayerInterface
@@ -26,23 +31,27 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void OnConstruction(const FTransform& Transform) override;
 
 	// IInteractable
 	virtual bool CanInteract_Implementation(APawn* InteractingPawn) const override;
 	virtual FText GetInteractPrompt_Implementation(APawn* InteractingPawn) const override;
 	virtual void Interact_Implementation(APawn* InteractingPawn) override;
 
-	// IPlayerInterface — only DoDamage used for doors; other events use generated defaults
+	// IPlayerInterface
 	virtual bool DoDamage_Implementation(float DamageAmout, AActor* DamageInstigator) override;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Door")
 	void Auth_SetOpen(bool bNewOpen);
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Door")
-	void Auth_GentlePush(APawn* InstigatorPawn);
+	void Auth_PushOpen(APawn* InstigatorPawn);
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Door")
 	void Auth_KickOpen(APawn* InstigatorPawn);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Door")
+	void Auth_Close(APawn* InstigatorPawn);
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Door")
 	bool IsOpen() const { return bOpen; }
@@ -53,11 +62,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Door")
 	float GetHealth() const { return Health; }
 
-	/** Resolve aim zone from pawn camera vs door leaf height. */
+	/** Look-pitch mode: up = Push, down = Kick. */
 	UFUNCTION(BlueprintPure, Category = "FPS|Door")
-	EDoorAimZone ResolveAimZone(APawn* InteractingPawn) const;
+	EDoorOpenMode ResolveOpenMode(APawn* InteractingPawn) const;
 
-	/** Spawn a test door in front of Pawn (PIE). Returns spawned actor or null. */
+	/** +1 / -1 swing sign so the leaf moves away from the pawn. */
+	UFUNCTION(BlueprintPure, Category = "FPS|Door")
+	float ResolveOpenDirectionAwayFrom(APawn* InteractingPawn) const;
+
+	/** Spawn a test door in front of Pawn (PIE). */
 	static ABreakableDoor* SpawnInFrontOf(APawn* Pawn, float DistCm = 180.f);
 
 protected:
@@ -66,46 +79,76 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Door")
 	TObjectPtr<USceneComponent> SceneRoot;
 
-	/** Hinge pivot; DoorLeaf rotates on this. Place actor so hinge sits on the frame edge. */
+	/** Hinge pivot; DoorLeaf rotates on this. Place actor origin on the frame hinge edge. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Door")
 	TObjectPtr<USceneComponent> Hinge;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Door")
 	TObjectPtr<UStaticMeshComponent> DoorLeaf;
 
-	/** Visibility + weapon hit box covering the leaf. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Door")
 	TObjectPtr<UBoxComponent> InteractBox;
+
+	/** Swap this to any door leaf mesh (ship doors, warehouse, etc.). Applied in OnConstruction. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	TObjectPtr<UStaticMesh> DoorLeafMesh;
+
+	/** Leaf offset from hinge (cm). Default assumes hinge on -Y edge of a ~100cm-wide door. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	FVector DoorLeafRelativeLocation = FVector(0.f, 50.f, 0.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	FRotator DoorLeafRelativeRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	FVector DoorLeafRelativeScale = FVector(1.f);
+
+	/** Interact / hit box half-extents around leaf (cm). Auto-fit from mesh bounds if bAutoFitInteractBox. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	FVector InteractBoxExtent = FVector(6.f, 50.f, 110.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	FVector InteractBoxRelativeLocation = FVector(0.f, 0.f, 110.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	bool bAutoFitInteractBox = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open")
 	float OpenAngleDegrees = 90.f;
 
-	/** Partial open for gentle push (degrees). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "5", ClampMax = "60"))
-	float GentlePushAngleDegrees = 25.f;
+	/** Push opens fully but slowly. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "0.5"))
+	float PushInterpSpeed = 2.2f;
 
+	/** Kick opens fast. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "1"))
-	float OpenInterpSpeed = 6.f;
+	float KickInterpSpeed = 16.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "1"))
-	float KickInterpSpeed = 14.f;
+	/** Close speed (quiet). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "0.5"))
+	float CloseInterpSpeed = 3.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open", meta = (ClampMin = "0.1"))
-	float GentleInterpSpeed = 2.5f;
-
-	/** +1 or -1 for swing direction. */
+	/**
+	 * Manual override for swing sign when bAutoOpenAwayFromPlayer is false.
+	 * +1 = positive yaw, -1 = negative yaw.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open")
 	float OpenDirection = 1.f;
 
-	/** Relative Z on leaf (cm from leaf origin) separating bottom / handle / upper. Leaf ~220 tall. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Aim")
-	float BottomZoneMaxZ = 70.f;
+	/** If true, each open chooses swing direction away from the player. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Open")
+	bool bAutoOpenAwayFromPlayer = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Aim")
-	float UpperZoneMinZ = 150.f;
+	/** Pitch (degrees, look up positive) at/above this = Push. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Aim", meta = (ClampMin = "0", ClampMax = "80"))
+	float LookUpPitchThreshold = 8.f;
+
+	/** Pitch at/below -this = Kick. Between -threshold and +threshold defaults to Push. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Aim", meta = (ClampMin = "0", ClampMax = "80"))
+	float LookDownPitchThreshold = 8.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Break")
-	bool bCanBreak = true;
+	bool bCanBreak = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Break", meta = (ClampMin = "1", EditCondition = "bCanBreak"))
 	float MaxHealth = 150.f;
@@ -117,13 +160,29 @@ protected:
 	float DebrisLifeSeconds = 8.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|FX")
-	TObjectPtr<USoundBase> OpenSound;
+	TObjectPtr<USoundBase> PushSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|FX")
+	TObjectPtr<USoundBase> KickSound;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|FX")
 	TObjectPtr<USoundBase> CloseSound;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|FX")
 	TObjectPtr<USoundBase> BreakSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|FX", meta = (ClampMin = "0", ClampMax = "2"))
+	float PushSoundVolume = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|FX", meta = (ClampMin = "0", ClampMax = "2"))
+	float KickSoundVolume = 1.2f;
+
+	/** AI hear loudness 0..1 (kick uses gunshot range band). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|FX", meta = (ClampMin = "0", ClampMax = "1"))
+	float KickNoiseLoudness = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|FX", meta = (ClampMin = "0", ClampMax = "1"))
+	float PushNoiseLoudness = 0.15f;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Open)
 	bool bOpen = false;
@@ -134,7 +193,7 @@ protected:
 	UPROPERTY(Replicated)
 	float Health = 150.f;
 
-	/** Current target open angle (degrees * direction). Gentle push may be partial. */
+	/** Signed target yaw degrees (includes open direction). */
 	UPROPERTY(ReplicatedUsing = OnRep_TargetOpen)
 	float TargetOpenDegrees = 0.f;
 
@@ -147,11 +206,12 @@ protected:
 	UFUNCTION()
 	void OnRep_Destroyed();
 
+	void ApplyDoorMeshAndBox();
 	void ApplyOpenVisual(bool bSnap);
 	void ApplyDestroyedVisual(bool bSpawnDebris);
 	void Auth_DestroyDoor(AActor* InstigatorActor);
 	void SpawnDebrisLocal();
-	void Auth_SetTargetOpen(float DegreesAbs, float InterpSpeed);
+	void Auth_SetTargetOpenSigned(float SignedDegrees, float InterpSpeed, USoundBase* Sound, float VolumeMultiplier, float NoiseLoudness, AActor* NoiseInstigator, bool bKickNoise);
 
 	float CurrentYaw = 0.f;
 	float TargetYaw = 0.f;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "CoopCqbTypes.generated.h"
@@ -34,6 +34,15 @@ enum class ECoopCqbWinReason : uint8
 	Aborted         UMETA(DisplayName = "Aborted")
 };
 
+/** Look-pitch open mode for BreakableDoor (push vs kick). */
+UENUM(BlueprintType)
+enum class EDoorOpenMode : uint8
+{
+	Push UMETA(DisplayName = "Push (slow quiet)"),
+	Kick UMETA(DisplayName = "Kick (fast loud)")
+};
+
+/** Legacy aim-zone enum kept for older notes; door now uses look pitch (EDoorOpenMode). */
 UENUM(BlueprintType)
 enum class EDoorAimZone : uint8
 {

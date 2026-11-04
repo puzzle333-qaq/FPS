@@ -1,0 +1,48 @@
+﻿Reusable CQB Door (BreakableDoor) — Lvl_boat HOWTO
+==================================================
+
+What it does
+------------
+- Place in empty doorframes; swap any Static Mesh for the leaf.
+- Look UP (or level) + F  = slow quiet PUSH open.
+- Look DOWN + F           = fast loud KICK open.
+- Opens AWAY from you (two-way). F again while open = close (quiet).
+- Kick alerts Hostile AI (gunshot-range noise). Push is near-silent.
+- Breaking by gunfire is OFF by default (bCanBreak).
+
+Place on Lvl_boat
+-----------------
+1. Open Lvl_boat.
+2. Place actor class BreakableDoor (C++), or make BP child:
+   Content Browser → right-click → Blueprint Class → BreakableDoor
+   e.g. /Game/FPS/Coop/BP_ShipDoor
+3. Align actor ORIGIN / Hinge on the frame hinge edge (leaf swings around it).
+4. Details → FPS|Door|Mesh:
+   - Door Leaf Mesh = ship door, e.g.
+       /Game/Industrial_Ship/Assets/door_1/SM_door_1
+       /Game/Industrial_Ship/Assets/door_2/SM_door_2
+       /Game/Industrial_Ship/Assets/door_3/SM_door_3_A
+     or FPS_Controller SM_Door / SM_ExteriorDoor / SM_WarehouseDoor
+   - Tweak Door Leaf Relative Location / Rotation / Scale until leaf fills the frame.
+   - bAutoFitInteractBox usually OK; if F never hits, enlarge Interact Box Extent.
+5. Actor forward should face one side of the doorway (used for "open away").
+6. Optional FX: assign PushSound / KickSound / CloseSound in Details.
+7. PIE: aim at door, F. Look down for kick, look up for push.
+
+Quick test without placing
+--------------------------
+Console: SpawnTestDoor  → door ~1.8m ahead.
+
+Tuning
+------
+- PushInterpSpeed (default ~2.2) / KickInterpSpeed (~16) / CloseInterpSpeed
+- LookUpPitchThreshold / LookDownPitchThreshold (default 8°)
+- OpenAngleDegrees (default 90)
+- bAutoOpenAwayFromPlayer (default true). If swing is wrong, flip actor yaw 180°,
+  or set bAutoOpenAwayFromPlayer false and set OpenDirection to -1.
+- KickNoiseLoudness / PushNoiseLoudness for AI.
+
+Notes
+-----
+- Frames stay yours; this actor is only the swinging leaf.
+- No animation montage yet — rotation interp only. Kick anim can layer later.
