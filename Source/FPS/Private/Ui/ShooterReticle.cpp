@@ -116,29 +116,6 @@ int32 UShooterReticle::NativePaint(const FPaintArgs& Args, const FGeometry& Allo
 	const FVector2D Center = FVector2D(AllottedGeometry.GetLocalSize()) * 0.5f;
 	bool bDrew = false;
 
-	// Damage ring: angle A is clockwise from screen-up. Arc i is centered on i * 90.
-	const int32 Segments = FMath::Clamp(DamageRingSegments, 2, 64);
-	const float HalfSpan = FMath::Max(1.f, 45.f - DamageRingGapDegrees * 0.5f);
-	for (int32 i = 0; i < 4; ++i)
-	{
-		if (ArcIntensity[i] <= KINDA_SMALL_NUMBER) continue;
-
-		TArray<FVector2D> Points;
-		Points.Reserve(Segments + 1);
-		const float Start = i * 90.f - HalfSpan;
-		const float Step = (HalfSpan * 2.f) / Segments;
-		for (int32 s = 0; s <= Segments; ++s)
-		{
-			const float Rad = FMath::DegreesToRadians(Start + Step * s);
-			Points.Add(Center + FVector2D(FMath::Sin(Rad), -FMath::Cos(Rad)) * DamageRingRadius);
-		}
-		FLinearColor Color = DamageRingColor;
-		Color.A *= ArcIntensity[i];
-		FSlateDrawElement::MakeLines(OutDrawElements, DrawLayer, AllottedGeometry.ToPaintGeometry(), Points,
-			ESlateDrawEffect::None, Color * InWidgetStyle.GetColorAndOpacityTint(), true, DamageRingThickness);
-		bDrew = true;
-	}
-
 	// Hit marker: four short lines at 45, 135, -135, -45 degrees. Kill marker = bigger red X (wins over hit).
 	const bool bKillMark = bShowHitKillMarkers && KillMarkerRemaining > 0.f;
 	if (bShowHitKillMarkers && (bKillMark || HitMarkerRemaining > 0.f))

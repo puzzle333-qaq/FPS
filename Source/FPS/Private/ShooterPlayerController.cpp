@@ -25,11 +25,19 @@
 #include "Ui/PauseMenuScreen.h"
 #include "ShooterGameModeBase.h"
 #include "Ui/ModeHudWidget.h"
+
 #include "Ui/MatchHUD.h"
+
 #include "Ui/CombatHudKeepAlive.h"
+
+#include "Ui/ScreenEffectOverlay.h"
+
 #include "Ui/CombatStatusHud.h"
+
 #include "Ui/BodyInjuryHud.h"
+
 #include "Blueprint/WidgetBlueprintLibrary.h"
+
 #include "Weapon/Weapon.h"
 #include "Weapon/AttachmentData.h"
 #include "Game/ShooterGameState.h"
@@ -878,11 +886,45 @@ void AShooterPlayerController::EnsureCombatHudKeepAlive()
 	{
 		CombatHudKeepAlive->AddToViewport(199);
 		UE_LOG(LogTemp, Warning, TEXT("[HUD] PATH=PC.Ensure CombatHudKeepAlive re-AddToViewport"));
+
 	}
 
-	// Auto-create BodyInjuryHud (bottom-left) if no WBP/instance of it is on screen.
+
+
+	if (!IsValid(ScreenEffectOverlay))
+
 	{
+
+		ScreenEffectOverlay = CreateWidget<UScreenEffectOverlay>(this, UScreenEffectOverlay::StaticClass());
+
+		if (IsValid(ScreenEffectOverlay))
+
+		{
+
+			ScreenEffectOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+			ScreenEffectOverlay->AddToViewport(250);
+
+		}
+
+	}
+
+	else if (!ScreenEffectOverlay->IsInViewport())
+
+	{
+
+		ScreenEffectOverlay->AddToViewport(250);
+
+	}
+
+
+
+	// Auto-create BodyInjuryHud (bottom-left) if no WBP/instance of it is on screen.
+
+	{
+
 		TArray<UUserWidget*> Found;
+
 		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Found, UBodyInjuryHud::StaticClass(), false);
 		bool bOnScreen = false;
 		for (UUserWidget* W : Found) { if (W && W->IsInViewport()) { bOnScreen = true; break; } }
@@ -1642,11 +1684,49 @@ void AShooterPlayerController::RefillVision(float Amount)
 			FString::Printf(TEXT("Vision battery -> %.0f%%"), Char->GetVisionBatteryNormalized() * 100.f));
 	}
 	UE_LOG(LogTemp, Log, TEXT("[Vision] refill amount=%.2f battery=%.0f%%"), Amount, Char->GetVisionBatteryNormalized() * 100.f);
+
 }
 
-void AShooterPlayerController::FlashWash(float Amount)
+
+
+void AShooterPlayerController::Goggles(int32 Enabled)
+
 {
+
 	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+
+	if (!IsValid(Char))
+
+	{
+
+		UE_LOG(LogTemp, Warning, TEXT("[Goggles] No ShooterCharacter pawn"));
+
+		return;
+
+	}
+
+	Char->SetHasFlashGoggles(Enabled != 0);
+
+	if (GEngine)
+
+	{
+
+		GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Cyan,
+
+			Enabled != 0 ? TEXT("护目镜：开（闪光弹变重影）") : TEXT("护目镜：关（闪光弹白屏）"));
+
+	}
+
+}
+
+
+
+void AShooterPlayerController::FlashWash(float Amount)
+
+{
+
+	AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn());
+
 	if (!IsValid(Char))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Vision] No ShooterCharacter pawn"));

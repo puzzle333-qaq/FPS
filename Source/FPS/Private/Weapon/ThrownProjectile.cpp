@@ -8,6 +8,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Controller.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -211,7 +212,32 @@ void AThrownProjectile::ApplyFlashWash()
 			const float Range = FMath::Max(1.f, Radius - InnerRadius);
 			Amount *= 1.f - (Dist - InnerRadius) / Range;
 		}
-		Char->AddVisionFlashWash(FMath::Max(0.4f, Amount));
+		float Facing = 0.35f;
+		if (const AController* Viewer = Char->GetController())
+		{
+			FVector ViewLoc;
+			FRotator ViewRot;
+			Viewer->GetPlayerViewPoint(ViewLoc, ViewRot);
+			const FVector ToFlash = (Origin - ViewLoc).GetSafeNormal();
+			const float Dot = FVector::DotProduct(ViewRot.Vector(), ToFlash);
+			if (Dot >= 0.35f) Facing = 1.f;
+			else if (Dot >= -0.1f) Facing = 0.42f;
+			else Facing = 0.12f;
+		}
+
+		FCollisionQueryParams SightParams(SCENE_QUERY_STAT(ThrownFlashSight), false, this);
+		SightParams.AddIgnoredActor(this);
+		SightParams.AddIgnoredActor(Char);
+		FHitResult SightHit;
+		const FVector Eye = Char->GetPawnViewLocation();
+		if (World->LineTraceSingleByChannel(SightHit, Origin, Eye, ECC_Visibility, SightParams))
+		{
+			continue;
+		}
+
+		const float Strength = FMath::Clamp((Amount / 2.5f) * Facing, 0.f, 1.f);
+		if (Strength < 0.08f) continue;
+		Char->Client_ReceiveFlashbang(Strength);
 	}
 }
 

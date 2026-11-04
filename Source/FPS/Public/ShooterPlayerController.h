@@ -12,11 +12,19 @@ class UInputAction;
 class AWeapon;
 class UPauseMenuScreen;
 class UModeHudWidget;
+
 class UMatchHUD;
+
 class UCombatHudKeepAlive;
+
+class UScreenEffectOverlay;
+
 class UCombatStatusHud;
+
 class AGameStateBase;
+
 class UScoreboardScreen;
+
 class AShooterCharacter;
 class USettingsScreen;
 struct FInputActionValue;
@@ -88,11 +96,25 @@ public:
 	void RefillVision(float Amount = -1.f);
 
 	UFUNCTION(Exec)
+
 	void FlashWash(float Amount = 2.f);
 
-	// PIE/debug: console `SpawnTestDoor` — wooden breakable door in front of you.
+
+
+	// PIE/debug: `Goggles 1` wears flash goggles (ghosting). `Goggles 0` is a normal whiteout.
+
 	UFUNCTION(Exec)
+
+	void Goggles(int32 Enabled);
+
+
+
+	// PIE/debug: console `SpawnTestDoor` — wooden breakable door in front of you.
+
+	UFUNCTION(Exec)
+
 	void SpawnTestDoor();
+
 
 	// PIE/debug traps: Spawn* ignore setup; Place* require criminal setup (or non-PC mode).
 	UFUNCTION(Exec)
@@ -383,10 +405,22 @@ private:
 	TObjectPtr<UMatchHUD> MatchHUD;
 
 	UPROPERTY(Transient)
+
 	TObjectPtr<UCombatHudKeepAlive> CombatHudKeepAlive;
 
+
+
 	UPROPERTY(Transient)
+
+	TObjectPtr<UScreenEffectOverlay> ScreenEffectOverlay;
+
+
+
+	UPROPERTY(Transient)
+
 	TObjectPtr<UCombatStatusHud> CombatStatusHud;
+
+
 
 	public:
 	/** Creates/re-pins CombatStatusHud + KeepAlive for local player. Safe to call repeatedly. */

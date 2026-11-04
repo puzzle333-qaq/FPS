@@ -356,19 +356,37 @@ void AShooterCharacter::BeginPlay()
 	{
 		PC->bPawnAlive = true;
 	}
+
 }
 
-void AShooterCharacter::BeginDestroy()
+
+
+void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+
 {
-	Super::BeginDestroy();
+
+	// 枪是独立 Actor，且 Mesh1P 是根组件、挂在角色手臂上。
+
+	// 不能放到 BeginDestroy：那时已经在 GC 里，再 Destroy 会在 ~AWeapon 读到坏指针。
 
 	if (IsValid(Combat))
+
 	{
+
 		Combat->DestroyInventory();
+
 	}
+
+
+
+	Super::EndPlay(EndPlayReason);
+
 }
 
+
+
 FRotator AShooterCharacter::GetFixedAimRotation() const
+
 {
 	FRotator AimRotation = GetBaseAimRotation();
 	if (AimRotation.Pitch > 90.f && !IsLocallyControlled())
@@ -1298,12 +1316,21 @@ const TArray<TObjectPtr<UAnimMontage>>& AShooterCharacter::GetHitReactPool(EHitR
 	return Pool->Num() > 0 ? *Pool : HitReacts;
 }
 
+
 void AShooterCharacter::Client_ShowDamageIndicator_Implementation(FVector_NetQuantize InstigatorLocation)
+
 {
-	OnDamageIndicator.Broadcast(InstigatorLocation);
+
+	(void)InstigatorLocation;
+
+	AddHitBlood();
+
 }
 
+
+
 void AShooterCharacter::Client_ConfirmHit_Implementation(bool bHeadshot)
+
 {
 	OnHitConfirmed.Broadcast();
 	OnHitConfirmedDetailed.Broadcast(bHeadshot, false);
@@ -1354,11 +1381,19 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AShooterCharacter, bArmInjured);
 	DOREPLIFETIME(AShooterCharacter, bLegInjured);
 	DOREPLIFETIME(AShooterCharacter, BodyArmor);
+
 	DOREPLIFETIME(AShooterCharacter, FactionLook);
+
 	DOREPLIFETIME(AShooterCharacter, bHasRadar);
+
+	DOREPLIFETIME(AShooterCharacter, bHasFlashGoggles);
+
 }
 
+
+
 // ===== 趴下 / 趴行 (Prone) =====
+
 void AShooterCharacter::EnsureProneInput()
 {
 	if (ProneAction) return;
@@ -4138,15 +4173,217 @@ void AShooterCharacter::RefillVisionBattery(float Amount)
 void AShooterCharacter::AddVisionFlashWash(float Amount)
 {
 	VisionFlashWash = FMath::Clamp(VisionFlashWash + FMath::Max(0.f, Amount), 0.f, 4.f);
+
 	if (IsLocallyControlled())
+
 	{
+
+		ReceiveFlashbang(FMath::Clamp(Amount / 2.5f, 0.f, 1.f));
+
 		ApplyTacticalVisionEffects();
+
 	}
+
 }
 
-void AShooterCharacter::CycleTacticalVisionMode()
+
+
+void AShooterCharacter::ReceiveFlashbang(float Strength)
+
 {
+
+	Strength = FMath::Clamp(Strength, 0.f, 1.f);
+
+	if (Strength <= 0.f) return;
+
+	if (bHasFlashGoggles)
+
+	{
+
+		FlashGhost = FMath::Max(FlashGhost, Strength);
+
+	}
+
+	else
+
+	{
+
+		FlashWhite = FMath::Max(FlashWhite, Strength);
+
+	}
+
+}
+
+
+
+void AShooterCharacter::Client_ReceiveFlashbang_Implementation(float Strength)
+
+{
+
+	ReceiveFlashbang(Strength);
+
+}
+
+
+
+void AShooterCharacter::SetHasFlashGoggles(bool bEnable)
+
+{
+
+	bHasFlashGoggles = bEnable;
+
+	if (!HasAuthority())
+
+	{
+
+		Server_SetHasFlashGoggles(bEnable);
+
+	}
+
+}
+
+
+
+void AShooterCharacter::Server_SetHasFlashGoggles_Implementation(bool bEnable)
+
+{
+
+	bHasFlashGoggles = bEnable;
+
+}
+
+
+
+float AShooterCharacter::GetHitBloodAlpha() const
+
+{
+
+	return FMath::Clamp(FMath::Max(HitBloodFlash, HitBloodTail), 0.f, 1.f);
+
+}
+
+
+
+void AShooterCharacter::AddHitBlood()
+
+{
+
+	HitBloodFlash = 1.f;
+
+	HitBloodTail = FMath::Max(HitBloodTail, 0.62f);
+
+}
+
+
+
+void AShooterCharacter::UpdateScreenEffects(float DeltaTime)
+
+{
+
+	if (FlashWhite > 0.f)
+
+	{
+
+		const float Rate = FlashWhite > 0.9f ? 0.18f : 0.48f;
+
+		FlashWhite = FMath::Max(0.f, FlashWhite - DeltaTime * Rate);
+
+	}
+
+	if (FlashGhost > 0.f)
+
+	{
+
+		FlashGhost = FMath::Max(0.f, FlashGhost - DeltaTime * 0.32f);
+
+	}
+
+	HitBloodFlash = FMath::Max(0.f, HitBloodFlash - DeltaTime * 3.4f);
+
+	HitBloodTail = FMath::Max(0.f, HitBloodTail - DeltaTime * 0.5f);
+
+	ApplyFlashGhostPostProcess();
+
+}
+
+
+
+void AShooterCharacter::ApplyFlashGhostPostProcess()
+
+{
+
+	if (!IsLocallyControlled() || !IsValid(FirstPersonCamera)) return;
+
+
+
+	FPostProcessSettings& PPS = FirstPersonCamera->PostProcessSettings;
+
+	if (FlashGhost > 0.02f)
+
+	{
+
+		PPS.bOverride_SceneFringeIntensity = true;
+
+		PPS.SceneFringeIntensity = FlashGhost * 6.5f;
+
+		PPS.bOverride_ChromaticAberrationStartOffset = true;
+
+		PPS.ChromaticAberrationStartOffset = FMath::Lerp(0.35f, 0.f, FlashGhost);
+
+		if (TacticalVisionMode == ETacticalVisionMode::Off)
+
+		{
+
+			PPS.bOverride_BloomIntensity = true;
+
+			PPS.BloomIntensity = 0.35f + FlashGhost * 1.4f;
+
+			PPS.bOverride_ColorContrast = true;
+
+			const float Contrast = 1.f - FlashGhost * 0.22f;
+
+			PPS.ColorContrast = FVector4(Contrast, Contrast, Contrast, 1.f);
+
+		}
+
+		bGhostPostProcess = true;
+
+		return;
+
+	}
+
+
+
+	if (!bGhostPostProcess) return;
+
+	PPS.bOverride_SceneFringeIntensity = false;
+
+	PPS.SceneFringeIntensity = 0.f;
+
+	PPS.bOverride_ChromaticAberrationStartOffset = false;
+
+	if (TacticalVisionMode == ETacticalVisionMode::Off)
+
+	{
+
+		PPS.bOverride_BloomIntensity = false;
+
+		PPS.bOverride_ColorContrast = false;
+
+	}
+
+	bGhostPostProcess = false;
+
+}
+
+
+
+void AShooterCharacter::CycleTacticalVisionMode()
+
+{
+
 	const uint8 Next = (static_cast<uint8>(TacticalVisionMode) + 1) % 3;
+
 	SetTacticalVisionMode(static_cast<ETacticalVisionMode>(Next));
 }
 
@@ -4451,9 +4688,19 @@ void AShooterCharacter::UpdateTacticalVision(float DeltaTime)
 	}
 	else
 	{
+
 		VisionOverlayRefreshAcc = 0.f;
+
 	}
+
+
+
+	UpdateScreenEffects(DeltaTime);
+
 }
+
+
+
 
 
 // ===== Radar / Watch / Blood polish =====

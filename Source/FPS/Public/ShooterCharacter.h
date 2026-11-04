@@ -123,11 +123,18 @@ public:
 	virtual bool DoDamage_Implementation(float DamageAmout,AActor* DamageInstigator) override;
 	/** PlayerInterface */
 
+
+
 	virtual void BeginPlay() override;
-	virtual void BeginDestroy() override;
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+
 
 	UFUNCTION(BlueprintCallable)
+
 	FRotator GetFixedAimRotation()const;
+
 
 	UPROPERTY(BlueprintReadOnly,Category = "FPS|FABRIK")
 	FTransform FABRIK_SocketTransform;
@@ -270,10 +277,62 @@ public:
 
 	// Call from flashbang BP (or console FlashWash) - NVG washes out harder.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+
 	void AddVisionFlashWash(float Amount);
 
+
+
+	// 0..1 whiteout, or ghosting when this character has flash goggles.
+
+	void ReceiveFlashbang(float Strength);
+
+
+
+	UFUNCTION(Client, Reliable)
+
+	void Client_ReceiveFlashbang(float Strength);
+
+
+
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+
+	void SetHasFlashGoggles(bool bEnable);
+
+
+
+	UFUNCTION(Server, Reliable)
+
+	void Server_SetHasFlashGoggles(bool bEnable);
+
+
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
+
+	bool HasFlashGoggles() const { return bHasFlashGoggles; }
+
+
+
+	UFUNCTION(BlueprintPure, Category = "FPS|HitFeedback")
+
+	float GetHitBloodAlpha() const;
+
+
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
+
+	float GetFlashWhiteAlpha() const { return FlashWhite; }
+
+
+
+	void AddHitBlood();
+
+
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+
 	void RefillVisionBattery(float Amount = -1.f);
+
+
 
 	// Radar accessory: MatchHUD shows radar only while true. Console GrantRadar.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Radar")
@@ -685,11 +744,25 @@ public:
 
 	// Equipped radar tablet / tactical map accessory.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_HasRadar, Category = "FPS|Radar")
+
 	bool bHasRadar = false;
 
+
+
+	// Flash goggles: flashbang ghosts the screen instead of whiteout. Console `Goggles 1`.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "FPS|Vision")
+
+	bool bHasFlashGoggles = false;
+
+
+
 	// Soft ref; defaults to RAR WatchCheck montage if null.
+
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Watch")
+
 	TSoftObjectPtr<UAnimMontage> WatchCheckMontage;
+
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Watch", meta = (ClampMin = "1"))
 	float WatchTimeDisplaySeconds = 4.f;
@@ -1320,11 +1393,31 @@ private:
 	float MuzzleDipAlpha = 0.f;
 	FRotator MuzzleDipRotCurrent = FRotator::ZeroRotator;
 
+
 	float VisionBatterySeconds = 60.f;
+
 	float VisionFlashWash = 0.f;
+
+	float FlashWhite = 0.f;
+
+	float FlashGhost = 0.f;
+
+	float HitBloodFlash = 0.f;
+
+	float HitBloodTail = 0.f;
+
+	bool bGhostPostProcess = false;
+
+	void UpdateScreenEffects(float DeltaTime);
+
+	void ApplyFlashGhostPostProcess();
+
 	float VisionOverlayRefreshAcc = 0.f;
+
 	ETacticalVisionMode AppliedVisionMode = ETacticalVisionMode::Off;
+
 	TWeakObjectPtr<UMaterialInterface> ActiveVisionBlendable;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> CachedThermalOverlayMat;
 	TArray<TWeakObjectPtr<USkeletalMeshComponent>> ThermalOverlayMeshes;
