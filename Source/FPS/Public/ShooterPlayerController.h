@@ -12,19 +12,12 @@ class UInputAction;
 class AWeapon;
 class UPauseMenuScreen;
 class UModeHudWidget;
-
 class UMatchHUD;
-
 class UCombatHudKeepAlive;
-
 class UScreenEffectOverlay;
-
 class UCombatStatusHud;
-
 class AGameStateBase;
-
 class UScoreboardScreen;
-
 class AShooterCharacter;
 class USettingsScreen;
 struct FInputActionValue;
@@ -41,20 +34,12 @@ public:
 	AShooterPlayerController();
 
 	// 只按当前状态重新算速度（不发 RPC），角色在开镜/下蹲变化时调用
-
 	void RefreshMovementSpeed() { ApplyMovementSpeed(); }
-
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement") bool IsSprinting() const { return bIsSprinting; }
-
 	bool IsCrouchHeld() const { return bCrouchHeld; }
-
 	bool IsControlMovementLocked() const { return IsMovementLocked(); }
 
-
-
 	float GetSprintToFireDelay() const { return SprintToFireDelay; }
-
-
 
 	// 冲刺后摇：要再等这么久才能开镜（Combat 预输入复用）
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
@@ -68,25 +53,15 @@ public:
 	float GetSprintToAdsDelay() const { return SprintToAdsDelay; }
 
 	UFUNCTION(BlueprintCallable)
-
 	void StopSprinting();
 
-
-
 	// PIE/debug: console `WeaponAttachDebug 1` — draw 1P attach / GripSocket / FABRIK and print pose/anim.
-
 	UFUNCTION(Exec)
-
 	void WeaponAttachDebug(int32 Enabled = 1);
 
-
-
 	// PIE/debug: console `Armor 0|1|2` (None/Light/Heavy).
-
 	UFUNCTION(Exec)
-
 	void Armor(int32 Level);
-
 
 	// PIE/debug: console `FactionLook 0|1|2` (DefaultManny/Criminal/Police).
 	UFUNCTION(Exec)
@@ -110,25 +85,15 @@ public:
 	void RefillVision(float Amount = -1.f);
 
 	UFUNCTION(Exec)
-
 	void FlashWash(float Amount = 2.f);
 
-
-
 	// PIE/debug: `Goggles 1` wears flash goggles (ghosting). `Goggles 0` is a normal whiteout.
-
 	UFUNCTION(Exec)
-
 	void Goggles(int32 Enabled);
 
-
-
 	// PIE/debug: console `SpawnTestDoor` — wooden breakable door in front of you.
-
 	UFUNCTION(Exec)
-
 	void SpawnTestDoor();
-
 
 	// PIE/debug traps: Spawn* ignore setup; Place* require criminal setup (or non-PC mode).
 	UFUNCTION(Exec)
@@ -260,18 +225,11 @@ public:
 
 	// ---------- 局外配装 ----------
 	// 服务器上已校验的配装；SpawnInventory 读它。控制器跨重生存在，所以重生也会用
-
 	const FLoadoutPreset* GetSubmittedLoadout() const { return bHasSubmittedLoadout ? &SubmittedLoadout : nullptr; }
 
-
-
 	// 允许进局使用的枪（空 = 不限制）。名单里没有的，只要类在 /Game/FPS/Weapon/ 下也会放行（改枪台新枪不用每次改这份名单）。
-
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Loadout")
-
 	TArray<TSubclassOf<AWeapon>> AllowedLoadoutWeapons;
-
-
 
 	UFUNCTION(Server, Reliable)
 	void Server_SubmitLoadout(const FLoadoutPreset& Loadout);
@@ -339,55 +297,30 @@ private:
 	TObjectPtr<UInputAction>SprintAction;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
-
 	TObjectPtr<UInputAction>WalkAction;
 
-
-
 	// 旧的 I 键战术开关。不再绑定；镭射/手电改由鼠标上侧键控制。
-
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
-
 	TObjectPtr<UInputAction> FlashlightAction;
 
-
-
 	void EnsureTacticalDeviceInput();
-
 	void Input_TacticalDevice_Started();
-
 	void Input_TacticalDevice_Completed();
-
 	void Input_TacticalDevice_Hold();
 
-
-
 	UPROPERTY(Transient)
-
 	TObjectPtr<UInputAction> TacticalDeviceAction;
 
-
-
 	UPROPERTY(Transient)
-
 	TObjectPtr<UInputMappingContext> TacticalDeviceIMC;
 
-
-
 	FTimerHandle TacticalDeviceHoldTimer;
-
 	bool bTacticalDeviceHoldFired = false;
-
 	// false = 手电槽，true = 镭射槽。点按开关当前槽，按住在两个槽之间换。
-
 	bool bTacticalDeviceIsLaser = false;
 
-
-
 	// NVG toggle (runtime Alt+K). Default Off; Thermal remains console-only for now.
-
 	void EnsureNVGInput();
-
 	void EnsureWatchInput();
 	void Input_CheckWatch();
 	void Input_ToggleNVG();
@@ -426,22 +359,13 @@ private:
 	TObjectPtr<UMatchHUD> MatchHUD;
 
 	UPROPERTY(Transient)
-
 	TObjectPtr<UCombatHudKeepAlive> CombatHudKeepAlive;
 
-
-
 	UPROPERTY(Transient)
-
 	TObjectPtr<UScreenEffectOverlay> ScreenEffectOverlay;
 
-
-
 	UPROPERTY(Transient)
-
 	TObjectPtr<UCombatStatusHud> CombatStatusHud;
-
-
 
 	public:
 	/** Creates/re-pins CombatStatusHud + KeepAlive for local player. Safe to call repeatedly. */

@@ -10,19 +10,12 @@
 #include "Engine/DecalActor.h"
 #include "Components/DecalComponent.h"
 
-
 #include "Camera/CameraComponent.h"
-
 #include "Components/SkeletalMeshComponent.h"
-
 #include "Engine/SkeletalMesh.h"
-
 #include "Engine/SkeletalMeshSocket.h"
-
 #include "Animation/AnimInstance.h"
-
 #include "Animation/Skeleton.h"
-
 #include "Animation/AnimMontage.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -364,37 +357,21 @@ void AShooterCharacter::BeginPlay()
 	{
 		PC->bPawnAlive = true;
 	}
-
 }
-
-
 
 void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
-
 {
-
 	// 枪是独立 Actor，且 Mesh1P 是根组件、挂在角色手臂上。
-
 	// 不能放到 BeginDestroy：那时已经在 GC 里，再 Destroy 会在 ~AWeapon 读到坏指针。
-
 	if (IsValid(Combat))
-
 	{
-
 		Combat->DestroyInventory();
-
 	}
 
-
-
 	Super::EndPlay(EndPlayReason);
-
 }
 
-
-
 FRotator AShooterCharacter::GetFixedAimRotation() const
-
 {
 	FRotator AimRotation = GetBaseAimRotation();
 	if (AimRotation.Pitch > 90.f && !IsLocallyControlled())
@@ -425,42 +402,25 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateLocomotionGait(true);
 	UpdateFootsteps(DeltaTime);
 
-
 	CalculateTurnInPlaceParameters(DeltaTime);
-
 	CalculateFABRIKSocket(DeltaTime);
-
 	if (bWeaponAttachDebug)
-
 	{
-
 		DrawWeaponAttachDebug();
-
 	}
-
 	UpdateAimAlpha(DeltaTime);             // 开镜进度先推进，下面对准和 FOV 都用它
-
 	RemoveVisualRecoilFromMesh();          // 开镜对准要按没有后坐的位置算
-
 	UpdateAimSocketAlignment(DeltaTime);
-
 	UpdateWeaponObstacle(DeltaTime);       // 枪管顶墙：抬枪/收枪，拦开镜
 	UpdateMuzzleDip(DeltaTime);            // 近距离瞄队友/人质：枪口下压
 	UpdateWeaponSway(DeltaTime);           // 转视角拖拽 / 走路晃 / 落地下沉（和枪身后坐一起写进 Mesh1P）
 	ApplyVisualRecoilToMesh(DeltaTime);    // 算完再把枪身后坐叠回去
 	UpdateBandage(DeltaTime);              // 长按包扎进度
-
 	UpdateTacticalVision(DeltaTime);       // NVG / Thermal PP + battery
-
 	UpdateAimFieldOfView(DeltaTime);
-
 	UpdateAltPeek();
-
 	UpdateLean(DeltaTime);
-
 	UpdateMomentumCarry(DeltaTime);
-
-
 
 	if (UOpticScopeComponent* OpticScope = FindComponentByClass<UOpticScopeComponent>())
 	{
@@ -619,257 +579,131 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 	}
 
 	const float Blend = FMath::Clamp(LeftHandIKBlendSpeed * DeltaTime, 0.f, 1.f);
-
 	FABRIK_Alpha = FMath::Lerp(FABRIK_Alpha, WantAlpha, Blend);
 
-
-
 	// First-person: snap the left hand only when a foregrip is mounted.
-
 	// Pack idle poses often already place both hands; FABRIK without a grip can fight that pose.
-
 	FTransform SocketWorld1P;
-
 	float WantAlpha1P = 0.f;
-
 	const bool bWantGripSnap1P =
-
 		Combat->CurrentWeapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip) != nullptr;
-
 	if (bWantGripSnap1P && Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld1P) && IsValid(Mesh1P))
-
 	{
-
 		FABRIK_SocketTransform1P = SocketWorld1P.GetRelativeTransform(Mesh1P->GetComponentTransform());
-
 		WantAlpha1P = 1.f;
-
 	}
-
 	else
-
 	{
-
 		FABRIK_SocketTransform1P = FTransform::Identity;
-
 		WantAlpha1P = 0.f;
-
 	}
-
-
 
 	if (bDisableLeftHandIKDuringReload
-
 		&& Combat->CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
-
 	{
-
 		WantAlpha1P = 0.f;
-
 	}
-
 	if (!DisableLeftHandIKCurveName.IsNone() && IsValid(Mesh1P))
-
 	{
-
 		if (UAnimInstance* Anim1P = Mesh1P->GetAnimInstance())
-
 		{
-
 			const float DisableCurve = Anim1P->GetCurveValue(DisableLeftHandIKCurveName);
-
 			if (DisableCurve > 0.01f)
-
 			{
-
 				WantAlpha1P = 0.f;
-
 			}
-
 			const float MaskGrip = Anim1P->GetCurveValue(TEXT("Mask_Grip"));
-
 			if (MaskGrip > 0.01f)
-
 			{
-
 				WantAlpha1P *= FMath::Clamp(1.f - MaskGrip, 0.f, 1.f);
-
 			}
-
 		}
-
 	}
-
-
 
 	FABRIK_Alpha1P = FMath::Lerp(FABRIK_Alpha1P, WantAlpha1P, Blend);
-
 }
-
-
 
 void AShooterCharacter::DrawWeaponAttachDebug() const
-
 {
-
 	UWorld* World = GetWorld();
-
 	AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
-
 	USkeletalMeshComponent* Arms = Mesh1P;
-
 	if (!World)
-
 	{
-
 		return;
-
 	}
-
-
 
 	auto DrawAxis = [World](const FTransform& Xf, float Size, const FColor& Color)
-
 	{
-
 		const FVector Loc = Xf.GetLocation();
-
 		DrawDebugCoordinateSystem(World, Loc, Xf.Rotator(), Size, false, 0.f, 255);
-
 		DrawDebugSphere(World, Loc, 1.6f, 8, Color, false, 0.f, 255);
-
 	};
 
-
-
 	FString Line = TEXT("[WeaponDebug]\n");
-
 	if (!IsValid(Weapon) || !IsValid(Arms))
-
 	{
-
 		Line += TEXT("no weapon or Mesh1P");
-
 		if (GEngine) GEngine->AddOnScreenDebugMessage(0x57415431, 0.f, FColor::Red, Line);
-
 		return;
-
 	}
-
-
 
 	USkeletalMeshComponent* Gun = Weapon->GetMesh1P();
-
 	const FName Sock = IsValid(Gun) ? Gun->GetAttachSocketName() : NAME_None;
-
 	const USceneComponent* Parent = IsValid(Gun) ? Gun->GetAttachParent() : nullptr;
-
 	Line += FString::Printf(TEXT("gun=%s type=%s custom1P=%d\n"),
-
 		*GetNameSafe(Weapon), *Weapon->WeaponType.ToString(), Weapon->UsesCustomMesh1PAttach() ? 1 : 0);
-
 	Line += FString::Printf(TEXT("1P attach sock='%s' parent=%s\n"),
-
 		*Sock.ToString(), *GetNameSafe(Parent ? Parent->GetOwner() : nullptr));
-
 	Line += FString::Printf(TEXT("arms mesh=%s\n"), *GetNameSafe(Arms->GetSkeletalMeshAsset()));
-
 	Line += FString::Printf(TEXT("idle=%s aim=%s\n"),
-
 		*GetNameSafe(Weapon->ArmsIdleSequence), *GetNameSafe(Weapon->ArmsAimIdleSequence));
-
 	Line += FString::Printf(TEXT("FABRIK a1P=%.2f a3P=%.2f grip=%s\n"),
-
 		FABRIK_Alpha1P, FABRIK_Alpha, *GetNameSafe(Weapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip)));
 
-
-
 	if (IsValid(Gun))
-
 	{
-
 		DrawAxis(Gun->GetComponentTransform(), 8.f, FColor::Yellow);
-
 		static const FName Marks[] = {
-
 			TEXT("GripSocket"), TEXT("AimPoint"), TEXT("MuzzleSocket"), TEXT("FABRIK")
-
 		};
-
 		for (const FName Mark : Marks)
-
 		{
-
 			if (Gun->DoesSocketExist(Mark))
-
 			{
-
 				DrawAxis(Gun->GetSocketTransform(Mark), 6.f, FColor::Cyan);
-
 			}
-
 		}
-
 	}
-
-
 
 	if (!Sock.IsNone() && Arms->DoesSocketExist(Sock))
-
 	{
-
 		DrawAxis(Arms->GetSocketTransform(Sock), 10.f, FColor::Green);
-
 	}
-
 	else if (!Sock.IsNone() && Arms->GetBoneIndex(Sock) != INDEX_NONE)
-
 	{
-
 		DrawAxis(Arms->GetBoneTransform(Arms->GetBoneIndex(Sock)), 10.f, FColor::Green);
-
 	}
-
-
 
 	FTransform GripWorld;
-
 	if (Weapon->GetFabrikWorldTransform(true, GripWorld))
-
 	{
-
 		DrawAxis(GripWorld, 7.f, FColor::Magenta);
-
 		Line += TEXT("FABRIK target OK (magenta)\n");
-
 	}
-
 	else
-
 	{
-
 		Line += TEXT("FABRIK target MISSING\n");
-
 	}
-
-
 
 	Line += TEXT("Yel=gun origin  Grn=arm attach  Cyan=gun sockets  Mag=hand IK");
-
 	if (GEngine)
-
 	{
-
 		GEngine->AddOnScreenDebugMessage(0x57415431, 0.f, FColor::White, Line);
-
 	}
-
 }
-
 void AShooterCharacter::ConfigureAimTickOrder()
-
 {
-
 	// The aim socket follows the arm bones, so read it after Mesh1P animates.
 	if (IsValid(Mesh1P))
 	{
@@ -1338,18 +1172,11 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 	UEnhancedInputComponent* ShooterInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
 
-
-
 	EnsureLeanInput(ShooterInputComponent);
-
 	EnsureFireModeInput(ShooterInputComponent);
-
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanLeft_Started);
-
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanLeft_Completed);
-
 	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanRight_Started);
-
 	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanRight_Completed);
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_FireWeapon_Pressed);
 	ShooterInputComponent->BindAction(FireWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_FireWeapon_Released);
@@ -1374,20 +1201,12 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	}
 	if (SwitchFireModeAction)
 	{
-
 		ShooterInputComponent->BindAction(SwitchFireModeAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchFireMode);
-
 	}
-
 	// Free inspect removed: mag check is hold-R (see Input_ReloadWeapon_*).
-
 	// VersionWeaponAction intentionally unbound.
 
-
-
 }
-
-
 
 void AShooterCharacter::PossessedBy(AController* NewController)
 {
@@ -1580,21 +1399,13 @@ const TArray<TObjectPtr<UAnimMontage>>& AShooterCharacter::GetHitReactPool(EHitR
 	return Pool->Num() > 0 ? *Pool : HitReacts;
 }
 
-
 void AShooterCharacter::Client_ShowDamageIndicator_Implementation(FVector_NetQuantize InstigatorLocation)
-
 {
-
 	(void)InstigatorLocation;
-
 	AddHitBlood();
-
 }
 
-
-
 void AShooterCharacter::Client_ConfirmHit_Implementation(bool bHeadshot)
-
 {
 	OnHitConfirmed.Broadcast();
 	OnHitConfirmedDetailed.Broadcast(bHeadshot, false);
@@ -1645,19 +1456,12 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AShooterCharacter, bArmInjured);
 	DOREPLIFETIME(AShooterCharacter, bLegInjured);
 	DOREPLIFETIME(AShooterCharacter, BodyArmor);
-
 	DOREPLIFETIME(AShooterCharacter, FactionLook);
-
 	DOREPLIFETIME(AShooterCharacter, bHasRadar);
-
 	DOREPLIFETIME(AShooterCharacter, bHasFlashGoggles);
-
 }
 
-
-
 // ===== 趴下 / 趴行 (Prone) =====
-
 void AShooterCharacter::EnsureProneInput()
 {
 	if (ProneAction) return;
@@ -2104,168 +1908,86 @@ void AShooterCharacter::UpdateSlide(float DeltaTime)
 	}
 }
 
-
-
 // ===== 左右探头 =====
-
 void AShooterCharacter::EnsureFireModeInput(UEnhancedInputComponent* InputComp)
-
 {
-
 	(void)InputComp;
-
 	if (!IsLocallyControlled()) return;
-
 	if (!SwitchFireModeAction)
-
 	{
-
 		SwitchFireModeAction = NewObject<UInputAction>(this, TEXT("IA_SwitchFireMode_Runtime"));
-
 		SwitchFireModeAction->ValueType = EInputActionValueType::Boolean;
-
 	}
-
 	if (!FireModeRuntimeIMC)
-
 	{
-
 		FireModeRuntimeIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_FireMode_Runtime"));
-
 		FireModeRuntimeIMC->MapKey(SwitchFireModeAction, EKeys::X);
-
 	}
-
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-
 	{
-
 		if (ULocalPlayer* LP = PC->GetLocalPlayer())
-
 		{
-
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
-
 			{
-
 				if (!Subsystem->HasMappingContext(FireModeRuntimeIMC))
-
 				{
-
 					Subsystem->AddMappingContext(FireModeRuntimeIMC, 2);
-
 				}
-
 			}
-
 		}
-
 	}
-
 }
-
-
 
 void AShooterCharacter::UpdateAltPeek()
-
 {
-
 	const bool bWasPeek = bAltPeekCrouch;
-
 	bAltPeekCrouch = false;
-
 	AltPeekDir = 0;
-
 	if (!IsLocallyControlled() || bIsProne || bIsSliding) 
-
 	{
-
 		// fall through to release crouch if a peek was active
-
 	}
-
 	else if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
-
 	{
-
 		const bool bAlt = PC->IsInputKeyDown(EKeys::LeftAlt) || PC->IsInputKeyDown(EKeys::RightAlt);
-
 		if (PC->bPawnAlive && !PC->IsControlMovementLocked())
-
 		{
-
 			const bool bA = PC->IsInputKeyDown(EKeys::A);
-
 			const bool bD = PC->IsInputKeyDown(EKeys::D);
-
 			if (bAlt && (bA || bD))
-
 			{
-
 				bAltPeekCrouch = true;
-
 				if (bA && !bD) AltPeekDir = -1;
-
 				else if (bD && !bA) AltPeekDir = 1;
-
 				PC->StopSprinting();
-
 			}
-
 		}
-
 	}
-
-
 
 	UCharacterMovementComponent* CMC = GetCharacterMovement();
-
 	if (!IsValid(CMC) || !IsLocallyControlled()) return;
-
 	if (bAltPeekCrouch)
-
 	{
-
 		CMC->bWantsToCrouch = true;
-
 		ConsumeMovementInputVector();
-
 		FVector Vel = CMC->Velocity;
-
 		Vel.X = 0.f;
-
 		Vel.Y = 0.f;
-
 		CMC->Velocity = Vel;
-
 	}
-
 	else if (bWasPeek && !bIsProne && !bIsSliding)
-
 	{
-
 		const AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController());
-
 		if (!PC || !PC->IsCrouchHeld())
-
 		{
-
 			CMC->bWantsToCrouch = false;
-
 		}
-
 	}
-
 }
 
-
-
 void AShooterCharacter::EnsureLeanInput(UEnhancedInputComponent* InputComp)
-
 {
-
 	const bool bNeedLeft = !LeanLeftAction;
-
 	const bool bNeedRight = !LeanRightAction;
 	if (!bNeedLeft && !bNeedRight) return;
 
@@ -2339,69 +2061,37 @@ bool AShooterCharacter::IsLeanBlocked() const
 	return bIsProne || bIsSliding;   // no leaning while lying down / sliding
 }
 
-
 void AShooterCharacter::Server_SetLeanTarget_Implementation(float NewTarget)
-
 {
-
 	LeanTarget = FMath::Clamp(NewTarget, -1.f, 1.f);
-
 }
 
-
-
 void AShooterCharacter::UpdateLean(float DeltaTime)
-
 {
-
 	if (IsLocallyControlled())
-
 	{
-
 		float Desired = 0.f;
-
 		const bool bWideStep = bAltPeekCrouch && AltPeekDir != 0 && !IsLeanBlocked();
-
 		if (bWideStep)
-
 		{
-
 			Desired = static_cast<float>(AltPeekDir);
-
 			LeanDistanceScale = FMath::Max(1.f, AltPeekLeanScale);
-
 		}
-
 		else if (!IsLeanBlocked())
-
 		{
-
 			Desired = static_cast<float>(LeanInputDir);
-
 			if (LeanInputDir != 0)
-
 			{
-
 				LeanDistanceScale = 1.f;
-
 			}
-
 		}
-
 		if (!bWideStep && LeanInputDir == 0 && FMath::Abs(LeanAlpha) < 0.02f)
-
 		{
-
 			LeanDistanceScale = 1.f;
-
 		}
-
 		if (!FMath::IsNearlyEqual(Desired, LeanTarget))
-
 		{
-
 			LeanTarget = Desired;
-
 			if (!HasAuthority())
 			{
 				Server_SetLeanTarget(Desired);
@@ -2421,36 +2111,22 @@ void AShooterCharacter::UpdateLean(float DeltaTime)
 	if (FMath::Abs(LeanAlpha) > KINDA_SMALL_NUMBER)
 	{
 		const USceneComponent* Parent = FirstPersonCamera->GetAttachParent();
-
 		const FTransform ParentXf = IsValid(Parent) ? FirstPersonCamera->GetAttachParent()->GetSocketTransform(FirstPersonCamera->GetAttachSocketName()) : GetActorTransform();
-
 		const FVector Start = ParentXf.TransformPosition(CameraBaseLocation);
-
 		const FVector End = ParentXf.TransformPosition(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * LeanDistanceScale, 0.f));
-
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(LeanProbe), false, this);
-
 		if (IsValid(Combat) && IsValid(Combat->CurrentWeapon)) Params.AddIgnoredActor(Combat->CurrentWeapon);
-
 		FHitResult Hit;
-
 		if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, ECC_Camera, FCollisionShape::MakeSphere(LeanWallProbeRadius), Params))
 		{
 			OffsetScale = Hit.Time;
 		}
-
 	}
 
-
-
 	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * LeanDistanceScale * OffsetScale, 0.f));
-
 	// 侧倾手感保留：开镜时收到 SlideCameraRollAds，不整段清零
-
 	const float SlideRoll = SlideAlpha * FMath::Lerp(SlideCameraRoll, SlideCameraRollAds, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
-
 	FirstPersonCamera->SetRelativeRotation(CameraBaseRotation + FRotator(0.f, 0.f, LeanAlpha * LeanRollDegrees + SlideRoll));
-
 }
 
 void AShooterCharacter::Input_SwitchZoom()
@@ -2548,95 +2224,51 @@ bool AShooterCharacter::ComputeCantedMeshTransform(FQuat& OutRelRotation, FVecto
 	return !OutRelLocation.ContainsNaN() && !OutRelRotation.ContainsNaN();
 }
 
-
 void AShooterCharacter::Input_SwitchFireMode()
-
 {
-
 	const APlayerController* PC = Cast<APlayerController>(GetController());
-
 	if (!PC || !PC->IsInputKeyDown(EKeys::X)) return;
-
 	const UWorld* World = GetWorld();
-
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
-
 	if (Now - LastFireModeSwitchTime < 0.05) return;
-
 	LastFireModeSwitchTime = Now;
-
 	if (IsValid(Combat)) Combat->Initiate_SwitchFireMode();
-
 }
-
-
 
 void AShooterCharacter::Input_ReloadWeapon()
 {
 	Input_ReloadWeapon_Started();
-
 }
-
-
 
 void AShooterCharacter::ClearReloadGestureTimers()
-
 {
-
 	if (UWorld* World = GetWorld())
-
 	{
-
 		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
-
 		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-
 	}
-
 }
 
-
-
 void AShooterCharacter::Input_ReloadWeapon_Started()
-
 {
-
 	// Second press inside the double-click window -> mark double (tactical on release).
-
 	if (bReloadAwaitingDouble)
-
 	{
-
 		bReloadAwaitingDouble = false;
-
 		bReloadDoubleClick = true;
-
 		if (UWorld* World = GetWorld())
-
 		{
-
 			World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-
 		}
-
 	}
-
 	else
-
 	{
-
 		bReloadDoubleClick = false;
-
 	}
-
-
 
 	bReloadKeyHeld = true;
-
 	bReloadHoldTriggered = false;
-
 	if (UWorld* World = GetWorld())
-
 	{
 		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
 		World->GetTimerManager().SetTimer(
@@ -2647,49 +2279,27 @@ void AShooterCharacter::Input_ReloadWeapon_Started()
 
 void AShooterCharacter::OnReloadHoldThreshold()
 {
-
 	if (!bReloadKeyHeld || bReloadHoldTriggered) return;
-
 	bReloadHoldTriggered = true;
-
 	bReloadAwaitingDouble = false;
-
 	bReloadDoubleClick = false;
-
 	if (UWorld* World = GetWorld())
-
 	{
-
 		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-
 	}
-
 	// HOLD R = mag check (no free inspect key)
-
 	if (IsValid(Combat)) Combat->Initiate_VersionWeapon();
-
 }
-
-
 
 void AShooterCharacter::OnReloadSingleClickTimeout()
-
 {
-
 	if (bReloadKeyHeld || bReloadHoldTriggered || bReloadDoubleClick) return;
-
 	bReloadAwaitingDouble = false;
-
 	// SINGLE R = reload (keep partial mag / Empty montage)
-
 	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(false);
-
 }
 
-
-
 void AShooterCharacter::Input_ReloadWeapon_Completed()
-
 {
 	bReloadKeyHeld = false;
 	if (UWorld* World = GetWorld())
@@ -2697,71 +2307,38 @@ void AShooterCharacter::Input_ReloadWeapon_Completed()
 		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
 	}
 	if (bReloadHoldTriggered)
-
 	{
-
 		bReloadHoldTriggered = false;
-
 		return; // hold already fired mag check
-
 	}
-
 	if (bReloadDoubleClick)
-
 	{
-
 		bReloadDoubleClick = false;
-
 		bReloadAwaitingDouble = false;
-
 		if (UWorld* World = GetWorld())
-
 		{
-
 			World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-
 		}
-
 		// DOUBLE R = tactical reload (drop mag / Tactical montage)
-
 		if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(true);
-
 		return;
-
 	}
-
 	// Wait briefly for a possible second tap before committing single reload.
-
 	bReloadAwaitingDouble = true;
-
 	if (UWorld* World = GetWorld())
-
 	{
-
 		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-
 		World->GetTimerManager().SetTimer(
-
 			ReloadDoubleClickTimer, this, &AShooterCharacter::OnReloadSingleClickTimeout,
-
 			FMath::Max(0.05f, ReloadDoubleClickWindow), false);
-
 	}
-
 	else if (IsValid(Combat))
-
 	{
-
 		Combat->Initiate_ReloadWeapon(false);
-
 	}
-
 }
 
-
-
 void AShooterCharacter::Input_FireWeapon_Pressed()
-
 {
 	// 配件菜单打开时鼠标留给界面。Enhanced Input 仍会收到左键，这里不要再开枪。
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -3052,19 +2629,12 @@ void AShooterCharacter::Input_Heal()
 	HealPlayer(HealAmout);
 }
 
-
 void AShooterCharacter::Input_VersionWeapon()
-
 {
-
 	// Free inspect disabled. Mag check is hold-R.
-
 }
 
-
-
 void AShooterCharacter::OnDeathStarted()
-
 {
 	ClearHitZoneMarks();
 	if (GetNetMode() != NM_DedicatedServer)
@@ -4437,217 +4007,111 @@ void AShooterCharacter::RefillVisionBattery(float Amount)
 void AShooterCharacter::AddVisionFlashWash(float Amount)
 {
 	VisionFlashWash = FMath::Clamp(VisionFlashWash + FMath::Max(0.f, Amount), 0.f, 4.f);
-
 	if (IsLocallyControlled())
-
 	{
-
 		ReceiveFlashbang(FMath::Clamp(Amount / 2.5f, 0.f, 1.f));
-
 		ApplyTacticalVisionEffects();
-
 	}
-
 }
-
-
 
 void AShooterCharacter::ReceiveFlashbang(float Strength)
-
 {
-
 	Strength = FMath::Clamp(Strength, 0.f, 1.f);
-
 	if (Strength <= 0.f) return;
-
 	if (bHasFlashGoggles)
-
 	{
-
 		FlashGhost = FMath::Max(FlashGhost, Strength);
-
 	}
-
 	else
-
 	{
-
 		FlashWhite = FMath::Max(FlashWhite, Strength);
-
 	}
-
 }
-
-
 
 void AShooterCharacter::Client_ReceiveFlashbang_Implementation(float Strength)
-
 {
-
 	ReceiveFlashbang(Strength);
-
 }
-
-
 
 void AShooterCharacter::SetHasFlashGoggles(bool bEnable)
-
 {
-
 	bHasFlashGoggles = bEnable;
-
 	if (!HasAuthority())
-
 	{
-
 		Server_SetHasFlashGoggles(bEnable);
-
 	}
-
 }
-
-
 
 void AShooterCharacter::Server_SetHasFlashGoggles_Implementation(bool bEnable)
-
 {
-
 	bHasFlashGoggles = bEnable;
-
 }
-
-
 
 float AShooterCharacter::GetHitBloodAlpha() const
-
 {
-
 	return FMath::Clamp(FMath::Max(HitBloodFlash, HitBloodTail), 0.f, 1.f);
-
 }
-
-
 
 void AShooterCharacter::AddHitBlood()
-
 {
-
 	HitBloodFlash = 1.f;
-
 	HitBloodTail = FMath::Max(HitBloodTail, 0.62f);
-
 }
-
-
 
 void AShooterCharacter::UpdateScreenEffects(float DeltaTime)
-
 {
-
 	if (FlashWhite > 0.f)
-
 	{
-
 		const float Rate = FlashWhite > 0.9f ? 0.18f : 0.48f;
-
 		FlashWhite = FMath::Max(0.f, FlashWhite - DeltaTime * Rate);
-
 	}
-
 	if (FlashGhost > 0.f)
-
 	{
-
 		FlashGhost = FMath::Max(0.f, FlashGhost - DeltaTime * 0.32f);
-
 	}
-
 	HitBloodFlash = FMath::Max(0.f, HitBloodFlash - DeltaTime * 3.4f);
-
 	HitBloodTail = FMath::Max(0.f, HitBloodTail - DeltaTime * 0.5f);
-
 	ApplyFlashGhostPostProcess();
-
 }
-
-
 
 void AShooterCharacter::ApplyFlashGhostPostProcess()
-
 {
-
 	if (!IsLocallyControlled() || !IsValid(FirstPersonCamera)) return;
 
-
-
 	FPostProcessSettings& PPS = FirstPersonCamera->PostProcessSettings;
-
 	if (FlashGhost > 0.02f)
-
 	{
-
 		PPS.bOverride_SceneFringeIntensity = true;
-
 		PPS.SceneFringeIntensity = FlashGhost * 6.5f;
-
 		PPS.bOverride_ChromaticAberrationStartOffset = true;
-
 		PPS.ChromaticAberrationStartOffset = FMath::Lerp(0.35f, 0.f, FlashGhost);
-
 		if (TacticalVisionMode == ETacticalVisionMode::Off)
-
 		{
-
 			PPS.bOverride_BloomIntensity = true;
-
 			PPS.BloomIntensity = 0.35f + FlashGhost * 1.4f;
-
 			PPS.bOverride_ColorContrast = true;
-
 			const float Contrast = 1.f - FlashGhost * 0.22f;
-
 			PPS.ColorContrast = FVector4(Contrast, Contrast, Contrast, 1.f);
-
 		}
-
 		bGhostPostProcess = true;
-
 		return;
-
 	}
-
-
 
 	if (!bGhostPostProcess) return;
-
 	PPS.bOverride_SceneFringeIntensity = false;
-
 	PPS.SceneFringeIntensity = 0.f;
-
 	PPS.bOverride_ChromaticAberrationStartOffset = false;
-
 	if (TacticalVisionMode == ETacticalVisionMode::Off)
-
 	{
-
 		PPS.bOverride_BloomIntensity = false;
-
 		PPS.bOverride_ColorContrast = false;
-
 	}
-
 	bGhostPostProcess = false;
-
 }
 
-
-
 void AShooterCharacter::CycleTacticalVisionMode()
-
 {
-
 	const uint8 Next = (static_cast<uint8>(TacticalVisionMode) + 1) % 3;
-
 	SetTacticalVisionMode(static_cast<ETacticalVisionMode>(Next));
 }
 
@@ -4952,19 +4416,11 @@ void AShooterCharacter::UpdateTacticalVision(float DeltaTime)
 	}
 	else
 	{
-
 		VisionOverlayRefreshAcc = 0.f;
-
 	}
 
-
-
 	UpdateScreenEffects(DeltaTime);
-
 }
-
-
-
 
 
 // ===== Radar / Watch / Blood polish =====
@@ -5645,116 +5101,62 @@ void AShooterCharacter::EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkelet
 			}
 		}
 	}
-
 	AliasSocketWeapon(Copies);
-
 	ApplyGripSocketCopies(ArmsMesh, Copies, TEXT("Arms1P"), *GetNameSafe(ArmsSource));
-
 	EnsureAnimatedGunAttachSockets(ArmsMesh);
-
 }
-
-
 
 void AShooterCharacter::EnsureAnimatedGunAttachSockets(USkeletalMesh* ArmsMesh)
-
 {
-
 	// NEVER promote ik_hand_gun (or VB pivots) to a same-named mesh socket.
-
 	// AttachToComponent prefers sockets over bones; a socket parented to ik_hand_root
-
 	// freezes the gun at rest pose while the animated bone (and RAR SOCKET_Weapon on
-
 	// that bone) keep moving — KINEMATION guns then look untunable.
-
 	// Strip any mesh-only shadow sockets left from older sessions.
-
 	if (!IsValid(ArmsMesh))
-
 	{
-
 		return;
-
 	}
-
-
 
 	TArray<TObjectPtr<USkeletalMeshSocket>>& Sockets = ArmsMesh->GetMeshOnlySocketList();
-
 	const int32 Removed = Sockets.RemoveAll([ArmsMesh](const TObjectPtr<USkeletalMeshSocket>& Socket)
-
 	{
-
 		if (!IsValid(Socket) || Socket->GetOuter() != ArmsMesh)
-
 		{
-
 			return false;
-
 		}
-
 		const FName N = Socket->SocketName;
-
 		if (N != FName(TEXT("ik_hand_gun"))
-
 			&& N != FName(TEXT("VB ik_hand_gun"))
-
 			&& N != FName(TEXT("VB ik_hand_gun_pivot")))
-
 		{
-
 			return false;
-
 		}
-
 		UE_LOG(LogTemp, Warning,
-
 			TEXT("[GunAttach] removed shadow socket '%s' on %s (was parent=%s) — attach must use the animated bone"),
-
 			*N.ToString(), *GetNameSafe(ArmsMesh), *Socket->BoneName.ToString());
-
 		return true;
-
 	});
-
 	if (Removed > 0)
-
 	{
-
 		UE_LOG(LogTemp, Warning, TEXT("[GunAttach] stripped %d shadow gun-attach socket(s) from %s"),
-
 			Removed, *GetNameSafe(ArmsMesh));
-
 	}
-
 }
 
-
-
 void AShooterCharacter::ApplyFactionArms1P()
-
 {
 	if (!bUseBanditsArms1P || !IsValid(Mesh1P))
 	{
 		return;
-
 	}
 
-
-
 	// Always finish the Bandits/arms swap; AttachToOwingPawn runs again at the end of this function.
-
 	// (An older early-out for UsesCustomMesh1PAttach skipped the swap and left guns on a bad attach target.)
 
-
-
 	if (!bCapturedDefaultArms1P)
-
 	{
-
 		USkeletalMesh* CurArms = Mesh1P->GetSkeletalMeshAsset();
-
 		DefaultArmsMesh1PAsset = IsBanditsSkelMesh(CurArms) ? LoadCanonicalArms1PSource() : CurArms;
 		if (!IsValid(DefaultArmsMesh1PAsset))
 		{
@@ -5794,25 +5196,15 @@ void AShooterCharacter::ApplyFactionArms1P()
 	const bool bBanditsTarget = (FactionLook == ECharacterLookFaction::Criminal || FactionLook == ECharacterLookFaction::Police);
 	if (bBanditsTarget)
 	{
-
 		EnsureArms1PGripSockets(WantMesh, SourceForSockets);
-
 	}
-
 	else
-
 	{
-
 		EnsureAnimatedGunAttachSockets(WantMesh);
-
 	}
-
-
 
 	USkeleton* WantSkel = WantMesh->GetSkeleton();
-
 	USkeleton* CurSkel = Mesh1P->GetSkeletalMeshAsset() ? Mesh1P->GetSkeletalMeshAsset()->GetSkeleton() : nullptr;
-
 #if WITH_EDITOR
 	if (IsValid(WantSkel) && IsValid(CurSkel) && WantSkel != CurSkel)
 	{

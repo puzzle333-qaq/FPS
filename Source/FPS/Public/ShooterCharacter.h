@@ -123,40 +123,22 @@ public:
 	virtual bool DoDamage_Implementation(float DamageAmout,AActor* DamageInstigator) override;
 	/** PlayerInterface */
 
-
-
 	virtual void BeginPlay() override;
-
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-
-
 	UFUNCTION(BlueprintCallable)
-
 	FRotator GetFixedAimRotation()const;
 
-
 	UPROPERTY(BlueprintReadOnly,Category = "FPS|FABRIK")
-
 	FTransform FABRIK_SocketTransform;
 
-
-
 	// First-person left-hand FABRIK target in Mesh1P component space (GripSocket snap).
-
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
-
 	FTransform FABRIK_SocketTransform1P;
 
-
-
 	// First-person FABRIK alpha. 1 when a grip/weapon hand socket exists; 0 while reloading / melee.
-
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
-
 	float FABRIK_Alpha1P = 0.f;
-
-
 
 	// 第三人称左手 FABRIK 强度。近战为 0，ABP 的 FABRIK Alpha 应绑这个。
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
@@ -172,22 +154,13 @@ public:
 
 	// 左手 IK 淡入淡出速度（越大越快，10 大约 0.2~0.3 秒）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FABRIK", meta = (ClampMin = "0"))
-
 	float LeftHandIKBlendSpeed = 10.f;
 
-
-
 	void SetWeaponAttachDebug(bool bEnabled) { bWeaponAttachDebug = bEnabled; }
-
 	void DrawWeaponAttachDebug() const;
 
-
-
 	UFUNCTION(BlueprintCallable)
-
 	bool HasCurrentWeapon() const;
-
-
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void EquipMainWeapon();
@@ -300,62 +273,33 @@ public:
 
 	// Call from flashbang BP (or console FlashWash) - NVG washes out harder.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
-
 	void AddVisionFlashWash(float Amount);
 
-
-
 	// 0..1 whiteout, or ghosting when this character has flash goggles.
-
 	void ReceiveFlashbang(float Strength);
 
-
-
 	UFUNCTION(Client, Reliable)
-
 	void Client_ReceiveFlashbang(float Strength);
 
-
-
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
-
 	void SetHasFlashGoggles(bool bEnable);
 
-
-
 	UFUNCTION(Server, Reliable)
-
 	void Server_SetHasFlashGoggles(bool bEnable);
 
-
-
 	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
-
 	bool HasFlashGoggles() const { return bHasFlashGoggles; }
 
-
-
 	UFUNCTION(BlueprintPure, Category = "FPS|HitFeedback")
-
 	float GetHitBloodAlpha() const;
 
-
-
 	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
-
 	float GetFlashWhiteAlpha() const { return FlashWhite; }
-
-
 
 	void AddHitBlood();
 
-
-
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
-
 	void RefillVisionBattery(float Amount = -1.f);
-
-
 
 	// Radar accessory: MatchHUD shows radar only while true. Console GrantRadar.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Radar")
@@ -495,39 +439,22 @@ public:
 	float LeanTarget = 0.f;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Lean")
-
 	float GetLeanAlpha() const { return LeanAlpha; }
 
-
-
 	// 1P 相机横移距离（cm）。Q/E 用这个距离，Alt+A/D 再乘 AltPeekLeanScale。侧倾角度两边一样。
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
-
 	float LeanCameraOffset = 30.f;
 
-
-
 	// Alt+A / Alt+D 往侧面跨出的距离倍数。不改变探头角度。
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean", meta = (ClampMin = "1.0"))
-
 	float AltPeekLeanScale = 2.f;
 
-
-
 	UFUNCTION(BlueprintPure, Category = "FPS|Lean")
-
 	bool IsAltPeekCrouching() const { return bAltPeekCrouch; }
 
-
-
 	// 1P 相机侧倾角度（度）
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
-
 	float LeanRollDegrees = 12.f;
-
 
 	// 插值速度（越大越快）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
@@ -767,25 +694,15 @@ public:
 
 	// Equipped radar tablet / tactical map accessory.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_HasRadar, Category = "FPS|Radar")
-
 	bool bHasRadar = false;
 
-
-
 	// Flash goggles: flashbang ghosts the screen instead of whiteout. Console `Goggles 1`.
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "FPS|Vision")
-
 	bool bHasFlashGoggles = false;
 
-
-
 	// Soft ref; defaults to RAR WatchCheck montage if null.
-
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Watch")
-
 	TSoftObjectPtr<UAnimMontage> WatchCheckMontage;
-
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Watch", meta = (ClampMin = "1"))
 	float WatchTimeDisplaySeconds = 4.f;
@@ -1184,79 +1101,42 @@ private:
 
 	// 当前按住/切换的方向：-1 左 0 无 1 右
 	int32 LeanInputDir = 0;
-
 	bool bLeanLeftHeld = false;
-
 	bool bLeanRightHeld = false;
-
 	bool bAltPeekCrouch = false;
-
 	int32 AltPeekDir = 0;
-
 	float LeanDistanceScale = 1.f;
-
 	double LastFireModeSwitchTime = -1.0;
-
 	void UpdateAltPeek();
-
 	FVector CameraBaseLocation = FVector::ZeroVector;
-
 	FRotator CameraBaseRotation = FRotator::ZeroRotator;
-
 	bool bCameraBaseCaptured = false;
 
-
-
 	UPROPERTY(Transient)
-
 	TObjectPtr<UInputMappingContext> LeanRuntimeIMC;
 
-
-
 	UPROPERTY(Transient)
-
 	TObjectPtr<UInputMappingContext> FireModeRuntimeIMC;
-
 	void EnsureFireModeInput(class UEnhancedInputComponent* InputComp);
-
 	void Input_ReloadWeapon_Started();
-
 	void Input_ReloadWeapon_Completed();
-
 	void Input_ReloadWeapon(); // legacy alias -> Started
-
 	void OnReloadHoldThreshold();
-
 	void OnReloadSingleClickTimeout();
-
 	void ClearReloadGestureTimers();
-
 	FTimerHandle ReloadHoldTimer;
-
 	FTimerHandle ReloadDoubleClickTimer;
-
 	bool bReloadKeyHeld = false;
-
 	bool bReloadHoldTriggered = false;
-
 	bool bReloadAwaitingDouble = false;
-
 	bool bReloadDoubleClick = false;
-
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Reload", meta = (ClampMin = "0.05"))
-
 	float ReloadHoldThreshold = 0.35f;
-
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Reload", meta = (ClampMin = "0.05"))
-
 	float ReloadDoubleClickWindow = 0.28f;
-
 	void Input_SwitchFireMode();
-
 	void Input_SwitchZoom();
-
 	// 第 12 步：侧瞄是切档循环里的一档（主镜各档 -> 侧瞄 -> 第一档），不再有单独按键
-
 	void SetCantedAim(bool bNewCanted);
 	// 侧瞄时 Mesh1P 的相对旋转和位置（让侧瞄插槽正对屏幕中心）。算不出返回 false
 	bool ComputeCantedMeshTransform(FQuat& OutRelRotation, FVector& OutRelLocation);
@@ -1293,18 +1173,11 @@ private:
 	void UpdateAimSocketAlignment(float DeltaTime);
 	float GetAimTimelineAlpha(float DeltaTime);
 	// 本地玩家每帧把镜头 FOV 插值到开镜目标或默认值
-
 	void UpdateAimFieldOfView(float DeltaTime);
 
-
-
 	bool bWeaponAttachDebug = false;
-
 	bool bWeaponFirstReplicated;
-
 	FRotator StartingAimRotation;
-
-
 
 	float InterpAO_Yaw;
 	float AimAlignAlpha = 0.f;
@@ -1387,21 +1260,13 @@ private:
 
 	void ApplyFactionLookMeshes();
 	void ApplyFactionArms1P();
-
 	void ApplyFactionSleeves1P();
-
 	void EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkeletalMesh* SourceMesh);
-
 	/** Strip mesh-only sockets that shadow animated gun bones (ik_hand_gun). Never promote those bones. */
-
 	void EnsureAnimatedGunAttachSockets(USkeletalMesh* ArmsMesh);
-
 	/** Copy Manny/default Mesh3P grip sockets onto Bandits body (weapon_r / RifleSocket* / PistolSocket*). */
-
 	void EnsureMesh3PGripSockets(USkeletalMesh* BodyMesh, USkeletalMesh* SourceMesh, USkeletalMeshComponent* LiveSourceComp = nullptr);
-
 	void EnsureFactionLookDefaults();
-
 	void SetModularLookVisible(bool bVisible);
 	USkeletalMesh* LoadSoftMesh(const TSoftObjectPtr<USkeletalMesh>& Soft) const;
 	UMaterialInterface* LoadSoftMaterial(const TSoftObjectPtr<UMaterialInterface>& Soft) const;
@@ -1434,31 +1299,18 @@ private:
 	float MuzzleDipAlpha = 0.f;
 	FRotator MuzzleDipRotCurrent = FRotator::ZeroRotator;
 
-
 	float VisionBatterySeconds = 60.f;
-
 	float VisionFlashWash = 0.f;
-
 	float FlashWhite = 0.f;
-
 	float FlashGhost = 0.f;
-
 	float HitBloodFlash = 0.f;
-
 	float HitBloodTail = 0.f;
-
 	bool bGhostPostProcess = false;
-
 	void UpdateScreenEffects(float DeltaTime);
-
 	void ApplyFlashGhostPostProcess();
-
 	float VisionOverlayRefreshAcc = 0.f;
-
 	ETacticalVisionMode AppliedVisionMode = ETacticalVisionMode::Off;
-
 	TWeakObjectPtr<UMaterialInterface> ActiveVisionBlendable;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> CachedThermalOverlayMat;
 	TArray<TWeakObjectPtr<USkeletalMeshComponent>> ThermalOverlayMeshes;

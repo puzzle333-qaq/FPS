@@ -1,18 +1,11 @@
 
 
 
-
-
 #include "Weapon/Weapon.h"
-
 #include "WeaponData.h"
-
 #include "CombatComponent.h"
-
 #include "FPSTraceChannels.h"
-
 #include "GameFramework/Pawn.h"
-
 #include "GameFramework/PlayerController.h"
 #include "Interface/PlayerInterface.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -21,108 +14,59 @@
 #include "Net/UnrealNetwork.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SpotLightComponent.h"
-
 #include "Components/DecalComponent.h"
-
 #include "Materials/MaterialInstanceDynamic.h"
-
 #include "Materials/MaterialInterface.h"
-
 #include "UObject/SavePackage.h"
-
 #include "Misc/PackageName.h"
-
 #include "HAL/IConsoleManager.h"
-
 #include "Engine/World.h"
-
 #include "TimerManager.h"
-
 #include "Camera/CameraComponent.h"
-
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Animation/AnimMontage.h"
-
 #include "PhysicalMaterials/PhysicalMaterial.h"
-
 #include "Animation/AnimInstance.h"
-
 #include "Animation/Skeleton.h"
-
 #include "BoneContainer.h"
-
 #include "Engine/SkeletalMeshSocket.h"
-
 #include "ShooterCharacter.h"
-
 #include "ShooterGamePlayTags.h"
-
 #include "UObject/UnrealType.h"
 
-
 namespace
-
 {
-
 	// Dual-mag: primary mag socket + optional reserve socket (Infima SOCKET_Magazine_Reserve).
-
 	// Reserve stays hidden until reload. SetMeshVisibility propagates hide; re-hide here.
-
 	void HideReserveMagazines(const AActor* Weapon, FName ReserveSocket)
-
 	{
-
 		if (!IsValid(Weapon) || ReserveSocket.IsNone()) return;
 
-
-
 		TArray<UStaticMeshComponent*> Meshes;
-
 		Weapon->GetComponents<UStaticMeshComponent>(Meshes);
-
 		for (UStaticMeshComponent* Mesh : Meshes)
-
 		{
-
 			if (!IsValid(Mesh) || Mesh->GetAttachSocketName() != ReserveSocket) continue;
-
 			Mesh->SetHiddenInGame(true);
-
 			Mesh->SetVisibility(false);
-
 		}
-
 	}
 
-
-
 	void DestroyReserveMagazines(AActor* Weapon, FName ReserveSocket)
-
 	{
-
 		if (!IsValid(Weapon) || ReserveSocket.IsNone()) return;
 
-
-
 		TArray<UStaticMeshComponent*> Meshes;
-
 		Weapon->GetComponents<UStaticMeshComponent>(Meshes);
-
 		for (UStaticMeshComponent* Mesh : Meshes)
-
 		{
-
 			if (IsValid(Mesh) && Mesh->GetAttachSocketName() == ReserveSocket)
-
 			{
-
 				Mesh->DestroyComponent();
-
 			}
-
 		}
 	}
 
@@ -188,321 +132,163 @@ namespace
 
 		return nullptr;
 	}
-
 }
-
-
-
 
 
 namespace OpticTrimT1025
-
 {
-
 	static bool IsKinLongGun(const AWeapon* W)
-
 	{
-
 		if (!IsValid(W) || !W->GetClass()) return false;
-
 		const FString N = W->GetClass()->GetName();
-
 		static const TCHAR* Keys[] = {
-
 			TEXT("Weapon_AK105"), TEXT("Weapon_TR15"), TEXT("Weapon_Mk14"), TEXT("Weapon_MKR9"),
-
 			TEXT("Weapon_MX68"), TEXT("Weapon_R08"), TEXT("Weapon_SRM12"), TEXT("Weapon_Herrington"), TEXT("Weapon_Viper")
-
 		};
-
 		for (const TCHAR* K : Keys) { if (N.Contains(K)) return true; }
-
 		return false;
-
 	}
-
-
 
 	static bool IsKeptKinOptic(const UAttachmentData* A)
-
 	{
-
 		if (!IsValid(A)) return false;
-
 		const FString N = A->GetName();
-
 		return N.Contains(TEXT("MicroRedDot")) || N.Contains(TEXT("PhantomTAC"))
-
 			|| N.Contains(TEXT("FPSTP_Holographic")) || N.Contains(TEXT("FPSTP_Reflex"));
-
 	}
-
-
 
 	static UAttachmentData* LoadDA(const TCHAR* Path)
-
 	{
-
 		return LoadObject<UAttachmentData>(nullptr, Path);
-
 	}
-
-
 
 #if WITH_EDITOR
-
 	static bool SaveObj(UObject* Obj)
-
 	{
-
 		if (!IsValid(Obj)) return false;
-
 		UPackage* Pkg = Obj->GetOutermost();
-
 		if (!Pkg) return false;
-
 		Pkg->FullyLoad();
-
 		Obj->MarkPackageDirty();
-
 		const FString Filename = FPackageName::LongPackageNameToFilename(Pkg->GetName(), FPackageName::GetAssetPackageExtension());
-
 		FSavePackageArgs Args;
-
 		Args.TopLevelFlags = RF_Public | RF_Standalone;
-
 		Args.SaveFlags = SAVE_NoError;
-
 		const bool bOk = UPackage::SavePackage(Pkg, Obj, *Filename, Args);
-
 		UE_LOG(LogTemp, Log, TEXT("[T1025] Save %s -> %d"), *Pkg->GetName(), bOk ? 1 : 0);
-
 		return bOk;
-
 	}
-
 #endif
-
-
 
 	static void ConfigureOpticsAndTrimAllowlists()
-
 	{
-
 		static bool bDone = false;
-
 		if (bDone) return;
-
 		bDone = true;
 
-
-
 		UAttachmentData* Micro = LoadDA(TEXT("/Game/FPS/Data/Kinemation/DA_Kinemation_MicroRedDot.DA_Kinemation_MicroRedDot"));
-
 		UAttachmentData* Phantom = LoadDA(TEXT("/Game/FPS/Data/Kinemation/DA_Kinemation_PhantomTAC.DA_Kinemation_PhantomTAC"));
-
 		UAttachmentData* Holo = LoadDA(TEXT("/Game/FPS/Data/Kinemation/DA_FPSTP_Holographic.DA_FPSTP_Holographic"));
-
 		UAttachmentData* Reflex = LoadDA(TEXT("/Game/FPS/Data/Kinemation/DA_FPSTP_Reflex.DA_FPSTP_Reflex"));
 
-
-
 		auto SetupRedDot = [](UAttachmentData* DA, float FOV, const TCHAR* Sight)
-
 		{
-
 			if (!IsValid(DA)) return;
-
 			DA->OpticType = EOpticType::RedDot;
-
 			DA->bOverridesAimFOV = true;
-
 			DA->AimFOV = FOV;
-
 			DA->SightSocketName = Sight;
-
 		};
-
-
 
 		SetupRedDot(Micro, 55.f, TEXT("AimPoint"));
-
 		// Phantom like PSR optical: camera/FOV path (NOT Magnified PiP)
-
 		SetupRedDot(Phantom, 40.f, TEXT("AimPoint"));
-
 		if (IsValid(Phantom))
-
 		{
-
 			Phantom->bOverridesEyeDistance = true;
-
 			Phantom->EyeDistance = 12.f;
-
 			Phantom->DisplayName = FText::FromString(TEXT("Phantom TAC Scope"));
-
 		}
-
 		if (IsValid(Holo))
-
 		{
-
 			Holo->OpticType = EOpticType::Holographic;
-
 			Holo->bOverridesAimFOV = true;
-
 			Holo->AimFOV = 55.f;
-
 			if (Holo->SightSocketName.IsNone()) Holo->SightSocketName = TEXT("SightSocket");
-
 		}
-
 		SetupRedDot(Reflex, 55.f, TEXT("SightSocket"));
-
 		if (IsValid(Reflex))
-
 		{
-
 			Reflex->OpticType = EOpticType::RedDot;
-
 			Reflex->bOverridesAimFOV = true;
-
 			Reflex->AimFOV = 55.f;
-
 		}
-
-
 
 #if WITH_EDITOR
-
 		if (IsValid(Micro)) { Micro->MarkPackageDirty(); }
-
 		if (IsValid(Phantom)) { Phantom->MarkPackageDirty(); }
-
 		if (IsValid(Holo)) { Holo->MarkPackageDirty(); }
-
 		if (IsValid(Reflex)) { Reflex->MarkPackageDirty(); }
-
 #endif
-
-
 
 		TArray<UAttachmentData*> Keep;
-
 		if (IsValid(Micro)) Keep.Add(Micro);
-
 		if (IsValid(Phantom)) Keep.Add(Phantom);
-
 		if (IsValid(Holo)) Keep.Add(Holo);
-
 		if (IsValid(Reflex)) Keep.Add(Reflex);
 
-
-
 		static const TCHAR* GunPaths[] = {
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_AK105.BP_Weapon_AK105_C"),
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_TR15.BP_Weapon_TR15_C"),
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_Mk14.BP_Weapon_Mk14_C"),
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_MKR9.BP_Weapon_MKR9_C"),
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_MX68.BP_Weapon_MX68_C"),
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_R08.BP_Weapon_R08_C"),
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_SRM12.BP_Weapon_SRM12_C"),
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_Herrington.BP_Weapon_Herrington_C"),
-
 			TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_Viper.BP_Weapon_Viper_C"),
-
 		};
-
 		for (const TCHAR* Path : GunPaths)
-
 		{
-
 			UClass* Cls = LoadClass<AWeapon>(nullptr, Path);
-
 			if (!Cls) { UE_LOG(LogTemp, Warning, TEXT("[T1025] missing class %s"), Path); continue; }
-
 			AWeapon* CDO = Cls->GetDefaultObject<AWeapon>();
-
 			if (!CDO) continue;
-
 			bool bChanged = false;
-
 			for (FWeaponAttachmentSlot& Slot : CDO->AttachmentSlots)
-
 			{
-
 				if (!Slot.SlotTag.ToString().Contains(TEXT("Optic"))) continue;
-
 				Slot.AllowedAttachments.Reset();
-
 				for (UAttachmentData* KeepDA : Keep)
-
 				{
-
 					Slot.AllowedAttachments.Add(KeepDA);
-
 				}
-
 				if (Slot.DefaultAttachment && !IsKeptKinOptic(Slot.DefaultAttachment))
-
 				{
-
 					Slot.DefaultAttachment = nullptr;
-
 				}
-
 				bChanged = true;
-
 			}
-
 			if (bChanged)
-
 			{
-
 #if WITH_EDITOR
-
 				CDO->MarkPackageDirty();
-
 #endif
-
 				UE_LOG(LogTemp, Log, TEXT("[T1025] trimmed optics on %s (dirty; Save All to persist)"), *Cls->GetName());
-
 			}
-
 		}
-
 		UE_LOG(LogTemp, Log, TEXT("[T1025] ConfigureOpticsAndTrimAllowlists done keep=%d"), Keep.Num());
-
 	}
 
-
-
 	static FAutoConsoleCommand Cmd(
-
 		TEXT("fps.OpticTrimT1025"),
-
 		TEXT("Trim KIN optics to MicroRedDot/Phantom/Holo/Reflex; Phantom FOV scope; configure DAs"),
-
 		FConsoleCommandDelegate::CreateStatic(&ConfigureOpticsAndTrimAllowlists));
-
 }
 
-
-
 AWeapon::AWeapon()
-
 {
-
 	// 只有激光开着时才 Tick（第 11 步），放在动画和开镜对齐之后
-
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
@@ -611,19 +397,12 @@ bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 			? static_cast<USceneComponent*>(Optic->Mesh1P.Get())
 			: static_cast<USceneComponent*>(Optic->SkelMesh1P.Get());
 		if (IsValid(OpticComp) && IsValid(Optic->Data))
-
 		{
-
 			// DA 填的名字优先；模型上没有时试常见命名（PCC 红点只有 Sight_ZeroPoint_*，SOP 有 Camera_sckt）
-
 			const FName SightCandidates[] = { Optic->Data->SightSocketName, TEXT("SightSocket"), TEXT("AimPoint"), TEXT("Camera_sckt"),
-
 				TEXT("Sight_ZeroPoint_Near"), TEXT("Sight_ZeroPoint_Mid"), TEXT("Sight_ZeroPoint_Far") };
-
 			for (const FName& Candidate : SightCandidates)
-
 			{
-
 				if (!Candidate.IsNone() && OpticComp->DoesSocketExist(Candidate))
 				{
 					OutLocation = OpticComp->GetSocketLocation(Candidate);
@@ -690,491 +469,250 @@ bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 
 	OutLocation = Mesh1P->GetSocketLocation(AimSocketName);
 	return true;
-
 }
-
-
 
 bool AWeapon::UsesCustomMesh1PAttach() const
-
 {
-
 	return !Mesh1PAttachSocket.IsNone();
-
 }
-
-
 
 FName AWeapon::ResolveMesh1PAttachPoint(const USkeletalMeshComponent* PawnMesh1P) const
-
 {
-
 	if (!IsValid(PawnMesh1P) || Mesh1PAttachSocket.IsNone())
-
 	{
-
 		return NAME_None;
-
 	}
-
-
 
 	auto HasBone = [](const USkeletalMeshComponent* Mesh, FName Name) -> bool
-
 	{
-
 		return IsValid(Mesh) && !Name.IsNone() && Mesh->GetBoneIndex(Name) != INDEX_NONE;
-
 	};
-
 	auto HasSocket = [](const USkeletalMeshComponent* Mesh, FName Name) -> bool
-
 	{
-
 		return IsValid(Mesh) && !Name.IsNone() && Mesh->GetSocketByName(Name) != nullptr;
-
 	};
-
 	// Usable for attach: real socket, OR bone that is NOT shadowed by a same-named mesh socket
-
 	// parented elsewhere (AttachToComponent prefers the socket and would freeze the gun).
-
 	auto UsableAnimated = [&](FName Name) -> bool
-
 	{
-
 		if (HasBone(PawnMesh1P, Name))
-
 		{
-
 			if (const USkeletalMeshSocket* Sock = PawnMesh1P->GetSocketByName(Name))
-
 			{
-
 				// Shadow socket on a different parent steals AttachToComponent from the bone.
-
 				if (Sock->BoneName != Name)
-
 				{
-
 					return false;
-
 				}
-
 			}
-
 			return true;
-
 		}
-
 		return HasSocket(PawnMesh1P, Name);
-
 	};
-
-
 
 	const FName Requested = Mesh1PAttachSocket;
-
 	const bool bWantsGunBone =
-
 		Requested == FName(TEXT("ik_hand_gun"))
-
 		|| Requested == FName(TEXT("VB ik_hand_gun"))
-
 		|| Requested == FName(TEXT("VB ik_hand_gun_pivot"));
 
-
-
 	// RAR-proven path: SOCKET_Weapon is authored on the animated ik_hand_gun bone (identity).
-
 	if (bWantsGunBone && HasSocket(PawnMesh1P, TEXT("SOCKET_Weapon")))
-
 	{
-
 		UE_LOG(LogTemp, Log,
-
 			TEXT("[WeaponAttach] %s remapped '%s' -> SOCKET_Weapon (follows animated ik_hand_gun)."),
-
 			*GetName(), *Requested.ToString());
-
 		return FName(TEXT("SOCKET_Weapon"));
-
 	}
-
 	if (bWantsGunBone && HasSocket(PawnMesh1P, TEXT("WeaponSocket")))
-
 	{
-
 		UE_LOG(LogTemp, Log,
-
 			TEXT("[WeaponAttach] %s remapped '%s' -> WeaponSocket."),
-
 			*GetName(), *Requested.ToString());
-
 		return FName(TEXT("WeaponSocket"));
-
 	}
-
-
 
 	if (UsableAnimated(Requested))
-
 	{
-
 		return Requested;
-
 	}
-
-
 
 	static const FName Fallbacks[] = {
-
 		FName(TEXT("SOCKET_Weapon")),
-
 		FName(TEXT("WeaponSocket")),
-
 		FName(TEXT("ik_hand_gun")),
-
 		FName(TEXT("weapon_r")),
-
 		FName(TEXT("hand_r"))
-
 	};
-
 	for (const FName& Name : Fallbacks)
-
 	{
-
 		if (UsableAnimated(Name) || (Name != FName(TEXT("ik_hand_gun")) && HasSocket(PawnMesh1P, Name)))
-
 		{
-
 			return Name;
-
 		}
-
 	}
-
-
 
 	UE_LOG(LogTemp, Warning,
-
 		TEXT("[WeaponAttach] %s Mesh1PAttachSocket '%s' missing on %s."),
-
 		*GetName(), *Mesh1PAttachSocket.ToString(), *GetNameSafe(PawnMesh1P->GetSkeletalMeshAsset()));
-
 	return NAME_None;
-
 }
-
-
 
 namespace
-
 {
-
 	FTransform RefPoseComponentSpace(const FReferenceSkeleton& RefSkel, int32 BoneIndex)
-
 	{
-
 		if (BoneIndex < 0 || BoneIndex >= RefSkel.GetNum())
-
 		{
-
 			return FTransform::Identity;
-
 		}
-
 		FTransform CS = RefSkel.GetRefBonePose()[BoneIndex];
-
 		for (int32 Parent = RefSkel.GetParentIndex(BoneIndex); Parent != INDEX_NONE; Parent = RefSkel.GetParentIndex(Parent))
-
 		{
-
 			CS = CS * RefSkel.GetRefBonePose()[Parent];
-
 		}
-
 		return CS;
-
 	}
-
-
 
 	// Gun meshes were authored so the actor origin sits on VB ik_hand_gun_pivot.
-
 	// That pivot is not keyed. Keep its rest offset, but parent the gun to the
-
 	// animated bone so MK14 reload moves it with the right hand.
-
 	FTransform PivotOffsetRelativeToBone(const USkeletalMesh* ArmMesh, FName AnimatedBone)
-
 	{
-
 		if (!IsValid(ArmMesh) || AnimatedBone.IsNone())
-
 		{
-
 			return FTransform::Identity;
-
 		}
-
 		const FReferenceSkeleton& RefSkel = ArmMesh->GetRefSkeleton();
-
 		const int32 GunIdx = RefSkel.FindBoneIndex(AnimatedBone);
-
 		const int32 PivotIdx = RefSkel.FindBoneIndex(TEXT("VB ik_hand_gun_pivot"));
-
 		if (GunIdx == INDEX_NONE || PivotIdx == INDEX_NONE)
-
 		{
-
 			return FTransform::Identity;
-
 		}
-
 		const FTransform GunCS = RefPoseComponentSpace(RefSkel, GunIdx);
-
 		const FTransform PivotCS = RefPoseComponentSpace(RefSkel, PivotIdx);
-
 		FTransform Rel = PivotCS.GetRelativeTransform(GunCS);
-
 		Rel.SetScale3D(FVector::OneVector);
-
 		Rel.NormalizeRotation();
-
 		return Rel;
-
 	}
-
 }
-
-
 
 UAnimSequence* AWeapon::GetGripPoseAnim() const
-
 {
-
 	if (const UAttachmentData* Grip = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip))
-
 	{
-
 		if (IsValid(Grip->GripPoseAnim))
-
 		{
-
 			return Grip->GripPoseAnim.Get();
-
 		}
-
 	}
-
 	return nullptr;
-
 }
-
-
 
 void AWeapon::ApplyAuthoredArmAnims(FPlayerAnim& InOut) const
-
 {
-
 	// Overlay BP/DA-authored sequences only — no hardcoded asset path tables.
-
 	UAnimSequence* Idle = ArmsIdleSequence.Get();
-
 	UAnimSequence* AimIdle = ArmsAimIdleSequence.Get();
-
 	UAnimSequence* Sprint = ArmsSprintSequence.Get();
 
-
-
 	if (IsValid(Idle))
-
 	{
-
 		InOut.IdleAnim = Idle;
-
 	}
-
 	if (IsValid(AimIdle))
-
 	{
-
 		InOut.AimIdleAnim = AimIdle;
-
 	}
-
 	else if (IsValid(Idle) && !IsValid(InOut.AimIdleAnim))
-
 	{
-
 		InOut.AimIdleAnim = Idle;
-
 	}
-
 	if (IsValid(Sprint))
-
 	{
-
 		InOut.SprintAnim = Sprint;
-
 	}
-
 	else if (IsValid(Idle) && !IsValid(InOut.SprintAnim))
-
 	{
-
 		InOut.SprintAnim = Idle;
-
 	}
-
 	if (UAnimSequence* GripPose = GetGripPoseAnim())
-
 	{
-
 		InOut.IdleAnim_Grab = GripPose;
-
 		InOut.LeftHandHoldPose_Grab = GripPose;
-
 	}
-
 }
 
-
-
 bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) const
-
 {
-
 	USkeletalMeshComponent* WeaponMesh = bFirstPerson ? Mesh1P : Mesh3P;
-
 	// 隐藏的枪不 Tick。读 Socket 前先刷新骨骼，握把才跟着枪走。
 	if (IsValid(WeaponMesh))
 	{
 		WeaponMesh->RefreshBoneTransforms();
 		WeaponMesh->UpdateComponentToWorld();
-
 	}
-
-
 
 	auto TryGripComponent = [&OutWorld](USceneComponent* GripComp, const UAttachmentData* Data) -> bool
-
 	{
-
 		if (!IsValid(GripComp) || !IsValid(Data))
-
 		{
-
 			return false;
-
 		}
-
 		const USceneComponent* GripParent = GripComp->GetAttachParent();
-
 		const FName MountSocket = GripComp->GetAttachSocketName();
-
 		// 握把没挂到真实插槽上时，它的 FABRIK 在枪根，不能拿来改扶手。
-
 		const bool bGripMounted = IsValid(GripParent) && (MountSocket.IsNone() || GripParent->DoesSocketExist(MountSocket));
-
 		if (!bGripMounted)
-
 		{
-
 			return false;
-
 		}
-
-
 
 		static const FName GripHandNames[] = {
-
 			NAME_None, // filled with Data->FabrikSocketName
-
 			TEXT("GripSocket"), TEXT("FABRIK"), TEXT("ik_hand_l"), TEXT("LeftHandSocket")
-
 		};
-
 		for (FName SocketName : GripHandNames)
-
 		{
-
 			if (SocketName.IsNone())
-
 			{
-
 				SocketName = Data->FabrikSocketName;
-
 			}
-
 			if (ComponentHasSocket(GripComp, SocketName))
-
 			{
-
 				GripComp->UpdateComponentToWorld();
-
 				OutWorld = GripComp->GetSocketTransform(SocketName, RTS_World);
-
 				return true;
-
 			}
-
 		}
-
 		return false;
-
 	};
-
-
 
 	if (const FAttachmentVisual* Grip = FindVisual(ShooterTags::Tag_Attachment_Slot_Grip))
-
 	{
-
 		USceneComponent* GripComp = AttachmentViewComponent(*Grip, bFirstPerson);
-
 		if (TryGripComponent(GripComp, Grip->Data.Get()))
-
 		{
-
 			return true;
-
 		}
-
 	}
 
-
-
 	// Authored left-hand sockets on the weapon body when no foregrip is mounted.
-
 	const FName FabrikNames[] = {
-
 		FabrikSocketName, TEXT("GripSocket"), TEXT("FABRIK"), TEXT("LeftHandSocket"), TEXT("lefthand"),
-
 		TEXT("IK_Hand_L"), TEXT("hand_l_socket"), TEXT("ik_hand_l")
-
 	};
-
 	for (const FName Name : FabrikNames)
-
 	{
-
 		if (Name.IsNone())
-
 		{
-
 			continue;
-
 		}
-
 		if (ComponentHasSocket(WeaponMesh, Name))
-
 		{
-
 			OutWorld = WeaponMesh->GetSocketTransform(Name, RTS_World);
-
 			UE_LOG(LogTemp, Verbose, TEXT("[FABRIK] %s using socket %s (1P=%d)"),
 				*GetName(), *Name.ToString(), bFirstPerson ? 1 : 0);
 			return true;
@@ -1184,21 +722,13 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 	return false;
 }
 
-
 FName AWeapon::GetFallbackMuzzleSocketName() const
-
 {
-
 	const FName AuthoredName = MuzzleSocketName.IsNone() ? FName(TEXT("Muzzle")) : MuzzleSocketName;
-
 	return ResolveBarrelVariantSocket(Mesh1P, GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Barrel), AuthoredName);
-
 }
 
-
-
 bool AWeapon::TryAttachmentMuzzle(const FGameplayTag& SlotTag, bool bFirstPerson, USceneComponent*& OutComponent, FName& OutSocketName) const
-
 {
 	const FAttachmentVisual* Visual = FindVisual(SlotTag);
 	if (!Visual || !IsValid(Visual->Data))
@@ -1206,19 +736,12 @@ bool AWeapon::TryAttachmentMuzzle(const FGameplayTag& SlotTag, bool bFirstPerson
 		return false;
 	}
 
-
 	USceneComponent* Mesh = AttachmentViewComponent(*Visual, bFirstPerson);
-
 	// 先用数据里填的名字，再试常见命名（Infima 枪管是 SOCKET_Muzzle，消音器是 SOCKET_Emitter）
-
 	const FName Candidates[] = { Visual->Data->MuzzleSocketName, TEXT("MuzzleSocket"), TEXT("SOCKET_Muzzle"), TEXT("SOCKET_Emitter"), TEXT("Muzzle"), TEXT("MuzzleFlash") };
-
 	for (const FName& Candidate : Candidates)
-
 	{
-
 		if (!Candidate.IsNone() && ComponentHasSocket(Mesh, Candidate))
-
 		{
 			OutComponent = Mesh;
 			OutSocketName = Candidate;
@@ -1265,19 +788,12 @@ bool AWeapon::GetMuzzleAttachPoint(bool bFirstPerson, USceneComponent*& OutCompo
 
 	OutComponent = WeaponMesh;
 	OutSocketName = GetFallbackMuzzleSocketName();
-
 	if (!ComponentHasSocket(WeaponMesh, OutSocketName))
-
 	{
-
 		for (const FName Candidate : { FName(TEXT("MuzzleSocket")), FName(TEXT("Muzzle")), FName(TEXT("SOCKET_Muzzle")), FName(TEXT("MuzzleFlash")) })
-
 		{
-
 			if (ComponentHasSocket(WeaponMesh, Candidate)) { OutSocketName = Candidate; break; }
-
 		}
-
 	}
 	return !OutSocketName.IsNone();
 }
@@ -1339,20 +855,12 @@ void AWeapon::ApplyMeshAttachRelative(USkeletalMeshComponent* WeaponMesh, bool b
 		Rot = RotOffset.Quaternion();
 	}
 
-
-
 	// Bandits FP arms: Ironbelly-tuned rifle Mesh1P sits ~90° yaw left on Epic hand_r.
-
 	// Custom Mesh1PAttachSocket mounts already carry their own correction — do not yaw them.
-
 	if (bFirstPerson && !UsesCustomMesh1PAttach() && WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Rifle))
-
 	{
-
 		if (const USkeletalMeshComponent* ParentMesh = Cast<USkeletalMeshComponent>(WeaponMesh->GetAttachParent()))
-
 		{
-
 			if (const USkeletalMesh* ParentAsset = ParentMesh->GetSkeletalMeshAsset())
 			{
 				if (ParentAsset->GetPathName().Contains(TEXT("Bandit")))
@@ -1399,19 +907,12 @@ namespace
 		if (IsUsableAttachPoint(Mesh, Requested))
 		{
 			return Requested;
-
 		}
-
 		static const FName Fallbacks[] = {
-
 			FName(TEXT("VB ik_hand_gun_pivot")), FName(TEXT("ik_hand_gun")),
-
 			FName(TEXT("weapon_r")), FName(TEXT("WeaponSocket")),
-
 			FName(TEXT("RifleSocketak")), FName(TEXT("RifleSocket")),
-
 			FName(TEXT("PistolSocket")), FName(TEXT("PistolSocketX24")),
-
 			FName(TEXT("hand_r")), FName(TEXT("HandGrip_R"))
 		};
 		for (const FName& Candidate : Fallbacks)
@@ -1448,41 +949,23 @@ void AWeapon::AttachToOwingPawn()
 	const FName AttachPoint = IPlayerInterface::Execute_GetWeaponAttachPoint(OwningPawn, WeaponType);
 	USkeletalMeshComponent* PawnMesh1P = IPlayerInterface::Execute_GetMesh1P(OwningPawn);
 	USkeletalMeshComponent* PawnMesh3P = IPlayerInterface::Execute_GetMesh3P(OwningPawn);
-
 	if (!IsValid(PawnMesh1P) || !IsValid(PawnMesh3P)) return;
 
-
-
 	// 1P custom: Mesh1PAttachSocket (e.g. ik_hand_gun) + optional pivot rest offset.
-
 	// 1P default: GripPoints (AK = weapon_r on arms). 3P AK: always RifleSocketak + FABRIK (not weapon_r).
-
 	const bool bCustom1P = UsesCustomMesh1PAttach();
-
 	FName Attach1P = NAME_None;
-
 	if (bCustom1P)
-
 	{
-
 		Attach1P = ResolveMesh1PAttachPoint(PawnMesh1P);
-
 	}
-
 	if (Attach1P.IsNone())
-
 	{
-
 		Attach1P = ResolveAttachPoint(PawnMesh1P, AttachPoint);
-
 	}
-
 	FName Attach3P = AttachPoint;
-
 	if (WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_AK))
-
 	{
-
 		static const FName RifleSocketAkName(TEXT("RifleSocketak"));
 		Attach3P = IsUsableAttachPoint(PawnMesh3P, RifleSocketAkName)
 			? RifleSocketAkName
@@ -1491,111 +974,58 @@ void AWeapon::AttachToOwingPawn()
 	else
 	{
 		Attach3P = ResolveAttachPoint(PawnMesh3P, AttachPoint);
-
 	}
-
-
 
 	const FAttachmentTransformRules SnapRules = bCustom1P
-
 		? FAttachmentTransformRules::SnapToTargetNotIncludingScale
-
 		: FAttachmentTransformRules::SnapToTargetIncludingScale;
-
 	Mesh1P->AttachToComponent(PawnMesh1P, SnapRules, Attach1P);
-
 	if (bCustom1P)
-
 	{
-
 		FTransform Rel = FTransform::Identity;
-
 		if (bMesh1PAttachUsePivotOffset)
-
 		{
-
 			// Pivot offset is only meaningful on KINEMATION pack arms (VB ik_hand_gun_pivot).
-
 			// On Bandits / shared arms that bone is absent → Identity.
-
 			Rel = PivotOffsetRelativeToBone(PawnMesh1P->GetSkeletalMeshAsset(), Attach1P);
-
 		}
-
 		FRotator RotOffset = Mesh1PAttachRotation;
-
 		// SOCKET_Weapon / WeaponSocket are authored identity on the animated ik_hand_gun bone
-
 		// (same mount RAR uses). Ignore the early KINEMATION pilot guess (0,90,-90).
-
 		const bool bRarStyleSocket =
-
 			Attach1P == FName(TEXT("SOCKET_Weapon"))
-
 			|| Attach1P == FName(TEXT("WeaponSocket"));
-
 		if (bRarStyleSocket && RotOffset.Equals(FRotator(0.f, 90.f, -90.f), 1.f))
-
 		{
-
 			UE_LOG(LogTemp, Warning,
-
 				TEXT("[WeaponAttach] %s clearing legacy Mesh1PAttachRotation (0,90,-90) on %s"),
-
 				*GetName(), *Attach1P.ToString());
-
 			RotOffset = FRotator::ZeroRotator;
-
 		}
-
 		const FVector Loc = Rel.GetLocation() + Mesh1PAttachLocation;
-
 		const FQuat Rot = RotOffset.Quaternion() * Rel.GetRotation();
-
 		Mesh1P->SetRelativeLocationAndRotation(Loc, Rot);
-
 		if (bCapturedAuthoredRelative)
-
 		{
-
 			Mesh1P->SetRelativeScale3D(AuthoredMesh1PRelative.GetScale3D());
-
 		}
-
 		const USkeletalMeshSocket* Sock = PawnMesh1P->GetSocketByName(Attach1P);
-
 		UE_LOG(LogTemp, Log,
-
 			TEXT("[WeaponAttach] %s target=%s kind=%s parentBone=%s customAttach loc=%s rot=%s"),
-
 			*GetName(),
-
 			*Attach1P.ToString(),
-
 			Sock ? TEXT("socket") : TEXT("bone"),
-
 			Sock ? *Sock->BoneName.ToString() : TEXT("n/a"),
-
 			*Loc.ToString(),
-
 			*Rot.Rotator().ToString());
-
 	}
-
 	else
-
 	{
-
 		ApplyMeshAttachRelative(Mesh1P, true);
-
 	}
-
-
 
 	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-
 	Mesh3P->AttachToComponent(PawnMesh3P, SnapRules, Attach3P);
-
 	ApplyMeshAttachRelative(Mesh3P, false);
 
 
@@ -1910,51 +1340,30 @@ void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal
 		Ammo = FMath::Clamp(Ammo - 1, 0, MagCapacity);
 		if (!GetInstigator()->HasAuthority())
 		{
-
 			++Sequence;
-
 		}
-
 		UpdateMagazineAmmoVisuals();
-
 	}
-
 }
-
-
 
 void AWeapon::Auth_Fire()
 {
-
 	if (!UsesAmmo()) { return; }
-
 	Ammo = FMath::Clamp(Ammo - 1, 0, MagCapacity);
-
 	UpdateMagazineAmmoVisuals();
-
 }
 
-
-
 void AWeapon::Rep_Fire(int32 AuthAmmo)
-
 {
 	APawn* InstigatorPawn = GetInstigator();
 	if (!IsValid(InstigatorPawn) || !InstigatorPawn->IsLocallyControlled() && !GetInstigator()->HasAuthority()) return;
 
-
 	Sequence = FMath::Max(Sequence - 1, 0);
-
 	Ammo = FMath::Clamp(AuthAmmo - Sequence, 0, MagCapacity);
-
 	UpdateMagazineAmmoVisuals();
-
 }
 
-
-
 TArray<EFireType> AWeapon::GetAllowedFireModes() const
-
 {
 	if (AllowedFireModes.Num() > 0)
 	{
@@ -2152,1306 +1561,656 @@ void AWeapon::OnChamberShellNotify(FName NotifyName, const FBranchingPointNotify
 void AWeapon::BindChamberShellNotifies()
 {
 	if (!bChamberShellsReady) return;
-
 	if (bChamberShellNotifyBound) return;
 
-
-
 	APawn* Pawn = GetInstigator();
-
 	if (!IsValid(Pawn) || !Pawn->Implements<UPlayerInterface>()) return;
 
-
-
 	bool bBoundAny = false;
-
 	auto BindMesh = [this, &bBoundAny](USkeletalMeshComponent* Mesh)
-
 	{
-
 		if (!IsValid(Mesh)) return;
-
 		if (UAnimInstance* Anim = Mesh->GetAnimInstance())
-
 		{
-
 			Anim->OnPlayMontageNotifyBegin.AddUniqueDynamic(this, &AWeapon::OnChamberShellNotify);
-
 			bBoundAny = true;
-
 		}
-
 	};
-
-
 
 	BindMesh(IPlayerInterface::Execute_GetMesh1P(Pawn));
-
 	BindMesh(IPlayerInterface::Execute_GetMesh3P(Pawn));
-
 	// Only latch once an AnimInstance existed — BeginPlay often runs before arms ABP is ready.
-
 	if (bBoundAny)
-
 	{
-
 		bChamberShellNotifyBound = true;
-
 	}
-
 }
-
-
 
 namespace
-
 {
-
 	// RequiredBones drops bones that have no skin weights. HideBone drops them again.
-
 	// A socket is not added back for these mag bones, so an attached mag stays in the well.
-
 	// Merge the bone and its parents back in after every RecalcRequiredBones.
-
 	void MergeBoneChain(TArray<FBoneIndexType>& Bones, const FReferenceSkeleton& Ref, FName BoneName)
-
 	{
-
 		if (BoneName.IsNone()) return;
-
 		const int32 Start = Ref.FindBoneIndex(BoneName);
-
 		if (Start == INDEX_NONE) return;
 
-
-
 		TArray<FBoneIndexType> Extra;
-
 		for (int32 Idx = Start; Idx != INDEX_NONE; Idx = Ref.GetParentIndex(Idx))
-
 		{
-
 			Extra.Add(static_cast<FBoneIndexType>(Idx));
-
 		}
-
 		Extra.Sort();
 
-
-
 		TArray<FBoneIndexType> Merged;
-
 		Merged.Reserve(Bones.Num() + Extra.Num());
-
 		int32 A = 0;
-
 		int32 B = 0;
-
 		while (A < Bones.Num() && B < Extra.Num())
-
 		{
-
 			if (Bones[A] == Extra[B])
-
 			{
-
 				Merged.Add(Bones[A]);
-
 				++A;
-
 				++B;
-
 			}
-
 			else if (Bones[A] < Extra[B])
-
 			{
-
 				Merged.Add(Bones[A]);
-
 				++A;
-
 			}
-
 			else
-
 			{
-
 				Merged.Add(Extra[B]);
-
 				++B;
-
 			}
-
 		}
-
 		while (A < Bones.Num())
-
 		{
-
 			Merged.Add(Bones[A]);
-
 			++A;
-
 		}
-
 		while (B < Extra.Num())
-
 		{
-
 			Merged.Add(Extra[B]);
-
 			++B;
-
 		}
-
 		Bones = MoveTemp(Merged);
-
 	}
-
-
 
 	void AppendKinEvaluatedBones(USkeletalMeshComponent* Mesh, const TArray<FName>& BoneNames)
-
 	{
-
 		if (!IsValid(Mesh) || BoneNames.Num() == 0 || !Mesh->GetSkeletalMeshAsset()) return;
-
-
 
 		const FReferenceSkeleton& Ref = Mesh->GetSkeletalMeshAsset()->GetRefSkeleton();
-
 		const int32 ReqBefore = Mesh->RequiredBones.Num();
-
 		const int32 FillBefore = Mesh->FillComponentSpaceTransformsRequiredBones.Num();
-
 		for (const FName BoneName : BoneNames)
-
 		{
-
 			MergeBoneChain(Mesh->RequiredBones, Ref, BoneName);
-
 			MergeBoneChain(Mesh->FillComponentSpaceTransformsRequiredBones, Ref, BoneName);
-
 		}
-
 		if (Mesh->RequiredBones.Num() == ReqBefore
-
 			&& Mesh->FillComponentSpaceTransformsRequiredBones.Num() == FillBefore)
-
 		{
-
 			return;
-
 		}
-
-
 
 		if (TSharedPtr<FBoneContainer> Shared = Mesh->GetSharedRequiredBones())
-
 		{
-
 			Shared->Reset();
-
 		}
-
 		if (UAnimInstance* Anim = Mesh->GetAnimInstance())
-
 		{
-
 			Anim->RecalcRequiredBones();
-
 		}
-
 	}
-
-
 
 	void CollectKinFollowBones(const FString& Cls, TArray<FName>& OutBones)
-
 	{
-
 		if (Cls.Contains(TEXT("Weapon_AK105")))
-
 		{
-
 			OutBones = { TEXT("Magazine_Parent") };
-
 		}
-
 		else if (Cls.Contains(TEXT("Weapon_Mk14")))
-
 		{
-
 			OutBones = { TEXT("Mag") };
-
 		}
-
 		else if (Cls.Contains(TEXT("Weapon_MKR9")))
-
 		{
-
 			OutBones = { TEXT("Mag_Primary"), TEXT("Mag_Secondary") };
-
 		}
-
 		else if (Cls.Contains(TEXT("Weapon_SRM12")))
-
 		{
-
 			OutBones = { TEXT("Magazine") };
-
 		}
-
 		else if (Cls.Contains(TEXT("Weapon_Viper")))
-
 		{
-
 			OutBones = { TEXT("Magazine"), TEXT("MagazineSocket"), TEXT("Mag") };
-
 		}
-
 		else if (Cls.Contains(TEXT("Weapon_R08")))
-
 		{
-
 			OutBones = {
-
 				TEXT("Speedloader"), TEXT("Cylinder"), TEXT("CylinderHolder"), TEXT("CylinderRelease"),
-
 				TEXT("Ammo_01"), TEXT("Ammo_02"), TEXT("Ammo_03"), TEXT("Ammo_04"),
-
 				TEXT("Ammo_05"), TEXT("Ammo_06"), TEXT("Ammo_07"), TEXT("Ammo_08")
-
 			};
-
 		}
-
 		else if (Cls.Contains(TEXT("Weapon_Herrington")))
-
 		{
-
 			OutBones = { TEXT("Cartridge"), TEXT("Feed"), TEXT("Reload"), TEXT("Ejector") };
-
 		}
-
 	}
-
-
 
 	void ArmKinEvaluatedBones(USkeletalMeshComponent* Mesh, const TArray<FName>& BoneNames)
-
 	{
-
 		if (!IsValid(Mesh) || BoneNames.Num() == 0 || !Mesh->GetSkeletalMeshAsset()) return;
-
 		// Recalc replaces RequiredBones. Only build the base set when it is still empty,
-
 		// then merge the mag / speedloader / shell bones the clip has to move.
-
 		if (Mesh->RequiredBones.Num() == 0)
-
 		{
-
 			Mesh->RecalcRequiredBones(FMath::Max(0, Mesh->GetPredictedLODLevel()));
-
 		}
-
 		AppendKinEvaluatedBones(Mesh, BoneNames);
-
 	}
-
-
 
 	void RefreshKinFollowBones(const AWeapon* Weapon, USkeletalMeshComponent* Mesh)
-
 	{
-
 		if (!IsValid(Weapon) || !IsValid(Mesh)) return;
-
 		const FString Cls = Weapon->GetClass() ? Weapon->GetClass()->GetName() : FString();
-
 		TArray<FName> Bones;
-
 		CollectKinFollowBones(Cls, Bones);
-
 		ArmKinEvaluatedBones(Mesh, Bones);
-
 	}
-
-
 
 	bool IsWeaponAnimPlaying(const USkeletalMeshComponent* WeaponMesh)
-
 	{
-
 		if (!IsValid(WeaponMesh)) return false;
-
 		if (const UAnimSingleNodeInstance* Node = WeaponMesh->GetSingleNodeInstance())
-
 		{
-
 			return Node->IsPlaying();
-
 		}
-
 		if (const UAnimInstance* Anim = WeaponMesh->GetAnimInstance())
-
 		{
-
 			return Anim->IsAnyMontagePlaying();
-
 		}
-
 		return false;
-
 	}
-
-
 
 	void UpdateKinSecondaryMag(USkeletalMeshComponent* WeaponMesh, USceneComponent* Primary, USkeletalMeshComponent* Secondary)
-
 	{
-
 		if (!IsValid(Secondary)) return;
-
 		bool bShow = false;
-
 		if (IsValid(WeaponMesh) && IsValid(Primary) && IsWeaponAnimPlaying(WeaponMesh))
-
 		{
-
 			const float DistSq = FVector::DistSquared(Primary->GetComponentLocation(), Secondary->GetComponentLocation());
-
 			bShow = DistSq > FMath::Square(8.f);
-
 		}
-
 		Secondary->SetHiddenInGame(!bShow);
-
 		Secondary->SetVisibility(bShow);
-
 	}
-
-
 
 	bool ActorHasKinSecondaryMag(const AActor* Actor)
-
 	{
-
 		if (!IsValid(Actor)) return false;
-
 		TArray<USkeletalMeshComponent*> Comps;
-
 		Actor->GetComponents<USkeletalMeshComponent>(Comps);
-
 		for (const USkeletalMeshComponent* Comp : Comps)
-
 		{
-
 			if (IsValid(Comp) && Comp->GetName().Contains(TEXT("KinMagSecondary")))
-
 			{
-
 				return true;
-
 			}
-
 		}
-
 		return false;
-
 	}
-
-
 
 	// SRM12 mag-check keeps the same hand grip as reload, but the visible mag stays in the
-
 	// well while the support hand lifts. Hold it on hand_l only for that lift, then put it back.
-
 	bool Srm12MagCheckTime(const AWeapon* Weapon, float& OutTime)
-
 	{
-
 		OutTime = -1.f;
-
 		if (!IsValid(Weapon) || !Weapon->GetClass() || !Weapon->GetClass()->GetName().Contains(TEXT("Weapon_SRM12")))
-
 		{
-
 			return false;
-
 		}
-
 		const USkeletalMeshComponent* Mesh = Weapon->GetMesh1P();
-
 		if (!IsValid(Mesh)) return false;
-
 		if (const UAnimSingleNodeInstance* Node = Mesh->GetSingleNodeInstance())
-
 		{
-
 			const UAnimationAsset* Asset = Node->GetAnimationAsset();
-
 			if (!Node->IsPlaying() || !Asset || !Asset->GetName().Contains(TEXT("Mag_Check")))
-
 			{
-
 				return false;
-
 			}
-
 			OutTime = Node->GetCurrentTime();
-
 			return true;
-
 		}
-
 		if (const UAnimInstance* Anim = Mesh->GetAnimInstance())
-
 		{
-
 			if (UAnimMontage* Active = Anim->GetCurrentActiveMontage())
-
 			{
-
 				if (Anim->Montage_IsPlaying(Active) && Active->GetName().Contains(TEXT("Mag_Check")))
-
 				{
-
 					OutTime = Anim->Montage_GetPosition(Active);
-
 					return true;
-
 				}
-
 			}
-
 		}
-
 		return false;
-
 	}
-
-
 
 	bool UpdateSrm12MagCheckHand(AWeapon* Weapon)
-
 	{
-
 		static TWeakObjectPtr<USceneComponent> Held;
-
 		static TWeakObjectPtr<USceneComponent> SavedParent;
-
 		static FTransform SavedRel = FTransform::Identity;
-
 		static FName SavedSocket = NAME_None;
 
-
-
 		auto Restore = [&]()
-
 		{
-
 			USceneComponent* Mag = Held.Get();
-
 			USceneComponent* Parent = SavedParent.Get();
-
 			if (IsValid(Mag) && IsValid(Parent) && Mag->GetAttachSocketName() == FName(TEXT("hand_l")))
-
 			{
-
 				Mag->AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SavedSocket);
-
 				Mag->SetUsingAbsoluteScale(true);
-
 				Mag->SetRelativeTransform(SavedRel);
-
 				Mag->SetRelativeScale3D(FVector::OneVector);
-
 			}
-
 			Held = nullptr;
-
 			SavedParent = nullptr;
-
 			SavedSocket = NAME_None;
-
 		};
-
-
 
 		float Time = -1.f;
-
 		const bool bPlaying = Srm12MagCheckTime(Weapon, Time);
-
 		// Authored grip is locked from ~0.75s through ~2.5s. Outside that the mag is back in the well.
-
 		const bool bHold = bPlaying && Time >= 0.70f && Time <= 2.52f;
-
 		if (!bHold)
-
 		{
-
 			Restore();
-
 			return bPlaying;
-
 		}
-
-
 
 		USkeletalMeshComponent* Mag = Weapon->GetMagazineSkelMesh1P();
-
 		APawn* Pawn = Weapon->GetInstigator();
-
 		if (!IsValid(Mag) || !IsValid(Pawn) || !Pawn->Implements<UPlayerInterface>())
-
 		{
-
 			return true;
-
 		}
-
 		USkeletalMeshComponent* Arms = IPlayerInterface::Execute_GetMesh1P(Pawn);
-
 		static const FName HandBone(TEXT("hand_l"));
-
 		if (!IsValid(Arms) || Arms->GetBoneIndex(HandBone) == INDEX_NONE)
-
 		{
-
 			return true;
-
 		}
-
-
 
 		if (Mag->GetAttachSocketName() != HandBone)
-
 		{
-
 			SavedRel = Mag->GetRelativeTransform();
-
 			SavedParent = Mag->GetAttachParent();
-
 			SavedSocket = Mag->GetAttachSocketName();
-
 			Held = Mag;
-
 			Mag->AttachToComponent(Arms, FAttachmentTransformRules::SnapToTargetNotIncludingScale, HandBone);
-
 			Mag->SetUsingAbsoluteScale(true);
-
 		}
-
 		// Mag bone relative to hand_l while the mag-check clip is locked to the support hand.
-
 		// Feed lips are mag local +Z. That grip points them at the ground, so tip +90° about local X.
-
 		const FQuat Grip = FRotator(62.3f, -39.8f, -61.4f).Quaternion();
-
 		const FQuat TipFeed = FQuat(FVector::ForwardVector, FMath::DegreesToRadians(90.f));
-
 		Mag->SetRelativeLocationAndRotation(FVector(8.52f, -2.27f, -1.51f), (Grip * TipFeed).Rotator());
-
 		Mag->SetRelativeScale3D(FVector::OneVector);
-
 		return true;
-
 	}
-
 }
-
-
 
 void AWeapon::EnsureKinemationSharedArmsAssets()
-
 {
-
 	const FString Cls = GetClass() ? GetClass()->GetName() : FString();
-
 	const bool bKin =
-
 		Cls.Contains(TEXT("Weapon_AK105")) || Cls.Contains(TEXT("Weapon_TR15")) || Cls.Contains(TEXT("Weapon_Mk14"))
-
 		|| Cls.Contains(TEXT("Weapon_MKR9")) || Cls.Contains(TEXT("Weapon_MX68")) || Cls.Contains(TEXT("Weapon_R08"))
-
 		|| Cls.Contains(TEXT("Weapon_SRM12")) || Cls.Contains(TEXT("Weapon_Herrington")) || Cls.Contains(TEXT("Weapon_Viper"));
-
 	if (!bKin)
-
 	{
-
 		return;
-
 	}
-
-
 
 	// Dual-mag Infima reserve path: KIN meshes don't have SOCKET_Magazine_Reserve.
-
 	ReserveMagazineSocketName = NAME_None;
 
-
-
 	// Separate mag mesh: AK105 / Mk14 / MKR9 / SRM12 / Viper. Full SKM has the mag bone but the
-
 	// visible mag is SKM_*Mag* on DA_KIN_Mag_*. TR15 and MX68 keep the baked body mag.
-
 	// R08 (speedloader) and Herrington (shell) have no mag mesh; their body bones are forced later.
-
 	struct FKinMagDA
-
 	{
-
 		const TCHAR* Match;
-
 		const TCHAR* Path;
-
 		const TCHAR* Socket;
-
 		const TCHAR* AmmoPrefix;
-
 	};
-
 	static const FKinMagDA MagDAGuns[] = {
-
 		{ TEXT("Weapon_AK105"), TEXT("/Game/FPS/Weapon/Kinemation/Data/DA_KIN_Mag_AK105.DA_KIN_Mag_AK105"), TEXT("Magazine_Parent"), TEXT("Ammo_") },
-
 		{ TEXT("Weapon_Mk14"), TEXT("/Game/FPS/Weapon/Kinemation/Data/DA_KIN_Mag_Mk14.DA_KIN_Mag_Mk14"), TEXT("Mag"), TEXT("Mk14_Ammo_") },
-
 		{ TEXT("Weapon_MKR9"), TEXT("/Game/FPS/Weapon/Kinemation/Data/DA_KIN_Mag_MKR9.DA_KIN_Mag_MKR9"), TEXT("Mag_Primary"), TEXT("Ammo_") },
-
 		{ TEXT("Weapon_SRM12"), TEXT("/Game/FPS/Weapon/Kinemation/Data/DA_KIN_Mag_SRM12.DA_KIN_Mag_SRM12"), TEXT("Magazine"), TEXT("Bullet_") },
-
 		{ TEXT("Weapon_Viper"), TEXT("/Game/FPS/Weapon/Kinemation/Data/DA_KIN_Mag_Viper.DA_KIN_Mag_Viper"), TEXT("Magazine"), TEXT("Ammo_") },
-
 	};
-
 	const FKinMagDA* MagRow = nullptr;
-
 	for (const FKinMagDA& Row : MagDAGuns)
-
 	{
-
 		if (Cls.Contains(Row.Match))
-
 		{
-
 			MagRow = &Row;
-
 			break;
-
 		}
-
 	}
-
 	const bool bNeedsMagDA = MagRow != nullptr;
 
-
-
 	struct FKinBodyMag { const TCHAR* Match; const TCHAR* FullMesh; };
-
 	static const FKinBodyMag BodyMagGuns[] = {
-
 		{ TEXT("Weapon_AK105"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/AK105/SKM_AK105.SKM_AK105") },
-
 		{ TEXT("Weapon_TR15"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/TR15/SKM_TR-15.SKM_TR-15") },
-
 		{ TEXT("Weapon_Mk14"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/Mk14EBR/SKM_Mk14EBR.SKM_Mk14EBR") },
-
 		{ TEXT("Weapon_MKR9"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/MKR9/SKM_MKR9.SKM_MKR9") },
-
 		{ TEXT("Weapon_MX68"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/MX68/SKM_MX68.SKM_MX68") },
-
 		{ TEXT("Weapon_R08"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/R08/SKM_R08.SKM_R08") },
-
 		{ TEXT("Weapon_SRM12"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/SRM-12/SKM_SRM-12.SKM_SRM-12") },
-
 		{ TEXT("Weapon_Herrington"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/Herrington_11-87/SKM_Herrington_11-87.SKM_Herrington_11-87") },
-
 		{ TEXT("Weapon_Viper"), TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/WK-11_Viper/SKM_WK-11_Viper.SKM_WK-11_Viper") },
-
 	};
-
 	const TCHAR* FullPath = nullptr;
-
 	for (const FKinBodyMag& Row : BodyMagGuns)
-
 	{
-
 		if (Cls.Contains(Row.Match)) { FullPath = Row.FullMesh; break; }
-
 	}
-
 	if (FullPath)
-
 	{
-
 		if (USkeletalMesh* Full = LoadObject<USkeletalMesh>(nullptr, FullPath))
-
 		{
-
 			if (IsValid(Mesh1P) && Mesh1P->GetSkeletalMeshAsset() != Full)
-
 			{
-
 				Mesh1P->SetSkeletalMesh(Full);
-
 			}
-
 			if (IsValid(Mesh3P) && Mesh3P->GetSkeletalMeshAsset() != Full)
-
 			{
-
 				Mesh3P->SetSkeletalMesh(Full);
-
 			}
-
 			UE_LOG(LogTemp, Log, TEXT("[KinMag] %s forced Full %s"), *Cls, *Full->GetName());
-
 		}
-
 	}
-
-
 
 	if (bNeedsMagDA)
-
 	{
-
 		const TCHAR* MagDAPath = MagRow->Path;
-
 		const FName MagSock = FName(MagRow->Socket);
-
 		if (MagRow->AmmoPrefix && MagRow->AmmoPrefix[0] != TEXT('\0'))
-
 		{
-
 			MagazineAmmoBonePrefix = FName(MagRow->AmmoPrefix);
-
 		}
-
 		if (UAttachmentData* MagDA = LoadObject<UAttachmentData>(nullptr, MagDAPath))
-
 		{
-
 			bool bFoundSlot = false;
-
 			for (FWeaponAttachmentSlot& Slot : AttachmentSlots)
-
 			{
-
 				if (Slot.SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine)
-
 				{
-
 					Slot.DefaultAttachment = MagDA;
-
 					Slot.bRequired = true;
-
 					const bool bSocketMissing = !Slot.SocketName.IsNone() && IsValid(Mesh1P)
-
 						&& Mesh1P->GetBoneIndex(Slot.SocketName) == INDEX_NONE
-
 						&& !Mesh1P->DoesSocketExist(Slot.SocketName);
-
 					if (Slot.SocketName.IsNone() || bSocketMissing)
-
 					{
-
 						Slot.SocketName = MagSock;
-
 					}
-
 					if (!Slot.AllowedAttachments.Contains(MagDA))
-
 					{
-
 						Slot.AllowedAttachments.Add(MagDA);
-
 					}
-
 					bFoundSlot = true;
-
 					UE_LOG(LogTemp, Log, TEXT("[KinMag] %s Mag DA restored %s sock=%s ammoPrefix=%s"),
-
 						*Cls, *MagDA->GetName(), *Slot.SocketName.ToString(), *MagazineAmmoBonePrefix.ToString());
-
 				}
-
 			}
-
 			if (!bFoundSlot)
-
 			{
-
 				FWeaponAttachmentSlot NewSlot;
-
 				NewSlot.SlotTag = ShooterTags::Tag_Attachment_Slot_Magazine;
-
 				NewSlot.SocketName = MagSock;
-
 				NewSlot.DefaultAttachment = MagDA;
-
 				NewSlot.bRequired = true;
-
 				NewSlot.AllowedAttachments.Add(MagDA);
-
 				AttachmentSlots.Add(NewSlot);
-
 				UE_LOG(LogTemp, Warning, TEXT("[KinMag] %s Mag slot created with DA %s"), *Cls, *MagDA->GetName());
-
 			}
-
 		}
-
 		else
-
 		{
-
 			UE_LOG(LogTemp, Error, TEXT("[KinMag] %s failed to load Mag DA %s"), *Cls, MagDAPath);
-
 		}
-
 	}
-
 	else if (FullPath)
-
 	{
-
 		// Baked body-mag guns (TR15 path): never spawn Mag DA.
-
 		for (FWeaponAttachmentSlot& Slot : AttachmentSlots)
-
 		{
-
 			if (Slot.SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine)
-
 			{
-
 				Slot.DefaultAttachment = nullptr;
-
 				Slot.bRequired = false;
-
 				UE_LOG(LogTemp, Log, TEXT("[KinMag] %s Mag slot DefaultAttachment cleared (keep body mag)"), *Cls);
-
 			}
-
 		}
-
 		RemoveAttachment(ShooterTags::Tag_Attachment_Slot_Magazine);
-
 		auto UnhideMag = [](USkeletalMeshComponent* Mesh)
-
 		{
-
 			if (!IsValid(Mesh)) return;
-
 			static const FName Bones[] = {
-
 				TEXT("Magazine"), TEXT("Mag"), TEXT("Mag_Primary"), TEXT("Mag_Secondary"),
-
 				TEXT("VB Magazine"), TEXT("Magazine_Parent"), TEXT("mag_01"), TEXT("mag_02"),
-
 				TEXT("MagazineSocket")
-
 			};
-
 			for (const FName Bone : Bones)
-
 			{
-
 				if (Mesh->GetBoneIndex(Bone) != INDEX_NONE)
-
 				{
-
 					Mesh->UnHideBoneByName(Bone);
-
 				}
-
 			}
-
 		};
-
 		UnhideMag(Mesh1P);
-
 		UnhideMag(Mesh3P);
-
 	}
-
-
 
 	// Shared FPS arms ABP — kill pack Override that forces ABP_FP_Arms / SK_Arms.
-
 	OverrideArmsAnimClass = nullptr;
-
 	OverrideArmsMesh1P = nullptr;
 
-
-
 	USkeleton* ArmsSkel = LoadObject<USkeleton>(nullptr,
-
 		TEXT("/Game/FirstPersonRifleAnimations/Demo/FirstPersonArms/Character/Mesh/SK_Mannequin_Arms_Skeleton.SK_Mannequin_Arms_Skeleton"));
 
-
-
 	auto NeedsReplace = [ArmsSkel](UAnimSequence* Seq) -> bool
-
 	{
-
 		if (!IsValid(Seq)) return true;
-
 		if (!IsValid(ArmsSkel)) return false;
-
 		return Seq->GetSkeleton() != ArmsSkel;
-
 	};
-
 	auto SoftLoad = [](const TCHAR* Path) -> UAnimSequence*
-
 	{
-
 		return LoadObject<UAnimSequence>(nullptr, Path);
-
 	};
-
-
 
 	struct FKinAnims {
-
 		const TCHAR* Match; // substring of class name
-
 		const TCHAR* Idle; const TCHAR* Equip; const TCHAR* ReloadEmpty; const TCHAR* ReloadTac; const TCHAR* Fire;
-
 		const TCHAR* WFire; const TCHAR* WReloadEmpty; const TCHAR* WReloadTac; const TCHAR* WEquip;
-
 	};
-
 	static const FKinAnims Table[] = {
-
 		{ TEXT("Weapon_AK105"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/AK105/RT_A_FP_AK105_Idle.RT_A_FP_AK105_Idle"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/AK105/RT_A_FP_AK105_Draw.RT_A_FP_AK105_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/AK105/RT_A_FP_AK105_Reload_Empty.RT_A_FP_AK105_Reload_Empty"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/AK105/RT_A_FP_AK105_Reload_Tac.RT_A_FP_AK105_Reload_Tac"),
-
 		  TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/A_RAR_FP_PCH_AssaultRifle_Fire.A_RAR_FP_PCH_AssaultRifle_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/AK105/Weapon/A_W_AK105_Fire.A_W_AK105_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/AK105/Weapon/A_W_AK105_Reload_Empty.A_W_AK105_Reload_Empty"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/AK105/Weapon/A_W_AK105_Reload_Tac.A_W_AK105_Reload_Tac"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/AK105/Weapon/A_W_AK105_Draw.A_W_AK105_Draw") },
-
 		{ TEXT("Weapon_TR15"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/TR15/RT_A_FP_TR15_Idle_Pose_Non_Grip.RT_A_FP_TR15_Idle_Pose_Non_Grip"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/TR15/RT_A_FP_TR15_Draw.RT_A_FP_TR15_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/TR15/RT_A_FP_TR15_Reload_Empty.RT_A_FP_TR15_Reload_Empty"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/TR15/RT_A_FP_TR15_Reload_Tactical.RT_A_FP_TR15_Reload_Tactical"),
-
 		  TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/A_RAR_FP_PCH_AssaultRifle_Fire.A_RAR_FP_PCH_AssaultRifle_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Weapon/A_W_TR15_Fire.A_W_TR15_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Weapon/A_W_TR15_Reload_Empty.A_W_TR15_Reload_Empty"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Weapon/A_W_TR15_Reload_Tac.A_W_TR15_Reload_Tac"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Weapon/A_W_TR15_Draw.A_W_TR15_Draw") },
-
 		{ TEXT("Weapon_Mk14"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Mk14EBR/RT_A_FP_Mk14EBR_Idle.RT_A_FP_Mk14EBR_Idle"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Mk14EBR/RT_A_FP_Mk14EBR_Draw.RT_A_FP_Mk14EBR_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Mk14EBR/RT_A_FP_Mk14EBR_Reload_Empty.RT_A_FP_Mk14EBR_Reload_Empty"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Mk14EBR/RT_A_FP_Mk14EBR_Reload_Tactical.RT_A_FP_Mk14EBR_Reload_Tactical"),
-
 		  TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/A_RAR_FP_PCH_AssaultRifle_Fire.A_RAR_FP_PCH_AssaultRifle_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Mk14EBR/Weapon/A_W_Mk14EBR_Fire.A_W_Mk14EBR_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Mk14EBR/Weapon/A_W_Mk14EBR_Reload_Empty.A_W_Mk14EBR_Reload_Empty"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Mk14EBR/Weapon/A_W_Mk14EBR_Reload_Tactical.A_W_Mk14EBR_Reload_Tactical"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Mk14EBR/Weapon/A_W_Mk14EBR_Draw.A_W_Mk14EBR_Draw") },
-
 		{ TEXT("Weapon_MKR9"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MKR9/RT_A_FP_MKR9_Idle.RT_A_FP_MKR9_Idle"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MKR9/RT_A_FP_MKR9_Draw.RT_A_FP_MKR9_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MKR9/RT_A_FP_MKR9_Reload_Empty.RT_A_FP_MKR9_Reload_Empty"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MKR9/RT_A_FP_MKR9_Reload_Tac.RT_A_FP_MKR9_Reload_Tac"),
-
 		  TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/A_RAR_FP_PCH_AssaultRifle_Fire.A_RAR_FP_PCH_AssaultRifle_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MKR9/Weapon/A_W_MKR9_Fire.A_W_MKR9_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MKR9/Weapon/A_W_MKR9_Reload_Empty.A_W_MKR9_Reload_Empty"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MKR9/Weapon/A_W_MKR9_Reload_Tac.A_W_MKR9_Reload_Tac"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MKR9/Weapon/A_W_MKR9_Draw.A_W_MKR9_Draw") },
-
 		{ TEXT("Weapon_MX68"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MX68/RT_A_FP_MX68_Idle.RT_A_FP_MX68_Idle"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MX68/RT_A_FP_MX68_Draw.RT_A_FP_MX68_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MX68/RT_A_FP_MX68_Reload_01.RT_A_FP_MX68_Reload_01"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MX68/RT_A_FP_MX68_Reload_02.RT_A_FP_MX68_Reload_02"),
-
 		  TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/A_RAR_FP_PCH_AssaultRifle_Fire.A_RAR_FP_PCH_AssaultRifle_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MX68/Weapon/A_W_MX68_Fire_Belt.A_W_MX68_Fire_Belt"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MX68/Weapon/A_W_MX68_Reload_01.A_W_MX68_Reload_01"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MX68/Weapon/A_W_MX68_Reload_02.A_W_MX68_Reload_02"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MX68/Weapon/A_W_MX68_Draw.A_W_MX68_Draw") },
-
 		{ TEXT("Weapon_R08"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/R08/RT_A_FP_R08_Idle.RT_A_FP_R08_Idle"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/R08/RT_A_FP_R08_Draw.RT_A_FP_R08_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/R08/RT_A_FP_R08_Reload_01.RT_A_FP_R08_Reload_01"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/R08/RT_A_FP_R08_Reload_02.RT_A_FP_R08_Reload_02"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/R08/RT_A_FP_R08_Fire.RT_A_FP_R08_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/R08/Weapon/A_W_R08_Fire.A_W_R08_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/R08/Weapon/A_W_R08_Reload_01.A_W_R08_Reload_01"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/R08/Weapon/A_W_R08_Reload_02.A_W_R08_Reload_02"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/R08/Weapon/A_W_R08_Draw.A_W_R08_Draw") },
-
 		{ TEXT("Weapon_SRM12"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/RT_A_FP_SRM-12_Idle_Pose.RT_A_FP_SRM-12_Idle_Pose"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/RT_A_FP_SRM-12_Draw.RT_A_FP_SRM-12_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/RT_A_FP_SRM-12_Reload_Empty.RT_A_FP_SRM-12_Reload_Empty"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/RT_A_FP_SRM-12_Reload_Tactical.RT_A_FP_SRM-12_Reload_Tactical"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/RT_A_FP_SRM-12_Fire.RT_A_FP_SRM-12_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/SRM-12/Weapon/A_W_SRM-12_Fire.A_W_SRM-12_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/SRM-12/Weapon/A_W_SRM-12_Reload_Empty.A_W_SRM-12_Reload_Empty"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/SRM-12/Weapon/A_W_SRM-12_Reload_Tac.A_W_SRM-12_Reload_Tac"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/SRM-12/Weapon/A_W_SRM-12_Draw.A_W_SRM-12_Draw") },
-
 		{ TEXT("Weapon_Herrington"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Herrington/RT_A_FP_Herrington_11-87_Idle.RT_A_FP_Herrington_11-87_Idle"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Herrington/RT_A_FP_Herrington_11-87_Draw.RT_A_FP_Herrington_11-87_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Herrington/RT_A_FP_Herrington_11-87_Reload_Empty_Start.RT_A_FP_Herrington_11-87_Reload_Empty_Start"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Herrington/RT_A_FP_Herrington_11-87_Reload_Tac_Start.RT_A_FP_Herrington_11-87_Reload_Tac_Start"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Herrington/RT_A_FP_Herrington_11-87_Fire.RT_A_FP_Herrington_11-87_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Herrington_11-87/Weapon/A_W_Herrington_11-87_Fire.A_W_Herrington_11-87_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Herrington_11-87/Weapon/A_W_Herrington_11-87_Reload_Empty_Start.A_W_Herrington_11-87_Reload_Empty_Start"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Herrington_11-87/Weapon/A_W_Herrington_11-87_Reload_Tac_Start.A_W_Herrington_11-87_Reload_Tac_Start"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Herrington_11-87/Weapon/A_W_Herrington_11-87_Draw.A_W_Herrington_11-87_Draw") },
-
 		{ TEXT("Weapon_Viper"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/RT_A_FP_WK-11_Viper_Idle_Pose.RT_A_FP_WK-11_Viper_Idle_Pose"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/RT_A_FP_WK-11_Viper_Draw.RT_A_FP_WK-11_Viper_Draw"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/RT_A_FP_WK-11_Viper_Reload_Empty.RT_A_FP_WK-11_Viper_Reload_Empty"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/RT_A_FP_WK-11_Viper_Reload_Tac.RT_A_FP_WK-11_Viper_Reload_Tac"),
-
 		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/RT_A_FP_WK-11_Viper_Fire.RT_A_FP_WK-11_Viper_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/WK-11_Viper/Weapon/A_W_WK-11_Viper_Fire.A_W_WK-11_Viper_Fire"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/WK-11_Viper/Weapon/A_W_WK-11_Viper_Reload_Empty.A_W_WK-11_Viper_Reload_Empty"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/WK-11_Viper/Weapon/A_W_WK-11_Viper_Reload_Tac.A_W_WK-11_Viper_Reload_Tac"),
-
 		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/WK-11_Viper/Weapon/A_W_WK-11_Viper_Draw.A_W_WK-11_Viper_Draw") },
-
 	};
-
-
 
 	for (const FKinAnims& Row : Table)
-
 	{
-
 		if (!Cls.Contains(Row.Match)) continue;
 
-
-
 		auto AssignArms = [&](TObjectPtr<UAnimSequence>& Slot, const TCHAR* Path)
-
 		{
-
 			if (!Path) return;
-
 			if (!NeedsReplace(Slot.Get())) return;
-
 			if (UAnimSequence* Seq = SoftLoad(Path))
-
 			{
-
 				Slot = Seq;
-
 			}
-
 		};
-
 		AssignArms(ArmsIdleSequence, Row.Idle);
-
 		AssignArms(ArmsAimIdleSequence, Row.Idle);
-
 		AssignArms(ArmsEquipSequence, Row.Equip);
-
 		AssignArms(ArmsReloadEmptySequence, Row.ReloadEmpty);
-
 		AssignArms(ArmsReloadTacticalSequence, Row.ReloadTac);
-
 		AssignArms(ArmsFireSequence, Row.Fire);
-
 		// Prefer aimed RAR fire when Row.Fire is the hip RAR fallback (rifles with no pack Character Fire).
-
 		if (Row.Fire && FCString::Strstr(Row.Fire, TEXT("A_RAR_FP_PCH_AssaultRifle_Fire.")) && !FCString::Strstr(Row.Fire, TEXT("Aimed")))
-
 		{
-
 			AssignArms(ArmsFireAimSequence, TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/A_RAR_FP_PCH_AssaultRifle_Fire_Aimed.A_RAR_FP_PCH_AssaultRifle_Fire_Aimed"));
-
 			if (!IsValid(ArmsFireAimSequence.Get()))
-
 			{
-
 				AssignArms(ArmsFireAimSequence, Row.Fire);
-
 			}
-
 		}
-
 		else
-
 		{
-
 			AssignArms(ArmsFireAimSequence, Row.Fire);
-
 		}
-
-
 
 		auto AssignWpn = [&](TObjectPtr<UAnimSequence>& Slot, const TCHAR* Path)
-
 		{
-
 			if (!Path) return;
-
 			if (IsValid(Slot.Get())) return;
-
 			if (UAnimSequence* Seq = SoftLoad(Path))
-
 			{
-
 				Slot = Seq;
-
 			}
-
 		};
-
 		AssignWpn(WeaponFireSequence, Row.WFire);
-
 		AssignWpn(WeaponReloadEmptySequence, Row.WReloadEmpty);
-
 		AssignWpn(WeaponReloadTacticalSequence, Row.WReloadTac);
-
 		AssignWpn(WeaponEquipSequence, Row.WEquip);
-
 		if (WeaponFireSequences.Num() == 0 && Row.WFire)
-
 		{
-
 			if (UAnimSequence* Seq = SoftLoad(Row.WFire))
-
 			{
-
 				WeaponFireSequences.Add(Seq);
-
 			}
-
 		}
-
 		UE_LOG(LogTemp, Log, TEXT("[KinRT] %s arms fire=%s empty=%s"),
-
 			*Cls,
-
 			*GetNameSafe(ArmsFireSequence.Get()),
-
 			*GetNameSafe(ArmsReloadEmptySequence.Get()));
-
 		break;
-
 	}
-
 }
-
-
 
 void AWeapon::BeginPlay()
 {
-
 	Super::BeginPlay();
-
 	SanitizeFireType();
-
 	EnsureKinemationSharedArmsAssets();
 
-
-
 	// [NoHipSpread] Undo RosterHipfire intentional huge cones (RAR 12 / AK 14 / base 10, etc.).
-
 	// User: no-crosshair already discourages casual hipfire — don't force a huge cone.
-
 	// Restore pre-20261028 small defaults; only shrink, never enlarge a tighter authored value.
 	{
 		float Target = 3.f;
@@ -3550,21 +2309,13 @@ void AWeapon::BeginPlay()
 	if (AuthoredMagCapacity <= 0)
 	{
 		AuthoredMagCapacity = MagCapacity;
-
 	}
-
-
 
 	EnsureDeviceSlots();
 
-
-
 	// 默认配件只由服务器装，客户端通过同步拿到
-
 	if (HasAuthority())
-
 	{
-
 		TSet<FGameplayTag> SeenSlots;
 		// 每个槽位装上自己的默认配件
 		for (const FWeaponAttachmentSlot& Slot : AttachmentSlots)
@@ -3617,27 +2368,16 @@ bool AWeapon::EquipAttachment(UAttachmentData* Attachment)
 		UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s rejected %s: no slot '%s', not in AllowedAttachments, or slot locked by %s."),
 			*GetName(), *GetNameSafe(Attachment), *Attachment->SlotTag.ToString(), *GetNameSafe(GetSlotBlocker(Attachment->SlotTag)));
 		return false;
-
 	}
 
-
-
 	// 同一个槽位只能有一个：镭射/手电按拆开后的槽算，其它仍按 SlotTag
-
 	const FGameplayTag NewSlot = GetEquipSlot(Attachment);
-
 	EquippedAttachments.RemoveAll([this, NewSlot](const UAttachmentData* Existing)
-
 	{
-
 		return !IsValid(Existing) || GetEquipSlot(Existing) == NewSlot;
-
 	});
-
 	// 新配件锁住的槽：已装的卸下（例：换短护木自动卸握把）
-
 	if (!Attachment->BlockedSlots.IsEmpty())
-
 	{
 		EquippedAttachments.RemoveAll([Attachment](const UAttachmentData* Existing)
 		{
@@ -3670,22 +2410,13 @@ bool AWeapon::RemoveAttachment(FGameplayTag SlotTag)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Attachment] %s: slot '%s' is required and cannot be emptied."), *GetName(), *SlotTag.ToString());
 		return false;
-
 	}
 
-
-
 	const int32 Removed = EquippedAttachments.RemoveAll([this, SlotTag](const UAttachmentData* Existing)
-
 	{
-
 		return !IsValid(Existing) || GetEquipSlot(Existing) == SlotTag;
-
 	});
-
 	if (Removed == 0) return false;
-
-
 
 	if (!HasFlashlight())
 	{
@@ -3701,219 +2432,112 @@ bool AWeapon::RemoveAttachment(FGameplayTag SlotTag)
 	return true;
 }
 
-
 void AWeapon::ToggleFlashlight()
-
 {
-
 	if (!HasAuthority() || !HasFlashlight()) return;
 
-
-
 	bFlashlightOn = !bFlashlightOn;
-
 	OnRep_FlashlightOn();
-
 	ForceNetUpdate();
-
 }
-
-
 
 void AWeapon::EnsureDeviceSlots()
-
 {
-
 	OpticTrimT1025::ConfigureOpticsAndTrimAllowlists();
 
-
-
 	if (bDeviceSlotsReady) return;
-
 	bDeviceSlotsReady = true;
 
-
-
 	const int32 TacIndex = AttachmentSlots.IndexOfByPredicate([](const FWeaponAttachmentSlot& Slot)
-
 	{
-
 		return Slot.SlotTag.MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Tactical);
-
 	});
-
 	if (TacIndex == INDEX_NONE) return;
-
 	if (FindSlot(ShooterTags::Tag_Attachment_Slot_Laser) || FindSlot(ShooterTags::Tag_Attachment_Slot_Flashlight))
-
 	{
-
 		return;
-
 	}
-
-
 
 	const FWeaponAttachmentSlot Tac = AttachmentSlots[TacIndex];
-
 	FWeaponAttachmentSlot LaserSlot;
-
 	FWeaponAttachmentSlot LightSlot;
-
 	FWeaponAttachmentSlot OtherSlot = Tac;
-
 	LaserSlot.SlotTag = ShooterTags::Tag_Attachment_Slot_Laser;
-
 	LightSlot.SlotTag = ShooterTags::Tag_Attachment_Slot_Flashlight;
-
 	LaserSlot.SocketName = Tac.SocketName;
-
 	LightSlot.SocketName = Tac.SocketName;
-
 	OtherSlot.AllowedAttachments.Reset();
-
 	OtherSlot.DefaultAttachment = nullptr;
 
-
-
 	for (UAttachmentData* Attachment : Tac.AllowedAttachments)
-
 	{
-
 		if (!IsValid(Attachment)) continue;
-
 		if (Attachment->bProvidesLaser && !Attachment->bProvidesFlashlight)
-
 		{
-
 			LaserSlot.AllowedAttachments.Add(Attachment);
-
 		}
-
 		else if (Attachment->bProvidesFlashlight)
-
 		{
-
 			LightSlot.AllowedAttachments.Add(Attachment);
-
 		}
-
 		else
-
 		{
-
 			OtherSlot.AllowedAttachments.Add(Attachment);
-
 		}
-
 	}
-
-
 
 	if (UAttachmentData* DefaultAttachment = Tac.DefaultAttachment)
-
 	{
-
 		auto AddUnique = [](FWeaponAttachmentSlot& Slot, UAttachmentData* Data)
-
 		{
-
 			if (!Slot.AllowedAttachments.Contains(Data))
-
 			{
-
 				Slot.AllowedAttachments.Add(Data);
-
 			}
-
 		};
-
 		if (DefaultAttachment->bProvidesLaser && !DefaultAttachment->bProvidesFlashlight)
-
 		{
-
 			LaserSlot.DefaultAttachment = DefaultAttachment;
-
 			AddUnique(LaserSlot, DefaultAttachment);
-
 		}
-
 		else if (DefaultAttachment->bProvidesFlashlight)
-
 		{
-
 			LightSlot.DefaultAttachment = DefaultAttachment;
-
 			AddUnique(LightSlot, DefaultAttachment);
-
 		}
-
 		else
-
 		{
-
 			OtherSlot.DefaultAttachment = DefaultAttachment;
-
 			AddUnique(OtherSlot, DefaultAttachment);
-
 		}
-
 	}
-
-
 
 	AttachmentSlots.RemoveAt(TacIndex);
-
 	AttachmentSlots.Insert(LaserSlot, TacIndex);
-
 	AttachmentSlots.Insert(LightSlot, TacIndex + 1);
-
 	if (OtherSlot.AllowedAttachments.Num() > 0 || IsValid(OtherSlot.DefaultAttachment))
-
 	{
-
 		AttachmentSlots.Insert(OtherSlot, TacIndex + 2);
-
 	}
-
 }
-
-
 
 FGameplayTag AWeapon::GetEquipSlot(const UAttachmentData* Attachment) const
-
 {
-
 	if (!IsValid(Attachment)) return FGameplayTag();
-
 	const bool bLaser = Attachment->bProvidesLaser;
-
 	const bool bLight = Attachment->bProvidesFlashlight;
-
 	if (bLaser && !bLight && FindSlot(ShooterTags::Tag_Attachment_Slot_Laser))
-
 	{
-
 		return ShooterTags::Tag_Attachment_Slot_Laser;
-
 	}
-
 	if (bLight && FindSlot(ShooterTags::Tag_Attachment_Slot_Flashlight))
-
 	{
-
 		return ShooterTags::Tag_Attachment_Slot_Flashlight;
-
 	}
-
 	return Attachment->SlotTag;
-
 }
 
-
-
 const FWeaponAttachmentSlot* AWeapon::FindSlot(const FGameplayTag& SlotTag) const
-
 {
 	if (!SlotTag.IsValid()) return nullptr;
 	// MatchesTagExact：必须完全相同，Attachment.Slot.Barrel 不会匹配父标签 Attachment.Slot
@@ -3932,52 +2556,28 @@ FName AWeapon::ResolveAttachmentSocket(const UAttachmentData* Data) const
 	if (!Data->MountSocketName.IsNone())
 	{
 		return Data->MountSocketName;
-
 	}
-
 	const FWeaponAttachmentSlot* Slot = FindSlot(Data->SlotTag);
-
 	FName SlotSocket = Slot ? Slot->SocketName : NAME_None;
-
 	if (SlotSocket.IsNone() && Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine && !MagazineSocketName.IsNone())
-
 	{
-
 		SlotSocket = MagazineSocketName;
-
 	}
-
 	if (Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Grip)
-
 	{
-
 		const FName GripMountNames[] = {
-
 			SlotSocket, FName(TEXT("GripSocket")), FName(TEXT("Attach_AR15_Grip"))
-
 		};
-
 		for (const FName& Name : GripMountNames)
-
 		{
-
 			if (!Name.IsNone() && IsValid(Mesh1P) && Mesh1P->DoesSocketExist(Name))
-
 			{
-
 				return Name;
-
 			}
-
 		}
-
 	}
-
 	return ResolveBarrelVariantSocket(Mesh1P, GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Barrel), SlotSocket);
-
 }
-
-
 
 UStaticMesh* AWeapon::ResolveAttachmentVisualMesh(const UAttachmentData* Data) const
 {
@@ -4019,76 +2619,42 @@ UStaticMesh* AWeapon::ResolveAttachmentVisualMesh(const UAttachmentData* Data) c
 TArray<UAttachmentData*> AWeapon::GetAllowedAttachmentsForSlot(FGameplayTag SlotTag) const
 {
 	TArray<UAttachmentData*> Result;
-
 	if (const FWeaponAttachmentSlot* Slot = FindSlot(SlotTag))
-
 	{
-
 		const bool bFilterKinOptic = OpticTrimT1025::IsKinLongGun(this)
-
 			&& SlotTag.ToString().Contains(TEXT("Optic"));
-
 		for (UAttachmentData* Attachment : Slot->AllowedAttachments)
-
 		{
-
 			if (!IsValid(Attachment)) continue;
-
 			if (bFilterKinOptic && !OpticTrimT1025::IsKeptKinOptic(Attachment)) continue;
-
 			Result.Add(Attachment);
-
 		}
-
 	}
-
 	return Result;
-
 }
 
 bool AWeapon::CanEquipAttachment(const UAttachmentData* Attachment) const
 {
-
 	if (!IsValid(Attachment)) return false;
 
-
-
 	const FGameplayTag EquipSlot = GetEquipSlot(Attachment);
-
 	const FWeaponAttachmentSlot* Slot = FindSlot(EquipSlot);
-
 	if (!Slot) return false;   // 这把枪没有这种槽位
 
-
-
 	// 白名单里有它才行
-
 	if (!Slot->AllowedAttachments.Contains(Attachment)) return false;
-
 	if (OpticTrimT1025::IsKinLongGun(this)
-
 		&& EquipSlot.ToString().Contains(TEXT("Optic"))
-
 		&& !OpticTrimT1025::IsKeptKinOptic(Attachment))
-
 	{
-
 		return false;
-
 	}
 
-
-
 	// 槽被别的已装配件锁住（例：短护木锁握把）
-
 	if (GetSlotBlocker(EquipSlot)) return false;
 
-
-
 	// 自己会锁住必选槽的配件不能装
-
 	for (const FGameplayTag& Blocked : Attachment->BlockedSlots)
-
 	{
 		const FWeaponAttachmentSlot* BlockedSlot = FindSlot(Blocked);
 		if (BlockedSlot && BlockedSlot->bRequired) return false;
@@ -4099,27 +2665,16 @@ bool AWeapon::CanEquipAttachment(const UAttachmentData* Attachment) const
 UAttachmentData* AWeapon::GetSlotBlocker(FGameplayTag SlotTag) const
 {
 	if (!SlotTag.IsValid()) return nullptr;
-
 	for (UAttachmentData* Equipped : EquippedAttachments)
-
 	{
-
 		if (!IsValid(Equipped) || GetEquipSlot(Equipped).MatchesTagExact(SlotTag)) continue;
-
 		const bool bBlocksDevice = (SlotTag.MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Laser)
-
 				|| SlotTag.MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Flashlight))
-
 			&& Equipped->BlockedSlots.HasTagExact(ShooterTags::Tag_Attachment_Slot_Tactical);
-
 		if (Equipped->BlockedSlots.HasTagExact(SlotTag) || bBlocksDevice)
-
 		{
-
 			return Equipped;
-
 		}
-
 	}
 	return nullptr;
 }
@@ -4135,19 +2690,12 @@ EGripHoldStyle AWeapon::GetGripHoldStyle() const
 }
 UAttachmentData* AWeapon::GetAttachmentInSlot(FGameplayTag SlotTag) const
 {
-
 	for (UAttachmentData* Attachment : EquippedAttachments)
-
 	{
-
 		if (IsValid(Attachment) && GetEquipSlot(Attachment) == SlotTag)
-
 		{
-
 			return Attachment;
-
 		}
-
 	}
 	return nullptr;
 }
@@ -4168,19 +2716,12 @@ void AWeapon::ApplyMagazineCapacity()
 		}
 	}
 
-
 	MagCapacity = FMath::Max(0, NewCapacity);
-
 	Ammo = FMath::Clamp(Ammo, 0, MagCapacity);
-
 	UpdateMagazineAmmoVisuals();
 
-
-
 	if (APawn* Pawn = GetInstigator())
-
 	{
-
 		if (UCombatComponent* Combat = Pawn->FindComponentByClass<UCombatComponent>())
 		{
 			Combat->NotifyAmmoChanged();
@@ -4520,21 +3061,13 @@ void AWeapon::UpdateLaserAttachment()
 }
 
 void AWeapon::ApplyLaserState()
-
 {
-
 	const bool bActive = bLaserOn && IsValid(LaserBeam) && GetNetMode() != NM_DedicatedServer;
-
 	float MagCheckTime = -1.f;
-
 	SetActorTickEnabled(bActive || ActorHasKinSecondaryMag(this) || Srm12MagCheckTime(this, MagCheckTime));
-
 	if (bActive)
-
 	{
-
 		UpdateLaser();
-
 		return;
 	}
 	if (IsValid(LaserBeam))
@@ -4551,67 +3084,36 @@ void AWeapon::ApplyLaserState()
 
 void AWeapon::Tick(float DeltaSeconds)
 {
-
 	Super::Tick(DeltaSeconds);
-
 	UpdateLaser();
-
 	const bool bSrm12MagCheck = UpdateSrm12MagCheckHand(this);
-
 	if (!bSrm12MagCheck && !ActorHasKinSecondaryMag(this) && !bLaserOn)
-
 	{
-
 		SetActorTickEnabled(false);
-
 	}
-
-
 
 	if (!ActorHasKinSecondaryMag(this)) return;
-
 	const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine);
-
 	TArray<USkeletalMeshComponent*> Comps;
-
 	GetComponents<USkeletalMeshComponent>(Comps);
-
 	for (USkeletalMeshComponent* Comp : Comps)
-
 	{
-
 		if (!IsValid(Comp) || !Comp->GetName().Contains(TEXT("KinMagSecondary"))) continue;
-
 		USkeletalMeshComponent* WeaponMesh = Cast<USkeletalMeshComponent>(Comp->GetAttachParent());
-
 		USceneComponent* Primary = nullptr;
-
 		if (Mag)
-
 		{
-
 			Primary = (WeaponMesh == Mesh1P) ? static_cast<USceneComponent*>(Mag->SkelMesh1P.Get()) : static_cast<USceneComponent*>(Mag->SkelMesh3P.Get());
-
 			if (!IsValid(Primary))
-
 			{
-
 				Primary = (WeaponMesh == Mesh1P) ? static_cast<USceneComponent*>(Mag->Mesh1P.Get()) : static_cast<USceneComponent*>(Mag->Mesh3P.Get());
-
 			}
-
 		}
-
 		UpdateKinSecondaryMag(WeaponMesh, Primary, Comp);
-
 	}
-
 }
 
-
-
 void AWeapon::UpdateLaser()
-
 {
 	auto HideAll = [this]()
 	{
@@ -4737,184 +3239,95 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 	Comp->SetStaticMesh(VisualMesh);
 	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Comp->bReceivesDecals = false;
-
 	Comp->CastShadow = !bFirstPerson;   // 和枪一样：1P 不投影，3P 投影
-
 	Comp->SetupAttachment(Mount, SocketName);
-
 	// SnapToTarget loc/rot onto the rail socket (GripSocket). MeshOffset is an extra tweak.
-
 	Comp->SetRelativeTransform(Data->bSnapToMountSocket ? FTransform::Identity : Data->MeshOffset);
-
 	if (GetEquipSlot(Data).MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Flashlight))
-
 	{
-
 		if (const UAttachmentData* LaserData = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Laser))
-
 		{
-
 			if (ResolveAttachmentSocket(Data) == ResolveAttachmentSocket(LaserData))
-
 			{
-
 				FTransform Rel = Comp->GetRelativeTransform();
-
 				Rel.AddToTranslation(FVector(6.f, 0.f, 0.f));
-
 				Comp->SetRelativeTransform(Rel);
-
 			}
-
 		}
-
 	}
-
 	Comp->RegisterComponent();
 
-
-
 	// FPSTP Holo/Reflex: pack BP mounts a separate Reticle plane; DA only spawns body mesh.
-
 	{
-
 		const FString AttName = Data->GetName();
-
 		const bool bHolo = AttName.Contains(TEXT("FPSTP_Holographic"));
-
 		const bool bReflex = AttName.Contains(TEXT("FPSTP_Reflex"));
-
 		if (bFirstPerson && (bHolo || bReflex))
-
 		{
-
 			static UStaticMesh* ScopePlane = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/FPSTP/Content/Weapons/Attachments/Param/StaticMesh/SM_ScopePlane.SM_ScopePlane"));
-
 			UMaterialInterface* ReticleMI = nullptr;
-
 			if (bHolo)
-
 			{
-
 				ReticleMI = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/FPSTP/Content/Weapons/Attachments/AttachmentsList/Sight/Holographic/Materials/MI_HolographicReticle_Var1.MI_HolographicReticle_Var1"));
-
 			}
-
 			else
-
 			{
-
 				ReticleMI = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/FPSTP/Content/Weapons/Attachments/AttachmentsList/Sight/Reflex/Materials/MI_ReflexSightReticleVar1.MI_ReflexSightReticleVar1"));
-
 				if (!IsValid(ReticleMI))
-
 				{
-
 					ReticleMI = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/FPSTP/Content/Weapons/Attachments/AttachmentsList/Sight/Reflex/Materials/MI_ReflexSightReticleVar2.MI_ReflexSightReticleVar2"));
-
 				}
-
 			}
-
 			if (IsValid(ScopePlane) && IsValid(ReticleMI))
-
 			{
-
 				FName PlaneSocket = NAME_None;
-
 				const FName Cands[] = { Data->SightSocketName, FName(TEXT("AimPoint")), FName(TEXT("SightSocket")) };
-
 				for (const FName Cand : Cands)
-
 				{
-
 					if (!Cand.IsNone() && Comp->DoesSocketExist(Cand)) { PlaneSocket = Cand; break; }
-
 				}
-
 				UStaticMeshComponent* Plane = NewObject<UStaticMeshComponent>(this);
-
 				Plane->SetMobility(EComponentMobility::Movable);
-
 				Plane->SetStaticMesh(ScopePlane);
-
 				Plane->SetMaterial(0, ReticleMI);
-
 				Plane->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
 				Plane->bReceivesDecals = false;
-
 				Plane->CastShadow = false;
-
 				if (!PlaneSocket.IsNone())
-
 				{
-
 					Plane->SetupAttachment(Comp, PlaneSocket);
-
 				}
-
 				else
-
 				{
-
 					Plane->SetupAttachment(Comp);
-
 				}
-
 				Plane->SetRelativeTransform(FTransform::Identity);
-
 				Plane->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.04f));
-
 				Plane->RegisterComponent();
-
 				UE_LOG(LogTemp, Log, TEXT("[OpticReticle] %s socket=%s"), *AttName, *PlaneSocket.ToString());
-
 			}
-
 			else
-
 			{
-
 				UE_LOG(LogTemp, Warning, TEXT("[OpticReticle] missing assets for %s"), *AttName);
-
 			}
-
 		}
-
 	}
 
-
-
 	// 第一人称换弹要两只弹夹。装回去的那只挂在备用骨上，动画把它送进弹仓。
-
 	if (bFirstPerson
-
 		&& Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine
-
 		&& Parent->DoesSocketExist(ReserveMagazineSocketName))
-
 	{
-
 		UStaticMeshComponent* Reserve = NewObject<UStaticMeshComponent>(this);
-
 		Reserve->SetMobility(EComponentMobility::Movable);
-
 		Reserve->SetStaticMesh(Data->Mesh);
 		Reserve->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
 		Reserve->bReceivesDecals = false;
-
 		Reserve->CastShadow = false;
-
 		Reserve->SetupAttachment(Parent, ReserveMagazineSocketName);
-
 		Reserve->SetRelativeTransform(Data->MeshOffset);
-
 		Reserve->SetHiddenInGame(true);
-
 		Reserve->SetVisibility(false);
-
 		Reserve->RegisterComponent();
 	}
 	return Comp;
@@ -4941,43 +3354,24 @@ USkeletalMeshComponent* AWeapon::SpawnAttachmentSkelMesh(USkeletalMeshComponent*
 	Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Comp->bReceivesDecals = false;
 	Comp->CastShadow = !bFirstPerson;
-
 	Comp->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-
 	Comp->SetupAttachment(Mount, SocketName);
-
 	Comp->SetRelativeTransform(Data->bSnapToMountSocket ? FTransform::Identity : Data->MeshOffset);
-
 	if (GetEquipSlot(Data).MatchesTagExact(ShooterTags::Tag_Attachment_Slot_Flashlight))
-
 	{
-
 		if (const UAttachmentData* LaserData = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Laser))
-
 		{
-
 			if (ResolveAttachmentSocket(Data) == ResolveAttachmentSocket(LaserData))
-
 			{
-
 				FTransform Rel = Comp->GetRelativeTransform();
-
 				Rel.AddToTranslation(FVector(6.f, 0.f, 0.f));
-
 				Comp->SetRelativeTransform(Rel);
-
 			}
-
 		}
-
 	}
-
 	Comp->RegisterComponent();
-
 	// Mag Armature rest pose is offset from root; park on MagReloadAnim frame 0.
-
 	if (UAnimSequence* RestPose = Data->MagReloadAnim.Get())
-
 	{
 		Comp->PlayAnimation(RestPose, false);
 		if (UAnimSingleNodeInstance* Node = Comp->GetSingleNodeInstance())
@@ -5009,237 +3403,121 @@ USkeletalMeshComponent* AWeapon::GetMagazineSkelMesh1P() const
 {
 	const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine);
 	return Mag ? Mag->SkelMesh1P.Get() : nullptr;
-
 }
-
-
-
 
 
 void AWeapon::UpdateMagazineAmmoVisuals()
-
 {
-
 	if (GetNetMode() == NM_DedicatedServer) return;
-
-
 
 	const int32 Rounds = UsesAmmo() ? FMath::Max(0, Ammo) : 0;
 
-
-
 	auto ApplyAmmoBones = [this, Rounds](USkeletalMeshComponent* Comp)
-
 	{
-
 		if (!IsValid(Comp) || MagazineAmmoBonePrefix.IsNone()) return;
-
 		USkeletalMesh* Skel = Comp->GetSkeletalMeshAsset();
-
 		if (!IsValid(Skel)) return;
 
-
-
 		const FReferenceSkeleton& RefSkel = Skel->GetRefSkeleton();
-
 		const FString Prefix = MagazineAmmoBonePrefix.ToString();
-
 		int32 Found = 0;
-
 		for (int32 BoneIdx = 0; BoneIdx < RefSkel.GetNum(); ++BoneIdx)
-
 		{
-
 			const FName BoneName = RefSkel.GetBoneName(BoneIdx);
-
 			const FString BoneStr = BoneName.ToString();
-
 			if (!BoneStr.StartsWith(Prefix)) continue;
-
 			const FString Suffix = BoneStr.Mid(Prefix.Len());
-
 			if (Suffix.IsEmpty() || !Suffix.IsNumeric()) continue;
-
 			const int32 Slot = FCString::Atoi(*Suffix); // Ammo_001 => 1
-
 			if (Slot <= 0) continue;
-
 			++Found;
-
 			const bool bShow = Slot <= Rounds;
-
 			if (bShow)
-
 			{
-
 				Comp->UnHideBoneByName(BoneName);
-
 			}
-
 			else
-
 			{
-
 				Comp->HideBoneByName(BoneName, EPhysBodyOp::PBO_None);
-
 			}
-
 		}
-
 		if (Found > 0)
-
 		{
-
 			Comp->MarkRenderStateDirty();
-
 		}
-
 	};
 
-
-
 	// Mag attachment skels (KINEMATION SK_Mag_* / SKM_Mag_*).
-
 	if (const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine))
-
 	{
-
 		ApplyAmmoBones(Mag->SkelMesh1P.Get());
-
 		ApplyAmmoBones(Mag->SkelMesh3P.Get());
 
-
-
 		// RAR static Empty/Full swap when MagEmptyMesh set (or auto _Full -> _Empty sibling).
-
 		auto ResolveEmpty = [](const UAttachmentData* Data) -> UStaticMesh*
-
 		{
-
 			if (!IsValid(Data)) return nullptr;
-
 			if (IsValid(Data->MagEmptyMesh)) return Data->MagEmptyMesh.Get();
-
 			if (!IsValid(Data->Mesh)) return nullptr;
-
 			const FString PathName = Data->Mesh->GetPathName();
-
 			if (!PathName.Contains(TEXT("_Full"))) return nullptr;
-
 			const FString EmptyPath = PathName.Replace(TEXT("_Full"), TEXT("_Empty"));
-
 			return LoadObject<UStaticMesh>(nullptr, *EmptyPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
-
 		};
 
-
-
 		if (IsValid(Mag->Data) && IsValid(Mag->Data->Mesh))
-
 		{
-
 			UStaticMesh* FullMesh = Mag->Data->Mesh.Get();
-
 			UStaticMesh* EmptyMesh = ResolveEmpty(Mag->Data);
-
 			UStaticMesh* Want = (Rounds > 0 || !IsValid(EmptyMesh)) ? FullMesh : EmptyMesh;
-
 			auto SwapSM = [Want](UStaticMeshComponent* Comp)
-
 			{
-
 				if (!IsValid(Comp) || !IsValid(Want)) return;
-
 				if (Comp->GetStaticMesh() != Want)
-
 				{
-
 					Comp->SetStaticMesh(Want);
-
 				}
-
 			};
-
 			SwapSM(Mag->Mesh1P.Get());
-
 			SwapSM(Mag->Mesh3P.Get());
-
 		}
-
 	}
 
-
-
 	// Also scan gun body in case Ammo_* live on the weapon skel.
-
 	ApplyAmmoBones(Mesh1P);
-
 	ApplyAmmoBones(Mesh3P);
-
 }
 
 
-
-
-
 void AWeapon::PlayMagazineReload(EReloadType ReloadType)
-
 {
-
 	// RAR-like: weapon body reload drives Mag socket/bone; Mag DA stays attached and follows.
-
 	// Empty and Tactical both need the body sequence on KIN Mag-DA guns (no MagReloadAnim on Mag DA).
-
 	UAnimSequence* BodySeq = nullptr;
-
 	if (ReloadType == EReloadType::Empty)
-
 	{
-
 		BodySeq = WeaponReloadEmptySequence.Get();
-
 	}
-
 	else if (ReloadType == EReloadType::Tactical)
-
 	{
-
 		BodySeq = WeaponReloadTacticalSequence.Get();
-
 	}
-
 	else if (ReloadType == EReloadType::First)
-
 	{
-
 		BodySeq = WeaponReloadEmptySequence.Get() ? WeaponReloadEmptySequence.Get() : WeaponReloadTacticalSequence.Get();
-
 	}
-
 	if (!IsValid(BodySeq))
-
 	{
-
 		BodySeq = WeaponReloadEmptySequence.Get() ? WeaponReloadEmptySequence.Get() : WeaponReloadTacticalSequence.Get();
-
 	}
-
 	if (IsValid(BodySeq))
-
 	{
-
 		PlayBodySequence(Mesh1P, BodySeq);
-
 		PlayBodySequence(Mesh3P, BodySeq);
-
 		UE_LOG(LogTemp, Log, TEXT("[KinMag] PlayMagazineReload body=%s type=%d"), *BodySeq->GetName(), (int32)ReloadType);
-
 	}
-
-
 
 	// Infima dual-hand: SOCKET_Magazine (old, pulled) + SOCKET_Magazine_Reserve (new, held)
-
 	// are both on the GUN mesh; WEP reload moves them to the hands. Keep reserve visible
 	// for the whole reload — do NOT hide via Infima notify timers (that regressed to 1 mag).
 	bReloadReserveMagVisible = true;
@@ -5287,533 +3565,275 @@ void AWeapon::PlayMagazineReload(EReloadType ReloadType)
 	}
 }
 
-
 void AWeapon::ShowReserveMagazineForReload()
-
 {
-
 	// Dual-mag only when the reserve socket exists on Mesh1P (RAR). Pack guns without it skip.
-
 	if (ReserveMagazineSocketName.IsNone() || !IsValid(Mesh1P) || !Mesh1P->DoesSocketExist(ReserveMagazineSocketName))
-
 	{
-
 		return;
-
 	}
-
-
 
 	bool bHasReserve = false;
-
 	TArray<UStaticMeshComponent*> Meshes;
-
 	GetComponents<UStaticMeshComponent>(Meshes);
-
 	for (UStaticMeshComponent* Mesh : Meshes)
-
 	{
-
 		if (!IsValid(Mesh) || Mesh->GetAttachSocketName() != ReserveMagazineSocketName) continue;
-
 		Mesh->SetHiddenInGame(false);
-
 		Mesh->SetVisibility(true);
-
 		bHasReserve = true;
-
 	}
 
-
-
 	if (!bHasReserve && IsValid(Mesh1P) && Mesh1P->DoesSocketExist(ReserveMagazineSocketName))
-
 	{
-
 		if (const FAttachmentVisual* MagVisual = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine))
-
 		{
-
 			if (IsValid(MagVisual->Data) && IsValid(MagVisual->Data->Mesh))
 			{
 				UStaticMeshComponent* Reserve = NewObject<UStaticMeshComponent>(this);
 				Reserve->SetMobility(EComponentMobility::Movable);
 				Reserve->SetStaticMesh(MagVisual->Data->Mesh);
 				Reserve->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
 				Reserve->bReceivesDecals = false;
-
 				Reserve->CastShadow = false;
-
 				Reserve->SetupAttachment(Mesh1P, ReserveMagazineSocketName);
-
 				Reserve->SetRelativeTransform(MagVisual->Data->MeshOffset);
-
 				Reserve->SetHiddenInGame(false);
-
 				Reserve->SetVisibility(true);
-
 				Reserve->RegisterComponent();
 				bHasReserve = true;
 			}
 		}
-
 	}
 
-
-
 	const bool bSock = IsValid(Mesh1P) && Mesh1P->DoesSocketExist(ReserveMagazineSocketName);
-
 	UE_LOG(LogTemp, Warning, TEXT("[RarMag] ShowReserve sock=%d hasReserve=%d weapon=%s"),
-
 		bSock ? 1 : 0, bHasReserve ? 1 : 0, *GetName());
-
 	if (!bHasReserve)
-
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[RarMag] no reserve mag — check DA magazine Mesh + SOCKET_Magazine_Reserve on Mesh1P"));
 	}
 }
 
-
 void AWeapon::FinishMagazineReloadVisuals()
-
 {
-
 	UpdateMagazineAmmoVisuals();
-
 	bReloadReserveMagVisible = false;
-
 	HideReserveMagazines(this, ReserveMagazineSocketName);
-
 }
-
-
-
 
 
 void AWeapon::ResolveMagazineVisualDuplicates()
-
 {
-
 	const FString Cls = GetClass() ? GetClass()->GetName() : FString();
-
 	// Body geo is the mag: TR15 (merged mag), MX68 (belt), R08 (speedloader), Herrington (shell).
-
 	// AK105 / Mk14 / MKR9 / SRM12 / Viper keep Mag DA on the animated mag bone.
-
 	const bool bKinKeepBodyMag =
-
 		Cls.Contains(TEXT("Weapon_TR15")) || Cls.Contains(TEXT("Weapon_MX68"))
-
 		|| Cls.Contains(TEXT("Weapon_R08")) || Cls.Contains(TEXT("Weapon_Herrington"));
 
-
-
 	// KIN pack body-mag guns: drop Mag DA; Full mesh already has the mag.
-
 	if (bKinKeepBodyMag)
-
 	{
-
 		auto UnhideMag = [](USkeletalMeshComponent* Mesh)
-
 		{
-
 			if (!IsValid(Mesh)) return;
-
 			static const FName Bones[] = {
-
 				TEXT("Magazine"), TEXT("Mag"), TEXT("Mag_Primary"), TEXT("Mag_Secondary"),
-
 				TEXT("VB Magazine"), TEXT("Magazine_Parent"), TEXT("mag_01"), TEXT("mag_02"),
-
 				TEXT("MagazineSocket")
-
 			};
-
 			for (const FName Bone : Bones)
-
 			{
-
 				if (Mesh->GetBoneIndex(Bone) != INDEX_NONE)
-
 				{
-
 					Mesh->UnHideBoneByName(Bone);
-
 				}
-
 			}
-
 		};
-
 		UnhideMag(Mesh1P);
-
 		UnhideMag(Mesh3P);
 
-
-
 		// Strip Mag DA from equipped list + visuals.
-
 		RemoveAttachment(ShooterTags::Tag_Attachment_Slot_Magazine);
 
-
-
 		TArray<USkeletalMeshComponent*> Comps;
-
 		GetComponents<USkeletalMeshComponent>(Comps);
-
 		for (USkeletalMeshComponent* Comp : Comps)
-
 		{
-
 			if (!IsValid(Comp) || Comp == Mesh1P || Comp == Mesh3P) continue;
-
 			const FString N = Comp->GetName();
-
 			const FName Sock = Comp->GetAttachSocketName();
-
 			const bool bLooksMag = N.Contains(TEXT("Mag")) || Sock.ToString().Contains(TEXT("Mag"));
-
 			if (!bLooksMag) continue;
-
 			UE_LOG(LogTemp, Warning, TEXT("[KinMag] destroying Mag DA/orphan %s sock=%s"), *N, *Sock.ToString());
-
 			Comp->DestroyComponent();
-
 		}
-
 		TArray<UStaticMeshComponent*> SMs;
-
 		GetComponents<UStaticMeshComponent>(SMs);
-
 		for (UStaticMeshComponent* Comp : SMs)
-
 		{
-
 			if (!IsValid(Comp)) continue;
-
 			const FString N = Comp->GetName();
-
 			if (!N.Contains(TEXT("Mag"))) continue;
-
 			UE_LOG(LogTemp, Warning, TEXT("[KinMag] destroying Mag SM %s"), *N);
-
 			Comp->DestroyComponent();
-
 		}
-
-
 
 		// Speedloader / shell bones often have no skin weights, so the clip never moves them.
-
 		TArray<FName> BodyBones;
-
 		CollectKinFollowBones(Cls, BodyBones);
-
 		if (BodyBones.Num() > 0)
-
 		{
-
 			auto UnhideNamed = [&BodyBones](USkeletalMeshComponent* Mesh)
-
 			{
-
 				if (!IsValid(Mesh)) return;
-
 				for (const FName Bone : BodyBones)
-
 				{
-
 					if (Mesh->GetBoneIndex(Bone) != INDEX_NONE)
-
 					{
-
 						Mesh->UnHideBoneByName(Bone);
-
 					}
-
 				}
-
 			};
-
 			UnhideNamed(Mesh1P);
-
 			UnhideNamed(Mesh3P);
-
 			ArmKinEvaluatedBones(Mesh1P, BodyBones);
-
 			ArmKinEvaluatedBones(Mesh3P, BodyBones);
-
 		}
-
-
 
 		UE_LOG(LogTemp, Log, TEXT("[KinMag] %s keep body mag; Mag DA dropped"), *GetName());
-
 		return;
-
 	}
-
-
 
 	const FAttachmentVisual* Mag = FindVisual(ShooterTags::Tag_Attachment_Slot_Magazine);
-
 	if (!Mag) return;
 
-
-
 	// Mag-DA guns: same as RAR — Mag DA stays on the magazine socket/bone (SOCKET_Magazine style).
-
 	// Weapon MagCheck / MagReloadAnim move it with the gun; do NOT reparent to hand_l.
-
 	// Hide builtin body mag bones so only the Mag DA shows.
-
 	// IMPORTANT: HideBone zeros bone scale. Mag DA attached to that bone would collapse unless
-
 	// it uses absolute scale (keeps size while still following bone loc/rot — RAR-like).
-
 	FName MagAttachBone = NAME_None;
-
 	if (IsValid(Mag->SkelMesh1P.Get())) MagAttachBone = Mag->SkelMesh1P->GetAttachSocketName();
-
 	else if (IsValid(Mag->Mesh1P.Get())) MagAttachBone = Mag->Mesh1P->GetAttachSocketName();
 
-
-
 	auto HideBodyMagBones = [](USkeletalMeshComponent* WeaponMesh)
-
 	{
-
 		if (!IsValid(WeaponMesh)) return;
-
 		static const FName Bones[] = {
-
 			TEXT("Magazine"), TEXT("Mag"), TEXT("Mag_Primary"), TEXT("Mag_Secondary"),
-
 			TEXT("VB Magazine"), TEXT("Magazine_Parent"), TEXT("MagazineSocket"), TEXT("mag_01"), TEXT("mag_02")
-
 		};
-
 		for (const FName Bone : Bones)
-
 		{
-
 			if (WeaponMesh->GetBoneIndex(Bone) != INDEX_NONE)
-
 			{
-
 				WeaponMesh->HideBoneByName(Bone, EPhysBodyOp::PBO_None);
-
 			}
-
 		}
-
 	};
-
 	HideBodyMagBones(Mesh1P);
-
 	HideBodyMagBones(Mesh3P);
 
-
-
 	auto PrepMagDA = [](UPrimitiveComponent* Comp)
-
 	{
-
 		if (!IsValid(Comp)) return;
-
 		Comp->SetHiddenInGame(false);
-
 		Comp->SetVisibility(true);
-
 		Comp->SetOwnerNoSee(false);
-
 		// Survive HideBone scale=0 on the mount bone so MagCheck/reload still moves Mag DA.
-
 		Comp->SetUsingAbsoluteScale(true);
-
 		Comp->SetRelativeScale3D(FVector::OneVector);
-
 	};
-
 	if (IsValid(Mag->SkelMesh3P.Get()))
-
 	{
-
 		Mag->SkelMesh3P->SetOwnerNoSee(true);
-
 		Mag->SkelMesh3P->SetUsingAbsoluteScale(true);
-
 		Mag->SkelMesh3P->SetRelativeScale3D(FVector::OneVector);
-
 	}
-
 	if (IsValid(Mag->Mesh3P.Get()))
-
 	{
-
 		Mag->Mesh3P->SetOwnerNoSee(true);
-
 		Mag->Mesh3P->SetUsingAbsoluteScale(true);
-
 		Mag->Mesh3P->SetRelativeScale3D(FVector::OneVector);
-
 	}
-
 	if (IsValid(Mag->SkelMesh1P.Get()))
-
 	{
-
 		PrepMagDA(Mag->SkelMesh1P.Get());
-
 	}
-
 	if (IsValid(Mag->Mesh1P.Get()))
-
 	{
-
 		PrepMagDA(Mag->Mesh1P.Get());
-
 	}
-
 	UE_LOG(LogTemp, Log, TEXT("[KinMag] Mag DA absolute-scale on attach=%s (HideBone-safe)"), *MagAttachBone.ToString());
 
-
-
 	TArray<USkeletalMeshComponent*> Comps;
-
 	GetComponents<USkeletalMeshComponent>(Comps);
-
 	for (USkeletalMeshComponent* Comp : Comps)
-
 	{
-
 		if (!IsValid(Comp) || Comp == Mesh1P || Comp == Mesh3P) continue;
-
 		if (Comp == Mag->SkelMesh1P.Get() || Comp == Mag->SkelMesh3P.Get()) continue;
-
 		const FString N = Comp->GetName();
-
 		const FName Sock = Comp->GetAttachSocketName();
-
 		const bool bLooksMag = N.Contains(TEXT("Mag")) || Sock.ToString().Contains(TEXT("Mag"));
-
 		if (!bLooksMag) continue;
-
 		UE_LOG(LogTemp, Warning, TEXT("[KinMag] destroying orphan mag comp %s sock=%s"), *N, *Sock.ToString());
-
 		Comp->DestroyComponent();
-
 	}
-
-
 
 	// HideBone drops the mag bone out of RequiredBones (no skin weights, Mesh1P is not
-
 	// AlwaysTickPoseAndRefreshBones). Put it back so the attached Mag DA follows the clip.
-
 	TArray<FName> FollowBones;
-
 	CollectKinFollowBones(Cls, FollowBones);
-
 	if (!MagAttachBone.IsNone())
-
 	{
-
 		FollowBones.AddUnique(MagAttachBone);
-
 	}
-
 	ArmKinEvaluatedBones(Mesh1P, FollowBones);
-
 	ArmKinEvaluatedBones(Mesh3P, FollowBones);
 
-
-
 	// MKR9 keys two mag bones. The second copy stays hidden until those bones separate
-
 	// during reload / mag check, so idle does not draw two magazines in the well.
-
 	if (Cls.Contains(TEXT("Weapon_MKR9")))
-
 	{
-
 		auto SpawnSecondary = [this](USkeletalMeshComponent* WeaponMesh, USkeletalMeshComponent* Primary, bool bFirstPerson)
-
 		{
-
 			if (!IsValid(WeaponMesh) || !IsValid(Primary) || !IsValid(Primary->GetSkeletalMeshAsset())) return;
-
 			const FName BoneName(TEXT("Mag_Secondary"));
-
 			if (WeaponMesh->GetBoneIndex(BoneName) == INDEX_NONE) return;
 
-
-
 			USkeletalMeshComponent* Comp = NewObject<USkeletalMeshComponent>(this,
-
 				MakeUniqueObjectName(this, USkeletalMeshComponent::StaticClass(),
-
 					bFirstPerson ? TEXT("KinMagSecondary1P") : TEXT("KinMagSecondary3P")));
-
 			Comp->SetMobility(EComponentMobility::Movable);
-
 			Comp->SetSkeletalMesh(Primary->GetSkeletalMeshAsset());
-
 			Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
 			Comp->bReceivesDecals = false;
-
 			Comp->CastShadow = !bFirstPerson;
-
 			Comp->SetupAttachment(WeaponMesh, BoneName);
-
 			Comp->SetRelativeTransform(Primary->GetRelativeTransform());
-
 			Comp->SetUsingAbsoluteScale(Primary->IsUsingAbsoluteScale());
-
 			Comp->SetHiddenInGame(true);
-
 			Comp->SetVisibility(false);
-
 			if (!bFirstPerson)
-
 			{
-
 				Comp->SetOwnerNoSee(true);
-
 			}
-
 			Comp->RegisterComponent();
-
 		};
-
 		SpawnSecondary(Mesh1P, Mag->SkelMesh1P.Get(), true);
-
 		SpawnSecondary(Mesh3P, Mag->SkelMesh3P.Get(), false);
-
 		if (GetNetMode() != NM_DedicatedServer)
-
 		{
-
 			SetActorTickEnabled(true);
-
 		}
-
 	}
 
-
-
 	UE_LOG(LogTemp, Log, TEXT("[KinMag] %s Mag DA on mag socket (RAR-like); body mag bones hidden"), *GetName());
-
 }
 
-
-
 void AWeapon::RebuildAttachmentVisuals()
-
 {
 	// 专用服务器不需要画面
 	if (GetNetMode() == NM_DedicatedServer) return;
@@ -5831,19 +3851,12 @@ void AWeapon::RebuildAttachmentVisuals()
 	if (IsValid(LaserBeam))
 	{
 		LaserBeam->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-
 	}
-
 	// 备用弹夹不在 AttachmentVisuals 里，先拆掉，避免每次重装多一只。
-
 	DestroyReserveMagazines(this, ReserveMagazineSocketName);
 
-
-
 	// 1. 清掉旧模型
-
 	for (FAttachmentVisual& Visual : AttachmentVisuals)
-
 	{
 		if (IsValid(Visual.Mesh1P)) Visual.Mesh1P->DestroyComponent();
 		if (IsValid(Visual.Mesh3P)) Visual.Mesh3P->DestroyComponent();
@@ -5909,23 +3922,14 @@ void AWeapon::RebuildAttachmentVisuals()
 			Visual.Mesh1P = SpawnAttachmentMesh(Mesh1P, Attachment, true);
 			Visual.Mesh3P = SpawnAttachmentMesh(Mesh3P, Attachment, false);
 		}
-
 	}
 
-
-
 	// KIN: TR15 keeps body mag; Mag-DA guns keep Mag DA on mag socket (RAR-like) and hide body mag bones.
-
 	ResolveMagazineVisualDuplicates();
 
-
-
 	// 3. Dual flashlights: 1P for local view, 3P so other clients see the beam.
-
 	if (HasFlashlight())
-
 	{
-
 		if (!IsValid(Flashlight1P))
 		{
 			Flashlight1P = CreateFlashlightLight(Mesh1P);
@@ -6087,18 +4091,11 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn)
 		if (IsValid(Visual.Mesh3P)) { Visual.Mesh3P->SetHiddenInGame(bLocal, true); }
 	}
 
-
-
 	// 父网格传播会把备用弹夹重新打开。平时只留枪里那一只。
-
 	HideReserveMagazines(this, ReserveMagazineSocketName);
-
 	if (bReloadReserveMagVisible)
-
 	{
-
 		ShowReserveMagazineForReload();
-
 	}
 	ApplyChamberShellVisibility();
 	// Parent SetHiddenInGame(propagate) also stomps child lights — restore after.
@@ -6195,25 +4192,15 @@ UAnimMontage* AWeapon::PlaySequenceAsDynamicMontage(UAnimInstance* Anim, UAnimSe
 void AWeapon::PlayBodySequence(USkeletalMeshComponent* WeaponMesh, UAnimSequence* Sequence)
 {
 	if (!IsValid(WeaponMesh) || !IsValid(Sequence)) return;
-
 	const UWorld* World = WeaponMesh->GetWorld();
-
 	if (World && World->GetNetMode() == NM_DedicatedServer) return;
-
 	// PlayAnimation can InitAnim and rebuild RequiredBones, which drops unweighted mag bones.
-
 	// Merge them again after that rebuild so the clip actually evaluates the mag.
-
 	WeaponMesh->PlayAnimation(Sequence, false);
-
 	RefreshKinFollowBones(Cast<AWeapon>(WeaponMesh->GetOwner()), WeaponMesh);
-
 }
 
-
-
 void AWeapon::PlayWeaponSequence(USkeletalMeshComponent* WeaponMesh, UAnimSequence* Sequence)
-
 {
 	if (!IsValid(WeaponMesh) || !IsValid(Sequence)) return;
 	UAnimInstance* Anim = WeaponMesh->GetAnimInstance();
@@ -6226,62 +4213,36 @@ void AWeapon::PlayWeaponSequence(USkeletalMeshComponent* WeaponMesh, UAnimSequen
 }
 
 void AWeapon::PlayWeaponMontageOrSequence(USkeletalMeshComponent* WeaponMesh, UAnimMontage* Montage)
-
 {
-
 	if (!IsValid(WeaponMesh) || !IsValid(Montage)) return;
-
 	if (AWeapon* Weapon = Cast<AWeapon>(WeaponMesh->GetOwner()))
-
 	{
-
 		if (Weapon->GetClass() && Weapon->GetClass()->GetName().Contains(TEXT("Weapon_SRM12"))
-
 			&& Montage->GetName().Contains(TEXT("Mag_Check")))
-
 		{
-
 			Weapon->SetActorTickEnabled(true);
-
 		}
-
 	}
-
 	UAnimInstance* Anim = WeaponMesh->GetAnimInstance();
-
 	if (IsValid(Anim) && !Anim->IsA<UAnimSingleNodeInstance>())
-
 	{
-
 		Anim->Montage_Play(Montage);
-
 		RefreshKinFollowBones(Cast<AWeapon>(WeaponMesh->GetOwner()), WeaponMesh);
-
 		return;
-
 	}
-
 	// 没有 AnimBP：取蒙太奇第一段序列直接播（资源包蒙太奇常把 semi/auto 两段串在一起，只要第一段）。
-
 	for (const FSlotAnimationTrack& Track : Montage->SlotAnimTracks)
 	{
 		if (Track.AnimTrack.AnimSegments.Num() == 0) continue;
 		const FAnimSegment& Seg = Track.AnimTrack.AnimSegments[0];
 		if (UAnimSequenceBase* Seq = Seg.GetAnimReference())
 		{
-
 			WeaponMesh->PlayAnimation(Seq, false);
-
 			WeaponMesh->SetPlayRate(Seg.AnimPlayRate * Montage->RateScale);
-
 			RefreshKinFollowBones(Cast<AWeapon>(WeaponMesh->GetOwner()), WeaponMesh);
-
 			return;
-
 		}
-
 	}
-
 }
 
 
