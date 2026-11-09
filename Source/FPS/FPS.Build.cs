@@ -13,11 +13,8 @@ public class FPS : ModuleRules
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
-			"Slate", "SlateCore", "CoreOnline", "NavigationSystem",
-			"OnlineSubsystem", "OnlineSubsystemUtils",
-			"OnlineSubsystemEOS", "EOSShared", "EOSSDK",
-			"MoviePlayer"
-			// EOS：用 IOnlineSubsystemEOS 拿平台句柄做 DeviceId（Plugins/OnlineSubsystemEOS 是项目覆盖版，开了 ADD_USER_LOGIN_INFO）
+			"Slate", "SlateCore", "NavigationSystem",
+			"MoviePlayer", "AssetRegistry"
 		});
 	}
 }

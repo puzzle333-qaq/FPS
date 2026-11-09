@@ -1,4 +1,0 @@
-﻿【已弃用实时 Capture】
-请看同目录 BakeMeshThumbs_HOWTO.txt。
-ULoadoutMeshThumbnails 现在只绑预烘焙 Texture2D，不再 Spawn MeshPreviewCapture。
-备份：Saved\CodeBackup_20261030_223400_BakedThumbs

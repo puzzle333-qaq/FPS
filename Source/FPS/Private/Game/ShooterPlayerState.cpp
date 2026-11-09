@@ -12,9 +12,6 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(AShooterPlayerState, Deaths);
 	DOREPLIFETIME(AShooterPlayerState, Assists);
 	DOREPLIFETIME(AShooterPlayerState, RespawnServerTime);
-	DOREPLIFETIME(AShooterPlayerState, bHasBomb);
-	DOREPLIFETIME(AShooterPlayerState, Money);
-	DOREPLIFETIME(AShooterPlayerState, bReady);
 }
 
 float AShooterPlayerState::GetRespawnRemaining() const
@@ -66,53 +63,11 @@ void AShooterPlayerState::OnRep_Stats()
 	OnStatsChanged.Broadcast(Kills, Deaths);
 }
 
-void AShooterPlayerState::SetHasBomb(bool bInHasBomb)
-{
-	bHasBomb = bInHasBomb;
-	OnRep_HasBomb();
-	ForceNetUpdate();
-}
-
-void AShooterPlayerState::OnRep_HasBomb()
-{
-	OnBombCarryChanged.Broadcast(bHasBomb);
-}
-
-void AShooterPlayerState::SetMoney(int32 NewMoney)
-{
-	Money = FMath::Max(0, NewMoney);
-	OnRep_Money();
-	ForceNetUpdate();
-}
-
-void AShooterPlayerState::AddMoney(int32 Delta)
-{
-	SetMoney(Money + Delta);
-}
-
-void AShooterPlayerState::OnRep_Money()
-{
-	OnMoneyChanged.Broadcast(Money);
-}
-void AShooterPlayerState::SetReady(bool bInReady)
-{
-	bReady = bInReady;
-	OnRep_Ready();
-	ForceNetUpdate();
-}
-
-void AShooterPlayerState::OnRep_Ready()
-{
-	OnReadyChanged.Broadcast(bReady ? 1 : 0);
-}
-
 void AShooterPlayerState::CopyProperties(APlayerState* PlayerState)
 {
 	Super::CopyProperties(PlayerState);
 	if (AShooterPlayerState* NewPS = Cast<AShooterPlayerState>(PlayerState))
 	{
 		NewPS->TeamId = TeamId;
-		NewPS->JoinOrder = JoinOrder;
-		// 准备状态、战绩、金钱不带（回大厅/进对局都重新开始）
 	}
 }

@@ -12,12 +12,8 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Engine/Texture2D.h"
-#include "ShooterGameInstance.h"
-#include "Game/ShooterBotController.h"
-
 AShooterGameModeBase::AShooterGameModeBase()
 {
-	// 房间 <-> 对局之间无缝切图（PlayerState::CopyProperties 带队伍）
 	bUseSeamlessTravel = true;
 	PlayerStateClass = AShooterPlayerState::StaticClass();
 	GameStateClass = AShooterGameState::StaticClass();
@@ -179,120 +175,6 @@ void AShooterGameModeBase::AssignShortPlayerName(APlayerController* NewPlayer)
 	PS->SetPlayerName(FString::Printf(TEXT("Player%d"), Number));
 }
 
-// ================= 房间 =================
-
-bool AShooterGameModeBase::HasActiveRoom() const
-{
-	const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
-	return GI && GI->Room.bActive && !GI->RoomLobbyMap.IsNull();
-}
-
-void AShooterGameModeBase::ConfigureMatchBot(AShooterBotController* /*Bot*/, AShooterPlayerState* /*PS*/)
-{
-}
-
-bool AShooterGameModeBase::SpawnMatchBot(uint8 TeamId)
-{
-	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
-	static volatile bool bBotsDisabled = true;
-	if (bBotsDisabled) { return false; }
-	if (!HasAuthority() || !GetWorld() || TeamId > 1) return false;
-	AShooterBotController* Bot = Cast<AShooterBotController>(SpawnPlayerControllerCommon(
-		ROLE_AutonomousProxy, FVector::ZeroVector, FRotator::ZeroRotator, AShooterBotController::StaticClass()));
-	if (!IsValid(Bot)) return false;
-
-	++BotSerial;
-	AShooterPlayerState* PS = Bot->GetPlayerState<AShooterPlayerState>();
-	if (!IsValid(PS))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Bot] Spawned controller has no player state"));
-		Bot->Destroy();
-		return false;
-	}
-
-	PS->SetIsABot(true);
-	PS->SetPlayerName(FString::Printf(TEXT("BOT %d"), BotSerial));
-	PS->SetTeamId(TeamId);
-	ConfigureMatchBot(Bot, PS);
-	Bot->bPawnAlive = true;
-	RestartPlayer(Bot);
-	UE_LOG(LogTemp, Log, TEXT("[Bot] %s joined team %d"), *PS->GetPlayerName(), TeamId);
-	return true;
-}
-
-void AShooterGameModeBase::SpawnRoomBots()
-{
-	// BOTS DISABLED — set bBotsDisabled=false (or delete this if) to re-enable
-	static volatile bool bBotsDisabled = true;
-	if (bBotsDisabled) { return; }
-	if (bRoomBotsSpawned || !HasAuthority() || !HasActiveRoom()) return;
-	const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
-	if (!GI) return;
-	bRoomBotsSpawned = true;
-	for (uint8 TeamId : GI->Room.LobbyBotTeams)
-	{
-		SpawnMatchBot(TeamId);
-	}
-	if (GI->Room.LobbyBotTeams.Num() > 0)
-	{
-		UE_LOG(LogTemp, Log, TEXT("[Bot] Spawned %d room bots"), GI->Room.LobbyBotTeams.Num());
-	}
-}
-
-bool AShooterGameModeBase::ReturnToRoomLobby()
-{
-	UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
-	if (!GI || !GI->Room.bActive || GI->RoomLobbyMap.IsNull()) return false;
-	FString URL = GI->RoomLobbyMap.ToSoftObjectPath().GetLongPackageName();
-	if (!GI->LobbyGameModeClass.IsNull())
-	{
-		URL += FString::Printf(TEXT("?game=%s"), *GI->LobbyGameModeClass.ToSoftObjectPath().ToString());
-	}
-	UE_LOG(LogTemp, Log, TEXT("[Room] ServerTravel back to lobby: %s (room %s)"), *URL, *GI->Room.RoomCode);
-	GetWorld()->ServerTravel(URL);
-	return true;
-}
-
-int32 AShooterGameModeBase::CountActivePlayersOnTeam(uint8 TeamId) const
-{
-	int32 Count = 0;
-	if (GameState)
-	{
-		for (const APlayerState* PS : GameState->PlayerArray)
-		{
-			const AShooterPlayerState* SPS = Cast<AShooterPlayerState>(PS);
-			if (!IsValid(SPS) || SPS->IsInactive() || SPS->IsOnlyASpectator()) continue;
-			if (!IsValid(SPS->GetOwner())) continue; // 控制器已销毁（掉线中）
-			if (SPS->GetTeamId() == TeamId) ++Count;
-		}
-	}
-	return Count;
-}
-
-bool AShooterGameModeBase::AreExpectedPlayersPresent(int32& OutArrived, int32& OutExpected) const
-{
-	OutArrived = 0;
-	OutExpected = 0;
-	const UShooterGameInstance* GI = GetGameInstance<UShooterGameInstance>();
-	if (!GI || !GI->Room.bActive || GI->Room.ExpectedPlayerKeys.Num() == 0) return true;
-	OutExpected = GI->Room.ExpectedPlayerKeys.Num();
-	if (GameState)
-	{
-		for (const FString& Key : GI->Room.ExpectedPlayerKeys)
-		{
-			for (const APlayerState* PS : GameState->PlayerArray)
-			{
-				if (IsValid(PS) && !PS->IsInactive() && UShooterGameInstance::GetRoomKey(PS) == Key)
-				{
-					++OutArrived;
-					break;
-				}
-			}
-		}
-	}
-	return OutArrived >= OutExpected;
-}
-
 void AShooterGameModeBase::Logout(AController* Exiting)
 {
 	Super::Logout(Exiting);
@@ -300,27 +182,4 @@ void AShooterGameModeBase::Logout(AController* Exiting)
 	{
 		GS->RefreshTeamAliveCounts();
 	}
-	// 下一帧再数（这一帧 PlayerState 还在列表里）
-	GetWorldTimerManager().SetTimer(LogoutCheckTimer, this, &ThisClass::CheckTeamsAfterLogout, 0.2f, false);
-}
-
-void AShooterGameModeBase::CheckTeamsAfterLogout()
-{
-	const AShooterGameState* GS = GetGameState<AShooterGameState>();
-	if (!GS || GS->GetMatchState() != EShooterMatchState::InProgress || GS->GetNumTeams() < 2) return;
-	const int32 A = CountActivePlayersOnTeam(0);
-	const int32 B = CountActivePlayersOnTeam(1);
-	if (A > 0 && B > 0) return;
-	if (A == 0 && B == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Room] Everyone left mid-match"));
-		if (!ReturnToRoomLobby())
-		{
-			HandleTeamForfeit(AShooterPlayerState::NoTeam);
-		}
-		return;
-	}
-	const uint8 Winner = A > 0 ? 0 : 1;
-	UE_LOG(LogTemp, Warning, TEXT("[Room] Team %d fully disconnected -> team %d wins"), 1 - Winner, Winner);
-	HandleTeamForfeit(Winner);
 }

@@ -1,8 +1,0 @@
-﻿Gunsmith 中间实时枪模（第1步）
-1. 打开 Content/FPS/UI/Gunsmith/WBP_GS_Main（父类 GunsmithScreen，已确认）。
-2. 中间放一个 Image，名字必须叫 Image_Preview，勾 Is Variable。Brush 留空，Tint 白色 Alpha=1。
-3. 给它足够大小（Canvas 里拉大 / 或在 Overlay 里 Fill），别被其它控件盖住。
-4. 运行时：GunsmithComponent 生成 LoadoutPreviewRig（Z=-100000，看不见）→ 拍到 RenderTarget → 自动塞进 Image_Preview。
-5. 现在会按枪包围盒自动居中、自动缩放。
-6. 还是空：Output Log 搜 [Gunsmith]，把那几行发我。
-备份：Saved/CodeBackup_20261031_003000_GsCenterPreview

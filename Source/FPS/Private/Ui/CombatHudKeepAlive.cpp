@@ -3,7 +3,6 @@
 #include "Blueprint/WidgetTree.h"
 #include "UObject/UObjectIterator.h"
 #include "Components/Widget.h"
-#include "Ui/MatchHUD.h"
 #include "Ui/CombatStatusHud.h"
 #include "ShooterPlayerController.h"
 
@@ -88,14 +87,6 @@ void UCombatHudKeepAlive::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 				break;
 			}
 		}
-	}
-
-	// Strip MatchHUD if BP still creates it after C++ EnsureMatchHUD no-op.
-	for (TObjectIterator<UMatchHUD> It; It; ++It)
-	{
-		UMatchHUD* Hud = *It;
-		if (!IsValid(Hud) || Hud->GetOwningPlayer() != PC) continue;
-		Hud->RemoveFromParent();
 	}
 
 	bool bStatusOk = false;

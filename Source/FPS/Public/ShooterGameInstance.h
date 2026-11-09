@@ -1,42 +1,11 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
 #include "Loadout/LoadoutTypes.h"
 #include "ShooterGameInstance.generated.h"
 
-class UShooterLoadoutSave;
-
-// 房间（服务器侧，存在 GameInstance 里，跨 ServerTravel 保留）
-USTRUCT(BlueprintType)
-struct FShooterRoomState
-{
-	GENERATED_BODY()
-
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
-	bool bActive = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
-	FString RoomCode;
-
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
-	EShooterGameMode Mode = EShooterGameMode::PoliceCriminal;
-
-	// 房主的 RoomKey（UniqueId 或名字）
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
-	FString HostKey;
-
-	// 点开始时房间里的人（对局里等这些人到齐）。BOT 不会无缝旅行，不放这里。
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
-	TArray<FString> ExpectedPlayerKeys;
-
-	// 点开始时每个 BOT 的队伍（0 / 1）。对局按这个名单生成。
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
-	TArray<uint8> LobbyBotTeams;
-};
-
-// 局外数据：当前配装、选中的模式，以及开房/加入/去靶场/回主菜单。
-// 做一个蓝图子类 BP_ShooterGameInstance 填表，然后在 Project Settings → Game Instance Class 里选它。
+// Travel and listen-host for solo or coop. Rooms and the gunsmith save are gone; those screens will be rebuilt.
 UCLASS()
 class FPS_API UShooterGameInstance : public UGameInstance
 {
@@ -47,7 +16,6 @@ public:
 	virtual void Init() override;
 	virtual void Shutdown() override;
 
-	// ---------- 在线/网络错误（断线、Listen 失败等，回主菜单后显示）----------
 	UFUNCTION(BlueprintPure, Category = "FPS|Online")
 	FString GetLastOnlineError() const { return LastOnlineError; }
 
@@ -57,14 +25,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Online")
 	void SetLastOnlineError(const FString& Error);
 
-	// ---------- 模式表 ----------
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Mode")
 	TMap<EShooterGameMode, FShooterModeInfo> Modes;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Mode")
 	TSoftObjectPtr<UWorld> RangeMap;
 
-	// 靶场用的 GameMode（空 = 用地图自己的设置）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Mode")
 	TSoftClassPtr<AGameModeBase> RangeGameMode;
 
@@ -72,7 +38,7 @@ public:
 	TSoftObjectPtr<UWorld> MainMenuMap;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Mode")
-	EShooterGameMode SelectedMode = EShooterGameMode::PoliceCriminal;
+	EShooterGameMode SelectedMode = EShooterGameMode::CoopCQB;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	void SelectMode(EShooterGameMode Mode) { SelectedMode = Mode; }
@@ -83,31 +49,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Mode")
 	bool IsModeAvailable(EShooterGameMode Mode) const;
 
-	// 自己开房：以 listen server 打开该模式的地图。成功返回 true
-	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
-	bool HostRoom(EShooterGameMode Mode);
-
-	// 输入 IP（可带 :端口）加入别人的房间
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool JoinByIP(const FString& Address);
-
-	// 本机联机测试：强制 Null/IpNetDriver，跳过 EOS，以 listen 打开靶场/警匪/大厅。
-	// Target: range | pc | lobby（空=range）
-	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
-	bool HostLocalListen(FString Target);
-
-	// 本机联机测试：加入本机 listen（Address 空 = 127.0.0.1）
-	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
-	bool JoinLocalhost(FString Address);
-
-	// 打开局域网模式（fps.OnlineUseNull=1 + IpNetDriver），不跳图
-	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
-	void EnsureLocalLanMode();
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool OpenRange();
 
-	// 单人练习：不进房间大厅，直接进该模式地图（警匪战术允许 1 人开局）
+	// Solo: open the mode map with no listen server.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool StartPractice(EShooterGameMode Mode);
 
@@ -117,82 +65,32 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Mode")
 	bool GoToMainMenu();
 
-	// ---------- 房间大厅 ----------
-	// 房间大厅地图（World Settings 的 GameMode 填 BP_LobbyGameMode，或者填下面 LobbyGameModeClass）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Room")
-	TSoftObjectPtr<UWorld> RoomLobbyMap;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Room")
-	TSoftClassPtr<AGameModeBase> LobbyGameModeClass;
-
-	// 本地玩家名字（加入时作为 ?Name= 发给服务器；空 = 用引擎默认名）
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Room")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Online")
 	FString LocalPlayerName;
 
-	// 创建房间：自己当 listen server 打开大厅地图（你就是房主）
-	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
-	bool CreateRoom(EShooterGameMode Mode);
+	// Force Null/IpNetDriver for a local listen test, then open range or coop.
+	// Target: range | coop
+	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
+	bool HostLocalListen(FString Target);
 
-	// 创建房间（专用服务器）：连接服务器 IP，作为第一个进入者成为房主，并请求模式
-	UFUNCTION(BlueprintCallable, Category = "FPS|Room")
-	bool CreateRoomOnServer(const FString& Address, EShooterGameMode Mode);
+	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
+	bool JoinLocalhost(FString Address);
 
-	// ---- 服务器侧房间状态 ----
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Room")
-	FShooterRoomState Room;
+	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
+	void EnsureLocalLanMode();
 
-	// 新建房间（生成 6 位房间号）
-	void ResetRoom(EShooterGameMode Mode);
+	// Authority-only travel preserving the connected squad. Local menu travel continues to use TravelTo.
+ bool TravelSquadTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, const TArray<FString>& ExtraOptions = TArray<FString>());
 
-	static FString MakeRoomCode();
-
-	// 玩家在房间里的标识：有 UniqueId 用 UniqueId，否则用名字
-	static FString GetRoomKey(const APlayerState* PS);
-
-	// 拼 ?Name= 选项
-	FString GetNameOption() const;
-
-	// ---------- 配装 ----------
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Loadout")
-	FString SaveSlotName = TEXT("Loadout");
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Loadout")
-	FLoadoutPreset GetCurrentLoadout() const { return CurrentLoadout; }
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Loadout")
-	void SetCurrentLoadout(const FLoadoutPreset& NewLoadout) { CurrentLoadout = NewLoadout; }
-
-	// 把一把枪写进当前配装（手枪/刀/投掷：同类只留一把；长枪：同 class 更新配件）
-	UFUNCTION(BlueprintCallable, Category = "FPS|Loadout")
-	void SetWeaponPreset(const FWeaponPreset& Preset);
-
-	// 装备成主武器：长枪插到第一把（原第一把变成第二把，最多两把）。手枪/刀同 SetWeaponPreset。
-	UFUNCTION(BlueprintCallable, Category = "FPS|Loadout")
-	void EquipPrimaryWeapon(const FWeaponPreset& Preset);
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Loadout")
-	TSubclassOf<AWeapon> GetPrimaryLongGun() const;
-
-	// 当前配装里这把枪的预设（没有返回 false）
-	UFUNCTION(BlueprintPure, Category = "FPS|Loadout")
-	bool FindWeaponPreset(TSubclassOf<AWeapon> WeaponClass, FWeaponPreset& OutPreset) const;
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Loadout")
-	bool SaveLoadout();
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Loadout")
-	bool LoadLoadout();
+ bool TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, bool bListen, const TArray<FString>& ExtraOptions = TArray<FString>());
 
 private:
-	UPROPERTY()
-	FLoadoutPreset CurrentLoadout;
-
 	bool bPracticeMode = false;
-
 	FString LastOnlineError;
-	FDelegateHandle NetFailHandle, TravelFailHandle;
+	FDelegateHandle NetFailHandle;
+	FDelegateHandle TravelFailHandle;
+
 	void HandleNetworkFailure(UWorld* World, class UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString);
 	void HandleTravelFailure(UWorld* World, ETravelFailure::Type FailureType, const FString& ErrorString);
-
-	bool TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, bool bListen, const TArray<FString>& ExtraOptions = TArray<FString>());
+	FString GetNameOption() const;
 };

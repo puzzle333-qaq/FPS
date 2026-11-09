@@ -6,10 +6,8 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterStatChanged, int32, Kills, int32, Deaths);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FShooterTeamChanged, uint8, TeamId);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FShooterBombCarryChanged, bool, bHasBomb);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FShooterMoneyChanged, int32, NewMoney);
 
-// 每个玩家的队伍和战绩（服务器写，复制给所有人）
+// Team and match stats. Server writes, clients replicate.
 UCLASS()
 class FPS_API AShooterPlayerState : public APlayerState
 {
@@ -19,6 +17,7 @@ public:
 	static constexpr uint8 NoTeam = 255;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void CopyProperties(APlayerState* PlayerState) override;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	uint8 GetTeamId() const { return TeamId; }
@@ -35,28 +34,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	int32 GetAssists() const { return Assists; }
 
-	// ---- 房间大厅 ----
-	UFUNCTION(BlueprintPure, Category = "FPS|Room")
-	bool IsReady() const { return bReady; }
-
-	// 进房间的顺序（越小越早，房主迁移用）
-	int32 GetJoinOrder() const { return JoinOrder; }
-	void SetJoinOrder(int32 InOrder) { JoinOrder = InOrder; }
-	void SetReady(bool bInReady);
-
-	UPROPERTY(BlueprintAssignable, Category = "FPS|Room")
-	FShooterTeamChanged OnReadyChanged;
-
-	// 无缝切图时把队伍/顺序带到新地图
-	virtual void CopyProperties(APlayerState* PlayerState) override;
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Bomb")
-	bool IsCarryingBomb() const { return bHasBomb; }
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Buy")
-	int32 GetMoney() const { return Money; }
-
-	// 距离复活还有几秒（没在等复活返回 0）。本地 HUD 每帧读它显示倒计时
 	UFUNCTION(BlueprintPure, Category = "FPS|Match")
 	float GetRespawnRemaining() const;
 
@@ -66,21 +43,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Match")
 	FShooterTeamChanged OnTeamChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "FPS|Bomb")
-	FShooterBombCarryChanged OnBombCarryChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "FPS|Buy")
-	FShooterMoneyChanged OnMoneyChanged;
-
-	// ---- 只在服务器调用 ----
 	void SetTeamId(uint8 NewTeam);
 	void AddKill();
 	void AddDeath();
 	void AddAssist();
 	void SetRespawnServerTime(float ServerTime);
-	void SetHasBomb(bool bInHasBomb);
-	void SetMoney(int32 NewMoney);
-	void AddMoney(int32 Delta);
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_TeamId)
@@ -95,34 +62,12 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_Stats)
 	int32 Assists = 0;
 
-	// 服务器时间，0 = 不在等复活
 	UPROPERTY(Replicated)
 	float RespawnServerTime = 0.f;
-
-	UPROPERTY(ReplicatedUsing = OnRep_HasBomb)
-	bool bHasBomb = false;
-
-	UPROPERTY(ReplicatedUsing = OnRep_Money)
-	int32 Money = 0;
-
-	UPROPERTY(ReplicatedUsing = OnRep_Ready)
-	bool bReady = false;
-
-	UPROPERTY()
-	int32 JoinOrder = 0;
-
-	UFUNCTION()
-	void OnRep_Ready();
 
 	UFUNCTION()
 	void OnRep_TeamId();
 
 	UFUNCTION()
 	void OnRep_Stats();
-
-	UFUNCTION()
-	void OnRep_HasBomb();
-
-	UFUNCTION()
-	void OnRep_Money();
 };
