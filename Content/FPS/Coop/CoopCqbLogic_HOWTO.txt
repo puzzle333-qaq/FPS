@@ -25,14 +25,11 @@ Mission flow
 - One life (no respawn) for now.
 - Operators auto team 0, police Bandits look + MVP police kit (RAR/X24/throwables).
 
-Door aim zones (press F)
-------------------------
-Aim at door leaf:
-- Upper third  → gentle push (ajar ~25°, slow)
-- Middle/handle → normal open / close
-- Bottom third → kick open (fast full swing)
-
-Tune BottomZoneMaxZ / UpperZoneMinZ on the door if mesh pivot differs.
+Door (press F) — see CqbDoor_HOWTO.txt
+--------------------------------------
+- Look up / level → slow quiet push open (away from you)
+- Look down → fast loud kick open (alerts AI)
+- Swap DoorLeafMesh for ship/warehouse doors; place hinge on frame edge
 
 Debug / fallback
 ----------------
@@ -43,4 +40,5 @@ Not in this batch
 -----------------
 Prep UI, custom loadout, hostages, AI teammates.
 Hostile AI hear/cover/crouch: see HostileAI_HOWTO.txt.
+
 

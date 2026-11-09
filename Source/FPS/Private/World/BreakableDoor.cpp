@@ -1,4 +1,4 @@
-#include "World/BreakableDoor.h"
+﻿#include "World/BreakableDoor.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
@@ -11,7 +11,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "FPSTraceChannels.h"
 #include "TimerManager.h"
-#include "CollisionQueryParams.h"
+#include "Game/AINoiseEvent.h"
 
 ABreakableDoor::ABreakableDoor()
 {
@@ -19,7 +19,7 @@ ABreakableDoor::ABreakableDoor()
 	PrimaryActorTick.bStartWithTickEnabled = true;
 	bReplicates = true;
 	SetReplicateMovement(false);
-	ActiveInterpSpeed = OpenInterpSpeed;
+	ActiveInterpSpeed = PushInterpSpeed;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
@@ -39,14 +39,15 @@ ABreakableDoor::ABreakableDoor()
 		TEXT("/Game/FPS_Controller/Environment/Meshes/SM_Door.SM_Door"));
 	if (DoorMeshFinder.Succeeded())
 	{
-		DoorLeaf->SetStaticMesh(DoorMeshFinder.Object);
-		DoorLeaf->SetRelativeLocation(FVector(0.f, 50.f, 0.f));
+		DoorLeafMesh = DoorMeshFinder.Object;
+		DoorLeaf->SetStaticMesh(DoorLeafMesh);
+		DoorLeaf->SetRelativeLocation(DoorLeafRelativeLocation);
 	}
 
 	InteractBox = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractBox"));
 	InteractBox->SetupAttachment(DoorLeaf);
-	InteractBox->InitBoxExtent(FVector(6.f, 50.f, 110.f));
-	InteractBox->SetRelativeLocation(FVector(0.f, 0.f, 110.f));
+	InteractBox->InitBoxExtent(InteractBoxExtent);
+	InteractBox->SetRelativeLocation(InteractBoxRelativeLocation);
 	InteractBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	InteractBox->SetCollisionResponseToAllChannels(ECR_Ignore);
 	InteractBox->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
@@ -54,9 +55,51 @@ ABreakableDoor::ABreakableDoor()
 	InteractBox->SetCanEverAffectNavigation(false);
 }
 
+void ABreakableDoor::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyDoorMeshAndBox();
+}
+
+void ABreakableDoor::ApplyDoorMeshAndBox()
+{
+	if (!IsValid(DoorLeaf)) return;
+
+	if (IsValid(DoorLeafMesh))
+	{
+		if (DoorLeaf->GetStaticMesh() != DoorLeafMesh)
+		{
+			DoorLeaf->SetStaticMesh(DoorLeafMesh);
+		}
+	}
+
+	DoorLeaf->SetRelativeLocation(DoorLeafRelativeLocation);
+	DoorLeaf->SetRelativeRotation(DoorLeafRelativeRotation);
+	DoorLeaf->SetRelativeScale3D(DoorLeafRelativeScale);
+
+	if (!IsValid(InteractBox)) return;
+
+	if (bAutoFitInteractBox && IsValid(DoorLeaf->GetStaticMesh()))
+	{
+		const FBoxSphereBounds B = DoorLeaf->GetStaticMesh()->GetBounds();
+		const FVector Ext = B.BoxExtent * DoorLeafRelativeScale.GetAbs();
+		// Thin depth so traces hit the leaf face; keep at least a few cm.
+		const FVector Fitted(
+			FMath::Max(4.f, Ext.X),
+			FMath::Max(10.f, Ext.Y),
+			FMath::Max(40.f, Ext.Z));
+		InteractBoxExtent = Fitted;
+		InteractBoxRelativeLocation = B.Origin * DoorLeafRelativeScale;
+	}
+
+	InteractBox->SetBoxExtent(InteractBoxExtent);
+	InteractBox->SetRelativeLocation(InteractBoxRelativeLocation);
+}
+
 void ABreakableDoor::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyDoorMeshAndBox();
 	if (HasAuthority())
 	{
 		Health = MaxHealth;
@@ -66,7 +109,7 @@ void ABreakableDoor::BeginPlay()
 	}
 	CurrentYaw = 0.f;
 	TargetYaw = 0.f;
-	ActiveInterpSpeed = OpenInterpSpeed;
+	ActiveInterpSpeed = PushInterpSpeed;
 	ApplyOpenVisual(true);
 	ApplyDestroyedVisual(false);
 }
@@ -100,9 +143,9 @@ void ABreakableDoor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ABreakableDoor, TargetOpenDegrees);
 }
 
-EDoorAimZone ABreakableDoor::ResolveAimZone(APawn* InteractingPawn) const
+EDoorOpenMode ABreakableDoor::ResolveOpenMode(APawn* InteractingPawn) const
 {
-	if (!IsValid(InteractingPawn) || !IsValid(DoorLeaf)) return EDoorAimZone::Handle;
+	if (!IsValid(InteractingPawn)) return EDoorOpenMode::Push;
 
 	FVector ViewLoc;
 	FRotator ViewRot;
@@ -115,28 +158,30 @@ EDoorAimZone ABreakableDoor::ResolveAimZone(APawn* InteractingPawn) const
 		InteractingPawn->GetActorEyesViewPoint(ViewLoc, ViewRot);
 	}
 
-	const FVector End = ViewLoc + ViewRot.Vector() * 350.f;
-	FHitResult Hit;
-	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoorAimZone), true, InteractingPawn);
-	Q.AddIgnoredActor(InteractingPawn);
-	UWorld* World = GetWorld();
-	if (!World) return EDoorAimZone::Handle;
-
-	bool bHit = World->LineTraceSingleByChannel(Hit, ViewLoc, End, ECC_Visibility, Q);
-	if (!bHit || (Hit.GetActor() != this && Hit.GetComponent() != DoorLeaf && Hit.GetComponent() != InteractBox))
+	const float Pitch = ViewRot.Pitch;
+	if (Pitch <= -LookDownPitchThreshold)
 	{
-		// Fallback: project aim ray onto door leaf plane approx using closest point on leaf bounds
-		const FVector LeafLoc = DoorLeaf->GetComponentLocation();
-		const FVector Closest = FMath::ClosestPointOnSegment(LeafLoc, ViewLoc, End);
-		Hit.ImpactPoint = Closest;
-		Hit.Component = DoorLeaf;
+		return EDoorOpenMode::Kick;
+	}
+	// Look up OR level → push (quiet default for teaching / CQB).
+	return EDoorOpenMode::Push;
+}
+
+float ABreakableDoor::ResolveOpenDirectionAwayFrom(APawn* InteractingPawn) const
+{
+	if (!bAutoOpenAwayFromPlayer || !IsValid(InteractingPawn))
+	{
+		return FMath::Sign(OpenDirection) >= 0.f ? 1.f : -1.f;
 	}
 
-	const FVector Local = DoorLeaf->GetComponentTransform().InverseTransformPosition(Hit.ImpactPoint);
-	const float Z = Local.Z;
-	if (Z < BottomZoneMaxZ) return EDoorAimZone::Bottom;
-	if (Z > UpperZoneMinZ) return EDoorAimZone::Upper;
-	return EDoorAimZone::Handle;
+	// Actor forward = door face normal when closed. Player on that side → swing the other way.
+	const FVector DoorOrigin = IsValid(Hinge) ? Hinge->GetComponentLocation() : GetActorLocation();
+	const FVector ToPlayer = InteractingPawn->GetActorLocation() - DoorOrigin;
+	const FVector Flat = FVector(ToPlayer.X, ToPlayer.Y, 0.f).GetSafeNormal();
+	const FVector Face = FVector(GetActorForwardVector().X, GetActorForwardVector().Y, 0.f).GetSafeNormal();
+	const float Side = FVector::DotProduct(Face, Flat);
+	// Player in front of face → open negative yaw (away). Behind → positive.
+	return (Side >= 0.f) ? -1.f : 1.f;
 }
 
 bool ABreakableDoor::CanInteract_Implementation(APawn* InteractingPawn) const
@@ -148,81 +193,100 @@ bool ABreakableDoor::CanInteract_Implementation(APawn* InteractingPawn) const
 FText ABreakableDoor::GetInteractPrompt_Implementation(APawn* InteractingPawn) const
 {
 	if (bDestroyed) return FText::GetEmpty();
-	const EDoorAimZone Zone = ResolveAimZone(InteractingPawn);
-	switch (Zone)
+	if (bOpen)
 	{
-	case EDoorAimZone::Upper:
-		return NSLOCTEXT("Door", "Push", "按 F 轻推门");
-	case EDoorAimZone::Bottom:
-		return NSLOCTEXT("Door", "Kick", "按 F 踹门");
-	default:
-		return bOpen
-			? NSLOCTEXT("Door", "Close", "按 F 关门")
-			: NSLOCTEXT("Door", "Open", "按 F 开门");
+		return NSLOCTEXT("Door", "Close", "F Close door");
 	}
+	const EDoorOpenMode Mode = ResolveOpenMode(InteractingPawn);
+	if (Mode == EDoorOpenMode::Kick)
+	{
+		return NSLOCTEXT("Door", "Kick", "F Kick door");
+	}
+	return NSLOCTEXT("Door", "Push", "F Push door");
 }
 
 void ABreakableDoor::Interact_Implementation(APawn* InteractingPawn)
 {
 	if (!HasAuthority() || bDestroyed || !IsValid(InteractingPawn)) return;
-	const EDoorAimZone Zone = ResolveAimZone(InteractingPawn);
-	switch (Zone)
+
+	if (bOpen)
 	{
-	case EDoorAimZone::Upper:
-		Auth_GentlePush(InteractingPawn);
-		break;
-	case EDoorAimZone::Bottom:
+		Auth_Close(InteractingPawn);
+		return;
+	}
+
+	const EDoorOpenMode Mode = ResolveOpenMode(InteractingPawn);
+	if (Mode == EDoorOpenMode::Kick)
+	{
 		Auth_KickOpen(InteractingPawn);
-		break;
-	default:
-		Auth_SetOpen(!bOpen);
-		break;
+	}
+	else
+	{
+		Auth_PushOpen(InteractingPawn);
 	}
 }
 
-void ABreakableDoor::Auth_SetTargetOpen(float DegreesAbs, float InterpSpeed)
+void ABreakableDoor::Auth_SetTargetOpenSigned(float SignedDegrees, float InterpSpeed, USoundBase* Sound, float VolumeMultiplier, float NoiseLoudness, AActor* NoiseInstigator, bool bKickNoise)
 {
 	if (!HasAuthority() || bDestroyed) return;
 	ActiveInterpSpeed = InterpSpeed;
-	TargetOpenDegrees = DegreesAbs;
-	const bool bNowOpen = FMath::Abs(DegreesAbs) > 1.f;
-	bOpen = bNowOpen;
+	TargetOpenDegrees = SignedDegrees;
+	bOpen = FMath::Abs(SignedDegrees) > 1.f;
 	ApplyOpenVisual(false);
 	ForceNetUpdate();
 
-	USoundBase* Snd = bOpen ? OpenSound.Get() : CloseSound.Get();
-	if (IsValid(Snd))
+	if (IsValid(Sound))
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Snd, GetActorLocation());
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, GetActorLocation(), VolumeMultiplier);
+	}
+
+	if (NoiseLoudness > 0.01f)
+	{
+		AINoiseEvent::Report(
+			GetWorld(),
+			GetActorLocation(),
+			NoiseLoudness,
+			NoiseInstigator,
+			bKickNoise ? AINoiseEvent::EKind::Gunshot : AINoiseEvent::EKind::Footstep);
 	}
 }
 
 void ABreakableDoor::Auth_SetOpen(bool bNewOpen)
 {
 	if (!HasAuthority() || bDestroyed) return;
-	Auth_SetTargetOpen(bNewOpen ? OpenAngleDegrees : 0.f, OpenInterpSpeed);
+	if (bNewOpen)
+	{
+		const float Dir = FMath::Sign(OpenDirection) >= 0.f ? 1.f : -1.f;
+		Auth_SetTargetOpenSigned(OpenAngleDegrees * Dir, PushInterpSpeed, PushSound.Get(), PushSoundVolume, PushNoiseLoudness, this, false);
+	}
+	else
+	{
+		Auth_Close(nullptr);
+	}
 }
 
-void ABreakableDoor::Auth_GentlePush(APawn* InstigatorPawn)
+void ABreakableDoor::Auth_PushOpen(APawn* InstigatorPawn)
 {
-	(void)InstigatorPawn;
 	if (!HasAuthority() || bDestroyed) return;
-	// If already fully open, gentle push does nothing useful; nudge ajar if closed/partial.
-	const float Desired = FMath::Min(GentlePushAngleDegrees, OpenAngleDegrees);
-	if (FMath::Abs(TargetOpenDegrees) >= Desired - 1.f && bOpen)
-	{
-		return;
-	}
-	Auth_SetTargetOpen(Desired, GentleInterpSpeed);
-	UE_LOG(LogTemp, Log, TEXT("[Door] Gentle push -> %.0f deg"), Desired);
+	const float Dir = ResolveOpenDirectionAwayFrom(InstigatorPawn);
+	Auth_SetTargetOpenSigned(OpenAngleDegrees * Dir, PushInterpSpeed, PushSound.Get(), PushSoundVolume, PushNoiseLoudness, InstigatorPawn, false);
+	UE_LOG(LogTemp, Log, TEXT("[Door] Push open dir=%.0f"), Dir);
 }
 
 void ABreakableDoor::Auth_KickOpen(APawn* InstigatorPawn)
 {
+	if (!HasAuthority() || bDestroyed) return;
+	const float Dir = ResolveOpenDirectionAwayFrom(InstigatorPawn);
+	Auth_SetTargetOpenSigned(OpenAngleDegrees * Dir, KickInterpSpeed, KickSound.Get(), KickSoundVolume, KickNoiseLoudness, InstigatorPawn, true);
+	UE_LOG(LogTemp, Log, TEXT("[Door] Kick open dir=%.0f"), Dir);
+}
+
+void ABreakableDoor::Auth_Close(APawn* InstigatorPawn)
+{
 	(void)InstigatorPawn;
 	if (!HasAuthority() || bDestroyed) return;
-	Auth_SetTargetOpen(OpenAngleDegrees, KickInterpSpeed);
-	UE_LOG(LogTemp, Log, TEXT("[Door] Kick open"));
+	Auth_SetTargetOpenSigned(0.f, CloseInterpSpeed, CloseSound.Get(), PushSoundVolume, 0.f, InstigatorPawn, false);
+	UE_LOG(LogTemp, Log, TEXT("[Door] Close"));
 }
 
 void ABreakableDoor::OnRep_Open()
@@ -242,21 +306,8 @@ void ABreakableDoor::OnRep_Destroyed()
 
 void ABreakableDoor::ApplyOpenVisual(bool bSnap)
 {
-	// Prefer replicated TargetOpenDegrees when available; fall back to binary open.
-	const float AbsDeg = (FMath::Abs(TargetOpenDegrees) > 0.01f || bOpen)
-		? (FMath::Abs(TargetOpenDegrees) > 0.01f ? FMath::Abs(TargetOpenDegrees) : OpenAngleDegrees)
-		: 0.f;
-	const float Signed = (AbsDeg > 0.01f ? AbsDeg : 0.f) * OpenDirection;
-	// When closing via Auth_SetOpen(false), TargetOpenDegrees is 0.
-	TargetYaw = (FMath::Abs(TargetOpenDegrees) < 0.01f && !bOpen) ? 0.f : Signed;
-	if (!bOpen && FMath::Abs(TargetOpenDegrees) < 0.01f)
-	{
-		TargetYaw = 0.f;
-	}
-	else
-	{
-		TargetYaw = FMath::Abs(TargetOpenDegrees) * OpenDirection;
-	}
+	TargetYaw = TargetOpenDegrees;
+	ActiveInterpSpeed = FMath::Max(ActiveInterpSpeed, 0.5f);
 
 	if (bSnap)
 	{

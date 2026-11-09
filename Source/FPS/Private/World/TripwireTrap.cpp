@@ -9,9 +9,6 @@
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
-#include "Game/PoliceCriminalGameState.h"
-#include "Game/PoliceCriminalTypes.h"
-#include "Game/ShooterPlayerState.h"
 #include "Interface/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
@@ -185,15 +182,7 @@ ATripwireTrap* ATripwireTrap::Auth_TryPlace(APawn* Pawn, bool bIgnoreSetup, FStr
 
 bool ATripwireTrap::IsPolicePawn(APawn* Pawn) const
 {
-	if (!IsValid(Pawn)) return false;
-	UWorld* World = GetWorld();
-	if (!World || !World->GetGameState<APoliceCriminalGameState>())
-	{
-		return true; // non-PC: anyone can disarm
-	}
-	AController* C = Pawn->GetController();
-	AShooterPlayerState* PS = C ? C->GetPlayerState<AShooterPlayerState>() : nullptr;
-	return PS && PS->GetTeamId() == PoliceCriminalTeams::Police;
+	return IsValid(Pawn);
 }
 
 bool ATripwireTrap::CanInteract_Implementation(APawn* InteractingPawn) const
@@ -226,11 +215,7 @@ void ATripwireTrap::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, A
 	// Don't trigger on placer's own pawn during setup (still placing nearby).
 	if (IsValid(PlacerController) && OtherPawn->GetController() == PlacerController.Get())
 	{
-		APoliceCriminalGameState* GS = GetWorld() ? GetWorld()->GetGameState<APoliceCriminalGameState>() : nullptr;
-		if (GS && GS->IsCriminalSetup())
-		{
-			return;
-		}
+		return;
 	}
 	Auth_Trigger(OtherActor);
 }

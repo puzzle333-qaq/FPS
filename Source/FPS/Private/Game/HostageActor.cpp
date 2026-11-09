@@ -6,6 +6,12 @@
 #include "Game/ShooterPlayerState.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/StaticMesh.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Animation/AnimSequence.h"
+#include "Net/UnrealNetwork.h"
+#include "Game/CoopCqbGameMode.h"
+#include "Game/CoopCqbGameState.h"
 
 AHostageActor::AHostageActor()
 {
@@ -16,6 +22,7 @@ AHostageActor::AHostageActor()
 	SetRootComponent(Capsule);
 	Capsule->InitCapsuleSize(34.f, 88.f);
 	Capsule->SetCollisionProfileName(TEXT("Pawn"));
+ Capsule->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 	Capsule->SetCanEverAffectNavigation(false);
 
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
@@ -29,7 +36,15 @@ AHostageActor::AHostageActor()
 		BodyMesh->SetRelativeLocation(FVector(0.f, 0.f, -20.f));
 	}
 
-	Tags.AddUnique(FName(TEXT("Hostage")));
+	CivilianMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CivilianMesh"));
+ CivilianMesh->SetupAttachment(Capsule);
+ CivilianMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+ CivilianMesh->SetRelativeLocation(FVector(0, 0, -88));
+ CivilianMesh->SetRelativeRotation(FRotator(0, -90, 0));
+ static ConstructorHelpers::FObjectFinder<USkeletalMesh> Manny(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
+ if (Manny.Succeeded()) { CivilianMesh->SetSkeletalMesh(Manny.Object); BodyMesh->SetVisibility(false); }
+ RescuedCrouchAnimation = TSoftObjectPtr<UAnimSequence>(FSoftObjectPath(TEXT("/Game/Characters/ThirdPerson/Animations/Locomotion/Pistol/MM_Pistol_Crouch_Idle.MM_Pistol_Crouch_Idle")));
+ Tags.AddUnique(FName(TEXT("Hostage")));
 	Health = MaxHealth;
 }
 
@@ -37,45 +52,57 @@ void AHostageActor::BeginPlay()
 {
 	Super::BeginPlay();
 	Tags.AddUnique(FName(TEXT("Hostage")));
-	Health = MaxHealth;
-	bAlive = true;
+	if (HasAuthority()) { Health = MaxHealth; bAlive = true; }
+ OnRep_RescueState();
 }
 
 bool AHostageActor::CanInteract_Implementation(APawn* InteractingPawn) const
 {
-	return bAlive && IsValid(InteractingPawn);
+	const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>();
+ return bAlive && !bRescued && IsValid(InteractingPawn) && GS && GS->IsMissionLive() && !GS->bRangeHub;
 }
 
 FText AHostageActor::GetInteractPrompt_Implementation(APawn* InteractingPawn) const
 {
-	if (!bAlive) return FText::GetEmpty();
-	return bFollowing
-		? NSLOCTEXT("Hostage", "StopFollow", "按 F 停止跟随")
-		: NSLOCTEXT("Hostage", "Follow", "按 F 跟随（人质占位）");
+ return bAlive && !bRescued ? NSLOCTEXT("Hostage", "Rescue", "按 F 解救人质") : FText::GetEmpty();
 }
-
 void AHostageActor::Interact_Implementation(APawn* InteractingPawn)
 {
-	if (!HasAuthority() || !bAlive || !IsValid(InteractingPawn)) return;
-	if (bFollowing && FollowTarget.Get() == InteractingPawn)
-	{
-		bFollowing = false;
-		FollowTarget = nullptr;
-		UE_LOG(LogTemp, Log, TEXT("[Hostage] %s stopped following"), *GetName());
-		return;
-	}
-	bFollowing = true;
-	FollowTarget = InteractingPawn;
-	// Stub: teleport slightly behind interactor; full AI later.
-	const FVector Behind = InteractingPawn->GetActorLocation() - InteractingPawn->GetActorForwardVector() * 80.f;
-	SetActorLocation(Behind);
-	UE_LOG(LogTemp, Log, TEXT("[Hostage] %s now following %s (stub)"), *GetName(), *GetNameSafe(InteractingPawn));
+ if (!HasAuthority() || !CanInteract_Implementation(InteractingPawn)) return;
+ bRescued = true;
+ bFollowing = false;
+ FollowTarget = nullptr;
+ OnRep_RescueState();
+ ForceNetUpdate();
+ if (auto* GM = GetWorld()->GetAuthGameMode<ACoopCqbGameMode>()) GM->Auth_RefreshObjectives();
+}
+void AHostageActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+ Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+ DOREPLIFETIME(AHostageActor, bRescued);
+ DOREPLIFETIME(AHostageActor, bAlive);
+ DOREPLIFETIME(AHostageActor, Health);
+}
+void AHostageActor::OnRep_RescueState()
+{
+ SetActorHiddenInGame(!bAlive);
+ if (!bAlive) Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+ if (bRescued && bAlive)
+ {
+  // Only change pose. Never move the actor or attach it to the rescuing operator.
+  if (auto* Anim = RescuedCrouchAnimation.LoadSynchronous()) CivilianMesh->PlayAnimation(Anim, true);
+  else BodyMesh->SetRelativeScale3D(FVector(.45f, .45f, .8f));
+ }
 }
 
 bool AHostageActor::DoDamage_Implementation(float DamageAmout, AActor* DamageInstigator)
 {
 	if (!HasAuthority() || !bAlive || DamageAmout <= 0.f) return false;
-	uint8 Team = 255;
+	if (const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>())
+ {
+  if (!GS->IsMissionLive() || GS->bRangeHub) return false;
+ }
+ uint8 Team = 255;
 	if (const APawn* P = Cast<APawn>(DamageInstigator))
 	{
 		if (const AShooterPlayerState* PS = P->GetPlayerState<AShooterPlayerState>())
@@ -111,5 +138,7 @@ void AHostageActor::Die(AActor* Killer)
 		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 	SetActorHiddenInGame(true);
+ ForceNetUpdate();
+ if (auto* GM = GetWorld()->GetAuthGameMode<ACoopCqbGameMode>()) GM->Auth_RefreshObjectives();
 	UE_LOG(LogTemp, Warning, TEXT("[Hostage] %s killed by %s (team=%d)"), *GetName(), *GetNameSafe(Killer), LastDamageTeam);
 }

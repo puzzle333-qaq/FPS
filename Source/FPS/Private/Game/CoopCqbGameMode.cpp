@@ -1,8 +1,14 @@
 #include "Game/CoopCqbGameMode.h"
 
 #include "Game/CoopCqbGameState.h"
+#include "Game/HostageActor.h"
+#include "World/MissionObjective.h"
+#include "ShooterGameInstance.h"
+#include "Kismet/GameplayStatics.h"
 #include "Game/HostileAICharacter.h"
+#include "Game/HostileAIController.h"
 #include "Game/HostileSpawner.h"
+#include "Game/HostileSquadSubsystem.h"
 #include "Game/ShooterPlayerState.h"
 #include "ShooterPlayerController.h"
 #include "ShooterCharacter.h"
@@ -11,11 +17,14 @@
 #include "Weapon/WeaponFlash.h"
 #include "Stats/StatsComponent.h"
 #include "GameFramework/PlayerStart.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "EngineUtils.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "UObject/SoftObjectPath.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Loadout/LoadoutTypes.h"
 #include "ShooterType/ShooterType.h"
 
@@ -27,16 +36,39 @@ ACoopCqbGameMode::ACoopCqbGameMode()
 	MaxOperators = 4;
 	PrimaryObjective = ECoopCqbObjectiveType::ClearEnemies;
 	HostileClass = AHostileAICharacter::StaticClass();
+	static ConstructorHelpers::FClassFinder<AHostileAICharacter> HostileBP(TEXT("/Game/FPS/Coop/BP_Hostile"));
+	if (HostileBP.Succeeded())
+	{
+		HostileClass = HostileBP.Class;
+	}
 
 	OperatorWeapons = {
 		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/RAR/BP_FPS_RAR.BP_FPS_RAR_C"))),
 		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/BP_Weapon_X24.BP_Weapon_X24_C"))),
 	};
 	OperatorThrowables = {
-		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Script/FPS.WeaponFlash"))),
+		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/BP_WeaponFlash.BP_WeaponFlash_C"))),
 		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/Throwable/BP_Weapon_Grenade.BP_Weapon_Grenade_C"))),
 	};
 	OperatorArmorLevel = 1;
+
+	static ConstructorHelpers::FClassFinder<APawn> PawnBP(TEXT("/Game/FPS/Character/BP_ShooterCharacter"));
+	if (PawnBP.Succeeded())
+	{
+		DefaultPawnClass = PawnBP.Class;
+	}
+	static ConstructorHelpers::FClassFinder<APlayerController> ControllerBP(TEXT("/Game/FPS/Player/BP_ShooterPlayerController"));
+	if (ControllerBP.Succeeded())
+	{
+		PlayerControllerClass = ControllerBP.Class;
+	}
+}
+
+void ACoopCqbGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+ Super::InitGame(MapName, Options, ErrorMessage);
+ bRangeHub = MapName.Contains(TEXT("Lvl_Range")) || UGameplayStatics::HasOption(Options, TEXT("RangeHub"));
+ ExpectedOperators = FMath::Clamp(UGameplayStatics::GetIntOption(Options, TEXT("ExpectedOperators"), 1), 1, MaxOperators);
 }
 
 void ACoopCqbGameMode::InitGameState()
@@ -44,7 +76,9 @@ void ACoopCqbGameMode::InitGameState()
 	Super::InitGameState();
 	if (ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>())
 	{
-		GS->InitTeams(1, 0);
+		GS->bRangeHub = bRangeHub;
+ GS->ExpectedOperators = ExpectedOperators;
+ GS->InitTeams(1, 0);
 		GS->SetMatchRules(EShooterGameMode::CoopCQB);
 		GS->SetPrimaryObjective(PrimaryObjective);
 		GS->SetCoopPhase(ECoopCqbPhase::Waiting);
@@ -96,7 +130,17 @@ void ACoopCqbGameMode::BeginMissionFlow()
 {
 	if (bFlowStarted) return;
 	bFlowStarted = true;
-	StartBriefing();
+	if (bRangeHub)
+ {
+  if (auto* GS = GetGameState<ACoopCqbGameState>())
+  {
+   GS->SetCoopPhase(ECoopCqbPhase::InProgress);
+   GS->SetMatchState(EShooterMatchState::InProgress);
+  }
+  return;
+ }
+ LoadStartedAt = GetWorld()->GetTimeSeconds();
+ GetWorldTimerManager().SetTimer(ReadinessTimer, this, &ThisClass::CheckOperatorReadiness, .25f, true);
 }
 
 void ACoopCqbGameMode::StartBriefing()
@@ -114,7 +158,11 @@ void ACoopCqbGameMode::StartBriefing()
 void ACoopCqbGameMode::StartMission()
 {
 	if (bMissionEnded) return;
-	SpawnHostilesFromLevel();
+ SpawnHostilesFromLevel();
+ for (TActorIterator<AHostileAICharacter> It(GetWorld()); It; ++It) MissionSuspects.Add(*It);
+ for (TActorIterator<AHostageActor> It(GetWorld()); It; ++It) MissionHostages.Add(*It);
+ for (TActorIterator<AMissionObjective> It(GetWorld()); It; ++It) MissionObjectives.Add(*It);
+ if (auto* GS = GetGameState<ACoopCqbGameState>()) GS->Report.OperatorsTotal = CountLivingOperators();
 	if (ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>())
 	{
 		GS->SetCoopPhase(ECoopCqbPhase::InProgress);
@@ -135,6 +183,12 @@ void ACoopCqbGameMode::SpawnHostilesFromLevel()
 	UWorld* World = GetWorld();
 	if (!World || !HasAuthority()) return;
 
+	TArray<AHostileAICharacter*> AlreadyThere;
+	for (TActorIterator<AHostileAICharacter> It(World); It; ++It)
+	{
+		AlreadyThere.Add(*It);
+	}
+
 	int32 Spawned = 0;
 	for (TActorIterator<AHostileSpawner> It(World); It; ++It)
 	{
@@ -146,16 +200,37 @@ void ACoopCqbGameMode::SpawnHostilesFromLevel()
 		AActor* Anchor = FindTaggedStart(OperatorStartTag);
 		if (!Anchor) Anchor = FindTaggedStart(OperatorStartTagAlt);
 		const FVector Base = Anchor ? Anchor->GetActorLocation() : FVector(0.f, 0.f, 100.f);
+		UHostileSquadSubsystem* Squad = World->GetSubsystem<UHostileSquadSubsystem>();
 		for (int32 i = 0; i < FallbackHostileCount; ++i)
 		{
 			const FVector Loc = Base + FVector(400.f + i * 120.f, 200.f, 0.f);
-			FActorSpawnParameters Params;
-			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-			if (AHostileAICharacter* H = World->SpawnActor<AHostileAICharacter>(HostileClass, Loc, FRotator::ZeroRotator, Params))
+			const FTransform Xform(FRotator::ZeroRotator, Loc);
+			AHostileAICharacter* H = World->SpawnActorDeferred<AHostileAICharacter>(
+				HostileClass, Xform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+			if (!H) continue;
+			if (Squad)
 			{
-				++Spawned;
-				(void)H;
+				H->SquadRole = Squad->TakeNextRole();
+				H->bAutoSquadRole = true;
 			}
+			H->FinishSpawning(Xform);
+			++Spawned;
+		}
+	}
+
+	TArray<AHostileAICharacter*> Born;
+	for (TActorIterator<AHostileAICharacter> It(World); It; ++It)
+	{
+		if (!AlreadyThere.Contains(*It))
+		{
+			Born.Add(*It);
+		}
+	}
+	if (Born.Num() == 1 && Born[0]->bAutoSquadRole)
+	{
+		if (AHostileAIController* Brain = Cast<AHostileAIController>(Born[0]->GetController()))
+		{
+			Brain->SetSquadRole(EHostileSquadRole::Closer);
 		}
 	}
 	UE_LOG(LogTemp, Log, TEXT("[CoopCQB] Spawned %d hostiles"), Spawned);
@@ -195,7 +270,7 @@ void ACoopCqbGameMode::ApplyOperatorLookAndKit(APlayerController* PC)
 	}
 
 	AShooterPlayerController* SPC = Cast<AShooterPlayerController>(PC);
-	if (SPC)
+	if (SPC && !SPC->GetSubmittedLoadout())
 	{
 		FLoadoutPreset Loadout;
 		Loadout.Name = FText::FromString(TEXT("CoopOperatorMVP"));
@@ -313,18 +388,19 @@ void ACoopCqbGameMode::ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerSt
 void ACoopCqbGameMode::OnPlayerKilled(AController* KillerController, AController* VictimController)
 {
 	Super::OnPlayerKilled(KillerController, VictimController);
-	if (bMissionEnded) return;
-	if (CountLivingOperators() <= 0)
+	if (bMissionEnded || bRangeHub) return;
+ if (CountLivingOperators() <= 0)
 	{
 		EndMission(false, ECoopCqbWinReason::TeamWiped);
-	}
+ }
+ else UpdateReport();
 }
 
 void ACoopCqbGameMode::NotifyHostileKilled(AHostileAICharacter* Hostile)
 {
-	(void)Hostile;
-	if (!HasAuthority() || bMissionEnded) return;
-	Auth_RefreshObjectives();
+ if (!HasAuthority() || bMissionEnded || bRangeHub) return;
+ if (Hostile && Hostile->GetMorale() == EHostileMorale::Surrender) UnlawfulKills.Add(Hostile);
+ Auth_RefreshObjectives();
 }
 
 int32 ACoopCqbGameMode::CountLivingHostiles() const
@@ -332,7 +408,9 @@ int32 ACoopCqbGameMode::CountLivingHostiles() const
 	int32 Count = 0;
 	for (TActorIterator<AHostileAICharacter> It(GetWorld()); It; ++It)
 	{
-		if (It->IsHostileAlive()) ++Count;
+		if (!It->IsHostileAlive()) continue;
+		if (It->IsArrested()) continue;
+		++Count;
 	}
 	return Count;
 }
@@ -355,27 +433,66 @@ int32 ACoopCqbGameMode::CountLivingOperators() const
 	return Count;
 }
 
+void ACoopCqbGameMode::UpdateReport(bool bFinal, bool bWon)
+{
+ auto* GS = GetGameState<ACoopCqbGameState>();
+ if (!GS) return;
+ FMissionReport& R = GS->Report;
+ R.SuspectsTotal = MissionSuspects.Num();
+ R.Neutralized = R.Arrested = 0;
+ for (const auto& Ref : MissionSuspects)
+ {
+  if (const auto* H = Ref.Get())
+  {
+   if (!H->IsHostileAlive()) NeutralizedSuspects.Add(Ref);
+   else if (H->IsArrested()) ArrestedSuspects.Add(Ref);
+  }
+  if (NeutralizedSuspects.Contains(Ref)) ++R.Neutralized;
+  else if (ArrestedSuspects.Contains(Ref)) ++R.Arrested;
+ }
+ R.HostagesTotal = MissionHostages.Num();
+ R.Rescued = R.HostagesLost = 0;
+ for (const auto& Ref : MissionHostages)
+ {
+  const auto* H = Ref.Get();
+  if (!H || !H->IsHostageAlive()) ++R.HostagesLost;
+  else if (H->IsRescued()) ++R.Rescued;
+ }
+ R.MarkedTotal = R.MarkedCompleted = R.HiddenCompleted = 0;
+ GS->ObjectiveDescriptions.Reset();
+ for (const auto& Ref : MissionObjectives)
+ {
+  if (const auto* O = Ref.Get())
+  {
+   if (O->bHiddenObjective) OptionalObjectives.Add(Ref);
+   if (O->bCompleted) CompletedObjectives.Add(Ref);
+   if (!O->bHiddenObjective || O->bCompleted) GS->ObjectiveDescriptions.Add(FText::Format(
+    NSLOCTEXT("Mission", "ObjectiveStatus", "{0} {1}"), FText::FromString(O->bCompleted ? TEXT("✓") : TEXT("○")), O->ObjectiveName));
+   if (O->bHiddenObjective) { if (O->bCompleted) ++R.HiddenCompleted; }
+   else { ++R.MarkedTotal; if (O->bCompleted) ++R.MarkedCompleted; }
+  }
+  else if (OptionalObjectives.Contains(Ref)) { if (CompletedObjectives.Contains(Ref)) ++R.HiddenCompleted; }
+  else { ++R.MarkedTotal; if (CompletedObjectives.Contains(Ref)) ++R.MarkedCompleted; }
+ }
+ R.Survivors = CountLivingOperators();
+ R.SurrenderedKilled = UnlawfulKills.Num();
+ R.bPrimaryComplete = R.SuspectsTotal == R.Neutralized + R.Arrested && R.Rescued == R.HostagesTotal
+  && R.MarkedCompleted == R.MarkedTotal && R.HostagesLost == 0;
+ R.Calculate(ScoreRules, bWon, bFinal);
+ GS->SetHostileCounts(FMath::Max(0, R.SuspectsTotal - R.Neutralized - R.Arrested), R.SuspectsTotal);
+ GS->PublishMission();
+}
+
 void ACoopCqbGameMode::Auth_RefreshObjectives()
 {
-	if (!HasAuthority() || bMissionEnded) return;
-	ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>();
-	if (!GS || !GS->IsMissionLive()) return;
-
-	const int32 Alive = CountLivingHostiles();
-	const int32 Total = FMath::Max(GS->GetHostileTotalCount(), Alive);
-	if (GS->GetHostileTotalCount() <= 0)
-	{
-		GS->SetHostileCounts(Alive, Alive);
-	}
-	else
-	{
-		GS->SetHostileCounts(Alive, GS->GetHostileTotalCount());
-	}
-
-	if (PrimaryObjective == ECoopCqbObjectiveType::ClearEnemies && Alive <= 0 && GS->GetHostileTotalCount() > 0)
-	{
-		EndMission(true, ECoopCqbWinReason::ObjectivesMet);
-	}
+ if (!HasAuthority() || bMissionEnded || bRangeHub) return;
+ auto* GS = GetGameState<ACoopCqbGameState>();
+ if (!GS || !GS->IsMissionLive()) return;
+ UpdateReport();
+ if (GS->Report.HostagesLost > 0) { EndMission(false, ECoopCqbWinReason::HostageLost); return; }
+ // Empty test maps stay playable; they must contain at least one real required task.
+ const bool bHasTasks = GS->Report.SuspectsTotal + GS->Report.HostagesTotal + GS->Report.MarkedTotal > 0;
+ if (bHasTasks && GS->Report.bPrimaryComplete) EndMission(true, ECoopCqbWinReason::ObjectivesMet);
 }
 
 void ACoopCqbGameMode::EndMission(bool bOperatorsWon, ECoopCqbWinReason Reason)
@@ -383,6 +500,8 @@ void ACoopCqbGameMode::EndMission(bool bOperatorsWon, ECoopCqbWinReason Reason)
 	if (!HasAuthority() || bMissionEnded) return;
 	bMissionEnded = true;
 	GetWorldTimerManager().ClearTimer(BriefingTimer);
+ GetWorldTimerManager().ClearTimer(ReadinessTimer);
+ UpdateReport(true, bOperatorsWon);
 
 	if (ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>())
 	{
@@ -390,17 +509,86 @@ void ACoopCqbGameMode::EndMission(bool bOperatorsWon, ECoopCqbWinReason Reason)
 		GS->SetCoopPhase(ECoopCqbPhase::PostMission);
 		GS->SetMatchState(EShooterMatchState::PostMatch);
 		GS->SetWinningTeam(bOperatorsWon ? CoopCqbTeams::Operators : 255);
+		GS->BeginEvac(PostMissionDelay);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[CoopCQB] Mission end won=%d reason=%d"), bOperatorsWon ? 1 : 0, (int32)Reason);
-	if (GEngine)
+ OpenDebrief();
+}
+
+void ACoopCqbGameMode::OpenDebrief()
+{
+	if (ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>())
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 12.f, bOperatorsWon ? FColor::Green : FColor::Red,
-			bOperatorsWon ? TEXT("任务完成：清敌成功") : TEXT("任务失败"));
+		GS->ReturnEndServerTime = GS->GetServerWorldTimeSeconds() + FMath::Max(5.f, DebriefDuration);
+  GS->OpenDebrief();
+  GetWorldTimerManager().SetTimer(ReturnTimer, this, &ThisClass::Auth_ReturnToRange, FMath::Max(5.f, DebriefDuration), false);
 	}
 }
 
 void ACoopCqbGameMode::Auth_AbortMission()
 {
 	EndMission(false, ECoopCqbWinReason::Aborted);
+}
+
+void ACoopCqbGameMode::Auth_OperatorReady(APlayerController* PC)
+{
+ if (!HasAuthority() || bRangeHub || bMissionEnded || !IsValid(PC) || !PC->GetPawn()) return;
+ ReadyPlayers.Add(PC);
+ CheckOperatorReadiness();
+}
+
+void ACoopCqbGameMode::CheckOperatorReadiness()
+{
+ auto* GS = GetGameState<ACoopCqbGameState>();
+ if (!GS || GS->GetCoopPhase() != ECoopCqbPhase::Waiting || bMissionEnded) return;
+ int32 Ready = 0, Connected = 0;
+ for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+ {
+  APlayerController* PC = It->Get();
+  if (!IsValid(PC)) continue;
+  ++Connected;
+  if (ReadyPlayers.Contains(PC) && PC->GetPawn() && PC->HasClientLoadedCurrentWorld()) ++Ready;
+ }
+ GS->ReadyOperators = Ready;
+ GS->MissionStatus = FString::Printf(TEXT("等待全员加载：%d / %d"), Ready, FMath::Max(Connected, ExpectedOperators));
+ GS->PublishMission();
+ if (Connected >= ExpectedOperators && Ready == Connected)
+ {
+  GetWorldTimerManager().ClearTimer(ReadinessTimer);
+  StartBriefing();
+ }
+ else if (GetWorld()->GetTimeSeconds() - LoadStartedAt > LoadTimeout)
+ {
+  GS->MissionStatus = TEXT("队员加载超时，任务取消，即将返回靶场");
+  EndMission(false, ECoopCqbWinReason::LoadTimeout);
+ }
+}
+
+void ACoopCqbGameMode::Logout(AController* Exiting)
+{
+ const bool bDepartedOperator = Exiting && Exiting->IsPlayerController();
+ if (auto* PC = Cast<APlayerController>(Exiting)) ReadyPlayers.Remove(PC);
+ Super::Logout(Exiting);
+ // Do not silently reduce a travel roster: cancel rather than starting without a teammate.
+ if (bDepartedOperator && !bRangeHub && !bMissionEnded)
+ {
+  auto* GS = GetGameState<ACoopCqbGameState>();
+  if (GS && GS->GetCoopPhase() == ECoopCqbPhase::InProgress)
+  {
+   if (CountLivingOperators() <= 0) EndMission(false, ECoopCqbWinReason::TeamWiped);
+   else UpdateReport();
+  }
+  else EndMission(false, ECoopCqbWinReason::Aborted);
+ }
+}
+
+void ACoopCqbGameMode::Auth_ReturnToRange()
+{
+ if (!HasAuthority()) return;
+ auto* GI = Cast<UShooterGameInstance>(GetGameInstance());
+ if (!GI) return;
+ TSoftObjectPtr<UWorld> Map = GI->RangeMap;
+ if (Map.IsNull()) Map = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/FPS/Level/Lvl_Range.Lvl_Range")));
+ GI->TravelSquadTo(Map, GI->RangeGameMode, {TEXT("RangeHub=1")});
 }

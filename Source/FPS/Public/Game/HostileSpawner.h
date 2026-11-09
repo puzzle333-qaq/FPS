@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Game/HostileSquadTypes.h"
 #include "HostileSpawner.generated.h"
 
 class AHostileAICharacter;
@@ -27,6 +28,14 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Hostile")
 	TSubclassOf<AHostileAICharacter> OverrideClass;
+
+	/**
+	 * Hands out Suppressor, Closer, Flanker across every spawner in the level.
+	 * A wave with only one hostile is put back on Closer by the game mode.
+	 * Turn this off to keep the character's Squad Role.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Hostile")
+	bool bMixSquadRoles = true;
 
 	/** Server: spawn hostiles. Returns number spawned. */
 	int32 Auth_SpawnHostiles(TSubclassOf<AHostileAICharacter> DefaultClass);

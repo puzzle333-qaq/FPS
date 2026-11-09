@@ -1,6 +1,7 @@
 #include "Game/HostileSpawner.h"
 
 #include "Game/HostileAICharacter.h"
+#include "Game/HostileSquadSubsystem.h"
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 
@@ -26,16 +27,22 @@ int32 AHostileSpawner::Auth_SpawnHostiles(TSubclassOf<AHostileAICharacter> Defau
 	int32 Spawned = 0;
 	const FVector Base = GetActorLocation();
 	const FRotator Rot = GetActorRotation();
-	for (int32 i = 0; i < FMath::Max(1, Count); ++i)
+	const int32 SpawnCount = FMath::Max(1, Count);
+	UHostileSquadSubsystem* Squad = World->GetSubsystem<UHostileSquadSubsystem>();
+	for (int32 i = 0; i < SpawnCount; ++i)
 	{
 		const FVector Loc = Base + GetActorRightVector() * (SpacingCm * i);
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-		if (AHostileAICharacter* H = World->SpawnActor<AHostileAICharacter>(ClassToUse, Loc, Rot, Params))
+		const FTransform Xform(Rot, Loc);
+		AHostileAICharacter* H = World->SpawnActorDeferred<AHostileAICharacter>(
+			ClassToUse, Xform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+		if (!H) continue;
+		if (bMixSquadRoles && Squad)
 		{
-			++Spawned;
-			(void)H;
+			H->SquadRole = Squad->TakeNextRole();
+			H->bAutoSquadRole = true;
 		}
+		H->FinishSpawning(Xform);
+		++Spawned;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[HostileSpawner] %s spawned %d"), *GetNameSafe(this), Spawned);
 	return Spawned;

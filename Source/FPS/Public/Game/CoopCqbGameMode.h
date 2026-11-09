@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "ShooterGameModeBase.h"
 #include "Game/CoopCqbTypes.h"
+#include "Game/MissionTypes.h"
 #include "CoopCqbGameMode.generated.h"
 
 class AWeapon;
@@ -21,9 +22,19 @@ UCLASS()
 class FPS_API ACoopCqbGameMode : public AShooterGameModeBase
 {
 	GENERATED_BODY()
+ friend class FMissionObjectiveFlowTest;
+ friend class FMissionLoadBarrierTest;
 
 public:
 	ACoopCqbGameMode();
+ virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+ virtual void Logout(AController* Exiting) override;
+ void Auth_OperatorReady(APlayerController* PC);
+ void Auth_ReturnToRange();
+ UPROPERTY(EditDefaultsOnly, Category="Mission") FMissionScoreRules ScoreRules;
+ UPROPERTY(EditDefaultsOnly, Category="Mission", meta=(ClampMin="5")) float DebriefDuration = 20.f;
+ UPROPERTY(EditDefaultsOnly, Category="Mission", meta=(ClampMin="10")) float LoadTimeout = 120.f;
+
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|CoopCQB", meta = (ClampMin = "1", ClampMax = "4"))
 	int32 MaxOperators = 4;
@@ -47,7 +58,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|CoopCQB")
 	FName OperatorStartTagAlt = TEXT("Police");
 
-	/** Soft paths — same police MVP kit as PoliceCriminal for now. */
+	/** Soft paths for the operator primary and sidearm. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|CoopCQB|Loadout")
 	TArray<TSoftClassPtr<AWeapon>> OperatorWeapons;
 
@@ -90,6 +101,23 @@ private:
 	void StartBriefing();
 	void StartMission();
 	void EndMission(bool bOperatorsWon, ECoopCqbWinReason Reason);
+	void OpenDebrief();
+ void CheckOperatorReadiness();
+ void UpdateReport(bool bFinal = false, bool bWon = false);
+ bool bRangeHub = false;
+ int32 ExpectedOperators = 1;
+ float LoadStartedAt = 0.f;
+ TSet<TWeakObjectPtr<APlayerController>> ReadyPlayers;
+ TArray<TWeakObjectPtr<AHostileAICharacter>> MissionSuspects;
+ TArray<TWeakObjectPtr<class AHostageActor>> MissionHostages;
+ TArray<TWeakObjectPtr<class AMissionObjective>> MissionObjectives;
+ TSet<TWeakObjectPtr<AHostileAICharacter>> UnlawfulKills;
+ TSet<TWeakObjectPtr<AHostileAICharacter>> NeutralizedSuspects;
+ TSet<TWeakObjectPtr<AHostileAICharacter>> ArrestedSuspects;
+ TSet<TWeakObjectPtr<class AMissionObjective>> OptionalObjectives;
+ TSet<TWeakObjectPtr<class AMissionObjective>> CompletedObjectives;
+ FTimerHandle ReadinessTimer;
+ FTimerHandle ReturnTimer;
 	void SpawnHostilesFromLevel();
 	void ApplyOperatorLookAndKit(APlayerController* PC);
 	AActor* FindTaggedStart(FName Tag) const;

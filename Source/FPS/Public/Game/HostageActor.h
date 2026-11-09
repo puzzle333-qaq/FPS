@@ -24,6 +24,12 @@ public:
 	AHostageActor();
 
 	virtual void BeginPlay() override;
+ virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+ UFUNCTION(BlueprintPure, Category="Mission") bool IsRescued() const { return bRescued; }
+ UPROPERTY(ReplicatedUsing=OnRep_RescueState, BlueprintReadOnly, Category="Mission") bool bRescued = false;
+ UFUNCTION() void OnRep_RescueState();
+ UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Mission") TObjectPtr<USkeletalMeshComponent> CivilianMesh;
+ UPROPERTY(EditAnywhere, Category="Mission") TSoftObjectPtr<class UAnimSequence> RescuedCrouchAnimation;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Hostage")
 	float GetHealth() const { return Health; }
@@ -52,10 +58,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Hostage", meta = (ClampMin = "1"))
 	float MaxHealth = 100.f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Hostage")
+	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Hostage")
 	float Health = 100.f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Hostage")
+	UPROPERTY(ReplicatedUsing=OnRep_RescueState, VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Hostage")
 	bool bAlive = true;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Hostage")

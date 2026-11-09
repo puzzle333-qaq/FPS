@@ -1,11 +1,13 @@
 #include "Game/HostileAICharacter.h"
 
 #include "Game/CoopCqbGameMode.h"
+#include "Game/CoopCqbGameState.h"
 #include "Game/HostileAIController.h"
 #include "Stats/StatsComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "PhysicsEngine/PhysicsAsset.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/SkeletalMesh.h"
@@ -26,6 +28,7 @@ AHostileAICharacter::AHostileAICharacter(const FObjectInitializer& ObjectInitial
 	Stats = CreateDefaultSubobject<UStatsComponent>(TEXT("Stats"));
 
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.f);
+ GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 
 	GetCharacterMovement()->bOrientRotationToMovement = true;
@@ -50,6 +53,8 @@ void AHostileAICharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AHostileAICharacter, bDead);
+	DOREPLIFETIME(AHostileAICharacter, Morale);
+ DOREPLIFETIME(AHostileAICharacter, bArrested);
 }
 
 void AHostileAICharacter::BeginPlay()
@@ -70,6 +75,24 @@ void AHostileAICharacter::BeginPlay()
 	}
 }
 
+void AHostileAICharacter::SetMorale(EHostileMorale NewMorale)
+{
+	if (!HasAuthority()) return;
+	if (bArrested) return;
+ Morale = NewMorale;
+ if (Morale == EHostileMorale::Surrender)
+ {
+  Crouch();
+  GetCharacterMovement()->StopMovementImmediately();
+ }
+ ForceNetUpdate();
+}
+
+void AHostileAICharacter::Multicast_HostileFired_Implementation(FVector Muzzle, FVector Impact)
+{
+	OnHostileFired(Muzzle, Impact);
+}
+
 bool AHostileAICharacter::IsHostileAlive() const
 {
 	if (bDead) return false;
@@ -81,6 +104,10 @@ bool AHostileAICharacter::DoDamage_Implementation(float DamageAmout, AActor* Dam
 {
 	if (!HasAuthority() || !IsHostileAlive() || DamageAmout <= 0.f) return false;
 	if (!Stats) return false;
+ if (const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>())
+ {
+  if (!GS->IsMissionLive() || GS->bRangeHub) return false;
+ }
 
 	Stats->ChangeHealthByAmout(-DamageAmout, DamageInstigator);
 	if (AHostileAIController* Brain = Cast<AHostileAIController>(GetController()))
@@ -136,13 +163,66 @@ void AHostileAICharacter::OnRep_Dead()
 void AHostileAICharacter::ApplyDeadVisual()
 {
 	if (!bDead) return;
-	GetCharacterMovement()->DisableMovement();
-	GetCharacterMovement()->StopMovementImmediately();
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	if (USkeletalMeshComponent* Skel = GetMesh())
+
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
 	{
-		Skel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Skel->SetSimulatePhysics(true);
+		Move->StopMovementImmediately();
+		Move->DisableMovement();
+		Move->SetComponentTickEnabled(false);
 	}
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	USkeletalMeshComponent* Skel = GetMesh();
+	if (!Skel) return;
+
+	if (!Skel->GetPhysicsAsset())
+	{
+		if (UPhysicsAsset* Asset = LoadObject<UPhysicsAsset>(nullptr, TEXT("/Game/Characters/Mannequins/Rigs/PA_Mannequin.PA_Mannequin")))
+		{
+			Skel->SetPhysicsAsset(Asset);
+		}
+	}
+
+	Skel->SetCollisionProfileName(TEXT("Ragdoll"));
+	Skel->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Skel->SetAllBodiesSimulatePhysics(true);
+	Skel->SetSimulatePhysics(true);
+	Skel->WakeAllRigidBodies();
+	Skel->bBlendPhysics = true;
+	Skel->bPauseAnims = true;
 }
 
+
+bool AHostileAICharacter::CanInteract_Implementation(APawn* Pawn) const
+{
+ const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>();
+ return IsValid(Pawn) && IsHostileAlive() && !bArrested && Morale == EHostileMorale::Surrender
+  && GS && GS->IsMissionLive() && !GS->bRangeHub;
+}
+FText AHostileAICharacter::GetInteractPrompt_Implementation(APawn* Pawn) const
+{
+ return NSLOCTEXT("Mission", "Arrest", "按 F 拘捕嫌疑人");
+}
+void AHostileAICharacter::Interact_Implementation(APawn* Pawn)
+{
+ if (!HasAuthority() || !CanInteract_Implementation(Pawn)) return;
+ bArrested = true;
+ Crouch();
+ OnRep_Arrested();
+ ForceNetUpdate();
+ if (auto* GM = GetWorld()->GetAuthGameMode<ACoopCqbGameMode>()) GM->Auth_RefreshObjectives();
+}
+void AHostileAICharacter::OnRep_Arrested()
+{
+ if (!bArrested) return;
+ GetCharacterMovement()->StopMovementImmediately();
+ if (auto* Brain = Cast<AHostileAIController>(GetController()))
+ {
+  Brain->StopMovement();
+  Brain->SetActorTickEnabled(false);
+ }
+ // Keep the pawn and its crouching animation in place after restraint.
+}
