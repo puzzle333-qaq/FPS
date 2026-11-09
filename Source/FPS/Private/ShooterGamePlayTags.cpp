@@ -12,6 +12,7 @@ namespace ShooterTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Smoke, "Weapon.type.smoke", "Smoke grenade");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Molotov, "Weapon.type.molotov", "Molotov / incendiary");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Flash, "Weapon.type.flash", "Flashbang");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_Sting, "Weapon.type.sting", "Sting grenade — pouch slot only, effect not implemented");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_X24,"Weapon.type.x24","Pistol X24");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_AR10, "Weapon.type.ar10", "DEFINITIVE_FPS_KIT AR-10");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_WeaponType_MCX, "Weapon.type.mcx", "DEFINITIVE_FPS_KIT MCX-VIRTUS");
@@ -29,5 +30,7 @@ namespace ShooterTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Grip, "Attachment.Slot.Grip", "Attachment slot: Grip");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Stock, "Attachment.Slot.Stock", "Attachment slot: Stock");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Tactical, "Attachment.Slot.Tactical", "Attachment slot: Tactical");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Laser, "Attachment.Slot.Laser", "Attachment slot: Laser");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Flashlight, "Attachment.Slot.Flashlight", "Attachment slot: Flashlight");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Tag_Attachment_Slot_Magazine, "Attachment.Slot.Magazine", "Attachment slot: Magazine");
 }

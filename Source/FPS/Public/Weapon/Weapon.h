@@ -9,6 +9,7 @@
 #include "Engine/Texture2D.h"
 #include "Interface/RecoilModifierInterface.h"
 #include "Weapon/AttachmentData.h"
+#include "WeaponData.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Weapon.generated.h"
 
@@ -158,7 +159,9 @@ public:
 	// ---------- 给 UI 用的查询 ----------
 	// 这把枪有哪些槽位
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
-	TArray<FWeaponAttachmentSlot> GetAttachmentSlots() const { return AttachmentSlots; }
+	TArray<FWeaponAttachmentSlot> GetAttachmentSlots() const;
+	// Shared by the CDO/UI and runtime: one device rail, both independently switchable functions.
+	static TArray<FWeaponAttachmentSlot> NormalizeDeviceSlots(const TArray<FWeaponAttachmentSlot>& Slots);
 
 	// 某个槽位可以装哪些配件（没有这个槽就返回空数组）
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
@@ -173,14 +176,18 @@ public:
 	UAttachmentData* GetSlotBlocker(FGameplayTag SlotTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
-	bool HasAttachmentSlot(FGameplayTag SlotTag) const { return FindSlot(SlotTag) != nullptr; }
+	bool HasAttachmentSlot(FGameplayTag SlotTag) const;
 
-	// 只在服务器调用：开/关手电和激光（第 12 步：两者一起；都没有时无效）
+	// 只在服务器调用：开/关手电（没有手电配件时无效）。镭射用 ToggleLaser。
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Attachment")
 	void ToggleFlashlight();
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
 	UAttachmentData* GetAttachmentInSlot(FGameplayTag SlotTag) const;
+
+	// 镭射/手电从旧的 Tactical 槽拆开后，用这个槽位身份去装、卸、查。其它配件仍是自己的 SlotTag。
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment")
+	FGameplayTag GetEquipSlot(const UAttachmentData* Attachment) const;
 
 	/** Cradle if no grip or grip DA says Cradle; Grab for vertical grips. */
 	UFUNCTION(BlueprintPure, Category = "FPS|Attachment|Grip")
@@ -272,6 +279,17 @@ public:
 
 	void AttachToOwingPawn();
 	void AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName);
+
+	/** True when Mesh1PAttachSocket is set (data-driven 1P mount, not GripPoints). */
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Attach")
+	bool UsesCustomMesh1PAttach() const;
+
+	/** Resolve Mesh1PAttachSocket (or fallbacks) on the arms mesh. NAME_None if unused. */
+	FName ResolveMesh1PAttachPoint(const USkeletalMeshComponent* PawnMesh1P) const;
+
+	/** Grip attachment GripPoseAnim, or null. */
+	UFUNCTION(BlueprintPure, Category = "FPS|Attachment|Grip")
+	UAnimSequence* GetGripPoseAnim() const;
 	void DetachFromPawn();
 	void SetHiddenForHeal(bool bHideWeapon);
 	void WeaponTrace(FHitResult& OutHit, float TraceLength);
@@ -281,12 +299,15 @@ public:
 
 	/** 弹匣骨骼配件：换弹时播 MagReloadAnim（与手臂 reload 同步）。 */
 	void PlayMagazineReload(EReloadType ReloadType);
-	/** Show SOCKET_Magazine_Reserve SM for the whole reload (Infima dual-hand look). */
+	/** Show reserve mag SM for the whole reload when ReserveMagazineSocketName exists. */
 	void ShowReserveMagazineForReload();
 	/** Hide reserve + clear reload dual-mag flag (reload end / re-attach). */
 	void FinishMagazineReloadVisuals();
 	USkeletalMeshComponent* GetMagazineSkelMesh1P() const;
-
+	/** Hide/show Ammo_* bones (KINEMATION) and swap Empty/Full mag SM (RAR) from Ammo. */
+	void UpdateMagazineAmmoVisuals();
+	/** Resolve double-mag: TR15 keeps body mag (drop Mag DA); Mag-DA guns hide body mag bones and keep Mag DA visible. */
+	void ResolveMagazineVisualDuplicates();
 	// 双管霰弹：手臂换弹蒙太奇的 Bullet1Spawn / Bullet1Delete / Bullet2Spawn / Bullet2Delete。
 	void HandleChamberShellNotify(FName NotifyName);
 
@@ -329,6 +350,43 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Arms")
 	TSubclassOf<UAnimInstance> OverrideArmsAnimClass;
 
+	/** 1P attach bone/socket on arms. NAME_None = GripPoints path (RAR/AK).
+	 *  Prefer SOCKET_Weapon (same as RAR) or the animated ik_hand_gun BONE (never a shadow socket).
+	 *  Default identity — KINEMATION meshes match ik_hand_gun / SOCKET_Weapon like RAR. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+	FName Mesh1PAttachSocket = NAME_None;
+
+	/** Relative correction after SnapToTarget onto Mesh1PAttachSocket (socket/bone space). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+	FRotator Mesh1PAttachRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+	FVector Mesh1PAttachLocation = FVector::ZeroVector;
+
+	/** When Mesh1PAttachSocket is set, bake rest offset from VB ik_hand_gun_pivot if that bone exists on arms. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
+	bool bMesh1PAttachUsePivotOffset = true;
+
+	/** Body muzzle socket when no muzzle/barrel attachment provides one. RAR default Muzzle; pack guns often MuzzleSocket. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sockets")
+	FName MuzzleSocketName = TEXT("Muzzle");
+
+	/** Preferred left-hand FABRIK socket on the weapon body when no grip is mounted. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sockets")
+	FName FabrikSocketName = NAME_None;
+
+	/** Optional magazine mount name used when AttachmentSlots Mag SocketName is empty. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sockets")
+	FName MagazineSocketName = NAME_None;
+
+	/** KINEMATION mag skel bones Ammo_001..Ammo_N. Empty string disables bone sync. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|MagazineVisual")
+	FName MagazineAmmoBonePrefix = TEXT("Ammo_");
+
+	/** Dual-mag reserve socket (Infima-style). Dual-mag visuals only run if this socket exists on Mesh1P. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Sockets")
+	FName ReserveMagazineSocketName = TEXT("SOCKET_Magazine_Reserve");
+
 	/** Mesh1P is RootComponent - BP RelativeRotation on root unreliable after AttachToComponent.
 	 *  When true, apply Mesh*AttachRelativeRotation/Location after attach (keeps Authored scale). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach")
@@ -352,7 +410,19 @@ public:
 
 	// Sequence fallbacks when DA montages are empty (PlaySlotAnimationAsDynamicMontage / PlayAnimation).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+	TObjectPtr<UAnimSequence> ArmsIdleSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+	TObjectPtr<UAnimSequence> ArmsAimIdleSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
+	TObjectPtr<UAnimSequence> ArmsSprintSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
 	TObjectPtr<UAnimSequence> ArmsFireSequence;
+
+	/** Overlay weapon-authored arm clips onto DA FPlayerAnim. Used when DA has no row for WeaponType. */
+	void ApplyAuthoredArmAnims(FPlayerAnim& InOut) const;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
 	TObjectPtr<UAnimSequence> ArmsFireAimSequence;
@@ -604,6 +674,14 @@ public:
 
 	void Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal, TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFirstPerson, bool bConsumeAmmo = true);
 
+	/** Hostile blueprint: hang the 3P gun on a socket. Does not enter the player equip pipeline. */
+	UFUNCTION(BlueprintCallable, Category = "FPS|Effects")
+	void AttachCosmeticThirdPerson(USceneComponent* Parent, FName SocketName, FTransform RelativeTransform);
+
+	/** Plays this weapon Blueprint's FireEffect (muzzle, tracer, gunshot) and does not spend ammo. */
+	UFUNCTION(BlueprintCallable, Category = "FPS|Effects")
+	void PlayCosmeticFire(const FVector& ImpactPoint);
+
 	// 多弹丸（霰弹）每颗命中都生成和普通子弹相同的弹孔/命中特效（B_WeaponImpacts / B_WeaponDecals）。
 	void SpawnPelletImpacts(const TArray<FHitResult>& Hits);
 
@@ -667,6 +745,8 @@ private:
 
 
 	void SetMeshVisibility(APawn* OwningPawn);
+	/** KIN pack: Body mesh swap + soft-load RT_ arms seqs when BP still points at Manny skeleton. */
+	void EnsureKinemationSharedArmsAssets();
 	void CaptureAuthoredMeshRelative();
 
 	// 双管霰弹弹壳。插槽挂在没蒙皮的 Bullet 骨上，不强制刷新的话运行时会停在绑定姿势。
@@ -739,6 +819,9 @@ private:
 	float LaserBeamLength = 100.f;
 
 	const UAttachmentData* GetLaserData() const;
+	void EnsureDeviceSlots();
+	friend class FCombinedTacticalAttachmentTest;
+	bool bDeviceSlotsReady = false;
 	void RebuildLaser();
 	void UpdateLaserAttachment();
 	void ApplyLaserState();
@@ -753,7 +836,7 @@ private:
 
 	int32 Sequence;
 
-	/** While true, SetMeshVisibility must not hide SOCKET_Magazine_Reserve (tactical dual-mag). */
+	/** While true, SetMeshVisibility must not hide the reserve mag (tactical dual-mag). */
 	bool bReloadReserveMagVisible = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon", meta = (AllowPrivateAccess = "true"))

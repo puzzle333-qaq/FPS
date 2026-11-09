@@ -16,11 +16,13 @@
 #include "Weapon/Weapon.h"
 #include "WeaponData.h"
 #include "Engine/SkeletalMesh.h"
+#include "Animation/Skeleton.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Interface/PlayerInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Misc/PackageName.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "UObject/UnrealType.h"
@@ -29,15 +31,18 @@
 #include "Engine/World.h"
 #include "ShooterPlayerController.h"
 #include "Loadout/LoadoutTypes.h"
+#include "Loadout/PouchInventoryComponent.h"
+#include "Weapon/WeaponFlash.h"
+#include "Weapon/WeaponSting.h"
 #include "Weapon/AttachmentData.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ShooterType/ShooterType.h"
 #include "Interface/RecoilModifierInterface.h"
+#include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Game/ShooterGameState.h"
-#include "Game/PoliceCriminalGameMode.h"
 #include "Game/ShooterPlayerState.h"
 #include "Range/TargetDummy.h"
 #include "Ui/HudBodyMarks.h"
@@ -209,21 +214,14 @@ void UCombatComponent::SpawnInventory()
 
 	// 局外配装：每把预设枪替换默认武器里同 WeaponKind 的第一把；没有同类就追加
 	TArray<TSubclassOf<AWeapon>> SpawnClasses = DefaultWeaponClass;
-	const AShooterGameState* ModeGS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
 	TArray<const FWeaponPreset*> SpawnPresets;
 	SpawnPresets.Init(nullptr, SpawnClasses.Num());
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-		const AShooterPlayerController* LoadoutPC = IsValid(OwnerPawn) ? Cast<AShooterPlayerController>(OwnerPawn->GetController()) : nullptr;
-	const bool bPoliceCriminalMode = (ModeGS && ModeGS->GetMatchMode() == EShooterGameMode::PoliceCriminal) || (GetWorld() && GetWorld()->GetAuthGameMode() && GetWorld()->GetAuthGameMode()->IsA(APoliceCriminalGameMode::StaticClass()));
-	if (bPoliceCriminalMode)
-	{
-		// 警匪：永远不用角色 DefaultWeaponClass（否则一直是旧刀/旧枪）。
-		// 未 PickFaction 前为空包；选阵营后只发 SubmittedLoadout 的 MVP 套装。
-		SpawnClasses.Reset();
-		SpawnPresets.Reset();
-	}
+	const AShooterPlayerController* LoadoutPC = IsValid(OwnerPawn) ? Cast<AShooterPlayerController>(OwnerPawn->GetController()) : nullptr;
+	bool bReplaceThrowables = false;
 	if (const FLoadoutPreset* Loadout = IsValid(LoadoutPC) ? LoadoutPC->GetSubmittedLoadout() : nullptr)
 	{
+		bReplaceThrowables = Loadout->bReplaceThrowables;
 		for (const FWeaponPreset& Preset : Loadout->Weapons)
 		{
 			if (!Preset.WeaponClass) continue;
@@ -251,12 +249,9 @@ void UCombatComponent::SpawnInventory()
 		}
 	}
 
-	const AShooterGameState* GS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr;
-	const bool bExtraction = !GS || !GS->HasMatchHeader() || GS->GetMatchMode() == EShooterGameMode::Extraction;
-	const int32 MaxLong = bExtraction ? 2 : 1;
-	const bool bAllowThrowable = !GS || !GS->HasMatchHeader() || GS->GetMatchMode() != EShooterGameMode::Extraction;
-	const bool bPoliceCriminalModeSpawn = (GS && GS->GetMatchMode() == EShooterGameMode::PoliceCriminal) || (GetWorld() && GetWorld()->GetAuthGameMode() && GetWorld()->GetAuthGameMode()->IsA(APoliceCriminalGameMode::StaticClass()));
-	const int32 MaxThrowables = bPoliceCriminalModeSpawn ? 4 : 1;
+	const int32 MaxLong = 2;
+	const bool bAllowThrowable = true;
+	const int32 MaxThrowables = 4;
 	bool bLoadoutHasLong = false;
 	for (const FWeaponPreset* Preset : SpawnPresets)
 	{
@@ -282,6 +277,7 @@ void UCombatComponent::SpawnInventory()
 		}
 		if (CDO->WeaponKind == EWeaponKind::Pistol && PistolCount >= 1) continue;
 		if (CDO->WeaponKind == EWeaponKind::Melee && MeleeCount >= 1) continue;
+		if (CDO->WeaponKind == EWeaponKind::Throwable && bReplaceThrowables && !SpawnPresets[SpawnIndex]) continue;
 		if (CDO->WeaponKind == EWeaponKind::Throwable && (!bAllowThrowable || ThrowableCount >= MaxThrowables)) continue;
 
 		AWeapon* Weapon = SpawnWeapon(SpawnClasses[SpawnIndex]);
@@ -291,9 +287,9 @@ void UCombatComponent::SpawnInventory()
 			// 预设里没有的槽先卸掉（必需槽 RemoveAttachment 会拒绝），再装预设里的；EquipAttachment 自己做白名单校验
 			for (const FWeaponAttachmentSlot& AttachSlot : Weapon->GetAttachmentSlots())
 			{
-				const bool bInPreset = Preset->Attachments.ContainsByPredicate([&AttachSlot](const UAttachmentData* A)
+				const bool bInPreset = Preset->Attachments.ContainsByPredicate([Weapon, &AttachSlot](const UAttachmentData* A)
 				{
-					return IsValid(A) && A->SlotTag == AttachSlot.SlotTag;
+					return IsValid(A) && IsValid(Weapon) && Weapon->GetEquipSlot(A) == AttachSlot.SlotTag;
 				});
 				if (!bInPreset) Weapon->RemoveAttachment(AttachSlot.SlotTag);
 			}
@@ -350,6 +346,7 @@ void UCombatComponent::SpawnInventory()
 		InitializeWeaponWidget();
 		IPlayerInterface::Execute_WeaponReplicated(GetOwner());
 	}
+	SeedPouchFromInventory();
 }
 
 void UCombatComponent::RebuildInventory()
@@ -367,15 +364,161 @@ void UCombatComponent::RebuildInventory()
 
 }
 
+void UCombatComponent::ClearPouch()
+{
+	AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetOwner());
+	UPouchInventoryComponent* PouchInv = Shooter ? Shooter->GetPouch() : nullptr;
+	if (!PouchInv) return;
+	for (int32 i = 0; i < PouchInv->GetSlotCount(); ++i)
+	{
+		PouchInv->ClearSlot(i);
+	}
+}
+
+void UCombatComponent::SeedPouchFromInventory()
+{
+	AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetOwner());
+	UPouchInventoryComponent* PouchInv = Shooter ? Shooter->GetPouch() : nullptr;
+	if (!PouchInv) return;
+
+	ClearPouch();
+
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	const AShooterPlayerController* LoadoutPC = IsValid(OwnerPawn) ? Cast<AShooterPlayerController>(OwnerPawn->GetController()) : nullptr;
+	const FLoadoutPreset* Loadout = IsValid(LoadoutPC) ? LoadoutPC->GetSubmittedLoadout() : nullptr;
+	const bool bBenchCounts = Loadout && Loadout->bReplaceThrowables;
+
+	AWeapon* Rifle = nullptr;
+	AWeapon* Sidearm = nullptr;
+	for (AWeapon* Weapon : Inventory)
+	{
+		if (!IsValid(Weapon) || !Weapon->UsesAmmo()) continue;
+		const bool bShotgun = Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun)
+			|| Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_DoubleBarrel)
+			|| Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Winchester);
+		if (!Rifle && Weapon->WeaponKind == EWeaponKind::LongGun && (bBenchCounts || !bShotgun))
+		{
+			Rifle = Weapon;
+		}
+		if (!Sidearm && Weapon->WeaponKind == EWeaponKind::Pistol)
+		{
+			Sidearm = Weapon;
+		}
+	}
+
+	auto AddFullMags = [this, PouchInv](AWeapon* Weapon, FGameplayTag FallbackType, int32 Count, int32 FallbackCapacity)
+	{
+		const FGameplayTag Type = IsValid(Weapon) && Weapon->WeaponType.IsValid() ? Weapon->WeaponType : FallbackType;
+		const int32 Capacity = IsValid(Weapon) && Weapon->MagCapacity > 0 ? Weapon->MagCapacity : FallbackCapacity;
+		TArray<int32> Queue;
+		Queue.Init(Capacity, Count);
+		MagQueues.Add(Type, Queue);
+		ReserveAmmo.Add(Type, Count);
+		if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponType.MatchesTagExact(Type))
+		{
+			CurrentReserveAmmo = Count;
+			SpareMagRounds = Queue;
+			OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
+		}
+		for (int32 i = 0; i < Count; ++i)
+		{
+			PouchInv->TryAddMagzine(Type, Capacity, Capacity);
+		}
+	};
+
+	int32 RifleMags = 5;
+	int32 PistolMags = 3;
+	constexpr int32 FlashCount = 3;
+	constexpr int32 StingCount = 2;
+	if (bBenchCounts)
+	{
+		RifleMags = 0;
+		PistolMags = 0;
+		bool bSawLong = false;
+		bool bSawPistol = false;
+		for (const FWeaponPreset& Preset : Loadout->Weapons)
+		{
+			if (!Preset.WeaponClass) continue;
+			const EWeaponKind Kind = Preset.WeaponClass->GetDefaultObject<AWeapon>()->WeaponKind;
+			if (Kind == EWeaponKind::LongGun && !bSawLong)
+			{
+				RifleMags = FMath::Max(0, Preset.StackCount);
+				bSawLong = true;
+			}
+			else if (Kind == EWeaponKind::Pistol && !bSawPistol)
+			{
+				PistolMags = FMath::Max(0, Preset.StackCount);
+				bSawPistol = true;
+			}
+		}
+	}
+
+	AddFullMags(Rifle, ShooterTags::Tag_WeaponType_Rifle, RifleMags, 30);
+	AddFullMags(Sidearm, ShooterTags::Tag_WeaponType_Pistol, PistolMags, 15);
+
+	if (bBenchCounts)
+	{
+		for (AWeapon* Weapon : Inventory)
+		{
+			if (!IsValid(Weapon) || Weapon->WeaponKind != EWeaponKind::Throwable) continue;
+			int32 Count = 0;
+			for (const FWeaponPreset& Preset : Loadout->Weapons)
+			{
+				if (Preset.WeaponClass == Weapon->GetClass())
+				{
+					Count = FMath::Max(0, Preset.StackCount);
+					break;
+				}
+			}
+			Weapon->Ammo = Count;
+			for (int32 i = 0; i < Count; ++i)
+			{
+				PouchInv->TryAddThrowable(Weapon->GetClass());
+			}
+		}
+	}
+	else
+	{
+		TSubclassOf<AWeapon> FlashClass = nullptr;
+		for (AWeapon* Weapon : Inventory)
+		{
+			if (IsValid(Weapon) && Weapon->IsA(AWeaponFlash::StaticClass()))
+			{
+				Weapon->Ammo = FlashCount;
+				FlashClass = Weapon->GetClass();
+			}
+		}
+		if (!FlashClass)
+		{
+			FlashClass = AWeaponFlash::StaticClass();
+		}
+		for (int32 i = 0; i < FlashCount; ++i)
+		{
+			PouchInv->TryAddThrowable(FlashClass);
+		}
+		for (int32 i = 0; i < StingCount; ++i)
+		{
+			PouchInv->TryAddThrowable(AWeaponSting::StaticClass());
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Pouch] %s %d rifle mags, %d pistol mags (%d / %d)"),
+		*GetNameSafe(Shooter), RifleMags, PistolMags,
+		PouchInv->CountUsed(), PouchInv->GetSlotCount());
+}
+
 void UCombatComponent::DestroyInventory()
 {
+	ClearPouch();
 	for (AWeapon* Weapon : Inventory)
 	{
 		if (IsValid(Weapon))
 		{
+			Weapon->DetachFromPawn();
 			Weapon->Destroy();
 		}
 	}
+	Inventory.Reset();
 }
 
 void UCombatComponent::InitializeWeaponWidget()
@@ -389,6 +532,7 @@ void UCombatComponent::InitializeWeaponWidget()
 void UCombatComponent::NotifyAmmoChanged()
 {
 	if (!IsValid(CurrentWeapon)) return;
+	CurrentWeapon->UpdateMagazineAmmoVisuals();
 	SyncSpareMagRoundsForHud();
 	OnCurrentReserveAmmoChanged.Broadcast(CurrentReserveAmmo, CurrentWeapon->Ammo, CurrentWeapon->WeaponIcon);
 }
@@ -431,6 +575,11 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	TickRecoil(DeltaTime);
+	// MagCheck montage finished naturally — clear inspect state.
+	if (ActiveInspectMontage.IsValid() && !IsInspecting())
+	{
+		CancelInspect();
+	}
 }
 
 void UCombatComponent::ResetRecoilPattern()
@@ -560,6 +709,17 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME_CONDITION(UCombatComponent, SpareMagRounds, COND_OwnerOnly);
 }
 
+FGameplayTag UCombatComponent::ResolveAnimTag(const AWeapon* Weapon) const
+{
+	if (!IsValid(Weapon)) return FGameplayTag();
+	if (Weapon->WeaponKind == EWeaponKind::Throwable
+		&& Weapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Flash))
+	{
+		return ShooterTags::Tag_WeaponType_Grenade;
+	}
+	return Weapon->WeaponType;
+}
+
 void UCombatComponent::Local_CycleWeapon(int32 WeaponIndex, bool bFirstPerson)
 {
 	if (!Inventory.IsValidIndex(WeaponIndex)) return;
@@ -614,6 +774,7 @@ void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
 
 	// Bandits faction look owns Mesh1P gloves + patched grip sockets. Do not let weapon OverrideArms
 	// swap back to Ironbelly/pack arms (that drops sockets and breaks rifle/pistol 1P mount).
+	// Pack guns stay on the shared RAR/AK arms ABP; set anim sequences on the weapon BP instead.
 	bool bLockBanditsFactionArms = false;
 	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(Owner))
 	{
@@ -644,13 +805,36 @@ void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
 		WantAnim = UPSRArmsAnimInstance::StaticClass();
 	}
 
-	if (Arms->GetSkeletalMeshAsset() != WantMesh)
+	if (IsValid(WantMesh) && Arms->GetSkeletalMeshAsset() && WantMesh->GetSkeleton() && Arms->GetSkeletalMeshAsset()->GetSkeleton())
 	{
-		Arms->SetSkeletalMesh(WantMesh);
+		USkeleton* WantSkel = WantMesh->GetSkeleton();
+		USkeleton* CurSkel = Arms->GetSkeletalMeshAsset()->GetSkeleton();
+		if (WantSkel != CurSkel)
+		{
+			WantSkel->AddCompatibleSkeletonSoft(CurSkel);
+			CurSkel->AddCompatibleSkeletonSoft(WantSkel);
+		}
+	}
+
+	const bool bMeshChanged = Arms->GetSkeletalMeshAsset() != WantMesh;
+	if (bMeshChanged && IsValid(WantMesh))
+	{
+		Arms->SetSkeletalMesh(WantMesh, true);
 	}
 	if (Arms->GetAnimClass() != WantAnim)
 	{
 		Arms->SetAnimInstanceClass(WantAnim);
+		if (UAnimInstance* AnimInst = Arms->GetAnimInstance())
+		{
+			AnimInst->InitializeAnimation(true);
+		}
+	}
+	else if (bMeshChanged)
+	{
+		if (UAnimInstance* AnimInst = Arms->GetAnimInstance())
+		{
+			AnimInst->InitializeAnimation(true);
+		}
 	}
 }
 void UCombatComponent::ApplyEquippedWeaponAnim(AWeapon* Weapon)
@@ -674,7 +858,7 @@ bool UCombatComponent::HasStrafeWalkingAnim() const
 
 	auto HasWalk = [this](const TMap<FGameplayTag, FPlayerAnim>& Anims) -> bool
 	{
-		if (const FPlayerAnim* Anim = Anims.Find(CurrentWeapon->WeaponType))
+		if (const FPlayerAnim* Anim = Anims.Find(ResolveAnimTag(CurrentWeapon)))
 		{
 			return IsValid(Anim->Strafe_Walking);
 		}
@@ -712,10 +896,22 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 		const TMap<FGameplayTag, FPlayerAnim>& Anims = bFirstPerson
 			? WeaponData->FirstPersonAnims
 			: WeaponData->ThirdPersonAnims;
-		const FPlayerAnim* WeaponAnim = Anims.Find(CurrentWeapon->WeaponType);
-		if (!WeaponAnim) return;
-
-		FPlayerAnim AnimCopy = *WeaponAnim;
+		const FPlayerAnim* WeaponAnim = Anims.Find(ResolveAnimTag(CurrentWeapon));
+		FPlayerAnim AnimCopy;
+		if (WeaponAnim)
+		{
+			AnimCopy = *WeaponAnim;
+		}
+		CurrentWeapon->ApplyAuthoredArmAnims(AnimCopy);
+		if (!IsValid(AnimCopy.IdleAnim))
+		{
+			if (bFirstPerson)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[Anim] %s WeaponType=%s has no FirstPerson Idle (DA row missing, ArmsIdleSequence empty)"),
+					*GetNameSafe(CurrentWeapon), *CurrentWeapon->WeaponType.ToString());
+			}
+			return;
+		}
 		// 站立 Locomotion 绑的是 Strafe_Standing；慢走时换成 Walk BS，避免继续采 Jog 造成小碎步
 		if (bUseWalkGait && IsValid(AnimCopy.Strafe_Walking))
 		{
@@ -744,14 +940,17 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 		}
 
 
-		// Shotgun FPSTP anims are authored as full arm poses. ABP AimOffset / Strafe / left-hand Layered
-		// blend deform them in-game (Persona preview has none of those). Strip for Weapon.type.shotgun 1P.
+		// First person is parented to the camera, so look pitch is already in the view.
+		// Aim offset stays on Mesh3P only.
 		const bool bShotgunRaw1P = bFirstPerson
 			&& CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun);
-		if (bShotgunRaw1P)
+		if (bFirstPerson)
 		{
 			AnimCopy.AimOffset_Hip = nullptr;
 			AnimCopy.AimOffset_Aim = nullptr;
+		}
+		if (bShotgunRaw1P)
+		{
 			AnimCopy.Strafe_Standing = nullptr;
 			AnimCopy.Strafe_Crouching = nullptr;
 			AnimCopy.Strafe_Walking = nullptr;
@@ -820,18 +1019,18 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 		: WeaponData->ThirdPersonMontages;
 
 	const bool bFirstDraw = !Weapon->bHasEquippedOnce;
-	const FMontageData* MontageData = ViewMontages.Find(Weapon->WeaponType);
+	const FMontageData* MontageData = ViewMontages.Find(ResolveAnimTag(Weapon));
 	UAnimMontage* EquipMontage = MontageData ? MontageData->ResolveEquipMontage(bFirstDraw) : nullptr;
 	if (!IsValid(EquipMontage) && !bFirstPerson)
 	{
-		if (const FMontageData* FPData = WeaponData->FirstPersonMontages.Find(Weapon->WeaponType))
+		if (const FMontageData* FPData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(Weapon)))
 		{
 			EquipMontage = FPData->ResolveEquipMontage(bFirstDraw);
 		}
 	}
 	if (!IsValid(EquipMontage))
 	{
-		if (const FMontageData* SharedData = WeaponData->WeaponMontages.Find(Weapon->WeaponType))
+		if (const FMontageData* SharedData = WeaponData->WeaponMontages.Find(ResolveAnimTag(Weapon)))
 		{
 			EquipMontage = SharedData->ResolveEquipMontage(bFirstDraw);
 		}
@@ -892,7 +1091,7 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 	if (bFirstPerson)
 	{
 		bool bPlayedWeaponEquip = false;
-		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(Weapon->WeaponType))
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(Weapon)))
 		{
 			if (UAnimMontage* WeaponEquip = WeaponMontageData->ResolveEquipMontage(bFirstDraw))
 			{
@@ -975,9 +1174,9 @@ void UCombatComponent::StopReloadMontages(AWeapon* Weapon)
 	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
 
 	TArray<UAnimMontage*> Montages;
-	auto Collect = [&Montages, Weapon](const TMap<FGameplayTag, FMontageData>& Map)
+	auto Collect = [this, &Montages, Weapon](const TMap<FGameplayTag, FMontageData>& Map)
 	{
-		if (const FMontageData* Data = Map.Find(Weapon->WeaponType))
+		if (const FMontageData* Data = Map.Find(ResolveAnimTag(Weapon)))
 		{
 			for (EReloadType Type : { EReloadType::Empty, EReloadType::Tactical })
 			{
@@ -1068,6 +1267,7 @@ void UCombatComponent::Multicast_CycleWeapon_Implementation(int32 WeaponIndex)
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
 	CancelInspect();
+	if (StopFireIfWeaponBlocked()) return;
 	if (const AShooterCharacter* Self = Cast<AShooterCharacter>(GetOwner()))
 	{
 		if (Self->IsBandaging()) return;
@@ -1167,14 +1367,14 @@ void UCombatComponent::PlayOwnerThirdPersonFireMontage()
 	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
 
 	UAnimMontage* Montage3P = nullptr;
-	if (const FMontageData* Montage3PData = WeaponData->ThirdPersonMontages.Find(CurrentWeapon->WeaponType))
+	if (const FMontageData* Montage3PData = WeaponData->ThirdPersonMontages.Find(ResolveAnimTag(CurrentWeapon)))
 	{
 		Montage3P = Montage3PData->ResolveFireMontage();
 	}
 	// Soft fallback: if no dedicated 3P fire clip, try 1P fire on the body (compatible skeletons).
 	if (!IsValid(Montage3P))
 	{
-		if (const FMontageData* Montage1PData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
+		if (const FMontageData* Montage1PData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon)))
 		{
 			Montage3P = Montage1PData->ResolveFireMontage();
 		}
@@ -1189,6 +1389,7 @@ void UCombatComponent::PlayOwnerThirdPersonFireMontage()
 
 void UCombatComponent::Local_FireWeapon()
 {
+	if (StopFireIfWeaponBlocked()) return;
 	if (!IsValid(WeaponData) || !IsValid(CurrentWeapon))
 	{
 		return;
@@ -1198,7 +1399,7 @@ void UCombatComponent::Local_FireWeapon()
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 
 	bool bPlayedArmsFire = false;
-	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
+	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon)))
 	{
 		UAnimMontage* Montage1P = MontageData->ResolveFireMontage();
 		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
@@ -1230,7 +1431,7 @@ void UCombatComponent::Local_FireWeapon()
 	bool bPlayedWeaponFire = false;
 	if (CurrentWeapon->WeaponKind != EWeaponKind::Melee)
 	{
-		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
 		{
 			if (UAnimMontage* WeaponFire = WeaponMontageData->ResolveFireMontage())
 			{
@@ -1393,6 +1594,7 @@ int32 UCombatComponent::AdvanceWeaponIndex()
 
 void UCombatComponent::FireTimerFinished()
 {
+	if (StopFireIfWeaponBlocked()) return;
 	if (!IsValid(CurrentWeapon))
 	{
 		return;
@@ -1510,6 +1712,7 @@ namespace FPSBallistics
 
 void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>& Hits)
 {
+	if (StopFireIfWeaponBlocked()) return;
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponKind == EWeaponKind::Bomb) return;
 	if (CurrentWeapon->WeaponKind == EWeaponKind::Throwable) return;
@@ -1645,7 +1848,7 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const TArray<FHitResu
 		}
 	}
 
-	if (const FMontageData* MontageData = WeaponData->ThirdPersonMontages.Find(CurrentWeapon->WeaponType))
+	if (const FMontageData* MontageData = WeaponData->ThirdPersonMontages.Find(ResolveAnimTag(CurrentWeapon)))
 	{
 		UAnimMontage* Montage3P = MontageData->ResolveFireMontage();
 		USkeletalMeshComponent* Mesh3P = IPlayerInterface::Execute_GetMesh3P(OwningPawn);
@@ -1760,7 +1963,7 @@ void UCombatComponent::Initiate_ReloadWeapon(bool bFastDrop)
 			PC->StopSprinting();
 		}
 	}
-	// 短按 R = EmptyReloadMontage（保留半匣）；长按 R = TacticalReloadMontage（丢匣）
+	// single R = Empty (keep mag); double R = Tactical (drop mag); hold R = MagCheck
 	const EReloadType ReloadType = bFastDrop ? EReloadType::Tactical : EReloadType::Empty;
 
 	UAnimMontage* ReloadMontage = nullptr;
@@ -1778,13 +1981,15 @@ void UCombatComponent::Initiate_ReloadWeapon(bool bFastDrop)
 	ResetRecoilPattern();
 	Server_ReloadWeapon(ReloadType, bFastDrop);
 	bool bPlayed = false;
-	if (bHasMontage)
-	{
-		bPlayed = PlayReloadMontage(true, ReloadType);
-	}
-	if (!bPlayed)
+	// KIN soft-wired ArmsReload* sequences must win over shared RAR WeaponData montages,
+	// otherwise Mesh1P gets a RAR WEP montage (wrong skeleton) and Mag stays glued.
+	if (bHasSeq)
 	{
 		bPlayed = PlayReloadSequences(true, ReloadType);
+	}
+	if (!bPlayed && bHasMontage)
+	{
+		bPlayed = PlayReloadMontage(true, ReloadType);
 	}
 	if (!bPlayed)
 	{
@@ -1794,9 +1999,14 @@ void UCombatComponent::Initiate_ReloadWeapon(bool bFastDrop)
 	else
 	{
 		// Multicast_Reload skips owner — drive Mesh3P reload for ToggleThirdPerson / body view.
-		if (!PlayReloadMontage(false, ReloadType))
+		bool bPlayed3P = false;
+		if (bHasSeq)
 		{
-			PlayReloadSequences(false, ReloadType);
+			bPlayed3P = PlayReloadSequences(false, ReloadType);
+		}
+		if (!bPlayed3P)
+		{
+			PlayReloadMontage(false, ReloadType);
 		}
 	}
 }
@@ -1835,11 +2045,11 @@ bool UCombatComponent::GetReloadMontage(bool bFirstPerson, EReloadType ReloadTyp
 	const TMap<FGameplayTag, FMontageData>& ViewMontages = bFirstPerson
 		? WeaponData->FirstPersonMontages
 		: WeaponData->ThirdPersonMontages;
-	const FMontageData* MontageData = ViewMontages.Find(CurrentWeapon->WeaponType);
+	const FMontageData* MontageData = ViewMontages.Find(ResolveAnimTag(CurrentWeapon));
 	if (!MontageData && !bFirstPerson)
 	{
 		// No authored 3P reload — fall back to 1P clip on body mesh (UE4/5 compatible skeletons).
-		MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType);
+		MontageData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon));
 	}
 
 	const UAttachmentData* Mag = CurrentWeapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Magazine);
@@ -1915,15 +2125,7 @@ bool UCombatComponent::PlayReloadSequences(bool bFirstPerson, EReloadType Reload
 				? CurrentWeapon->WeaponReloadEmptySequence.Get()
 				: CurrentWeapon->WeaponReloadTacticalSequence.Get();
 		}
-		if (IsValid(WeaponSeq))
-		{
-			// 空仓枪身序列由 PlayMagazineReload 用 PlayAnimation 播到 1P 和 3P，这里再播会叠一层。
-			const bool bEmptyBody = Resolved == EReloadType::Empty && WeaponSeq == CurrentWeapon->WeaponReloadEmptySequence;
-			if (!bEmptyBody)
-			{
-				AWeapon::PlayWeaponSequence(CurrentWeapon->GetMesh1P(), WeaponSeq);
-			}
-		}
+		// Body Mag socket/bone motion is owned by PlayMagazineReload (Empty + Tactical).
 		CurrentWeapon->PlayMagazineReload(Resolved);
 	}
 
@@ -1953,7 +2155,7 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson, EReloadType ReloadTy
 	// owning first-person mesh; the third-person gun leaves the magazine floating.
 	if (bFirstPerson)
 	{
-		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
 		{
 			// 枪身也按同一个种类挑，保证手和弹匣是成对的那两条动画
 			EReloadType WeaponReloadType = ReloadType;
@@ -2118,6 +2320,22 @@ bool UCombatComponent::CancelReload()
 	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(OwningPawn->GetController()))
 	{
 		PC->RefreshMovementSpeed();
+	}
+	return true;
+}
+
+bool UCombatComponent::StopFireIfWeaponBlocked()
+{
+	const AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetOwner());
+	if (!Shooter || !Shooter->IsWeaponFireBlocked()) return false;
+	// Cancel queued automatic/burst/buffered shots; the trigger must be pressed again
+	// after the gun is lowered. Run before animation, effects, ammo or server damage.
+	bTriggerPressed = false;
+	BurstShotsRemaining = 0;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(FireTimer);
+		World->GetTimerManager().ClearTimer(SprintFireBufferTimer);
 	}
 	return true;
 }
@@ -2296,14 +2514,14 @@ UAnimMontage* UCombatComponent::ResolveThrowPinPullMontage(bool bFirstPerson) co
 	const TMap<FGameplayTag, FMontageData>& ViewMontages = bFirstPerson
 		? WeaponData->FirstPersonMontages
 		: WeaponData->ThirdPersonMontages;
-	if (const FMontageData* MontageData = ViewMontages.Find(CurrentWeapon->WeaponType))
+	if (const FMontageData* MontageData = ViewMontages.Find(ResolveAnimTag(CurrentWeapon)))
 	{
 		if (UAnimMontage* PinPull = MontageData->ResolveEquipMontage())
 		{
 			return PinPull;
 		}
 	}
-	if (const FMontageData* SharedData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+	if (const FMontageData* SharedData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
 	{
 		return SharedData->ResolveEquipMontage();
 	}
@@ -2331,7 +2549,7 @@ bool UCombatComponent::PlayThrowPinPull(bool bFirstPerson)
 
 	if (bFirstPerson)
 	{
-		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
 		{
 			if (UAnimMontage* WeaponPinPull = WeaponMontageData->ResolveEquipMontage())
 			{
@@ -2399,7 +2617,7 @@ void UCombatComponent::PlayThrowMontage(bool bFirstPerson, bool bHighThrow)
 	const TMap<FGameplayTag, FMontageData>& ViewMontages = bFirstPerson
 		? WeaponData->FirstPersonMontages
 		: WeaponData->ThirdPersonMontages;
-	const FMontageData* MontageData = ViewMontages.Find(CurrentWeapon->WeaponType);
+	const FMontageData* MontageData = ViewMontages.Find(ResolveAnimTag(CurrentWeapon));
 	UAnimMontage* ThrowMontage = MontageData ? MontageData->ResolveThrowMontage(bHighThrow) : nullptr;
 	USkeletalMeshComponent* Mesh = bFirstPerson
 		? IPlayerInterface::Execute_GetMesh1P(Owner)
@@ -2470,6 +2688,15 @@ void UCombatComponent::CommitThrow()
 	{
 		Server_CommitThrow();
 	}
+
+	// 没有投掷蒙太奇时结束回调不会来，状态会一直占着，数字键切不回枪。
+	const bool bThrowAnimPlaying = IsValid(ActiveThrowAnim.Get())
+		&& IsValid(ActiveThrowMontage.Get())
+		&& ActiveThrowAnim->Montage_IsPlaying(ActiveThrowMontage.Get());
+	if (!bThrowAnimPlaying)
+	{
+		FinishThrow();
+	}
 }
 
 void UCombatComponent::SpawnThrownProjectile()
@@ -2539,7 +2766,7 @@ void UCombatComponent::OnThrowMontageEnded(UAnimMontage* Montage, bool bInterrup
 	UAnimMontage* ThrowMontage = nullptr;
 	if (IsValid(CurrentWeapon) && IsValid(WeaponData))
 	{
-		if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
+		if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon)))
 		{
 			ThrowMontage = MontageData->ResolveThrowMontage(bThrowHigh);
 		}
@@ -2884,7 +3111,17 @@ AWeapon* UCombatComponent::FindWeaponForSlot(EWeaponSlot Slot) const
 void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 {
 	CancelInspect();
-	if (bThrowInProgress) return;
+	if (bThrowInProgress)
+	{
+		const bool bMontagePlaying = IsValid(ActiveThrowAnim.Get())
+			&& IsValid(ActiveThrowMontage.Get())
+			&& ActiveThrowAnim->Montage_IsPlaying(ActiveThrowMontage.Get());
+		if (bMontagePlaying || bThrowPinPulling)
+		{
+			return;
+		}
+		FinishThrow();
+	}
 	AWeapon* Weapon = FindWeaponForSlot(Slot);
 	if (!IsValid(Weapon) || Weapon == CurrentWeapon) return;
 	if (Weapon->WeaponKind == EWeaponKind::Throwable && Weapon->Ammo <= 0) return;
@@ -3011,37 +3248,188 @@ bool UCombatComponent::Initiate_Hotkey(int32 Hotkey)
 
 
 
+// Prefer MagCheck montage. No MagCheck asset => no-op (free inspect removed).
+static UAnimMontage* ResolveKinMagCheckMontage(AWeapon* Weapon, bool bWeaponMesh)
+{
+	if (!IsValid(Weapon)) return nullptr;
+	const FString Cls = Weapon->GetClass() ? Weapon->GetClass()->GetName() : FString();
+	struct FKinMagCheck { const TCHAR* Match; const TCHAR* ArmsMontage; const TCHAR* ArmsSeq; const TCHAR* WpnMontage; const TCHAR* WpnSeq; };
+	static const FKinMagCheck Table[] = {
+		{ TEXT("Weapon_TR15"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/TR15/AM_RT_A_FP_TR15_Mag_Check.AM_RT_A_FP_TR15_Mag_Check"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/TR15/RT_A_FP_TR15_Mag_Check.RT_A_FP_TR15_Mag_Check"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Weapon/AM_W_TR15_Mag_Check.AM_W_TR15_Mag_Check"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Weapon/A_W_TR15_Mag_Check.A_W_TR15_Mag_Check") },
+		{ TEXT("Weapon_AK105"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/AK105/AM_RT_A_FP_AK105_MagCheck.AM_RT_A_FP_AK105_MagCheck"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/AK105/RT_A_FP_AK105_MagCheck.RT_A_FP_AK105_MagCheck"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/AK105/Weapon/AM_W_AK105_MagCheck.AM_W_AK105_MagCheck"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/AK105/Weapon/A_W_AK105_MagCheck.A_W_AK105_MagCheck") },
+		{ TEXT("Weapon_Mk14"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Mk14EBR/AM_RT_A_FP_Mk14EBR_MagCheck.AM_RT_A_FP_Mk14EBR_MagCheck"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Mk14EBR/RT_A_FP_Mk14EBR_MagCheck.RT_A_FP_Mk14EBR_MagCheck"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Mk14EBR/Weapon/AM_W_Mk14EBR_MagCheck.AM_W_Mk14EBR_MagCheck"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/Mk14EBR/Weapon/A_W_Mk14EBR_MagCheck.A_W_Mk14EBR_MagCheck") },
+		{ TEXT("Weapon_MKR9"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MKR9/AM_RT_A_FP_MKR9_Mag_Check.AM_RT_A_FP_MKR9_Mag_Check"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/MKR9/RT_A_FP_MKR9_Mag_Check.RT_A_FP_MKR9_Mag_Check"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MKR9/Weapon/AM_W_MKR9_Mag_Check.AM_W_MKR9_Mag_Check"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/MKR9/Weapon/A_W_MKR9_Mag_Check.A_W_MKR9_Mag_Check") },
+		{ TEXT("Weapon_SRM12"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/AM_RT_A_FP_SRM-12_FP_Mag_Check.AM_RT_A_FP_SRM-12_FP_Mag_Check"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/SRM12/RT_A_FP_SRM-12_FP_Mag_Check.RT_A_FP_SRM-12_FP_Mag_Check"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/SRM-12/Weapon/AM_W_SRM-12_Mag_Check.AM_W_SRM-12_Mag_Check"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/SRM-12/Weapon/A_W_SRM-12_Mag_Check.A_W_SRM-12_Mag_Check") },
+		{ TEXT("Weapon_Viper"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/AM_RT_A_FP_WK-11_Viper_Mag_Check.AM_RT_A_FP_WK-11_Viper_Mag_Check"),
+		  TEXT("/Game/FPS/Weapon/Kinemation/Anims/Viper/RT_A_FP_WK-11_Viper_Mag_Check.RT_A_FP_WK-11_Viper_Mag_Check"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/WK-11_Viper/Weapon/AM_W_WK-11_Viper_Mag_Check.AM_W_WK-11_Viper_Mag_Check"),
+		  TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/WK-11_Viper/Weapon/A_W_WK-11_Viper_Mag_Check.A_W_WK-11_Viper_Mag_Check") },
+	};
+	for (const FKinMagCheck& Row : Table)
+	{
+		if (!Cls.Contains(Row.Match)) continue;
+		const TCHAR* MontPath = bWeaponMesh ? Row.WpnMontage : Row.ArmsMontage;
+		const TCHAR* SeqPath = bWeaponMesh ? Row.WpnSeq : Row.ArmsSeq;
+		if (MontPath)
+		{
+			if (UAnimMontage* M = LoadObject<UAnimMontage>(nullptr, MontPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+			{
+				return M;
+			}
+		}
+		if (SeqPath)
+		{
+			if (UAnimSequence* Seq = LoadObject<UAnimSequence>(nullptr, SeqPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+			{
+				if (UAnimMontage* Dyn = UAnimMontage::CreateSlotAnimationAsDynamicMontage(Seq, FName(TEXT("DefaultSlot")), 0.15f, 0.15f))
+				{
+					Dyn->AddToRoot();
+					return Dyn;
+				}
+			}
+		}
+		break;
+	}
+	return nullptr;
+}
+
+static UAnimMontage* ResolveMagCheckMontage(UAnimMontage* InspectMontage, bool bWeaponMesh)
+{
+	TArray<FString> Candidates;
+	if (IsValid(InspectMontage))
+	{
+		const FString Pkg = FPackageName::GetLongPackagePath(InspectMontage->GetOutermost()->GetName());
+		const FString Name = InspectMontage->GetName();
+		if (Name.Contains(TEXT("Inspect")))
+		{
+			const FString MagName = Name.Replace(TEXT("Inspect"), TEXT("MagCheck"));
+			Candidates.AddUnique(Pkg / MagName + TEXT(".") + MagName);
+		}
+		if (Name.Contains(TEXT("RAR")) || Name.Contains(TEXT("AssaultRifle")))
+		{
+			Candidates.AddUnique(bWeaponMesh
+				? FString(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Weapon/Animations/AM_RAR_FP_WEP_AssaultRifle_MagCheck.AM_RAR_FP_WEP_AssaultRifle_MagCheck"))
+				: FString(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/AM_RAR_FP_PCH_AssaultRifle_MagCheck.AM_RAR_FP_PCH_AssaultRifle_MagCheck")));
+		}
+	}
+	else if (!bWeaponMesh)
+	{
+		Candidates.AddUnique(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/AM_RAR_FP_PCH_AssaultRifle_MagCheck.AM_RAR_FP_PCH_AssaultRifle_MagCheck"));
+	}
+
+	for (const FString& Path : Candidates)
+	{
+		if (UAnimMontage* M = LoadObject<UAnimMontage>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			return M;
+		}
+	}
+
+	// Character MagCheck may only exist as AnimSequence — wrap with inspect slot if possible.
+	if (!bWeaponMesh)
+	{
+		const FString SeqPath = TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Actions/A_RAR_FP_PCH_AssaultRifle_MagCheck.A_RAR_FP_PCH_AssaultRifle_MagCheck");
+		if (UAnimSequence* Seq = LoadObject<UAnimSequence>(nullptr, *SeqPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			const FName Slot = (IsValid(InspectMontage) && InspectMontage->SlotAnimTracks.Num() > 0)
+				? InspectMontage->SlotAnimTracks[0].SlotName
+				: FName(TEXT("DefaultSlot"));
+			const float InBlend = IsValid(InspectMontage) ? InspectMontage->BlendIn.GetBlendTime() : 0.15f;
+			const float OutBlend = IsValid(InspectMontage) ? InspectMontage->BlendOut.GetBlendTime() : 0.15f;
+			if (UAnimMontage* Dyn = UAnimMontage::CreateSlotAnimationAsDynamicMontage(Seq, Slot, InBlend, OutBlend))
+			{
+				Dyn->AddToRoot();
+				return Dyn;
+			}
+		}
+	}
+	return nullptr;
+}
+
 void UCombatComponent::Initiate_VersionWeapon()
 {
 	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
-	// 只有空闲时能检视：不在换弹、拉栓、切枪、开火、开镜
+	// Mag check only while idle (hold-R). Free inspect key removed.
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Idle) return;
-	if (IsReloading()) return;   // 换弹期间禁止检视（与 Idle 检查双保险）
+	if (IsReloading()) return;
 	if (bAiming || bTriggerPressed) return;
-	if (IsInspecting()) return;   // 正在检视就不重新开始
+	if (IsInspecting()) return;
 
-	const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType);
+	const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon));
 	UAnimMontage* InspectMontage = MontageData ? MontageData->InspectMontage1P.Get() : nullptr;
 	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
 	UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
-	if (!IsValid(InspectMontage) || !IsValid(AnimInstance)) return;
-	if (AnimInstance->Montage_Play(InspectMontage) <= 0.f) return;
+	if (!IsValid(AnimInstance)) return;
 
-	ActiveInspectMontage = InspectMontage;
+	// KIN retargeted Mag_Check on shared arms DefaultSlot first; RAR Inspect/MagCheck fallback second.
+	UAnimMontage* MagCheckMontage = ResolveKinMagCheckMontage(CurrentWeapon, false);
+	if (!IsValid(MagCheckMontage))
+	{
+		MagCheckMontage = ResolveMagCheckMontage(InspectMontage, false);
+	}
+	if (!IsValid(MagCheckMontage))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[MagCheck] no MagCheck montage for %s"), *GetNameSafe(CurrentWeapon));
+		return;
+	}
+	const float Played = AnimInstance->Montage_Play(MagCheckMontage);
+	if (Played <= 0.f)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[MagCheck] Montage_Play failed for %s (slot/skeleton?). mont=%s"),
+			*GetNameSafe(CurrentWeapon), *MagCheckMontage->GetName());
+		return;
+	}
+
+	CurrentWeapon->UpdateMagazineAmmoVisuals();
+	ActiveInspectMontage = MagCheckMontage;
 	InspectWeapon = CurrentWeapon;
 	ActiveInspectWeaponMontage = nullptr;
 
-	// 枪身检视（可选）：WeaponMontages 里也填了就同时播
-	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
 	{
+		// RAR-like: drive Mesh1P Mag socket/bone; Mag DA stays attached (no hand reparent).
+		// Use PlayWeaponMontageOrSequence so guns without AnimBP still PlayAnimation the sequence.
 		USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
-		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
-		if (IsValid(WeaponMontageData->InspectMontage1P) && IsValid(WeaponAnim)
-			&& WeaponAnim->Montage_Play(WeaponMontageData->InspectMontage1P) > 0.f)
+		UAnimMontage* WeaponMagCheck = ResolveKinMagCheckMontage(CurrentWeapon, true);
+		if (!IsValid(WeaponMagCheck))
 		{
-			ActiveInspectWeaponMontage = WeaponMontageData->InspectMontage1P;
+			if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
+			{
+				WeaponMagCheck = ResolveMagCheckMontage(WeaponMontageData->InspectMontage1P.Get(), true);
+			}
+		}
+		if (IsValid(WeaponMagCheck) && IsValid(WeaponMesh))
+		{
+			AWeapon::PlayWeaponMontageOrSequence(WeaponMesh, WeaponMagCheck);
+			ActiveInspectWeaponMontage = WeaponMagCheck;
+			UE_LOG(LogTemp, Log, TEXT("[MagCheck] weapon mesh playing %s"), *WeaponMagCheck->GetName());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[MagCheck] no weapon MagCheck anim for %s"), *GetNameSafe(CurrentWeapon));
 		}
 	}
+	UE_LOG(LogTemp, Log, TEXT("[MagCheck] playing %s (%.2fs)"), *MagCheckMontage->GetName(), Played);
 }
 
 bool UCombatComponent::IsInspecting() const
@@ -3340,7 +3728,7 @@ bool UCombatComponent::IsViewedFirstPersonLocally() const
 void UCombatComponent::PlaySpectated1PFire()
 {
 	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
-	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(CurrentWeapon->WeaponType))
+	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon)))
 	{
 		UAnimMontage* Montage1P = MontageData->ResolveFireMontage();
 		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
@@ -3349,7 +3737,7 @@ void UCombatComponent::PlaySpectated1PFire()
 	}
 	if (CurrentWeapon->WeaponKind != EWeaponKind::Melee)
 	{
-		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
 		{
 			UAnimMontage* WeaponFire = WeaponMontageData->ResolveFireMontage();
 			USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
@@ -3368,7 +3756,7 @@ void UCombatComponent::PlaySpectated1PReload(EReloadType ReloadType)
 	{
 		ArmsAnim->Montage_Play(ArmsMontage);
 	}
-	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(CurrentWeapon->WeaponType))
+	if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
 	{
 		EReloadType WeaponReloadType = ReloadType;
 		if (WeaponReloadType == EReloadType::First && !IsValid(WeaponMontageData->FirstReloadMontage))

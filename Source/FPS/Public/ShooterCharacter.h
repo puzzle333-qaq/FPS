@@ -14,6 +14,7 @@
 #include "ShooterCharacter.generated.h"
 
 class UCombatComponent;
+class UPouchInventoryComponent;
 class UCameraComponent;
 class USpringArmComponent;
 class UInputAction;
@@ -26,6 +27,7 @@ class USoundAttenuation;
 class USkeletalMesh;
 class UMaterialInterface;
 class UNiagaraSystem;
+namespace WeaponObstacle { struct FProbeResult; }
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
 // 第 10 步：侧瞄开/关（只在本地）
@@ -124,7 +126,7 @@ public:
 	/** PlayerInterface */
 
 	virtual void BeginPlay() override;
-	virtual void BeginDestroy() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintCallable)
 	FRotator GetFixedAimRotation()const;
@@ -132,11 +134,11 @@ public:
 	UPROPERTY(BlueprintReadOnly,Category = "FPS|FABRIK")
 	FTransform FABRIK_SocketTransform;
 
-	// First-person left-hand FABRIK target (runtime unused). C++ keeps Identity/Alpha=0; grip from hold anims.
+	// First-person left-hand FABRIK target in Mesh1P component space (GripSocket snap).
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
 	FTransform FABRIK_SocketTransform1P;
 
-	// First-person FABRIK alpha: always 0 (design: no 1P FABRIK; grip from per-weapon hold anims).
+	// First-person FABRIK alpha. 1 when a grip/weapon hand socket exists; 0 while reloading / melee.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
 	float FABRIK_Alpha1P = 0.f;
 
@@ -155,6 +157,9 @@ public:
 	// 左手 IK 淡入淡出速度（越大越快，10 大约 0.2~0.3 秒）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FABRIK", meta = (ClampMin = "0"))
 	float LeftHandIKBlendSpeed = 10.f;
+
+	void SetWeaponAttachDebug(bool bEnabled) { bWeaponAttachDebug = bEnabled; }
+	void DrawWeaponAttachDebug() const;
 
 	UFUNCTION(BlueprintCallable)
 	bool HasCurrentWeapon() const;
@@ -272,10 +277,33 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
 	void AddVisionFlashWash(float Amount);
 
+	// 0..1 whiteout, or ghosting when this character has flash goggles.
+	void ReceiveFlashbang(float Strength);
+
+	UFUNCTION(Client, Reliable)
+	void Client_ReceiveFlashbang(float Strength);
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+	void SetHasFlashGoggles(bool bEnable);
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetHasFlashGoggles(bool bEnable);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
+	bool HasFlashGoggles() const { return bHasFlashGoggles; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|HitFeedback")
+	float GetHitBloodAlpha() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
+	float GetFlashWhiteAlpha() const { return FlashWhite; }
+
+	void AddHitBlood();
+
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
 	void RefillVisionBattery(float Amount = -1.f);
 
-	// Radar accessory: MatchHUD shows radar only while true. Console GrantRadar.
+	// Radar accessory. Console GrantRadar.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Radar")
 	void SetHasRadar(bool bEnable);
 	UFUNCTION(Server, Reliable)
@@ -396,6 +424,7 @@ public:
 	// 每发开火由 CombatComponent 调用：给第一人称手臂加一次视觉后坐（镜头空间的位移和旋转）
 	void AddVisualRecoil(const FVector& KickLocation, const FRotator& KickRotation);
 	UCombatComponent* GetCombatComponent() const { return Combat; }
+	UPouchInventoryComponent* GetPouch() const { return Pouch; }
 	float GetDefaultFieldOfView() const { return DefaultFOV; }
 	// 设置里的 FOV（只改本机镜头）
 	void SetDefaultFieldOfView(float InFOV);
@@ -415,9 +444,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Lean")
 	float GetLeanAlpha() const { return LeanAlpha; }
 
-	// 1P 相机横移距离（cm）
+	// 1P 相机横移距离（cm）。Q/E 用这个距离，Alt+A/D 再乘 AltPeekLeanScale。侧倾角度两边一样。
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
 	float LeanCameraOffset = 30.f;
+
+	// Alt+A / Alt+D 往侧面跨出的距离倍数。不改变探头角度。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean", meta = (ClampMin = "1.0"))
+	float AltPeekLeanScale = 2.f;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Lean")
+	bool IsAltPeekCrouching() const { return bAltPeekCrouch; }
 
 	// 1P 相机侧倾角度（度）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Lean")
@@ -586,6 +622,8 @@ public:
 	float GetArmorSpeedMultiplier() const;
 	float GetWeaponBlockAlpha() const { return WeaponBlockAlpha; }
 	bool IsWeaponBlocked() const { return WeaponBlockAlpha > 0.55f; }
+	bool IsWeaponFireBlocked() const;
+	friend class FWeaponObstacleFireGateTest;
 	float GetMuzzleDipAlpha() const { return MuzzleDipAlpha; }
 	bool IsMuzzleDipped() const { return MuzzleDipAlpha > 0.35f; }
 	bool IsArmInjured() const { return bArmInjured; }
@@ -662,6 +700,10 @@ public:
 	// Equipped radar tablet / tactical map accessory.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_HasRadar, Category = "FPS|Radar")
 	bool bHasRadar = false;
+
+	// Flash goggles: flashbang ghosts the screen instead of whiteout. Console `Goggles 1`.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated, Category = "FPS|Vision")
+	bool bHasFlashGoggles = false;
 
 	// Soft ref; defaults to RAR WatchCheck montage if null.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Watch")
@@ -777,9 +819,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Look")
 	TSoftObjectPtr<USkeletalMesh> PoliceSleeveMesh1P;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
-	float WeaponBlockRaisePitch = 28.f;
+	float WeaponBlockRaisePitch = 85.f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
-	float WeaponBlockRetract = 18.f;
+	float WeaponBlockRetract = 4.f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
 	float WeaponBlockInterpSpeed = 10.f;
 
@@ -817,6 +859,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly , Category = "FPS|Combat")
 	TObjectPtr<UCombatComponent> Combat;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Pouch")
+	TObjectPtr<UPouchInventoryComponent> Pouch;
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void OnAim(bool bIsAiming);
@@ -1066,21 +1111,37 @@ private:
 	int32 LeanInputDir = 0;
 	bool bLeanLeftHeld = false;
 	bool bLeanRightHeld = false;
+	bool bAltPeekCrouch = false;
+	int32 AltPeekDir = 0;
+	float LeanDistanceScale = 1.f;
+	double LastFireModeSwitchTime = -1.0;
+	void UpdateAltPeek();
 	FVector CameraBaseLocation = FVector::ZeroVector;
 	FRotator CameraBaseRotation = FRotator::ZeroRotator;
 	bool bCameraBaseCaptured = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> LeanRuntimeIMC;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> FireModeRuntimeIMC;
+	void EnsureFireModeInput(class UEnhancedInputComponent* InputComp);
 	void Input_ReloadWeapon_Started();
 	void Input_ReloadWeapon_Completed();
 	void Input_ReloadWeapon(); // legacy alias -> Started
 	void OnReloadHoldThreshold();
+	void OnReloadSingleClickTimeout();
+	void ClearReloadGestureTimers();
 	FTimerHandle ReloadHoldTimer;
+	FTimerHandle ReloadDoubleClickTimer;
 	bool bReloadKeyHeld = false;
 	bool bReloadHoldTriggered = false;
+	bool bReloadAwaitingDouble = false;
+	bool bReloadDoubleClick = false;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Reload", meta = (ClampMin = "0.05"))
 	float ReloadHoldThreshold = 0.35f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Reload", meta = (ClampMin = "0.05"))
+	float ReloadDoubleClickWindow = 0.28f;
 	void Input_SwitchFireMode();
 	void Input_SwitchZoom();
 	// 第 12 步：侧瞄是切档循环里的一档（主镜各档 -> 侧瞄 -> 第一档），不再有单独按键
@@ -1122,6 +1183,7 @@ private:
 	// 本地玩家每帧把镜头 FOV 插值到开镜目标或默认值
 	void UpdateAimFieldOfView(float DeltaTime);
 
+	bool bWeaponAttachDebug = false;
 	bool bWeaponFirstReplicated;
 	FRotator StartingAimRotation;
 
@@ -1174,6 +1236,7 @@ private:
 	void AbortServerHeal();
 
 	void UpdateWeaponObstacle(float DeltaTime);
+	WeaponObstacle::FProbeResult ProbeWeaponObstacle() const;
 	void SpawnBloodFootprint();
 	UFUNCTION(NetMulticast, Unreliable)
 	void Multicast_NotifyBloodyFeet();
@@ -1208,6 +1271,8 @@ private:
 	void ApplyFactionArms1P();
 	void ApplyFactionSleeves1P();
 	void EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkeletalMesh* SourceMesh);
+	/** Strip mesh-only sockets that shadow animated gun bones (ik_hand_gun). Never promote those bones. */
+	void EnsureAnimatedGunAttachSockets(USkeletalMesh* ArmsMesh);
 	/** Copy Manny/default Mesh3P grip sockets onto Bandits body (weapon_r / RifleSocket* / PistolSocket*). */
 	void EnsureMesh3PGripSockets(USkeletalMesh* BodyMesh, USkeletalMesh* SourceMesh, USkeletalMeshComponent* LiveSourceComp = nullptr);
 	void EnsureFactionLookDefaults();
@@ -1245,6 +1310,13 @@ private:
 
 	float VisionBatterySeconds = 60.f;
 	float VisionFlashWash = 0.f;
+	float FlashWhite = 0.f;
+	float FlashGhost = 0.f;
+	float HitBloodFlash = 0.f;
+	float HitBloodTail = 0.f;
+	bool bGhostPostProcess = false;
+	void UpdateScreenEffects(float DeltaTime);
+	void ApplyFlashGhostPostProcess();
 	float VisionOverlayRefreshAcc = 0.f;
 	ETacticalVisionMode AppliedVisionMode = ETacticalVisionMode::Off;
 	TWeakObjectPtr<UMaterialInterface> ActiveVisionBlendable;

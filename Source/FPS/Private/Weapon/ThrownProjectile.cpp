@@ -6,8 +6,11 @@
 #include "FPSTraceChannels.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Controller.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -211,7 +214,32 @@ void AThrownProjectile::ApplyFlashWash()
 			const float Range = FMath::Max(1.f, Radius - InnerRadius);
 			Amount *= 1.f - (Dist - InnerRadius) / Range;
 		}
-		Char->AddVisionFlashWash(FMath::Max(0.4f, Amount));
+		float Facing = 0.35f;
+		if (const AController* Viewer = Char->GetController())
+		{
+			FVector ViewLoc;
+			FRotator ViewRot;
+			Viewer->GetPlayerViewPoint(ViewLoc, ViewRot);
+			const FVector ToFlash = (Origin - ViewLoc).GetSafeNormal();
+			const float Dot = FVector::DotProduct(ViewRot.Vector(), ToFlash);
+			if (Dot >= 0.35f) Facing = 1.f;
+			else if (Dot >= -0.1f) Facing = 0.42f;
+			else Facing = 0.12f;
+		}
+
+		FCollisionQueryParams SightParams(SCENE_QUERY_STAT(ThrownFlashSight), false, this);
+		SightParams.AddIgnoredActor(this);
+		SightParams.AddIgnoredActor(Char);
+		FHitResult SightHit;
+		const FVector Eye = Char->GetPawnViewLocation();
+		if (World->LineTraceSingleByChannel(SightHit, Origin, Eye, ECC_Visibility, SightParams))
+		{
+			continue;
+		}
+
+		const float Strength = FMath::Clamp((Amount / 2.5f) * Facing, 0.f, 1.f);
+		if (Strength < 0.08f) continue;
+		Char->Client_ReceiveFlashbang(Strength);
 	}
 }
 
@@ -285,6 +313,22 @@ void AThrownProjectile::ApplyFragDamage()
 
 AThrownFlash::AThrownFlash()
 {
+	// The held weapon and the projectile are separate actors. Replace the inherited
+	// placeholder sphere with the released flashbang body (without its fuse assembly).
+	Mesh->SetStaticMesh(nullptr);
+	Mesh->SetHiddenInGame(true);
+	FlashMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("FlashMesh"));
+	FlashMesh->SetupAttachment(Collision);
+	FlashMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FlashMesh->SetGenerateOverlapEvents(false);
+	FlashMesh->SetCastShadow(true);
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> FlashBody(
+		TEXT("/Game/FPSTP/Content/Weapons/Grenades/GrenadeList/FlashGrenade/SkeletalMesh/SK_FlashGrenadeWithoutFuse.SK_FlashGrenadeWithoutFuse"));
+	if (FlashBody.Succeeded())
+	{
+		FlashMesh->SetSkeletalMesh(FlashBody.Object);
+	}
+
 	EffectType = EThrownEffect::Flash;
 	FuseTime = 1.4f;
 	bDetonateOnImpact = false;
@@ -292,6 +336,13 @@ AThrownFlash::AThrownFlash()
 	InnerRadius = 200.f;
 	DamageRadius = 900.f;
 	bRequireLineOfSight = true;
+}
+
+void AThrownFlash::OnDetonate_Implementation()
+{
+	// OnDetonate is multicast, so the released body disappears on every client.
+	if (IsValid(FlashMesh)) FlashMesh->SetHiddenInGame(true);
+	Super::OnDetonate_Implementation();
 }
 
 AThrownMolotov::AThrownMolotov()

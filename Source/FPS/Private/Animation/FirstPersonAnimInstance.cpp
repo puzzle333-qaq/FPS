@@ -1,6 +1,7 @@
-﻿#include "Animation/FirstPersonAnimInstance.h"
+#include "Animation/FirstPersonAnimInstance.h"
 
 #include "ShooterCharacter.h"
+#include "ShooterPlayerController.h"
 #include "CombatComponent.h"
 #include "Weapon/Weapon.h"
 #include "WeaponData.h"
@@ -60,6 +61,11 @@ namespace RarGripAimPose_Private
 	}
 }
 
+void UFirstPersonAnimInstance::NativeInitializeAnimation()
+{
+	Super::NativeInitializeAnimation();
+}
+
 void UFirstPersonAnimInstance::ForceShotgunRawPose1P()
 {
 	// ABP_FirstPerson AnimGraph is only: SequencePlayer -> BlendListByBool(bUseLeftHandHoldPose) -> Slot -> Root.
@@ -68,8 +74,6 @@ void UFirstPersonAnimInstance::ForceShotgunRawPose1P()
 	// bUseLeftHandHoldPose AFTER NativeUpdateAnimation — starve again here (ThreadSafe runs after BP).
 	bUseLeftHandHoldPose = false;
 	LeftHandHoldPose = nullptr;
-	FABRIK_Alpha1P = 0.f;
-
 	if (FStructProperty* AnimProperty = FindFProperty<FStructProperty>(GetClass(), TEXT("CurrenrAnim")))
 	{
 		if (AnimProperty->Struct == FPlayerAnim::StaticStruct())
@@ -97,6 +101,7 @@ void UFirstPersonAnimInstance::ForceShotgunRawPose1P()
 void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
+	bRestoreFlashIdle1P = false;
 
 	AShooterCharacter* Shooter = Cast<AShooterCharacter>(TryGetPawnOwner());
 	if (!IsValid(Shooter))
@@ -106,7 +111,17 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	FABRIK_Socket1P = Shooter->FABRIK_SocketTransform1P;
-	FABRIK_Alpha1P = 0.f; // 1P FABRIK stays off (shotgun and all)
+	FABRIK_Alpha1P = Shooter->FABRIK_Alpha1P;
+
+	if (FBoolProperty* SprintProp = FindFProperty<FBoolProperty>(GetClass(), TEXT("bIsSprinting")))
+	{
+		bool bSprint = false;
+		if (const AShooterPlayerController* PC = Cast<AShooterPlayerController>(Shooter->GetController()))
+		{
+			bSprint = PC->IsSprinting() && Shooter->GetVelocity().SizeSquared2D() > 100.f;
+		}
+		SprintProp->SetPropertyValue_InContainer(this, bSprint);
+	}
 
 	UCombatComponent* Combat = Shooter->FindComponentByClass<UCombatComponent>();
 	if (!IsValid(Combat) || !IsValid(Combat->CurrentWeapon) || !IsValid(Combat->WeaponData))
@@ -114,8 +129,13 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		return;
 	}
 
-	const FPlayerAnim* WeaponAnim = Combat->WeaponData->FirstPersonAnims.Find(Combat->CurrentWeapon->WeaponType);
-	if (!WeaponAnim)
+	FPlayerAnim AnimCopy;
+	if (const FPlayerAnim* WeaponAnim = Combat->WeaponData->FirstPersonAnims.Find(Combat->ResolveAnimTag(Combat->CurrentWeapon)))
+	{
+		AnimCopy = *WeaponAnim;
+	}
+	Combat->CurrentWeapon->ApplyAuthoredArmAnims(AnimCopy);
+	if (!IsValid(AnimCopy.IdleAnim))
 	{
 		return;
 	}
@@ -123,27 +143,34 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	const EGripHoldStyle Style = Combat->CurrentWeapon->GetGripHoldStyle();
 	GripHoldStyle = Style;
 
-	UAnimSequence* DesiredIdle = WeaponAnim->IdleAnim.Get();
-	UAnimSequence* DesiredAimIdle = WeaponAnim->AimIdleAnim.Get();
+	UAnimSequence* DesiredIdle = AnimCopy.IdleAnim.Get();
+	UAnimSequence* DesiredAimIdle = AnimCopy.AimIdleAnim.Get();
 	if (Style == EGripHoldStyle::Grab)
 	{
-		if (IsValid(WeaponAnim->IdleAnim_Grab) && WeaponAnim->IdleAnim_Grab != WeaponAnim->LeftHandHoldPose_Grab)
+		if (IsValid(AnimCopy.IdleAnim_Grab) && AnimCopy.IdleAnim_Grab != AnimCopy.LeftHandHoldPose_Grab)
 		{
-			DesiredIdle = WeaponAnim->IdleAnim_Grab.Get();
+			DesiredIdle = AnimCopy.IdleAnim_Grab.Get();
 		}
-		if (IsValid(WeaponAnim->AimIdleAnim_Grab))
+		if (IsValid(AnimCopy.AimIdleAnim_Grab))
 		{
-			DesiredAimIdle = WeaponAnim->AimIdleAnim_Grab.Get();
+			DesiredAimIdle = AnimCopy.AimIdleAnim_Grab.Get();
 		}
-		LeftHandHoldPose = WeaponAnim->LeftHandHoldPose_Grab.Get();
+		LeftHandHoldPose = AnimCopy.LeftHandHoldPose_Grab.Get();
 	}
 	else
 	{
-		UAnimSequence* CradlePose = WeaponAnim->LeftHandHoldPose_Cradle.Get();
-		LeftHandHoldPose = (CradlePose && CradlePose != WeaponAnim->IdleAnim.Get()) ? CradlePose : nullptr;
+		UAnimSequence* CradlePose = AnimCopy.LeftHandHoldPose_Cradle.Get();
+		LeftHandHoldPose = (CradlePose && CradlePose != AnimCopy.IdleAnim.Get()) ? CradlePose : nullptr;
+	}
+	if (UAnimSequence* KineGripPose = Combat->CurrentWeapon->GetGripPoseAnim())
+	{
+		LeftHandHoldPose = KineGripPose;
 	}
 	bUseLeftHandHoldPose = IsValid(LeftHandHoldPose);
+	GripPoseWeight = FMath::Clamp(1.f - GetCurveValue(TEXT("Mask_Grip")), 0.f, 1.f);
 	ActiveIdleAnim = DesiredIdle;
+	bRestoreFlashIdle1P = Combat->CurrentWeapon->WeaponKind == EWeaponKind::Throwable
+		&& Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Flash);
 
 	if (RarGripAimPose_Private::IsRAR(Combat->CurrentWeapon))
 	{
@@ -164,14 +191,18 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 				{
 					Currenr->AimIdleAnim = DesiredAimIdle;
 				}
-				if (IsValid(WeaponAnim->SprintAnim))
+				if (IsValid(AnimCopy.SprintAnim))
 				{
-					Currenr->SprintAnim = WeaponAnim->SprintAnim.Get();
+					Currenr->SprintAnim = AnimCopy.SprintAnim.Get();
 				}
 				else if (!IsValid(Currenr->SprintAnim) && IsValid(DesiredIdle))
 				{
 					Currenr->SprintAnim = DesiredIdle;
 				}
+				// Mesh1P is on the camera. Look aim offset is Mesh3P only.
+				Currenr->AimOffset_Hip = nullptr;
+				Currenr->AimOffset_Aim = nullptr;
+
 			}
 		}
 	}
@@ -185,6 +216,30 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 void UFirstPersonAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
+
+	// After BlueprintUpdateAnimation, so an Event Graph copy cannot put aim offset back on Mesh1P.
+	if (FStructProperty* AnimProperty = FindFProperty<FStructProperty>(GetClass(), TEXT("CurrenrAnim")))
+	{
+		if (AnimProperty->Struct == FPlayerAnim::StaticStruct())
+		{
+			if (FPlayerAnim* Currenr = AnimProperty->ContainerPtrToValuePtr<FPlayerAnim>(this))
+			{
+				Currenr->AimOffset_Hip = nullptr;
+				Currenr->AimOffset_Aim = nullptr;
+				// BlueprintUpdateAnimation runs after NativeUpdateAnimation and can replace
+				// CurrenrAnim with an empty direct Flash-tag lookup. Restore the resolved
+				// Grenade/BP-authored idle immediately before the AnimGraph consumes it.
+				if (bRestoreFlashIdle1P && IsValid(ActiveIdleAnim))
+				{
+					Currenr->IdleAnim = ActiveIdleAnim;
+					if (!IsValid(Currenr->AimIdleAnim)) Currenr->AimIdleAnim = ActiveIdleAnim;
+					if (!IsValid(Currenr->SprintAnim)) Currenr->SprintAnim = ActiveIdleAnim;
+					LeftHandHoldPose = nullptr;
+					bUseLeftHandHoldPose = false;
+				}
+			}
+		}
+	}
 
 	// Runs AFTER BlueprintUpdateAnimation — defeats Event Graph restoring LeftHand / CurrenrAnim from DA.
 	AShooterCharacter* Shooter = Cast<AShooterCharacter>(TryGetPawnOwner());
@@ -213,4 +268,3 @@ void UFirstPersonAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSecond
 			*GetNameSafe(ActiveIdleAnim), bUseLeftHandHoldPose ? 1 : 0);
 	}
 }
-

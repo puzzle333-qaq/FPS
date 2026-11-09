@@ -6,6 +6,7 @@
 
 class USphereComponent;
 class UStaticMeshComponent;
+class USkeletalMeshComponent;
 class UProjectileMovementComponent;
 class UNiagaraSystem;
 class USoundBase;
@@ -122,6 +123,12 @@ class FPS_API AThrownFlash : public AThrownProjectile
 	GENERATED_BODY()
 public:
 	AThrownFlash();
+
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Throwable")
+	TObjectPtr<USkeletalMeshComponent> FlashMesh;
+
+	virtual void OnDetonate_Implementation() override;
 };
 
 /** MVP molotov projectile — impact burn stand-in (radial DoDamage). Full fire pool later. */

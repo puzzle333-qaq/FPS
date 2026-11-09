@@ -4,21 +4,22 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Loadout/LoadoutTypes.h"
-#include "Game/PoliceCriminalTypes.h"
 #include "ShooterPlayerController.generated.h"
 
+class AMissionDeployPoint;
+class UMissionFlowWidget;
+class ACoopCqbGameState;
 class UInputMappingContext;
 class UInputAction;
 class AWeapon;
-class UPauseMenuScreen;
-class UModeHudWidget;
-class UMatchHUD;
 class UCombatHudKeepAlive;
+class UScreenEffectOverlay;
 class UCombatStatusHud;
 class AGameStateBase;
-class UScoreboardScreen;
 class AShooterCharacter;
-class USettingsScreen;
+class ARangeLoadoutBench;
+class URangeLoadoutWidget;
+class UAttachmentData;
 struct FInputActionValue;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterSpectateChanged, bool, bIsSpectating, APlayerState*, Target);
 /**
@@ -31,10 +32,19 @@ class FPS_API AShooterPlayerController : public APlayerController
 	
 public:
 	AShooterPlayerController();
+ UFUNCTION(Client, Reliable) void Client_OpenMissionSelection(AMissionDeployPoint* Deploy);
+ UFUNCTION(Server, Reliable) void Server_SelectMission(AMissionDeployPoint* Deploy, int32 Index);
+ UFUNCTION(Server, Reliable) void Server_CancelMissionDeploy(AMissionDeployPoint* Deploy);
+ UFUNCTION(Server, Reliable) void Server_MissionLoaded();
+ void CloseMissionPanel();
+ UFUNCTION() void OnMissionStateUpdated();
+
 
 	// 只按当前状态重新算速度（不发 RPC），角色在开镜/下蹲变化时调用
 	void RefreshMovementSpeed() { ApplyMovementSpeed(); }
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement") bool IsSprinting() const { return bIsSprinting; }
+	bool IsCrouchHeld() const { return bCrouchHeld; }
+	bool IsControlMovementLocked() const { return IsMovementLocked(); }
 
 	float GetSprintToFireDelay() const { return SprintToFireDelay; }
 
@@ -51,6 +61,10 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	void StopSprinting();
+
+	// PIE/debug: console `WeaponAttachDebug 1` — draw 1P attach / GripSocket / FABRIK and print pose/anim.
+	UFUNCTION(Exec)
+	void WeaponAttachDebug(int32 Enabled = 1);
 
 	// PIE/debug: console `Armor 0|1|2` (None/Light/Heavy).
 	UFUNCTION(Exec)
@@ -80,6 +94,10 @@ public:
 	UFUNCTION(Exec)
 	void FlashWash(float Amount = 2.f);
 
+	// PIE/debug: `Goggles 1` wears flash goggles (ghosting). `Goggles 0` is a normal whiteout.
+	UFUNCTION(Exec)
+	void Goggles(int32 Enabled);
+
 	// PIE/debug: console `SpawnTestDoor` — wooden breakable door in front of you.
 	UFUNCTION(Exec)
 	void SpawnTestDoor();
@@ -97,38 +115,10 @@ public:
 	UFUNCTION(Exec)
 	void PlaceGasCan();
 
-	// ---- 警匪战术 PIE ----
-	// PickFaction 0=警察 1=匪；VanPick / ArmoryPick；SkipSetup 跳过布置
-	UFUNCTION(Exec)
-	void PickFaction(int32 Faction);
-
-	UFUNCTION(Exec)
-	void VanPick(FString WeaponName);
-
-	UFUNCTION(Exec)
-	void ArmoryPick(FString WeaponName);
-
-	UFUNCTION(Exec)
-	void SkipSetup();
-
 	UFUNCTION(Exec)
 	void SpawnTestHostage();
 
-	// MvpRound 测试：KillSelf / ForceWin 0|1 / SetRoundTime 秒
-	UFUNCTION(Exec)
-	void KillSelf();
-
-	UFUNCTION(Exec)
-	void ForceWin(int32 Team);
-
-	UFUNCTION(Exec)
-	void SetRoundTime(float Seconds);
-
-	/** 面包车/军械库关卡测切图：TravelToMatch [/Game/.../MapName] */
-	UFUNCTION(Exec)
-	void TravelToMatch(FString MapName);
-
-	// Polish: watch time, radar equip, barrel debug, blood footprints PIE.
+	// Watch, radar, barrel debug, blood footprints.
 	UFUNCTION(Exec)
 	void CheckWatch();
 
@@ -141,56 +131,13 @@ public:
 	UFUNCTION(Exec)
 	void MarkBlood(int32 Steps = 10);
 
-	UFUNCTION(BlueprintPure, Category = "FPS|HUD")
-	UMatchHUD* GetMatchHUD() const { return MatchHUD; }
-
-
 	/** Server helper: write SubmittedLoadout + rebuild (GameMode calls this). */
 	void Auth_SetSubmittedLoadout(const FLoadoutPreset& Loadout, bool bStripAttachments);
 
+	bool bPawnAlive = true;
 
-
-	bool bPawnAlive;
-
-	// ---------- 局内头顶 HUD（计分条 + 击杀播报） ----------
-	// 填 WBP_MatchHUD（父类 MatchHUD）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|HUD")
-	TSubclassOf<UMatchHUD> MatchHUDClass;
-
-	// ---------- 局内暂停菜单 ----------
-	// 菜单控件（WBP_PauseMenu，父类 PauseMenuScreen）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|PauseMenu")
-	TSubclassOf<UPauseMenuScreen> PauseMenuWidgetClass;
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
-	void TogglePauseMenu();
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
-	void OpenPauseMenu();
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
-	void ClosePauseMenu();
-
-	// ---- 设置（暂停菜单里的“设置”按钮调用） ----
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Settings")
-	TSubclassOf<USettingsScreen> SettingsWidgetClass;
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Settings")
-	void ShowSettings();
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Settings")
-	void HideSettings();
-
-	// 把保存的操作设置（FOV 等）套到当前角色上
+	// Applies saved FOV onto the current pawn.
 	void ApplyControlSettings();
-
-	bool bPauseHiddenForSettings = false;
-
-	UPROPERTY()
-	TObjectPtr<USettingsScreen> SettingsScreen;
-
-	UFUNCTION(BlueprintPure, Category = "FPS|PauseMenu")
-	bool IsPauseMenuOpen() const;
 
 	// ---- F 交互 ----
 	// 相机射线长度（cm）
@@ -205,23 +152,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
 	FText GetInteractPromptText() const;
 
-	// ---- 计分板（按住 Tab） ----
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|HUD")
-	TSubclassOf<UScoreboardScreen> ScoreboardWidgetClass;
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|HUD")
-	void ShowScoreboard(bool bShow);
+	// 靶场改枪台。服务器在交互时调用；本地打开镜头和抽屉，离开时提交配装。
+	void Auth_OpenRangeBench(ARangeLoadoutBench* Bench);
+	UFUNCTION(BlueprintCallable, Category = "FPS|改枪台")
+	void LeaveRangeBench();
+	void UpdateRangeBenchPreview(ARangeLoadoutBench* Bench, TSubclassOf<AWeapon> WeaponClass, const TArray<UAttachmentData*>& Attachments);
+	bool IsRangeBenchOpen() const { return bRangeBenchOpen; }
 
 	// ---------- 局外配装 ----------
 	// 服务器上已校验的配装；SpawnInventory 读它。控制器跨重生存在，所以重生也会用
 	const FLoadoutPreset* GetSubmittedLoadout() const { return bHasSubmittedLoadout ? &SubmittedLoadout : nullptr; }
 
-	// 允许进局使用的枪（空 = 不限制）
+	// 允许进局使用的枪（空 = 不限制）。名单里没有的，只要类在 /Game/FPS/Weapon/ 下也会放行（改枪台新枪不用每次改这份名单）。
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Loadout")
 	TArray<TSubclassOf<AWeapon>> AllowedLoadoutWeapons;
 
 	UFUNCTION(Server, Reliable)
 	void Server_SubmitLoadout(const FLoadoutPreset& Loadout);
+
+	UFUNCTION(Client, Reliable)
+	void Client_SaveWarehouseLoadout(const FLoadoutPreset& Loadout);
+
+	void RestoreWarehouseLoadout();
+	bool bRestoredWarehouseLoadout = false;
 
 	// ---------- 比赛 ----------
 	// 比赛结束：本地停掉输入（结算界面由 HUD 监听 GameState.OnMatchEnded 显示）
@@ -261,11 +214,24 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+ virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void SetupInputComponent() override;
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void AcknowledgePossession(APawn* P) override;
 
 private:
+ void InitializeMissionInput();
+ void ToggleMissionTablet();
+ void ServiceMissionReadiness();
+ void ShowMissionPanel(uint8 Panel, AMissionDeployPoint* Deploy = nullptr);
+ UPROPERTY(Transient) TObjectPtr<UMissionFlowWidget> MissionWidget;
+ UPROPERTY(Transient) TObjectPtr<UInputAction> TabletAction;
+ UPROPERTY(Transient) TObjectPtr<UInputMappingContext> TabletIMC;
+ UPROPERTY(Transient) TObjectPtr<ACoopCqbGameState> BoundMissionState;
+ bool bMissionInputMuted = false;
+ bool bMissionLoadAcknowledged = false;
+ FTimerHandle MissionServiceTimer;
+
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputMappingContext> ShooterIMC;
@@ -288,11 +254,25 @@ private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction>WalkAction;
 
-	// 战术配件开关（例如 F 键）：手电和激光一起开关（第 12 步）
+	// 旧的 I 键战术开关。不再绑定；镭射/手电改由鼠标上侧键控制。
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> FlashlightAction;
 
-	void Input_ToggleFlashlight();
+	void EnsureTacticalDeviceInput();
+	void Input_TacticalDevice_Started();
+	void Input_TacticalDevice_Completed();
+	void Input_TacticalDevice_Hold();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> TacticalDeviceAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> TacticalDeviceIMC;
+
+	FTimerHandle TacticalDeviceHoldTimer;
+	bool bTacticalDeviceHoldFired = false;
+	// 同一战术配件的功能：false=手电，true=镭射。SideMouse2 短按开关，长按切换。
+	bool bTacticalDeviceIsLaser = false;
 
 	// NVG toggle (runtime Alt+K). Default Off; Thermal remains console-only for now.
 	void EnsureNVGInput();
@@ -317,24 +297,11 @@ private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> InteractAction;
 
-	// 暂停菜单按键（运行时创建：Esc + P，P 方便 PIE 里测，因为 PIE 默认 Esc 是停止）
-	void EnsurePauseInput();
-	void Input_TogglePauseMenu();
-
-	UPROPERTY(Transient)
-	TObjectPtr<UInputAction> PauseMenuAction;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UInputMappingContext> PauseMenuIMC;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UPauseMenuScreen> PauseMenu;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMatchHUD> MatchHUD;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UCombatHudKeepAlive> CombatHudKeepAlive;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UScreenEffectOverlay> ScreenEffectOverlay;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCombatStatusHud> CombatStatusHud;
@@ -344,14 +311,6 @@ private:
 	void EnsureCombatHudKeepAlive();
 
 	private:
-	void EnsureMatchHUD();
-
-
-	void EnsureModeHud();
-
-	UPROPERTY(Transient)
-	TObjectPtr<UModeHudWidget> ModeHud;
-
 	bool bMatchOver = false;
 
 	FLoadoutPreset SubmittedLoadout;
@@ -398,21 +357,31 @@ private:
 	UFUNCTION(Server, Reliable)
 	void Server_Interact(AActor* Target);
 
-	UPROPERTY()
-	TObjectPtr<UInputAction> ScoreboardAction;
-
-	UPROPERTY()
-	TObjectPtr<UInputMappingContext> ScoreboardIMC;
-
-	UPROPERTY()
-	TObjectPtr<UScoreboardScreen> Scoreboard;
-
-	bool bScoreboardBound = false;
-	void EnsureScoreboardInput();
-	void Input_Scoreboard_Started();
-	void Input_Scoreboard_Completed();
-
 	void EnsureInteractInput();
+
+	UFUNCTION(Client, Reliable)
+	void Client_OpenRangeBench(ARangeLoadoutBench* Bench);
+
+	UFUNCTION(Client, Reliable)
+	void Client_CloseRangeBench();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetRangeBenchPreview(ARangeLoadoutBench* Bench, TSubclassOf<AWeapon> WeaponClass, const TArray<UAttachmentData*>& Attachments);
+
+	UFUNCTION(Server, Reliable)
+	void Server_EndRangeBench();
+
+	void EnterRangeBench(ARangeLoadoutBench* Bench);
+	void RefreshEquippedWeapon();
+
+	UPROPERTY()
+	TObjectPtr<ARangeLoadoutBench> RangeBench;
+
+	UPROPERTY()
+	TObjectPtr<URangeLoadoutWidget> RangeLoadoutWidget;
+
+	bool bRangeBenchOpen = false;
+	bool bRangeBenchInputMuted = false;
 
 	// ---- 观战 ----
 	UPROPERTY(ReplicatedUsing = OnRep_Spectate)
@@ -519,24 +488,6 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_SpawnGasCan(bool bIgnoreSetup);
-
-	UFUNCTION(Server, Reliable)
-	void Server_PickFaction(uint8 FactionByte);
-
-	UFUNCTION(Server, Reliable)
-	void Server_VanPickByName(const FString& WeaponName);
-
-	UFUNCTION(Server, Reliable)
-	void Server_ArmoryPickByName(const FString& WeaponName);
-
-	UFUNCTION(Server, Reliable)
-	void Server_SkipSetup();
-
-	UFUNCTION(Server, Reliable)
-	void Server_MvpDebug(int32 Op, float Value);
-
-	UFUNCTION(Server, Reliable)
-	void Server_TravelToMatch(const FString& MapName);
 
 	UFUNCTION(Server, Reliable)
 	void Server_SpawnTestHostage();

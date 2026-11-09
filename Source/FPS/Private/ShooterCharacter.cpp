@@ -2,16 +2,17 @@
 
 
 #include "ShooterCharacter.h"
+#include "Loadout/PouchInventoryComponent.h"
 #include "Ui/HudBodyMarks.h"
 #include "Engine/Engine.h"
 #include "DrawDebugHelpers.h"
-#include "Ui/MatchHUD.h"
 #include "Game/ShooterGameState.h"
 #include "Engine/DecalActor.h"
 #include "Components/DecalComponent.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/Skeleton.h"
@@ -20,6 +21,7 @@
 #include "Components/CapsuleComponent.h"
 #include "WeaponData.h"
 #include "Weapon/Weapon.h"
+#include "Weapon/WeaponObstacle.h"
 #include "Weapon/OpticScopeComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -30,7 +32,6 @@
 #include "FPSTraceChannels.h"
 #include "UObject/UnrealType.h"
 #include "ShooterPlayerController.h"
-#include "Game/ShooterBotController.h"
 #include "ShooterGamePlayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "InputAction.h"
@@ -39,7 +40,6 @@
 #include "Engine/LocalPlayer.h"
 #include "ShooterGameModeBase.h"
 #include "Game/ShooterPlayerState.h"
-#include "Game/PoliceCriminalTypes.h"
 #include "Interface/HostageProtectInterface.h"
 #include "CombatComponent.h"
 #include "Camera/PlayerCameraManager.h"
@@ -247,6 +247,9 @@ AShooterCharacter::AShooterCharacter()
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
 	Combat->SetIsReplicated(true);
 
+	Pouch = CreateDefaultSubobject<UPouchInventoryComponent>(TEXT("Pouch"));
+	Pouch->SetIsReplicated(true);
+
 	Stats = CreateDefaultSubobject<UStatsComponent>("Stats");
 	Stats->SetIsReplicated(true);
 
@@ -358,14 +361,16 @@ void AShooterCharacter::BeginPlay()
 	}
 }
 
-void AShooterCharacter::BeginDestroy()
+void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	Super::BeginDestroy();
-
+	// 枪是独立 Actor，且 Mesh1P 是根组件、挂在角色手臂上。
+	// 不能放到 BeginDestroy：那时已经在 GC 里，再 Destroy 会在 ~AWeapon 读到坏指针。
 	if (IsValid(Combat))
 	{
 		Combat->DestroyInventory();
 	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 FRotator AShooterCharacter::GetFixedAimRotation() const
@@ -401,6 +406,10 @@ void AShooterCharacter::Tick(float DeltaTime)
 
 	CalculateTurnInPlaceParameters(DeltaTime);
 	CalculateFABRIKSocket(DeltaTime);
+	if (bWeaponAttachDebug)
+	{
+		DrawWeaponAttachDebug();
+	}
 	UpdateAimAlpha(DeltaTime);             // 开镜进度先推进，下面对准和 FOV 都用它
 	RemoveVisualRecoilFromMesh();          // 开镜对准要按没有后坐的位置算
 	UpdateAimSocketAlignment(DeltaTime);
@@ -411,6 +420,7 @@ void AShooterCharacter::Tick(float DeltaTime)
 	UpdateBandage(DeltaTime);              // 长按包扎进度
 	UpdateTacticalVision(DeltaTime);       // NVG / Thermal PP + battery
 	UpdateAimFieldOfView(DeltaTime);
+	UpdateAltPeek();
 	UpdateLean(DeltaTime);
 	UpdateMomentumCarry(DeltaTime);
 
@@ -573,10 +583,126 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 	const float Blend = FMath::Clamp(LeftHandIKBlendSpeed * DeltaTime, 0.f, 1.f);
 	FABRIK_Alpha = FMath::Lerp(FABRIK_Alpha, WantAlpha, Blend);
 
-	// First-person: permanently disable left-hand FABRIK.
-	// Grip alignment comes from per-weapon hold/equip animations on WeaponData tags.
-	FABRIK_SocketTransform1P = FTransform::Identity;
-	FABRIK_Alpha1P = 0.f;
+	// First-person: snap the left hand only when a foregrip is mounted.
+	// Pack idle poses often already place both hands; FABRIK without a grip can fight that pose.
+	FTransform SocketWorld1P;
+	float WantAlpha1P = 0.f;
+	const bool bWantGripSnap1P =
+		Combat->CurrentWeapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip) != nullptr;
+	if (bWantGripSnap1P && Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld1P) && IsValid(Mesh1P))
+	{
+		FABRIK_SocketTransform1P = SocketWorld1P.GetRelativeTransform(Mesh1P->GetComponentTransform());
+		WantAlpha1P = 1.f;
+	}
+	else
+	{
+		FABRIK_SocketTransform1P = FTransform::Identity;
+		WantAlpha1P = 0.f;
+	}
+
+	if (bDisableLeftHandIKDuringReload
+		&& Combat->CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading)
+	{
+		WantAlpha1P = 0.f;
+	}
+	if (!DisableLeftHandIKCurveName.IsNone() && IsValid(Mesh1P))
+	{
+		if (UAnimInstance* Anim1P = Mesh1P->GetAnimInstance())
+		{
+			const float DisableCurve = Anim1P->GetCurveValue(DisableLeftHandIKCurveName);
+			if (DisableCurve > 0.01f)
+			{
+				WantAlpha1P = 0.f;
+			}
+			const float MaskGrip = Anim1P->GetCurveValue(TEXT("Mask_Grip"));
+			if (MaskGrip > 0.01f)
+			{
+				WantAlpha1P *= FMath::Clamp(1.f - MaskGrip, 0.f, 1.f);
+			}
+		}
+	}
+
+	FABRIK_Alpha1P = FMath::Lerp(FABRIK_Alpha1P, WantAlpha1P, Blend);
+}
+
+void AShooterCharacter::DrawWeaponAttachDebug() const
+{
+	UWorld* World = GetWorld();
+	AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	USkeletalMeshComponent* Arms = Mesh1P;
+	if (!World)
+	{
+		return;
+	}
+
+	auto DrawAxis = [World](const FTransform& Xf, float Size, const FColor& Color)
+	{
+		const FVector Loc = Xf.GetLocation();
+		DrawDebugCoordinateSystem(World, Loc, Xf.Rotator(), Size, false, 0.f, 255);
+		DrawDebugSphere(World, Loc, 1.6f, 8, Color, false, 0.f, 255);
+	};
+
+	FString Line = TEXT("[WeaponDebug]\n");
+	if (!IsValid(Weapon) || !IsValid(Arms))
+	{
+		Line += TEXT("no weapon or Mesh1P");
+		if (GEngine) GEngine->AddOnScreenDebugMessage(0x57415431, 0.f, FColor::Red, Line);
+		return;
+	}
+
+	USkeletalMeshComponent* Gun = Weapon->GetMesh1P();
+	const FName Sock = IsValid(Gun) ? Gun->GetAttachSocketName() : NAME_None;
+	const USceneComponent* Parent = IsValid(Gun) ? Gun->GetAttachParent() : nullptr;
+	Line += FString::Printf(TEXT("gun=%s type=%s custom1P=%d\n"),
+		*GetNameSafe(Weapon), *Weapon->WeaponType.ToString(), Weapon->UsesCustomMesh1PAttach() ? 1 : 0);
+	Line += FString::Printf(TEXT("1P attach sock='%s' parent=%s\n"),
+		*Sock.ToString(), *GetNameSafe(Parent ? Parent->GetOwner() : nullptr));
+	Line += FString::Printf(TEXT("arms mesh=%s\n"), *GetNameSafe(Arms->GetSkeletalMeshAsset()));
+	Line += FString::Printf(TEXT("idle=%s aim=%s\n"),
+		*GetNameSafe(Weapon->ArmsIdleSequence), *GetNameSafe(Weapon->ArmsAimIdleSequence));
+	Line += FString::Printf(TEXT("FABRIK a1P=%.2f a3P=%.2f grip=%s\n"),
+		FABRIK_Alpha1P, FABRIK_Alpha, *GetNameSafe(Weapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip)));
+
+	if (IsValid(Gun))
+	{
+		DrawAxis(Gun->GetComponentTransform(), 8.f, FColor::Yellow);
+		static const FName Marks[] = {
+			TEXT("GripSocket"), TEXT("AimPoint"), TEXT("MuzzleSocket"), TEXT("FABRIK")
+		};
+		for (const FName Mark : Marks)
+		{
+			if (Gun->DoesSocketExist(Mark))
+			{
+				DrawAxis(Gun->GetSocketTransform(Mark), 6.f, FColor::Cyan);
+			}
+		}
+	}
+
+	if (!Sock.IsNone() && Arms->DoesSocketExist(Sock))
+	{
+		DrawAxis(Arms->GetSocketTransform(Sock), 10.f, FColor::Green);
+	}
+	else if (!Sock.IsNone() && Arms->GetBoneIndex(Sock) != INDEX_NONE)
+	{
+		DrawAxis(Arms->GetBoneTransform(Arms->GetBoneIndex(Sock)), 10.f, FColor::Green);
+	}
+
+	FTransform GripWorld;
+	if (Weapon->GetFabrikWorldTransform(true, GripWorld))
+	{
+		DrawAxis(GripWorld, 7.f, FColor::Magenta);
+		Line += TEXT("FABRIK target OK (magenta)\n");
+	}
+	else
+	{
+		Line += TEXT("FABRIK target MISSING\n");
+	}
+
+	Line += TEXT("Yel=gun origin  Grn=arm attach  Cyan=gun sockets  Mag=hand IK");
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(0x57415431, 0.f, FColor::White, Line);
+	}
 }
 void AShooterCharacter::ConfigureAimTickOrder()
 {
@@ -752,9 +878,18 @@ void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 
 	// 后坐 + 晃动 + 枪管顶墙抬枪（都是镜头空间）
 	// [RecoilFeel2] exclude VisualRecoilLoc/Rot — only sway + barrel-block remain on Mesh1P
-	const FVector TotalLoc = SwayLocCurrent + WeaponBlockLocCurrent + FVector(0.f, 0.f, SwayDipZ - MuzzleDipAlpha * 2.f);
-	const FRotator TotalRot = SwayRotCurrent + WeaponBlockRotCurrent + MuzzleDipRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f);
-	if (TotalLoc.IsNearlyZero(0.001f) && TotalRot.IsNearlyZero(0.001f))
+	const FQuat OtherRotation = (SwayRotCurrent + MuzzleDipRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f)).Quaternion();
+	const FQuat BlockRotation = WeaponBlockRotCurrent.Quaternion();
+	const FQuat TotalRotation = OtherRotation * BlockRotation;
+	const FTransform& CameraTransform = FirstPersonCamera->GetComponentTransform();
+	const FVector MeshOrigin = CameraTransform.InverseTransformPosition(Mesh1P->GetComponentLocation());
+	const FVector Grip = Mesh1P->DoesSocketExist(TEXT("hand_r"))
+		? CameraTransform.InverseTransformPosition(Mesh1P->GetSocketLocation(TEXT("hand_r")))
+		: FVector(20.f, 10.f, -15.f);
+	const FVector GripPivotCorrection = WeaponObstacle::PivotCorrection(MeshOrigin, Grip, BlockRotation);
+	const FVector TotalLoc = SwayLocCurrent + OtherRotation.RotateVector(WeaponBlockLocCurrent + GripPivotCorrection)
+		+ FVector(0.f, 0.f, SwayDipZ - MuzzleDipAlpha * 2.f);
+	if (TotalLoc.IsNearlyZero(0.001f) && TotalRotation.Equals(FQuat::Identity, 1.e-5f))
 	{
 		return;   // 没有偏移就不碰 Mesh1P
 	}
@@ -762,7 +897,7 @@ void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 	// 偏移是按镜头空间定义的（X 前、Z 上），换算到 Mesh1P 父组件的空间
 	USceneComponent* Parent = Mesh1P->GetAttachParent();
 	FVector LocParent = TotalLoc;
-	FQuat RotParent = TotalRot.Quaternion();
+	FQuat RotParent = TotalRotation;
 	if (IsValid(Parent) && Parent != FirstPersonCamera)
 	{
 		const FTransform CameraToParent = FirstPersonCamera->GetComponentTransform().GetRelativeTransform(Parent->GetComponentTransform());
@@ -890,24 +1025,7 @@ float AShooterCharacter::GetBandageSpeedMultiplier() const
 
 float AShooterCharacter::GetArmorSpeedMultiplier() const
 {
-	float Mul = BodyArmor == EBodyArmorType::Heavy ? HeavyArmorMoveSpeedMultiplier : 1.f;
-	// MVP: unarmored criminals move faster than police (who default to light armor).
-	if (BodyArmor == EBodyArmorType::None)
-	{
-		bool bCriminal = FactionLook == ECharacterLookFaction::Criminal;
-		if (const AShooterPlayerState* PS = GetPlayerState<AShooterPlayerState>())
-		{
-			if (PS->HasTeam())
-			{
-				bCriminal = PS->GetTeamId() == PoliceCriminalTeams::Criminal;
-			}
-		}
-		if (bCriminal)
-		{
-			Mul *= UnarmoredCriminalSpeedMultiplier; // default 1.12
-		}
-	}
-	return Mul;
+	return BodyArmor == EBodyArmorType::Heavy ? HeavyArmorMoveSpeedMultiplier : 1.f;
 }
 
 float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
@@ -1049,6 +1167,7 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	UEnhancedInputComponent* ShooterInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
 
 	EnsureLeanInput(ShooterInputComponent);
+	EnsureFireModeInput(ShooterInputComponent);
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanLeft_Started);
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanLeft_Completed);
 	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanRight_Started);
@@ -1078,10 +1197,8 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	{
 		ShooterInputComponent->BindAction(SwitchFireModeAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchFireMode);
 	}
-	if (VersionWeaponAction)
-	{
-		ShooterInputComponent->BindAction(VersionWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_VersionWeapon);
-	}
+	// Free inspect removed: mag check is hold-R (see Input_ReloadWeapon_*).
+	// VersionWeaponAction intentionally unbound.
 
 }
 
@@ -1103,12 +1220,6 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 
 bool AShooterCharacter::IsLocallyControlled() const
 {
-	// 傀儡的控制器在服务器上算本地玩家，这样 Pawn 才会按模拟代理复制移动。
-	// 枪械显隐、预测扣弹、换弹必须走远程路径，否则主机上看不见他们的身体。
-	if (GetController() && GetController()->IsA(AShooterBotController::StaticClass()))
-	{
-		return false;
-	}
 	return Super::IsLocallyControlled();
 }
 
@@ -1126,7 +1237,10 @@ FName AShooterCharacter::GetWeaponAttachPoint_Implementation(const FGameplayTag&
 {
 	checkf(Combat, TEXT("Combat component is missing"));
 	checkf(Combat->WeaponData, TEXT("No WeaponData Asset - Please Fill out BP_ShooterCharacter"));
-	if (const FName* GripPoint = Combat->WeaponData->GripPoints.Find(WeaponType))
+	const FGameplayTag GripTag = WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Flash)
+		? ShooterTags::Tag_WeaponType_Grenade
+		: WeaponType;
+	if (const FName* GripPoint = Combat->WeaponData->GripPoints.Find(GripTag))
 	{
 		return *GripPoint;
 	}
@@ -1278,7 +1392,8 @@ const TArray<TObjectPtr<UAnimMontage>>& AShooterCharacter::GetHitReactPool(EHitR
 
 void AShooterCharacter::Client_ShowDamageIndicator_Implementation(FVector_NetQuantize InstigatorLocation)
 {
-	OnDamageIndicator.Broadcast(InstigatorLocation);
+	(void)InstigatorLocation;
+	AddHitBlood();
 }
 
 void AShooterCharacter::Client_ConfirmHit_Implementation(bool bHeadshot)
@@ -1334,6 +1449,7 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AShooterCharacter, BodyArmor);
 	DOREPLIFETIME(AShooterCharacter, FactionLook);
 	DOREPLIFETIME(AShooterCharacter, bHasRadar);
+	DOREPLIFETIME(AShooterCharacter, bHasFlashGoggles);
 }
 
 // ===== 趴下 / 趴行 (Prone) =====
@@ -1784,6 +1900,82 @@ void AShooterCharacter::UpdateSlide(float DeltaTime)
 }
 
 // ===== 左右探头 =====
+void AShooterCharacter::EnsureFireModeInput(UEnhancedInputComponent* InputComp)
+{
+	(void)InputComp;
+	if (!IsLocallyControlled()) return;
+	if (!SwitchFireModeAction)
+	{
+		SwitchFireModeAction = NewObject<UInputAction>(this, TEXT("IA_SwitchFireMode_Runtime"));
+		SwitchFireModeAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!FireModeRuntimeIMC)
+	{
+		FireModeRuntimeIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_FireMode_Runtime"));
+		FireModeRuntimeIMC->MapKey(SwitchFireModeAction, EKeys::X);
+	}
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+			{
+				if (!Subsystem->HasMappingContext(FireModeRuntimeIMC))
+				{
+					Subsystem->AddMappingContext(FireModeRuntimeIMC, 2);
+				}
+			}
+		}
+	}
+}
+
+void AShooterCharacter::UpdateAltPeek()
+{
+	const bool bWasPeek = bAltPeekCrouch;
+	bAltPeekCrouch = false;
+	AltPeekDir = 0;
+	if (!IsLocallyControlled() || bIsProne || bIsSliding) 
+	{
+		// fall through to release crouch if a peek was active
+	}
+	else if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
+	{
+		const bool bAlt = PC->IsInputKeyDown(EKeys::LeftAlt) || PC->IsInputKeyDown(EKeys::RightAlt);
+		if (PC->bPawnAlive && !PC->IsControlMovementLocked())
+		{
+			const bool bA = PC->IsInputKeyDown(EKeys::A);
+			const bool bD = PC->IsInputKeyDown(EKeys::D);
+			if (bAlt && (bA || bD))
+			{
+				bAltPeekCrouch = true;
+				if (bA && !bD) AltPeekDir = -1;
+				else if (bD && !bA) AltPeekDir = 1;
+				PC->StopSprinting();
+			}
+		}
+	}
+
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(CMC) || !IsLocallyControlled()) return;
+	if (bAltPeekCrouch)
+	{
+		CMC->bWantsToCrouch = true;
+		ConsumeMovementInputVector();
+		FVector Vel = CMC->Velocity;
+		Vel.X = 0.f;
+		Vel.Y = 0.f;
+		CMC->Velocity = Vel;
+	}
+	else if (bWasPeek && !bIsProne && !bIsSliding)
+	{
+		const AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController());
+		if (!PC || !PC->IsCrouchHeld())
+		{
+			CMC->bWantsToCrouch = false;
+		}
+	}
+}
+
 void AShooterCharacter::EnsureLeanInput(UEnhancedInputComponent* InputComp)
 {
 	const bool bNeedLeft = !LeanLeftAction;
@@ -1862,14 +2054,32 @@ bool AShooterCharacter::IsLeanBlocked() const
 
 void AShooterCharacter::Server_SetLeanTarget_Implementation(float NewTarget)
 {
-	LeanTarget = FMath::Clamp(FMath::RoundToFloat(NewTarget), -1.f, 1.f);
+	LeanTarget = FMath::Clamp(NewTarget, -1.f, 1.f);
 }
 
 void AShooterCharacter::UpdateLean(float DeltaTime)
 {
 	if (IsLocallyControlled())
 	{
-		const float Desired = IsLeanBlocked() ? 0.f : static_cast<float>(LeanInputDir);
+		float Desired = 0.f;
+		const bool bWideStep = bAltPeekCrouch && AltPeekDir != 0 && !IsLeanBlocked();
+		if (bWideStep)
+		{
+			Desired = static_cast<float>(AltPeekDir);
+			LeanDistanceScale = FMath::Max(1.f, AltPeekLeanScale);
+		}
+		else if (!IsLeanBlocked())
+		{
+			Desired = static_cast<float>(LeanInputDir);
+			if (LeanInputDir != 0)
+			{
+				LeanDistanceScale = 1.f;
+			}
+		}
+		if (!bWideStep && LeanInputDir == 0 && FMath::Abs(LeanAlpha) < 0.02f)
+		{
+			LeanDistanceScale = 1.f;
+		}
 		if (!FMath::IsNearlyEqual(Desired, LeanTarget))
 		{
 			LeanTarget = Desired;
@@ -1894,7 +2104,7 @@ void AShooterCharacter::UpdateLean(float DeltaTime)
 		const USceneComponent* Parent = FirstPersonCamera->GetAttachParent();
 		const FTransform ParentXf = IsValid(Parent) ? FirstPersonCamera->GetAttachParent()->GetSocketTransform(FirstPersonCamera->GetAttachSocketName()) : GetActorTransform();
 		const FVector Start = ParentXf.TransformPosition(CameraBaseLocation);
-		const FVector End = ParentXf.TransformPosition(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset, 0.f));
+		const FVector End = ParentXf.TransformPosition(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * LeanDistanceScale, 0.f));
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(LeanProbe), false, this);
 		if (IsValid(Combat) && IsValid(Combat->CurrentWeapon)) Params.AddIgnoredActor(Combat->CurrentWeapon);
 		FHitResult Hit;
@@ -1904,7 +2114,7 @@ void AShooterCharacter::UpdateLean(float DeltaTime)
 		}
 	}
 
-	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * OffsetScale, 0.f));
+	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * LeanDistanceScale * OffsetScale, 0.f));
 	// 侧倾手感保留：开镜时收到 SlideCameraRollAds，不整段清零
 	const float SlideRoll = SlideAlpha * FMath::Lerp(SlideCameraRoll, SlideCameraRollAds, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
 	FirstPersonCamera->SetRelativeRotation(CameraBaseRotation + FRotator(0.f, 0.f, LeanAlpha * LeanRollDegrees + SlideRoll));
@@ -2007,6 +2217,12 @@ bool AShooterCharacter::ComputeCantedMeshTransform(FQuat& OutRelRotation, FVecto
 
 void AShooterCharacter::Input_SwitchFireMode()
 {
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC || !PC->IsInputKeyDown(EKeys::X)) return;
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	if (Now - LastFireModeSwitchTime < 0.05) return;
+	LastFireModeSwitchTime = Now;
 	if (IsValid(Combat)) Combat->Initiate_SwitchFireMode();
 }
 
@@ -2015,8 +2231,32 @@ void AShooterCharacter::Input_ReloadWeapon()
 	Input_ReloadWeapon_Started();
 }
 
+void AShooterCharacter::ClearReloadGestureTimers()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
+		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+	}
+}
+
 void AShooterCharacter::Input_ReloadWeapon_Started()
 {
+	// Second press inside the double-click window -> mark double (tactical on release).
+	if (bReloadAwaitingDouble)
+	{
+		bReloadAwaitingDouble = false;
+		bReloadDoubleClick = true;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+		}
+	}
+	else
+	{
+		bReloadDoubleClick = false;
+	}
+
 	bReloadKeyHeld = true;
 	bReloadHoldTriggered = false;
 	if (UWorld* World = GetWorld())
@@ -2032,8 +2272,22 @@ void AShooterCharacter::OnReloadHoldThreshold()
 {
 	if (!bReloadKeyHeld || bReloadHoldTriggered) return;
 	bReloadHoldTriggered = true;
-	// HOLD R = tactical reload montage + drop mag
-	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(true);
+	bReloadAwaitingDouble = false;
+	bReloadDoubleClick = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+	}
+	// HOLD R = mag check (no free inspect key)
+	if (IsValid(Combat)) Combat->Initiate_VersionWeapon();
+}
+
+void AShooterCharacter::OnReloadSingleClickTimeout()
+{
+	if (bReloadKeyHeld || bReloadHoldTriggered || bReloadDoubleClick) return;
+	bReloadAwaitingDouble = false;
+	// SINGLE R = reload (keep partial mag / Empty montage)
+	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(false);
 }
 
 void AShooterCharacter::Input_ReloadWeapon_Completed()
@@ -2046,10 +2300,33 @@ void AShooterCharacter::Input_ReloadWeapon_Completed()
 	if (bReloadHoldTriggered)
 	{
 		bReloadHoldTriggered = false;
-		return; // already started fast reload
+		return; // hold already fired mag check
 	}
-	// TAP R = empty reload montage + keep partial mag in queue
-	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(false);
+	if (bReloadDoubleClick)
+	{
+		bReloadDoubleClick = false;
+		bReloadAwaitingDouble = false;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+		}
+		// DOUBLE R = tactical reload (drop mag / Tactical montage)
+		if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(true);
+		return;
+	}
+	// Wait briefly for a possible second tap before committing single reload.
+	bReloadAwaitingDouble = true;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
+		World->GetTimerManager().SetTimer(
+			ReloadDoubleClickTimer, this, &AShooterCharacter::OnReloadSingleClickTimeout,
+			FMath::Max(0.05f, ReloadDoubleClickWindow), false);
+	}
+	else if (IsValid(Combat))
+	{
+		Combat->Initiate_ReloadWeapon(false);
+	}
 }
 
 void AShooterCharacter::Input_FireWeapon_Pressed()
@@ -2345,7 +2622,7 @@ void AShooterCharacter::Input_Heal()
 
 void AShooterCharacter::Input_VersionWeapon()
 {
-	VersionWeapon();   // 第 9 步：检视武器
+	// Free inspect disabled. Mag check is hold-R.
 }
 
 void AShooterCharacter::OnDeathStarted()
@@ -2903,6 +3180,34 @@ void AShooterCharacter::PlayFootstepAtFeet(USoundBase* Sound, float Volume)
 
 // ===== Barrel obstacle / limb injury / bandage (tactical) =====
 
+WeaponObstacle::FProbeResult AShooterCharacter::ProbeWeaponObstacle() const
+{
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	if (!IsValid(Weapon) || !GetWorld() || !IsValid(FirstPersonCamera)) return {};
+	if (Weapon->WeaponKind != EWeaponKind::LongGun && Weapon->WeaponKind != EWeaponKind::Pistol) return {};
+	float Length = Weapon->WeaponLength;
+	if (Weapon->WeaponKind == EWeaponKind::Pistol && Length >= 60.f) Length = 22.f;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WeaponBarrelObstacle), false, this);
+	Params.AddIgnoredActor(Weapon);
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors, true, true);
+	Params.AddIgnoredActors(AttachedActors);
+	// Remote first-person camera rotation is not driven every server frame. Use
+	// authoritative aim rotation there instead of trusting a client fire-state flag.
+	const FQuat ViewRotation = IsLocallyControlled()
+		? FirstPersonCamera->GetComponentQuat() : GetBaseAimRotation().Quaternion();
+	return WeaponObstacle::Probe(*GetWorld(), FirstPersonCamera->GetComponentLocation(), ViewRotation, Length, Params);
+}
+
+bool AShooterCharacter::IsWeaponFireBlocked() const
+{
+	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
+	if (!IsValid(Weapon) || (Weapon->WeaponKind != EWeaponKind::LongGun && Weapon->WeaponKind != EWeaponKind::Pistol)) return false;
+	// Block from the first visible lift until the pose has nearly settled, including
+	// between character ticks. The server independently probes current geometry.
+	return WeaponBlockAlpha > 0.02f || ProbeWeaponObstacle().Alpha > 0.02f;
+}
+
 void AShooterCharacter::UpdateWeaponObstacle(float DeltaTime)
 {
 	if (!IsLocallyControlled() || DeltaTime <= KINDA_SMALL_NUMBER)
@@ -2910,78 +3215,26 @@ void AShooterCharacter::UpdateWeaponObstacle(float DeltaTime)
 		return;
 	}
 
-	float TargetAlpha = 0.f;
-	const AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
-	float Length = IsValid(Weapon) ? Weapon->WeaponLength : 0.f;
-	// Pistol BPs often inherit the LongGun default (70); treat as short.
-	if (IsValid(Weapon) && Weapon->WeaponKind == EWeaponKind::Pistol && Length >= 60.f) Length = 22.f;
-	if (IsValid(Weapon) && (Weapon->WeaponKind == EWeaponKind::Melee || Weapon->WeaponKind == EWeaponKind::Throwable || Weapon->WeaponKind == EWeaponKind::Bomb)) Length = 0.f;
-
-	FHitResult Hit;
-	bool bHit = false;
-	FVector Start = FVector::ZeroVector;
-	FVector End = FVector::ZeroVector;
-
-	if (Length > 1.f && IsValid(FirstPersonCamera) && IsValid(Weapon)
-		&& Weapon->WeaponKind != EWeaponKind::Melee
-		&& Weapon->WeaponKind != EWeaponKind::Throwable
-		&& Weapon->WeaponKind != EWeaponKind::Bomb
-		&& GetWorld())
+	const WeaponObstacle::FProbeResult Probe = ProbeWeaponObstacle();
+	const float TargetAlpha = Probe.Alpha;
+	if (bDebugWeaponObstacle && GetWorld() && !Probe.Starts[0].Equals(Probe.Ends[0]))
 	{
-		Start = FirstPersonCamera->GetComponentLocation();
-		const FVector Dir = FirstPersonCamera->GetForwardVector();
-		End = Start + Dir * Length;
-
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(WeaponBarrelObstacle), false, this);
-		Params.AddIgnoredActor(this);
-		Params.AddIgnoredActor(Weapon);
-
-		// Visibility often misses range/static meshes; query world geometry + pawns instead.
-		FCollisionObjectQueryParams ObjectParams;
-		ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
-		ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
-		ObjectParams.AddObjectTypesToQuery(ECC_PhysicsBody);
-		ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
-
-		bHit = GetWorld()->LineTraceSingleByObjectType(Hit, Start, End, ObjectParams, Params);
-
-		// Fallback: weapon channel with explicit responses (same family as muzzle-dip).
-		if (!bHit)
+		const FColor Color = TargetAlpha > 0.f ? FColor::Orange : FColor::Green;
+		for (int32 Index = 0; Index < 2; ++Index)
 		{
-			FCollisionResponseParams ResponseParams;
-			ResponseParams.CollisionResponse.SetAllChannels(ECR_Ignore);
-			ResponseParams.CollisionResponse.SetResponse(ECC_WorldStatic, ECR_Block);
-			ResponseParams.CollisionResponse.SetResponse(ECC_WorldDynamic, ECR_Block);
-			ResponseParams.CollisionResponse.SetResponse(ECC_PhysicsBody, ECR_Block);
-			ResponseParams.CollisionResponse.SetResponse(ECC_Pawn, ECR_Block);
-			bHit = GetWorld()->LineTraceSingleByChannel(
-				Hit, Start, End, FPSTraceChannels::ECC_Weapon, Params, ResponseParams);
+			DrawDebugLine(GetWorld(), Probe.Starts[Index], Probe.Ends[Index], Color, false, -1.f, 0, 1.2f);
+			DrawDebugSphere(GetWorld(), Probe.Ends[Index], 4.f, 8, Color, false, -1.f);
 		}
-
-		if (bHit && IsValid(Hit.GetActor()))
-		{
-			const float Dist = Hit.Distance;
-			TargetAlpha = FMath::Clamp(1.f - (Dist / Length), 0.f, 1.f);
-			if (Dist > Length * 0.95f) TargetAlpha = 0.f;
-		}
+		if (TargetAlpha > 0.f) DrawDebugPoint(GetWorld(), Probe.Hit.ImpactPoint, 8.f, FColor::Red, false, -1.f);
 	}
 
-	if (bDebugWeaponObstacle && GetWorld() && Length > 1.f)
-	{
-		const FColor Col = (bHit && TargetAlpha > 0.f) ? FColor::Orange : FColor::Green;
-		DrawDebugLine(GetWorld(), Start, End, Col, false, -1.f, 0, 1.2f);
-		if (bHit)
-		{
-			DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 8.f, FColor::Red, false, -1.f);
-		}
-	}
-
-	WeaponBlockAlpha = FMath::FInterpTo(WeaponBlockAlpha, TargetAlpha, DeltaTime, WeaponBlockInterpSpeed);
-
-	const FVector TargetLoc(-WeaponBlockRetract * WeaponBlockAlpha, 0.f, WeaponBlockRetract * 0.35f * WeaponBlockAlpha);
-	const FRotator TargetRot(WeaponBlockRaisePitch * WeaponBlockAlpha, 0.f, 0.f);
-	WeaponBlockLocCurrent = FMath::VInterpTo(WeaponBlockLocCurrent, TargetLoc, DeltaTime, WeaponBlockInterpSpeed);
-	WeaponBlockRotCurrent = FMath::RInterpTo(WeaponBlockRotCurrent, TargetRot, DeltaTime, WeaponBlockInterpSpeed);
+	// One exponential blend: consistent response across frame rates without stacking
+	// three interpolation delays on alpha, location and rotation.
+	const float Blend = WeaponBlockInterpSpeed > 0.f ? 1.f - FMath::Exp(-WeaponBlockInterpSpeed * DeltaTime) : 1.f;
+	WeaponBlockAlpha = FMath::Lerp(WeaponBlockAlpha, TargetAlpha, Blend);
+	WeaponBlockLocCurrent = FVector(-WeaponBlockRetract * WeaponBlockAlpha, 0.f, 0.f);
+	const float RaisedPoseAlpha = FMath::Clamp(WeaponBlockAlpha / 0.65f, 0.f, 1.f);
+	WeaponBlockRotCurrent = FRotator(WeaponBlockRaisePitch * RaisedPoseAlpha, 0.f, 0.f);
 
 	// Auto drop ADS when jammed.
 	if (IsWeaponBlocked() && IsValid(Combat) && Combat->bAiming)
@@ -3723,8 +3976,104 @@ void AShooterCharacter::AddVisionFlashWash(float Amount)
 	VisionFlashWash = FMath::Clamp(VisionFlashWash + FMath::Max(0.f, Amount), 0.f, 4.f);
 	if (IsLocallyControlled())
 	{
+		ReceiveFlashbang(FMath::Clamp(Amount / 2.5f, 0.f, 1.f));
 		ApplyTacticalVisionEffects();
 	}
+}
+
+void AShooterCharacter::ReceiveFlashbang(float Strength)
+{
+	Strength = FMath::Clamp(Strength, 0.f, 1.f);
+	if (Strength <= 0.f) return;
+	if (bHasFlashGoggles)
+	{
+		FlashGhost = FMath::Max(FlashGhost, Strength);
+	}
+	else
+	{
+		FlashWhite = FMath::Max(FlashWhite, Strength);
+	}
+}
+
+void AShooterCharacter::Client_ReceiveFlashbang_Implementation(float Strength)
+{
+	ReceiveFlashbang(Strength);
+}
+
+void AShooterCharacter::SetHasFlashGoggles(bool bEnable)
+{
+	bHasFlashGoggles = bEnable;
+	if (!HasAuthority())
+	{
+		Server_SetHasFlashGoggles(bEnable);
+	}
+}
+
+void AShooterCharacter::Server_SetHasFlashGoggles_Implementation(bool bEnable)
+{
+	bHasFlashGoggles = bEnable;
+}
+
+float AShooterCharacter::GetHitBloodAlpha() const
+{
+	return FMath::Clamp(FMath::Max(HitBloodFlash, HitBloodTail), 0.f, 1.f);
+}
+
+void AShooterCharacter::AddHitBlood()
+{
+	HitBloodFlash = 1.f;
+	HitBloodTail = FMath::Max(HitBloodTail, 0.62f);
+}
+
+void AShooterCharacter::UpdateScreenEffects(float DeltaTime)
+{
+	if (FlashWhite > 0.f)
+	{
+		const float Rate = FlashWhite > 0.9f ? 0.18f : 0.48f;
+		FlashWhite = FMath::Max(0.f, FlashWhite - DeltaTime * Rate);
+	}
+	if (FlashGhost > 0.f)
+	{
+		FlashGhost = FMath::Max(0.f, FlashGhost - DeltaTime * 0.32f);
+	}
+	HitBloodFlash = FMath::Max(0.f, HitBloodFlash - DeltaTime * 3.4f);
+	HitBloodTail = FMath::Max(0.f, HitBloodTail - DeltaTime * 0.5f);
+	ApplyFlashGhostPostProcess();
+}
+
+void AShooterCharacter::ApplyFlashGhostPostProcess()
+{
+	if (!IsLocallyControlled() || !IsValid(FirstPersonCamera)) return;
+
+	FPostProcessSettings& PPS = FirstPersonCamera->PostProcessSettings;
+	if (FlashGhost > 0.02f)
+	{
+		PPS.bOverride_SceneFringeIntensity = true;
+		PPS.SceneFringeIntensity = FlashGhost * 6.5f;
+		PPS.bOverride_ChromaticAberrationStartOffset = true;
+		PPS.ChromaticAberrationStartOffset = FMath::Lerp(0.35f, 0.f, FlashGhost);
+		if (TacticalVisionMode == ETacticalVisionMode::Off)
+		{
+			PPS.bOverride_BloomIntensity = true;
+			PPS.BloomIntensity = 0.35f + FlashGhost * 1.4f;
+			PPS.bOverride_ColorContrast = true;
+			const float Contrast = 1.f - FlashGhost * 0.22f;
+			PPS.ColorContrast = FVector4(Contrast, Contrast, Contrast, 1.f);
+		}
+		bGhostPostProcess = true;
+		return;
+	}
+
+	if (!bGhostPostProcess) return;
+	PPS.bOverride_SceneFringeIntensity = false;
+	PPS.SceneFringeIntensity = 0.f;
+	PPS.bOverride_ChromaticAberrationStartOffset = false;
+	if (TacticalVisionMode == ETacticalVisionMode::Off)
+	{
+		PPS.bOverride_BloomIntensity = false;
+		PPS.bOverride_ColorContrast = false;
+	}
+	bGhostPostProcess = false;
 }
 
 void AShooterCharacter::CycleTacticalVisionMode()
@@ -4036,6 +4385,8 @@ void AShooterCharacter::UpdateTacticalVision(float DeltaTime)
 	{
 		VisionOverlayRefreshAcc = 0.f;
 	}
+
+	UpdateScreenEffects(DeltaTime);
 }
 
 
@@ -4119,14 +4470,6 @@ void AShooterCharacter::CheckWatch()
 		GEngine->AddOnScreenDebugMessage(88221001, WatchTimeDisplaySeconds, FColor::Cyan, Msg);
 	}
 	UE_LOG(LogTemp, Log, TEXT("[Watch] %s"), *Msg);
-
-	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
-	{
-		if (UMatchHUD* HUD = PC->GetMatchHUD())
-		{
-			HUD->ShowWatchTime(Remaining, WatchTimeDisplaySeconds);
-		}
-	}
 }
 
 void AShooterCharacter::Multicast_NotifyBloodyFeet_Implementation()
@@ -4719,6 +5062,45 @@ void AShooterCharacter::EnsureArms1PGripSockets(USkeletalMesh* ArmsMesh, USkelet
 	}
 	AliasSocketWeapon(Copies);
 	ApplyGripSocketCopies(ArmsMesh, Copies, TEXT("Arms1P"), *GetNameSafe(ArmsSource));
+	EnsureAnimatedGunAttachSockets(ArmsMesh);
+}
+
+void AShooterCharacter::EnsureAnimatedGunAttachSockets(USkeletalMesh* ArmsMesh)
+{
+	// NEVER promote ik_hand_gun (or VB pivots) to a same-named mesh socket.
+	// AttachToComponent prefers sockets over bones; a socket parented to ik_hand_root
+	// freezes the gun at rest pose while the animated bone (and RAR SOCKET_Weapon on
+	// that bone) keep moving — KINEMATION guns then look untunable.
+	// Strip any mesh-only shadow sockets left from older sessions.
+	if (!IsValid(ArmsMesh))
+	{
+		return;
+	}
+
+	TArray<TObjectPtr<USkeletalMeshSocket>>& Sockets = ArmsMesh->GetMeshOnlySocketList();
+	const int32 Removed = Sockets.RemoveAll([ArmsMesh](const TObjectPtr<USkeletalMeshSocket>& Socket)
+	{
+		if (!IsValid(Socket) || Socket->GetOuter() != ArmsMesh)
+		{
+			return false;
+		}
+		const FName N = Socket->SocketName;
+		if (N != FName(TEXT("ik_hand_gun"))
+			&& N != FName(TEXT("VB ik_hand_gun"))
+			&& N != FName(TEXT("VB ik_hand_gun_pivot")))
+		{
+			return false;
+		}
+		UE_LOG(LogTemp, Warning,
+			TEXT("[GunAttach] removed shadow socket '%s' on %s (was parent=%s) — attach must use the animated bone"),
+			*N.ToString(), *GetNameSafe(ArmsMesh), *Socket->BoneName.ToString());
+		return true;
+	});
+	if (Removed > 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[GunAttach] stripped %d shadow gun-attach socket(s) from %s"),
+			Removed, *GetNameSafe(ArmsMesh));
+	}
 }
 
 void AShooterCharacter::ApplyFactionArms1P()
@@ -4727,6 +5109,9 @@ void AShooterCharacter::ApplyFactionArms1P()
 	{
 		return;
 	}
+
+	// Always finish the Bandits/arms swap; AttachToOwingPawn runs again at the end of this function.
+	// (An older early-out for UsesCustomMesh1PAttach skipped the swap and left guns on a bad attach target.)
 
 	if (!bCapturedDefaultArms1P)
 	{
@@ -4771,6 +5156,10 @@ void AShooterCharacter::ApplyFactionArms1P()
 	if (bBanditsTarget)
 	{
 		EnsureArms1PGripSockets(WantMesh, SourceForSockets);
+	}
+	else
+	{
+		EnsureAnimatedGunAttachSockets(WantMesh);
 	}
 
 	USkeleton* WantSkel = WantMesh->GetSkeleton();

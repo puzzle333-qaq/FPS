@@ -15,6 +15,7 @@ namespace ShooterTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Smoke);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Molotov);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Flash);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_Sting);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_X24);
 	// DEFINITIVE_FPS_KIT (skip Glock18)
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_WeaponType_AR10);
@@ -34,5 +35,7 @@ namespace ShooterTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Grip);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Stock);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Tactical);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Laser);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Flashlight);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Tag_Attachment_Slot_Magazine);
 }
