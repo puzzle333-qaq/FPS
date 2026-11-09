@@ -56,6 +56,10 @@ struct FWeaponPreset
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Loadout")
 	TArray<TObjectPtr<UAttachmentData>> Attachments;
+
+	// 长枪/手枪：备用弹匣个数。投掷物：携带个数。改枪台离开时按这个数填背包。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Loadout")
+	int32 StackCount = 0;
 };
 
 // 一套配装。数组里第一把长枪是进局 1 号位主枪；第二把长枪是摸金 2 号位。
@@ -69,4 +73,8 @@ struct FLoadoutPreset
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Loadout")
 	TArray<FWeaponPreset> Weapons;
+
+	// 靶场改枪台：为 true 时，投掷物以这份列表为准，不再额外带上默认投掷物。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Loadout")
+	bool bReplaceThrowables = false;
 };
