@@ -2,6 +2,9 @@
 
 
 #include "ShooterCharacter.h"
+#include "Components/WidgetComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Ui/PlayerNameplateWidget.h"
 #include "Loadout/PouchInventoryComponent.h"
 #include "Ui/HudBodyMarks.h"
 #include "Engine/Engine.h"
@@ -253,6 +256,17 @@ AShooterCharacter::AShooterCharacter()
 	Stats = CreateDefaultSubobject<UStatsComponent>("Stats");
 	Stats->SetIsReplicated(true);
 
+	Nameplate = CreateDefaultSubobject<UWidgetComponent>(TEXT("PlayerNameplate"));
+	Nameplate->SetupAttachment(GetCapsuleComponent());
+	Nameplate->SetRelativeLocation(FVector(0.f, 0.f, 104.f));
+	Nameplate->SetWidgetSpace(EWidgetSpace::Screen);
+	Nameplate->SetWidgetClass(UPlayerNameplateWidget::StaticClass());
+	Nameplate->SetDrawSize(FVector2D(220.f, 32.f));
+	Nameplate->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Nameplate->SetGenerateOverlapEvents(false);
+	Nameplate->SetOwnerNoSee(true);
+	Nameplate->SetCastShadow(false);
+
 	DefaultFOV = 90.f;
 	TurningStatus = ETurningInPlace::NotTurning;
 
@@ -273,6 +287,7 @@ void AShooterCharacter::BeginPlay()
 	}
 
 	Super::BeginPlay();
+	RefreshNameplate();
 
 	Stats->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);
 
@@ -1212,6 +1227,7 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 		FactionLook = ECharacterLookFaction::Police;
 	}
 	ApplyFactionLookMeshes();
+	RefreshNameplate();
 	if (IsValid(Combat))
 	{
 		Combat->SpawnInventory();
@@ -1223,9 +1239,20 @@ bool AShooterCharacter::IsLocallyControlled() const
 	return Super::IsLocallyControlled();
 }
 
+void AShooterCharacter::RefreshNameplate()
+{
+	if (!IsValid(Nameplate) || GetNetMode() == NM_DedicatedServer) return;
+	Nameplate->InitWidget();
+	if (UPlayerNameplateWidget* Plate = Cast<UPlayerNameplateWidget>(Nameplate->GetWidget()))
+	{
+		Plate->SetSubject(this);
+	}
+}
+
 void AShooterCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
+	RefreshNameplate();
 
 	if (IsValid(Combat))
 	{

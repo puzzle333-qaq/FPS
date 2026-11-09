@@ -19,6 +19,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDeploymentUpdated);
 
 class UBoxComponent;
 class UStaticMeshComponent;
+class APlayerController;
 
 /** Range mission selection and server-owned squad countdown. */
 UCLASS()
@@ -38,6 +39,7 @@ public:
  UFUNCTION() void OnRep_Deployment();
  FMissionDestination GetDestination(int32 Index) const;
  int32 GetDestinationCount() const;
+ bool IsRoomHost(const APlayerController* PC) const;
  bool Auth_SelectMission(APlayerController* PC, int32 Index);
  void Auth_Cancel(APlayerController* PC);
  UFUNCTION(NetMulticast, Reliable) void Multicast_ShowCountdown();

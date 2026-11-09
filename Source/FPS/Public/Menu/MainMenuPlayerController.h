@@ -6,6 +6,8 @@
 #include "MainMenuPlayerController.generated.h"
 
 class UUserWidget;
+class USettingsScreen;
+class UWidgetSwitcher;
 
 // Main menu shell. Shows MainMenuWidgetClass and can start solo or listen-host coop.
 // Room browser and the gunsmith bench are removed; those screens will be rebuilt.
@@ -22,6 +24,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Menu")
 	UUserWidget* GetMainMenuWidget() const { return MainMenuWidget; }
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Menu")
+	TSubclassOf<USettingsScreen> SettingsWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
+	void ShowSettings();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
+	void HideSettings();
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Menu")
 	void StartPractice(EShooterGameMode Mode);
@@ -44,4 +55,10 @@ protected:
 private:
 	UPROPERTY()
 	TObjectPtr<UUserWidget> MainMenuWidget;
+
+	UPROPERTY()
+	TObjectPtr<USettingsScreen> SettingsScreen;
+
+	TWeakObjectPtr<UWidgetSwitcher> SettingsSwitcher;
+	int32 SettingsPrevIndex = 0;
 };

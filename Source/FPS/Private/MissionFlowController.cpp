@@ -110,7 +110,7 @@ void AShooterPlayerController::ShowMissionPanel(uint8 Panel, AMissionDeployPoint
   MissionWidget = CreateWidget<UMissionFlowWidget>(this, UMissionFlowWidget::StaticClass());
   if (!MissionWidget) return;
   MissionWidget->Configure(NewPanel, Deploy);
-  MissionWidget->AddToViewport(60);
+  MissionWidget->AddToViewport(400);
  }
  else MissionWidget->Configure(NewPanel, Deploy);
  if (!bMissionInputMuted)

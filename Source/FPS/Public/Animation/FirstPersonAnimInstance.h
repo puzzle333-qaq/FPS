@@ -21,7 +21,7 @@ public:
 	float FABRIK_Alpha1P = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|GripHold")
-	EGripHoldStyle GripHoldStyle = EGripHoldStyle::Cradle;
+	EGripHoldStyle GripHoldStyle = EGripHoldStyle::None;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|GripHold")
 	TObjectPtr<UAnimSequence> LeftHandHoldPose = nullptr;
@@ -49,5 +49,10 @@ protected:
 	bool bRestoreFlashIdle1P = false;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UAnimSequence> GrabIdleSlotAsset = nullptr;
+	TObjectPtr<UAnimSequence> GripBodyPose = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> GripAimPose = nullptr;
+
+	void ApplyResolvedGripPose();
 };

@@ -1,4 +1,5 @@
 #include "ShooterGameInstance.h"
+#include "Online/PartySubsystem.h"
 
 #include "Engine/Engine.h"
 #include "HAL/IConsoleManager.h"
@@ -117,6 +118,17 @@ bool UShooterGameInstance::TravelTo(const TSoftObjectPtr<UWorld>& Map, const TSo
 		Options.Add(FString::Printf(TEXT("game=%s"), *GameMode.ToSoftObjectPath().ToString()));
 	}
 
+	const FString NameOpt = GetNameOption();
+	if (!NameOpt.IsEmpty())
+	{
+		bool bHasName = false;
+		for (const FString& Opt : Options)
+		{
+			if (Opt.StartsWith(TEXT("Name="))) bHasName = true;
+		}
+		if (!bHasName) Options.Add(NameOpt.RightChop(1));
+	}
+
 	const FString MapName = Map.ToSoftObjectPath().GetLongPackageName();
 	UE_LOG(LogTemp, Log, TEXT("[Menu] OpenLevel %s ?%s"), *MapName, *FString::Join(Options, TEXT("?")));
 	UGameplayStatics::OpenLevel(this, FName(*MapName), true, FString::Join(Options, TEXT("?")));
@@ -213,6 +225,10 @@ void UShooterGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDr
 	(void)NetDriver;
 	ShooterLoadingScreen::Hide();
 	SetLastOnlineError(FString::Printf(TEXT("网络错误（%s）：%s"), ENetworkFailure::ToString(FailureType), *ErrorString));
+	if (UPartySubsystem* Party = GetSubsystem<UPartySubsystem>())
+	{
+		if (Party->HandleNetworkFailure()) return;
+	}
 
 	if (World && World->WorldType == EWorldType::PIE)
 	{
@@ -241,6 +257,10 @@ void UShooterGameInstance::HandleTravelFailure(UWorld* World, ETravelFailure::Ty
 {
 	ShooterLoadingScreen::Hide();
 	SetLastOnlineError(FString::Printf(TEXT("跳转失败（%s）：%s"), ETravelFailure::ToString(FailureType), *ErrorString));
+	if (UPartySubsystem* Party = GetSubsystem<UPartySubsystem>())
+	{
+		if (Party->HandleTravelFailure()) return;
+	}
 	if (World && !MainMenuMap.IsNull())
 	{
 		const FString MenuPkg = MainMenuMap.ToSoftObjectPath().GetLongPackageName();

@@ -8,6 +8,8 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AShooterPlayerState, TeamId);
+	DOREPLIFETIME(AShooterPlayerState, bPartyHost);
+	DOREPLIFETIME(AShooterPlayerState, PlatformId);
 	DOREPLIFETIME(AShooterPlayerState, Kills);
 	DOREPLIFETIME(AShooterPlayerState, Deaths);
 	DOREPLIFETIME(AShooterPlayerState, Assists);
@@ -26,6 +28,18 @@ void AShooterPlayerState::SetTeamId(uint8 NewTeam)
 {
 	TeamId = NewTeam;
 	OnRep_TeamId();
+}
+
+void AShooterPlayerState::SetPartyHost(bool bHost)
+{
+	bPartyHost = bHost;
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::SetPlatformId(const FString& InId)
+{
+	PlatformId = InId.Left(24);
+	ForceNetUpdate();
 }
 
 void AShooterPlayerState::AddKill()
@@ -69,5 +83,7 @@ void AShooterPlayerState::CopyProperties(APlayerState* PlayerState)
 	if (AShooterPlayerState* NewPS = Cast<AShooterPlayerState>(PlayerState))
 	{
 		NewPS->TeamId = TeamId;
+		NewPS->bPartyHost = bPartyHost;
+		NewPS->PlatformId = PlatformId;
 	}
 }

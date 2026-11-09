@@ -35,9 +35,18 @@ AMissionDeployPoint::AMissionDeployPoint()
 	MissionGameMode = TSoftClassPtr<AGameModeBase>(FSoftObjectPath(TEXT("/Script/FPS.CoopCqbGameMode")));
 }
 
+bool AMissionDeployPoint::IsRoomHost(const APlayerController* PC) const
+{
+	const UWorld* World = GetWorld();
+	if (!World || !IsValid(PC)) return false;
+	if (World->GetNetMode() == NM_Standalone) return PC->IsLocalController();
+	return World->GetNetMode() != NM_Client && PC->IsLocalController();
+}
+
 bool AMissionDeployPoint::CanInteract_Implementation(APawn* InteractingPawn) const
 {
-	return IsValid(InteractingPawn) && GetDestinationCount() > 0;
+	const APlayerController* PC = IsValid(InteractingPawn) ? Cast<APlayerController>(InteractingPawn->GetController()) : nullptr;
+	return IsRoomHost(PC) && GetDestinationCount() > 0;
 }
 
 FText AMissionDeployPoint::GetInteractPrompt_Implementation(APawn* InteractingPawn) const
@@ -77,7 +86,7 @@ void AMissionDeployPoint::OnRep_Deployment() { OnDeploymentUpdated.Broadcast(); 
 
 bool AMissionDeployPoint::Auth_SelectMission(APlayerController* PC, int32 Index)
 {
- if (!HasAuthority() || !IsValid(PC) || !PC->GetPawn() || Index < 0 || Index >= GetDestinationCount()) return false;
+ if (!HasAuthority() || !IsRoomHost(PC) || !IsValid(PC) || !PC->GetPawn() || Index < 0 || Index >= GetDestinationCount()) return false;
  if (FVector::DistSquared(PC->GetPawn()->GetActorLocation(), GetActorLocation()) > FMath::Square(500.f)) return false;
  const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>();
  if (GS && !GS->bRangeHub) return false;
@@ -97,7 +106,7 @@ bool AMissionDeployPoint::Auth_SelectMission(APlayerController* PC, int32 Index)
 }
 void AMissionDeployPoint::Auth_Cancel(APlayerController* PC)
 {
- if (!HasAuthority() || DeploymentLeader.Get() != PC || CountdownEndServerTime < 0) return;
+ if (!HasAuthority() || !IsRoomHost(PC) || DeploymentLeader.Get() != PC || CountdownEndServerTime < 0) return;
  GetWorldTimerManager().ClearTimer(DeployTimer);
  CountdownEndServerTime = -1; SelectedMission = INDEX_NONE; DeploymentLeader.Reset();
  OnRep_Deployment(); ForceNetUpdate();

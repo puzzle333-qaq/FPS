@@ -20,11 +20,18 @@
 #include "Ui/CombatHudKeepAlive.h"
 #include "Ui/ScreenEffectOverlay.h"
 #include "Ui/CombatStatusHud.h"
+#include "Ui/PartyRosterWidget.h"
+#include "Ui/InteractPromptWidget.h"
+#include "Ui/PauseMenuScreen.h"
+#include "Ui/SettingsScreen.h"
+#include "Ui/MissionFlowWidget.h"
+#include "Online/PartySubsystem.h"
 #include "Ui/BodyInjuryHud.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Weapon/Weapon.h"
 #include "Weapon/AttachmentData.h"
 #include "Game/ShooterGameState.h"
+#include "Game/CoopCqbGameState.h"
 #include "GameFramework/GameStateBase.h"
 #include "Interface/Interactable.h"
 #include "Range/RangeLoadoutBench.h"
@@ -116,6 +123,7 @@ void AShooterPlayerController::BeginPlay()
 			GetWorldTimerManager().SetTimer(TimeSyncTimer, this, &ThisClass::RequestServerTimeSync, 2.f, true);
 		}
 		EnsureSpectateInput();
+		EnsurePauseInput();
 	}
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
@@ -135,6 +143,12 @@ void AShooterPlayerController::SetupInputComponent()
 
 	UEnhancedInputComponent* ShooterInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!IsValid(ShooterInputComponent)) return;
+
+	EnsurePauseInput();
+	if (PauseMenuAction)
+	{
+		ShooterInputComponent->BindAction(PauseMenuAction, ETriggerEvent::Started, this, &ThisClass::Input_TogglePauseMenu);
+	}
 
 	if (MoveAction)
 	{
@@ -730,6 +744,36 @@ void AShooterPlayerController::RefreshEquippedWeapon()
 	Combat->CurrentWeapon->SetActorHiddenInGame(false);
 	Combat->CurrentWeapon->AttachToOwingPawn();
 }
+void AShooterPlayerController::SubmitLocalIdentity()
+{
+	if (!IsLocalController()) return;
+	UGameInstance* GI = GetGameInstance();
+	UPartySubsystem* Party = GI ? GI->GetSubsystem<UPartySubsystem>() : nullptr;
+	if (!Party) return;
+	Server_SubmitIdentity(Party->GetLocalDisplayName(), Party->GetLocalPlatformId());
+}
+
+void AShooterPlayerController::Server_SubmitIdentity_Implementation(const FString& DisplayName, const FString& PlatformId)
+{
+	AShooterPlayerState* State = GetPlayerState<AShooterPlayerState>();
+	if (!State) return;
+	FString CleanName = DisplayName.Left(24);
+	CleanName.ReplaceInline(TEXT("?"), TEXT(""));
+	CleanName.ReplaceInline(TEXT("="), TEXT(""));
+	CleanName.TrimStartAndEndInline();
+	if (!CleanName.IsEmpty()) State->SetPlayerName(CleanName);
+	FString CleanId;
+	for (const TCHAR Char : PlatformId.Left(20))
+	{
+		if (FChar::IsDigit(Char)) CleanId.AppendChar(Char);
+	}
+	State->SetPlatformId(CleanId);
+	if (UPartySubsystem* Party = GetGameInstance() ? GetGameInstance()->GetSubsystem<UPartySubsystem>() : nullptr)
+	{
+		Party->RegisterJoinedPlayer(this);
+	}
+}
+
 void AShooterPlayerController::EnsureCombatHudKeepAlive()
 {
 	if (!IsLocalController())
@@ -800,6 +844,26 @@ void AShooterPlayerController::EnsureCombatHudKeepAlive()
 		CombatStatusHud->RemoveFromParent();
 		CombatStatusHud = nullptr;
 	}
+
+	if (!IsValid(PartyRoster))
+	{
+		PartyRoster = CreateWidget<UPartyRosterWidget>(this, UPartyRosterWidget::StaticClass());
+	}
+	if (IsValid(PartyRoster) && !PartyRoster->IsInViewport())
+	{
+		PartyRoster->AddToViewport(220);
+		UE_LOG(LogTemp, Log, TEXT("[Party] roster on screen"));
+	}
+
+	if (!IsValid(InteractPrompt))
+	{
+		InteractPrompt = CreateWidget<UInteractPromptWidget>(this, UInteractPromptWidget::StaticClass());
+	}
+	if (IsValid(InteractPrompt) && !InteractPrompt->IsInViewport())
+	{
+		InteractPrompt->AddToViewport(210);
+		UE_LOG(LogTemp, Log, TEXT("[Interact] prompt on screen"));
+	}
 }
 
 void AShooterPlayerController::OnPossess(APawn* InPawn)
@@ -822,6 +886,7 @@ void AShooterPlayerController::OnPossess(APawn* InPawn)
 	ApplyMovementSpeed();
 	GetWorldTimerManager().SetTimerForNextTick(this, &AShooterPlayerController::ApplyMovementSpeed);
 	EnsureCombatHudKeepAlive();
+	SubmitLocalIdentity();
 }
 
 void AShooterPlayerController::AcknowledgePossession(APawn* P)
@@ -841,6 +906,7 @@ void AShooterPlayerController::AcknowledgePossession(APawn* P)
 	ApplyMovementSpeed();
 	GetWorldTimerManager().SetTimerForNextTick(this, &AShooterPlayerController::ApplyMovementSpeed);
 	EnsureCombatHudKeepAlive();
+	SubmitLocalIdentity();
 }
 
 bool AShooterPlayerController::IsMovementLocked() const
@@ -1376,6 +1442,161 @@ void AShooterPlayerController::Client_ReportServerTime_Implementation(double Cli
 	}
 	const double Weight = RTT <= BestTimeSyncRTT * 1.5 ? 0.3 : 0.05;
 	GS->SetSyncedServerTimeOffset(FMath::Lerp(GS->GetSyncedServerTimeOffset(), NewOffset, Weight));
+}
+
+void AShooterPlayerController::EnsurePauseInput()
+{
+	if (!IsLocalController()) return;
+	if (!PauseMenuAction)
+	{
+		PauseMenuAction = NewObject<UInputAction>(this, TEXT("IA_PauseMenu_Runtime"));
+		PauseMenuAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!PauseMenuIMC)
+	{
+		PauseMenuIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_PauseMenu_Runtime"));
+		PauseMenuIMC->MapKey(PauseMenuAction, EKeys::Escape);
+		PauseMenuIMC->MapKey(PauseMenuAction, EKeys::P);
+	}
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+	{
+		if (!Subsystem->HasMappingContext(PauseMenuIMC))
+		{
+			Subsystem->AddMappingContext(PauseMenuIMC, 2);
+		}
+	}
+}
+
+bool AShooterPlayerController::CanTogglePauseMenu() const
+{
+	if (!IsLocalController() || bRangeBenchOpen) return false;
+	const UMissionFlowWidget* Mission = MissionWidget.Get();
+	return !(Mission && Mission->IsInViewport());
+}
+
+void AShooterPlayerController::Input_TogglePauseMenu()
+{
+	if (!CanTogglePauseMenu()) return;
+	if (IsValid(SettingsScreen) && SettingsScreen->IsInViewport())
+	{
+		HideSettings();
+		return;
+	}
+	TogglePauseMenu();
+}
+
+bool AShooterPlayerController::IsPauseMenuOpen() const
+{
+	return IsValid(PauseMenu) && PauseMenu->IsInViewport();
+}
+
+void AShooterPlayerController::TogglePauseMenu()
+{
+	if (IsPauseMenuOpen()) ClosePauseMenu();
+	else OpenPauseMenu();
+}
+
+void AShooterPlayerController::OpenPauseMenu()
+{
+	if (!CanTogglePauseMenu() || IsPauseMenuOpen()) return;
+	if (!PauseMenuWidgetClass)
+	{
+		PauseMenuWidgetClass = LoadClass<UPauseMenuScreen>(nullptr, TEXT("/Game/FPS/UI/WBP_PauseMenu.WBP_PauseMenu_C"));
+	}
+	if (!PauseMenuWidgetClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PauseMenu] WBP_PauseMenu is missing"));
+		return;
+	}
+	if (!IsValid(PauseMenu))
+	{
+		PauseMenu = CreateWidget<UPauseMenuScreen>(this, PauseMenuWidgetClass);
+		if (!IsValid(PauseMenu)) return;
+	}
+	StopSprinting();
+	PauseMenu->SetVisibility(ESlateVisibility::Visible);
+	if (!PauseMenu->IsInViewport()) PauseMenu->AddToViewport(50);
+	FInputModeUIOnly Mode;
+	Mode.SetWidgetToFocus(PauseMenu->TakeWidget());
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(Mode);
+	bShowMouseCursor = true;
+	PauseMenu->OnMenuOpened();
+}
+
+void AShooterPlayerController::ClosePauseMenu()
+{
+	if (IsValid(SettingsScreen) && SettingsScreen->IsInViewport()) SettingsScreen->RemoveFromParent();
+	bPauseHiddenForSettings = false;
+	if (IsValid(PauseMenu)) PauseMenu->RemoveFromParent();
+	if (!IsLocalController() || bRangeBenchOpen) return;
+	bShowMouseCursor = false;
+	SetInputMode(FInputModeGameOnly());
+}
+
+void AShooterPlayerController::ShowSettings()
+{
+	if (!IsLocalController()) return;
+	if (!SettingsWidgetClass)
+	{
+		SettingsWidgetClass = LoadClass<USettingsScreen>(nullptr, TEXT("/Game/FPS/UI/WBP_Settings.WBP_Settings_C"));
+	}
+	if (!SettingsWidgetClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Settings] WBP_Settings is missing"));
+		return;
+	}
+	if (!IsValid(SettingsScreen)) SettingsScreen = CreateWidget<USettingsScreen>(this, SettingsWidgetClass);
+	if (!IsValid(SettingsScreen)) return;
+	bool bLockGraphics = true;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const ACoopCqbGameState* MissionState = World->GetGameState<ACoopCqbGameState>())
+		{
+			bLockGraphics = !MissionState->bRangeHub;
+		}
+		if (World->GetMapName().Contains(TEXT("Lvl_Range")))
+		{
+			bLockGraphics = false;
+		}
+	}
+	SettingsScreen->SetGraphicsLocked(bLockGraphics);
+	if (!SettingsScreen->IsInViewport()) SettingsScreen->AddToViewport(60);
+	if (IsValid(PauseMenu) && PauseMenu->IsInViewport() && PauseMenu->GetVisibility() != ESlateVisibility::Collapsed)
+	{
+		PauseMenu->SetVisibility(ESlateVisibility::Collapsed);
+		bPauseHiddenForSettings = true;
+	}
+	SettingsScreen->RefreshFromCurrent();
+	FInputModeUIOnly Mode;
+	Mode.SetWidgetToFocus(SettingsScreen->TakeWidget());
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(Mode);
+	bShowMouseCursor = true;
+}
+
+void AShooterPlayerController::HideSettings()
+{
+	if (IsValid(SettingsScreen) && SettingsScreen->IsInViewport()) SettingsScreen->RemoveFromParent();
+	if (!IsLocalController()) return;
+	if (bPauseHiddenForSettings && IsValid(PauseMenu))
+	{
+		PauseMenu->SetVisibility(ESlateVisibility::Visible);
+		bPauseHiddenForSettings = false;
+	}
+	if (IsPauseMenuOpen())
+	{
+		FInputModeUIOnly Mode;
+		Mode.SetWidgetToFocus(PauseMenu->TakeWidget());
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(Mode);
+		bShowMouseCursor = true;
+	}
+	else
+	{
+		bShowMouseCursor = false;
+		SetInputMode(FInputModeGameOnly());
+	}
 }
 
 void AShooterPlayerController::ApplyControlSettings()

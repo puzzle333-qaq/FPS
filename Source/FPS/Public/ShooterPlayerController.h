@@ -15,6 +15,10 @@ class AWeapon;
 class UCombatHudKeepAlive;
 class UScreenEffectOverlay;
 class UCombatStatusHud;
+class UPartyRosterWidget;
+class UInteractPromptWidget;
+class UPauseMenuScreen;
+class USettingsScreen;
 class AGameStateBase;
 class AShooterCharacter;
 class ARangeLoadoutBench;
@@ -35,6 +39,7 @@ public:
  UFUNCTION(Client, Reliable) void Client_OpenMissionSelection(AMissionDeployPoint* Deploy);
  UFUNCTION(Server, Reliable) void Server_SelectMission(AMissionDeployPoint* Deploy, int32 Index);
  UFUNCTION(Server, Reliable) void Server_CancelMissionDeploy(AMissionDeployPoint* Deploy);
+ UFUNCTION(Server, Reliable) void Server_SubmitIdentity(const FString& DisplayName, const FString& PlatformId);
  UFUNCTION(Server, Reliable) void Server_MissionLoaded();
  void CloseMissionPanel();
  UFUNCTION() void OnMissionStateUpdated();
@@ -138,6 +143,31 @@ public:
 
 	// Applies saved FOV onto the current pawn.
 	void ApplyControlSettings();
+
+	// Esc / P 打开暂停菜单。邀请好友和设置都在这一层，有光标才能点。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|PauseMenu")
+	TSubclassOf<UPauseMenuScreen> PauseMenuWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
+	void TogglePauseMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
+	void OpenPauseMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|PauseMenu")
+	void ClosePauseMenu();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|PauseMenu")
+	bool IsPauseMenuOpen() const;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Settings")
+	TSubclassOf<USettingsScreen> SettingsWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings")
+	void ShowSettings();
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings")
+	void HideSettings();
 
 	// ---- F 交互 ----
 	// 相机射线长度（cm）
@@ -305,6 +335,32 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCombatStatusHud> CombatStatusHud;
+
+	void EnsurePauseInput();
+	void Input_TogglePauseMenu();
+	bool CanTogglePauseMenu() const;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> PauseMenuAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> PauseMenuIMC;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPauseMenuScreen> PauseMenu;
+
+	UPROPERTY()
+	TObjectPtr<USettingsScreen> SettingsScreen;
+
+	bool bPauseHiddenForSettings = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPartyRosterWidget> PartyRoster;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInteractPromptWidget> InteractPrompt;
+
+	void SubmitLocalIdentity();
 
 	public:
 	/** Creates/re-pins CombatStatusHud + KeepAlive for local player. Safe to call repeatedly. */

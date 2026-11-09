@@ -61,6 +61,50 @@ namespace RarGripAimPose_Private
 	}
 }
 
+namespace GripBodyPose_Private
+{
+	static UAnimSequence* Load(const TCHAR* Path)
+	{
+		return LoadObject<UAnimSequence>(nullptr, Path);
+	}
+
+	static bool UsesRarArms(const USkeletalMeshComponent* Arms, const AWeapon* Weapon)
+	{
+		const USkeletalMesh* Mesh = IsValid(Arms) ? Arms->GetSkeletalMeshAsset() : nullptr;
+		if (IsValid(Mesh))
+		{
+			const FString Path = Mesh->GetPathName();
+			if (Path.Contains(TEXT("InfimaGames")) || Path.Contains(TEXT("SKEL_IG"))) return true;
+			if (Path.Contains(TEXT("Manny")) || Path.Contains(TEXT("FPSArms"))) return false;
+		}
+		return RarGripAimPose_Private::IsRAR(Weapon);
+	}
+
+	// Full-body idles. The 1P graph has no left-hand IK, so the hold has to be the sequence itself.
+	static UAnimSequence* Resolve(const USkeletalMeshComponent* Arms, const AWeapon* Weapon, EGripHoldStyle Style)
+	{
+		if (Style == EGripHoldStyle::None) return nullptr;
+		static TObjectPtr<UAnimSequence> RarAngled, RarVertical, KinAngled, KinVertical;
+		if (UsesRarArms(Arms, Weapon))
+		{
+			if (Style == EGripHoldStyle::Grab)
+			{
+				if (!RarVertical) RarVertical = Load(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Poses/A_RAR_FP_PCH_AssaultRifle_Idle_Pose_Grip_Vertical.A_RAR_FP_PCH_AssaultRifle_Idle_Pose_Grip_Vertical"));
+				return RarVertical;
+			}
+			if (!RarAngled) RarAngled = Load(TEXT("/Game/InfimaGames/RealisticAssaultRifle/Art/Character/Animations/Poses/A_RAR_FP_PCH_AssaultRifle_Idle_Pose_Grip_Angled.A_RAR_FP_PCH_AssaultRifle_Idle_Pose_Grip_Angled"));
+			return RarAngled;
+		}
+		if (Style == EGripHoldStyle::Grab)
+		{
+			if (!KinVertical) KinVertical = Load(TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/General/Character/A_FP_VerticalGrip.A_FP_VerticalGrip"));
+			return KinVertical;
+		}
+		if (!KinAngled) KinAngled = Load(TEXT("/Game/KINEMATION/TacticalShooterPack/Animations/UE5/TR15/Character/A_FP_TR15_Idle_Pose_Grip.A_FP_TR15_Idle_Pose_Grip"));
+		return KinAngled;
+	}
+}
+
 void UFirstPersonAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
@@ -141,32 +185,20 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	const EGripHoldStyle Style = Combat->CurrentWeapon->GetGripHoldStyle();
+	if (GripHoldStyle != Style)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[GripHold] %s style %d -> %d"),
+			*GetNameSafe(Combat->CurrentWeapon), (int32)GripHoldStyle, (int32)Style);
+	}
 	GripHoldStyle = Style;
 
 	UAnimSequence* DesiredIdle = AnimCopy.IdleAnim.Get();
 	UAnimSequence* DesiredAimIdle = AnimCopy.AimIdleAnim.Get();
-	if (Style == EGripHoldStyle::Grab)
-	{
-		if (IsValid(AnimCopy.IdleAnim_Grab) && AnimCopy.IdleAnim_Grab != AnimCopy.LeftHandHoldPose_Grab)
-		{
-			DesiredIdle = AnimCopy.IdleAnim_Grab.Get();
-		}
-		if (IsValid(AnimCopy.AimIdleAnim_Grab))
-		{
-			DesiredAimIdle = AnimCopy.AimIdleAnim_Grab.Get();
-		}
-		LeftHandHoldPose = AnimCopy.LeftHandHoldPose_Grab.Get();
-	}
-	else
-	{
-		UAnimSequence* CradlePose = AnimCopy.LeftHandHoldPose_Cradle.Get();
-		LeftHandHoldPose = (CradlePose && CradlePose != AnimCopy.IdleAnim.Get()) ? CradlePose : nullptr;
-	}
-	if (UAnimSequence* KineGripPose = Combat->CurrentWeapon->GetGripPoseAnim())
-	{
-		LeftHandHoldPose = KineGripPose;
-	}
-	bUseLeftHandHoldPose = IsValid(LeftHandHoldPose);
+	// Handguard keeps the weapon idle. Angled and vertical replace it after the AnimBP copy.
+	LeftHandHoldPose = nullptr;
+	bUseLeftHandHoldPose = false;
+	GripBodyPose = GripBodyPose_Private::Resolve(GetSkelMeshComponent(), Combat->CurrentWeapon, Style);
+	GripAimPose = nullptr;
 	GripPoseWeight = FMath::Clamp(1.f - GetCurveValue(TEXT("Mask_Grip")), 0.f, 1.f);
 	ActiveIdleAnim = DesiredIdle;
 	bRestoreFlashIdle1P = Combat->CurrentWeapon->WeaponKind == EWeaponKind::Throwable
@@ -177,7 +209,12 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		if (UAnimSequence* RarAim = RarGripAimPose_Private::Resolve(Combat->CurrentWeapon))
 		{
 			DesiredAimIdle = RarAim;
+			GripAimPose = RarAim;
 		}
+	}
+	else if (IsValid(GripBodyPose))
+	{
+		GripAimPose = GripBodyPose;
 	}
 
 	if (FStructProperty* AnimProperty = FindFProperty<FStructProperty>(GetClass(), TEXT("CurrenrAnim")))
@@ -211,6 +248,33 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	{
 		ForceShotgunRawPose1P();
 	}
+	ApplyResolvedGripPose();
+}
+
+void UFirstPersonAnimInstance::ApplyResolvedGripPose()
+{
+	if (bRestoreFlashIdle1P || GripHoldStyle == EGripHoldStyle::None || !IsValid(GripBodyPose))
+	{
+		return;
+	}
+	if (GripPoseWeight <= 0.01f)
+	{
+		return;
+	}
+	FStructProperty* AnimProperty = FindFProperty<FStructProperty>(GetClass(), TEXT("CurrenrAnim"));
+	if (!AnimProperty || AnimProperty->Struct != FPlayerAnim::StaticStruct())
+	{
+		return;
+	}
+	FPlayerAnim* Currenr = AnimProperty->ContainerPtrToValuePtr<FPlayerAnim>(this);
+	if (!Currenr)
+	{
+		return;
+	}
+	Currenr->IdleAnim = GripBodyPose;
+	Currenr->AimIdleAnim = IsValid(GripAimPose) ? GripAimPose.Get() : GripBodyPose.Get();
+	bUseLeftHandHoldPose = false;
+	LeftHandHoldPose = nullptr;
 }
 
 void UFirstPersonAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
@@ -252,12 +316,17 @@ void UFirstPersonAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSecond
 	{
 		return;
 	}
+	if (Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun))
+	{
+		ForceShotgunRawPose1P();
+	}
+	// Event Graph copies the weapon-data idle after NativeUpdateAnimation. Put the grip pose back.
+	ApplyResolvedGripPose();
+
 	if (!Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_ShotGun))
 	{
 		return;
 	}
-
-	ForceShotgunRawPose1P();
 
 	static bool bLoggedOnce = false;
 	if (!bLoggedOnce)

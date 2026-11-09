@@ -2747,11 +2747,22 @@ UAttachmentData* AWeapon::GetSlotBlocker(FGameplayTag SlotTag) const
 
 EGripHoldStyle AWeapon::GetGripHoldStyle() const
 {
-	if (const UAttachmentData* Grip = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip))
+	const UAttachmentData* Grip = GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip);
+	if (!IsValid(Grip))
 	{
-		return Grip->GripHoldStyle;
+		return EGripHoldStyle::None;
 	}
-	return EGripHoldStyle::Cradle;
+	const FString GripName = Grip->GetName();
+	if (GripName.Contains(TEXT("Vert")))
+	{
+		return EGripHoldStyle::Grab;
+	}
+	// Angled assets were saved as Grab. The name is the hold the mesh was built for.
+	if (GripName.Contains(TEXT("Angl")) || GripName.Contains(TEXT("Cant")) || GripName.Contains(TEXT("45")))
+	{
+		return EGripHoldStyle::Cradle;
+	}
+	return Grip->GripHoldStyle == EGripHoldStyle::Grab ? EGripHoldStyle::Grab : EGripHoldStyle::Cradle;
 }
 UAttachmentData* AWeapon::GetAttachmentInSlot(FGameplayTag SlotTag) const
 {

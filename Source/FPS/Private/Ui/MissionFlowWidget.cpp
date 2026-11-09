@@ -80,13 +80,23 @@ void UMissionFlowWidget::Refresh()
  {
   AddLine(TEXT("行动部署 / MISSION SELECT"), 28);
   if (!Deploy) { AddLine(TEXT("任务台不可用")); return; }
+  const bool bHost = Deploy->IsRoomHost(PC);
   if (Deploy->CountdownEndServerTime > 0)
   {
    AddLine(Deploy->GetDestination(Deploy->SelectedMission).Title.ToString(), 24);
    AddLine(TEXT("全队即将出发。倒计时结束后开始加载，所有队员就绪后任务才会开始。"));
    Rows->AddSlot().AutoHeight().Padding(0, 12) [ SAssignNew(Clock, STextBlock).Font(FTacticalUIStyle::MakeFont(36, true)).ColorAndOpacity(FTacticalUIStyle::TextGold) ];
-   TWeakObjectPtr<AMissionDeployPoint> WeakDeploy(Deploy);
-   AddButton(NSLOCTEXT("Mission", "CancelDeploy", "取消出发（发起人）"), [WeakPC, WeakDeploy]() { if (WeakPC.IsValid()) WeakPC->Server_CancelMissionDeploy(WeakDeploy.Get()); });
+   if (bHost)
+   {
+    TWeakObjectPtr<AMissionDeployPoint> WeakDeploy(Deploy);
+    AddButton(NSLOCTEXT("Mission", "CancelDeploy", "取消出发（房主）"), [WeakPC, WeakDeploy]() { if (WeakPC.IsValid()) WeakPC->Server_CancelMissionDeploy(WeakDeploy.Get()); });
+   }
+   else AddLine(TEXT("等待房主确认出发。"));
+  }
+  else if (!bHost)
+  {
+   AddLine(TEXT("只有房主可以选择任务。"));
+   AddButton(NSLOCTEXT("Mission", "Close", "返回 / Esc"), [WeakPC]() { if (WeakPC.IsValid()) WeakPC->CloseMissionPanel(); });
   }
   else
   {

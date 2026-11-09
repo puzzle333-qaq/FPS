@@ -44,6 +44,10 @@ public:
 	FShooterTeamChanged OnTeamChanged;
 
 	void SetTeamId(uint8 NewTeam);
+	void SetPartyHost(bool bHost);
+	void SetPlatformId(const FString& InId);
+	bool IsPartyHost() const { return bPartyHost; }
+	const FString& GetPlatformId() const { return PlatformId; }
 	void AddKill();
 	void AddDeath();
 	void AddAssist();
@@ -52,6 +56,12 @@ public:
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_TeamId)
 	uint8 TeamId = NoTeam;
+
+	UPROPERTY(Replicated)
+	bool bPartyHost = false;
+
+	UPROPERTY(Replicated)
+	FString PlatformId;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Stats)
 	int32 Kills = 0;

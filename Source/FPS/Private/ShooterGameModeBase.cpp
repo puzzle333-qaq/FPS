@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShooterGameModeBase.h"
+#include "Online/PartySubsystem.h"
 
 #include "Game/ShooterPlayerState.h"
 #include "Game/ShooterGameState.h"
@@ -146,6 +147,14 @@ void AShooterGameModeBase::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
 	AssignShortPlayerName(NewPlayer);
+	if (AShooterPlayerState* JoinerState = IsValid(NewPlayer) ? NewPlayer->GetPlayerState<AShooterPlayerState>() : nullptr)
+	{
+		JoinerState->SetPartyHost(NewPlayer->IsLocalController() && GetNetMode() != NM_Standalone);
+	}
+	if (UPartySubsystem* Party = GetGameInstance() ? GetGameInstance()->GetSubsystem<UPartySubsystem>() : nullptr)
+	{
+		Party->RegisterJoinedPlayer(NewPlayer);
+	}
 	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
 	{
 		GS->RefreshTeamAliveCounts();
@@ -177,6 +186,10 @@ void AShooterGameModeBase::AssignShortPlayerName(APlayerController* NewPlayer)
 
 void AShooterGameModeBase::Logout(AController* Exiting)
 {
+	if (UPartySubsystem* Party = GetGameInstance() ? GetGameInstance()->GetSubsystem<UPartySubsystem>() : nullptr)
+	{
+		Party->UnregisterExitingPlayer(Exiting);
+	}
 	Super::Logout(Exiting);
 	if (AShooterGameState* GS = GetGameState<AShooterGameState>())
 	{

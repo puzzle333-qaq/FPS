@@ -79,6 +79,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|LocalMP")
 	void EnsureLocalLanMode();
 
+	FString GetPlayerNameOption() const { return GetNameOption(); }
+
 	// Authority-only travel preserving the connected squad. Local menu travel continues to use TravelTo.
  bool TravelSquadTo(const TSoftObjectPtr<UWorld>& Map, const TSoftClassPtr<AGameModeBase>& GameMode, const TArray<FString>& ExtraOptions = TArray<FString>());
 

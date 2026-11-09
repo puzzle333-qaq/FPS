@@ -27,6 +27,7 @@ class USoundAttenuation;
 class USkeletalMesh;
 class UMaterialInterface;
 class UNiagaraSystem;
+class UWidgetComponent;
 namespace WeaponObstacle { struct FProbeResult; }
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*, Weapon);
@@ -1292,6 +1293,9 @@ private:
 	TObjectPtr<USkeletalMeshComponent> Mesh3P_Pants;
 	UPROPERTY()
 	TObjectPtr<USkeletalMeshComponent> Mesh3P_Jacket;
+	UPROPERTY(VisibleAnywhere, Category = "FPS|Name")
+	TObjectPtr<UWidgetComponent> Nameplate;
+	void RefreshNameplate();
 	bool bCapturedDefaultMesh3P = false;
 	UPROPERTY()
 	TObjectPtr<USkeletalMesh> DefaultArmsMesh1PAsset;
