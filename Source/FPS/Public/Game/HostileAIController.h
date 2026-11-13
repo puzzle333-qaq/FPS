@@ -4,11 +4,15 @@
 #include "AIController.h"
 #include "Game/AINoiseEvent.h"
 #include "Game/HostileSquadTypes.h"
+#include "Perception/AIPerceptionTypes.h"
 #include "HostileAIController.generated.h"
 
 class AHostileAICharacter;
+class UAIPerceptionComponent;
+class UAISenseConfig_Hearing;
+class UAISenseConfig_Sight;
 
-UENUM()
+UENUM(BlueprintType)
 enum class EHostileBrainState : uint8
 {
 	Idle,
@@ -17,12 +21,22 @@ enum class EHostileBrainState : uint8
 	TakeCover,
 	Retreat,
 	Flee,
-	Surrender
+	Surrender,
+	Search
+};
+
+UENUM(BlueprintType)
+enum class EHostileAlertState : uint8
+{
+	Relaxed,
+	Suspicious,
+	Alert,
+	Searching
 };
 
 /**
  * Bandit brain:
- * - Hear gunshots and footsteps, then investigate and push
+ * - Hear gunshots, doors, explosions and footsteps, then investigate or go alert
  * - The first hit rolls surrender, last stand, or flee
  * - A runner keeps going until they can no longer see the player
  */
@@ -44,13 +58,29 @@ public:
 	/** Called when pawn takes damage. */
 	void NotifyTookDamage(AActor* DamageInstigator, const FVector& HitFrom);
 
+	/** Ally alert broadcast (same level, within AlertBroadcastRadius). */
+	void ReceiveAllyAlert(const FVector& Location, AActor* InstigatorActor);
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Hostile")
 	EHostileMorale GetMorale() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Hostile")
+	EHostileAlertState GetAlertState() const { return AlertState; }
 
 	/** Change job after spawn. A solo hostile is forced back to Closer. */
 	void SetSquadRole(EHostileSquadRole NewRole);
 
 protected:
+	UPROPERTY(VisibleAnywhere, Category = "FPS|HostileAI|Perception")
+	TObjectPtr<UAIPerceptionComponent> AIPerception;
+
+	UPROPERTY()
+	TObjectPtr<UAISenseConfig_Hearing> HearingConfig;
+
+	/** Phase 2 hook only — sight / light is not used for alert yet. */
+	UPROPERTY()
+	TObjectPtr<UAISenseConfig_Sight> SightConfig;
+
 	UPROPERTY(EditAnywhere, Category = "FPS|HostileAI")
 	float HearGunshotRange = 4500.f;
 
@@ -92,6 +122,16 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "FPS|HostileAI|Morale", meta = (ClampMin = "0"))
 	float FleeChance = 0.45f;
+
+	/** Morale roll while FlashSurrenderWindow active on the pawn (renormalized). */
+	UPROPERTY(EditAnywhere, Category = "FPS|HostileAI|Morale", meta = (ClampMin = "0"))
+	float FlashSurrenderChance = 1.f;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|HostileAI|Morale", meta = (ClampMin = "0"))
+	float FlashLastStandChance = 0.f;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|HostileAI|Morale", meta = (ClampMin = "0"))
+	float FlashFleeChance = 0.f;
 
 	/** Below this health fraction the bot stops pushing and falls back. */
 	UPROPERTY(EditAnywhere, Category = "FPS|HostileAI|Squad", meta = (ClampMin = "0", ClampMax = "1"))
@@ -161,8 +201,19 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "FPS|HostileAI|Fire", meta = (ClampMin = "0"))
 	float BurstPauseMax = 1.6f;
 
+	UFUNCTION()
+	void OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
+
 private:
 	void Think(float DeltaSeconds);
+	void TickAlertDebug() const;
+	void TickSearchLook(float Now, float DeltaSeconds);
+	void SetAlertState(EHostileAlertState NewState);
+	void EnterSearch(const FVector& Where);
+	void BroadcastAlert(const FVector& Location, AActor* InstigatorActor);
+	void NotifyLevelAlarm();
+	void NotifyPlayerDetected();
+	bool IsLevelAlarmRaised() const;
 	void TickFootstepSense(float Now);
 	void TickSuppress(AHostileAICharacter* Me, APawn* Target, bool bCanSee, float Dist, bool bUnderFire, float Now, float DeltaSeconds);
 	void TickFlank(AHostileAICharacter* Me, APawn* Target, bool bCanSee, float Dist, float Now, float DeltaSeconds);
@@ -186,6 +237,7 @@ private:
 	bool IsNear(const FVector& Loc, float DistCm) const;
 
 	EHostileBrainState State = EHostileBrainState::Idle;
+	EHostileAlertState AlertState = EHostileAlertState::Relaxed;
 	EHostileSquadRole Role = EHostileSquadRole::Closer;
 	FVector HomeLocation = FVector::ZeroVector;
 
@@ -209,10 +261,14 @@ private:
 	float NextFootSenseTime = 0.f;
 	float LostSightAt = -1.f;
 	float InvestigateUntil = 0.f;
+	float InvestigateMoveAt = 0.f;
 	float UnderFireUntil = 0.f;
 	float EnteredCoverAt = 0.f;
 	float RelocateUntil = 0.f;
 	float CoverCooldownUntil = 0.f;
+	float SearchUntil = 0.f;
+	float NextAlertBroadcastTime = 0.f;
+	float SearchLookTimer = 0.f;
 
 	FVector CachedGoal = FVector::ZeroVector;
 	FVector LastKnownEnemy = FVector::ZeroVector;

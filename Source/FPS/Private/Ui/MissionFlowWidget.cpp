@@ -1,5 +1,7 @@
 #include "Ui/MissionFlowWidget.h"
 #include "Ui/TacticalUIStyle.h"
+#include "Ui/OperationUIStyle.h"
+#include "Ui/ShooterLoadingScreen.h"
 #include "ShooterPlayerController.h"
 #include "World/MissionDeployPoint.h"
 #include "Game/CoopCqbGameState.h"
@@ -20,21 +22,44 @@ TSharedRef<SWidget> UMissionFlowWidget::RebuildWidget()
  PanelBrush = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::Panel, 12.f, 1.f);
  DimBrush = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::BgDim, 0.f, 0.f);
  ButtonStyle = FTacticalUIStyle::MakeButtonStyle();
- return SNew(SBorder).BorderImage(&DimBrush).Padding(32)
- [
-  SNew(SScaleBox).Stretch(EStretch::ScaleToFit).StretchDirection(EStretchDirection::DownOnly)
-  [
-   SNew(SBox).WidthOverride(860).HeightOverride(760)
-   [
-    SNew(SBorder).BorderImage(&PanelBrush).Padding(36)
-    [ SNew(SScrollBox) + SScrollBox::Slot() [ SAssignNew(Rows, SVerticalBox) ] ]
-   ]
-  ]
- ];
+ if(Panel==EMissionPanel::Tablet){
+  PanelBrush=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Panel,2,1);
+  DimBrush=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Panel,0,0);
+  ButtonStyle.Normal=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Panel,2,1);
+  ButtonStyle.Hovered=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Dim,2,1);
+  ButtonStyle.Pressed=ButtonStyle.Normal;
+ }
+ ReconBrush=FOperationUIStyle::MakePanelBrush(FLinearColor::Transparent,0,1,&FOperationUIStyle::TextMuted);
+ return SNew(SOverlay)
+ +SOverlay::Slot()
+ [SAssignNew(LegacyPanel,SBorder).BorderImage(&DimBrush).Padding(32)
+  [SNew(SScaleBox).Stretch(EStretch::ScaleToFit).StretchDirection(EStretchDirection::DownOnly)
+   [SNew(SBox).WidthOverride(860).HeightOverride(760)
+    [SNew(SBorder).BorderImage(&PanelBrush).Padding(36)
+     [SNew(SScrollBox)+SScrollBox::Slot()[SAssignNew(Rows,SVerticalBox)]]]]]]
+ +SOverlay::Slot().Padding(FMargin(48,40))
+ [SAssignNew(ReconPanel,SBorder).BorderImage(&ReconBrush).Padding(24).Visibility(EVisibility::Collapsed)
+  [SNew(SVerticalBox)
+   +SVerticalBox::Slot().AutoHeight()
+    [SAssignNew(ReconMap,STextBlock).Font(FOperationUIStyle::MakeFont(28,true)).ColorAndOpacity(FOperationUIStyle::Text)
+     .ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))]
+   +SVerticalBox::Slot().AutoHeight().Padding(FMargin(0,8,0,0))
+    [SAssignNew(ReconTask,STextBlock).Font(FOperationUIStyle::MakeFont(20)).ColorAndOpacity(FOperationUIStyle::Text)
+     .ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f)).AutoWrapText(true)]
+   +SVerticalBox::Slot().FillHeight(1)[SNew(SBox)]
+   +SVerticalBox::Slot().AutoHeight()
+    [SNew(SHorizontalBox)
+     +SHorizontalBox::Slot().AutoWidth()
+      [SNew(STextBlock).Text(FText::FromString(TEXT("等待队友就绪"))).Font(FOperationUIStyle::MakeFont(16)).ColorAndOpacity(FOperationUIStyle::TextMuted)
+       .ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))]
+     +SHorizontalBox::Slot().AutoWidth().Padding(FMargin(8,0,0,0))
+      [SAssignNew(ReconCount,STextBlock).Font(FOperationUIStyle::MakeFont(16)).ColorAndOpacity(FOperationUIStyle::Text)
+       .ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))]]]];
+
 }
 void UMissionFlowWidget::ReleaseSlateResources(bool bReleaseChildren)
 {
- Super::ReleaseSlateResources(bReleaseChildren); Rows.Reset(); Clock.Reset(); FirstButton.Reset();
+ Super::ReleaseSlateResources(bReleaseChildren); Rows.Reset(); Clock.Reset(); FirstButton.Reset(); LegacyPanel.Reset();ReconPanel.Reset();ReconMap.Reset();ReconTask.Reset();ReconCount.Reset();
 }
 void UMissionFlowWidget::NativeConstruct()
 {
@@ -57,22 +82,28 @@ void UMissionFlowWidget::Configure(EMissionPanel InPanel, AMissionDeployPoint* I
 }
 void UMissionFlowWidget::AddLine(const FString& Text, int32 Size)
 {
- Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 14)
- [ SNew(STextBlock).Text(FText::FromString(Text)).Font(FTacticalUIStyle::MakeFont(Size, Size >= 24))
-  .ColorAndOpacity(Size >= 24 ? FTacticalUIStyle::TextGold : FTacticalUIStyle::Text).AutoWrapText(true) ];
+ const bool Modern=Panel==EMissionPanel::Tablet;
+ const int32 FontSize=Size>=32?40:Size>=24?28:Size>=18?20:Size>=15?16:Size>=13?13:12;
+ Rows->AddSlot().AutoHeight().Padding(0, 0, 0, Modern?16:14)
+ [ SNew(STextBlock).Text(FText::FromString(Text)).Font(Modern?FOperationUIStyle::MakeFont(FontSize,Size>=24):FTacticalUIStyle::MakeFont(Size, Size >= 24))
+  .ColorAndOpacity(Modern?FOperationUIStyle::Text:(Size >= 24 ? FTacticalUIStyle::TextGold : FTacticalUIStyle::Text)).AutoWrapText(true)
+  .ShadowOffset(Modern?FVector2D(0,1):FVector2D::ZeroVector).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f)) ];
 }
 void UMissionFlowWidget::AddButton(const FText& Label, TFunction<void()> Action)
 {
  TSharedPtr<SButton> NewButton;
  Rows->AddSlot().AutoHeight().Padding(0, 4)
- [ SAssignNew(NewButton, SButton).ButtonStyle(&ButtonStyle).ContentPadding(FMargin(18, 12))
+ [ SAssignNew(NewButton, SButton).ButtonStyle(&ButtonStyle).ContentPadding(Panel==EMissionPanel::Tablet?FMargin(16,8):FMargin(18,12))
   .OnClicked_Lambda([Action=MoveTemp(Action)]() { Action(); return FReply::Handled(); })
-  [ SNew(STextBlock).Text(Label).Font(FTacticalUIStyle::MakeFont(18)).ColorAndOpacity(FTacticalUIStyle::Text) ] ];
+  [ SNew(STextBlock).Text(Label).Font(Panel==EMissionPanel::Tablet?FOperationUIStyle::MakeFont(16):FTacticalUIStyle::MakeFont(18)).ColorAndOpacity(Panel==EMissionPanel::Tablet?FOperationUIStyle::Text:FTacticalUIStyle::Text)
+   .ShadowOffset(Panel==EMissionPanel::Tablet?FVector2D(0,1):FVector2D::ZeroVector).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f)) ] ];
  if (!FirstButton) FirstButton = NewButton;
 }
 void UMissionFlowWidget::Refresh()
 {
  if (!Rows) return;
+ if(LegacyPanel)LegacyPanel->SetVisibility(Panel==EMissionPanel::Loading?EVisibility::Collapsed:EVisibility::Visible);
+ if(ReconPanel)ReconPanel->SetVisibility(Panel==EMissionPanel::Loading?EVisibility::HitTestInvisible:EVisibility::Collapsed);
  Rows->ClearChildren(); Clock.Reset(); FirstButton.Reset();
  auto* PC = Cast<AShooterPlayerController>(GetOwningPlayer());
  TWeakObjectPtr<AShooterPlayerController> WeakPC(PC);
@@ -116,9 +147,10 @@ void UMissionFlowWidget::Refresh()
  if (!GS) return;
  if (Panel == EMissionPanel::Loading)
  {
-  AddLine(TEXT("行动准备 / SQUAD LOADING"), 28);
-  AddLine(GS->GetCoopPhase() == ECoopCqbPhase::Briefing ? TEXT("全员加载完成，正在准备行动…") : GS->MissionStatus, 24);
-  AddLine(TEXT("等待地图、角色及场景流送就绪。准备完成前禁止移动与开火。"));
+  const FString Map=GetWorld()->GetMapName();
+  if(ReconMap)ReconMap->SetText(FText::FromString(ShooterLoadingScreen::GetMapName(Map)));
+  if(ReconTask)ReconTask->SetText(FText::FromString(ShooterLoadingScreen::GetTaskName(Map)));
+  if(ReconCount)ReconCount->SetText(FText::FromString(FString::Printf(TEXT("%d/%d"),GS->ReadyOperators,FMath::Max(1,GS->ExpectedOperators))));
   return;
  }
  const FMissionReport& R = GS->Report;
@@ -143,7 +175,7 @@ void UMissionFlowWidget::Refresh()
  AddLine(TEXT("投降不等于拘捕：靠近按 F 拘捕。人质解救后原地蹲下。"), 16);
  if (bDebrief)
  {
-  Rows->AddSlot().AutoHeight().Padding(0, 12) [ SAssignNew(Clock, STextBlock).Font(FTacticalUIStyle::MakeFont(20)).ColorAndOpacity(FTacticalUIStyle::TextGold) ];
+  Rows->AddSlot().AutoHeight().Padding(0, 12) [ SAssignNew(Clock, STextBlock).Font(Panel==EMissionPanel::Tablet?FOperationUIStyle::MakeFont(20):FTacticalUIStyle::MakeFont(20)).ColorAndOpacity(Panel==EMissionPanel::Tablet?FOperationUIStyle::Text:FTacticalUIStyle::TextGold) ];
   AddLine(TEXT("结算展示结束后全队自动返回靶场。"), 16);
  }
  else AddButton(NSLOCTEXT("Mission", "CloseTablet", "收起平板 / Tab"), [WeakPC]() { if (WeakPC.IsValid()) WeakPC->CloseMissionPanel(); });

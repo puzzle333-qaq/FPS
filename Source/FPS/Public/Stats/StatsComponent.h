@@ -28,7 +28,9 @@ class FPS_API UStatsComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-public:	
+public:
+	void StartDeath();
+
 	UStatsComponent();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -114,7 +116,4 @@ protected:
 
 	UFUNCTION()
 	void OnRep_MaxStamina(float OldValue);
-private:	
-	void StartDeath();
-	
 };

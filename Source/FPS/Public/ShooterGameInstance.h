@@ -34,6 +34,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Mode")
 	TSoftClassPtr<AGameModeBase> RangeGameMode;
 
+	// RangeGameMode when it is set, otherwise the coop mode that understands the range hub.
+	TSoftClassPtr<AGameModeBase> GetRangeGameMode() const;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Mode")
 	TSoftObjectPtr<UWorld> MainMenuMap;
 

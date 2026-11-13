@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Interfaces/OnlineSessionInterface.h"
+#include "OnlineSessionSettings.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "PartySubsystem.generated.h"
 
@@ -44,6 +45,13 @@ private:
 	void EnterOwnRangeIfNeeded();
 	void BindOnlineDelegates();
 	void BeginListenTravel();
+	void CreateEosRoom();
+	void StartJoin(const FOnlineSessionSearchResult& Result);
+	void DestroyAdvertisedRooms();
+	void RunAfterSessionDestroyed();
+	void OnDestroySessionComplete(FName SessionName, bool bWasSuccessful);
+	void OnRoomSessionCleared();
+	void FinishInviteAfterTravel();
 	void StartListenSession();
 	void PublishSteamLobby();
 	void JoinFromEosResult(const FOnlineSessionSearchResult& Result);
@@ -64,6 +72,7 @@ private:
 	FDelegateHandle EosInviteHandle;
 	FDelegateHandle SteamInviteHandle;
 	FDelegateHandle SteamCreateHandle;
+	FDelegateHandle DestroyHandle;
 	FDelegateHandle MapHandle;
 
 	bool bDelegatesBound = false;
@@ -75,8 +84,11 @@ private:
 	bool bOpenInviteAfterTravel = false;
 	bool bHostAfterLogin = false;
 	bool bSteamLobbyPublished = false;
+	bool bCreateRoomAfterDestroy = false;
+	bool bJoinAfterDestroy = false;
 	FString StatusText;
 	FString PendingEosSessionId;
+	FOnlineSessionSearchResult PendingJoinResult;
 
 	UPROPERTY()
 	TMap<FString, TObjectPtr<UTexture2D>> Avatars;

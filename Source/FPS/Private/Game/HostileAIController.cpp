@@ -1,8 +1,19 @@
 #include "Game/HostileAIController.h"
+#include "Combat/HitZoneVitalsComponent.h"
+#include "ShooterCharacter.h"
+#include "ShooterType/ShooterType.h"
+#include "ShooterGamePlayTags.h"
+
 
 #include "Game/HostileAICharacter.h"
 #include "Game/HostileSquadSubsystem.h"
+#include "Game/CoopCqbGameMode.h"
 #include "Game/CoopCqbGameState.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISense_Hearing.h"
+#include "Perception/AISenseConfig_Hearing.h"
+#include "Perception/AISenseConfig_Sight.h"
+#include "DrawDebugHelpers.h"
 #include "Interface/PlayerInterface.h"
 #include "Stats/StatsComponent.h"
 #include "ShooterCharacter.h"
@@ -18,6 +29,32 @@ AHostileAIController::AHostileAIController()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	bWantsPlayerState = false;
+
+	AIPerception = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("AIPerception"));
+	SetPerceptionComponent(*AIPerception);
+
+	HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
+	HearingConfig->HearingRange = 3500.f;
+	HearingConfig->LoSHearingRange = 3500.f;
+	HearingConfig->bUseLoSHearing = false;
+	HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
+	HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
+	HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
+	AIPerception->ConfigureSense(*HearingConfig);
+
+	// TODO(phase 2): vision / light. Sight config is registered but not used for alert yet.
+	SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
+	SightConfig->SightRadius = 0.f;
+	SightConfig->LoseSightRadius = 0.f;
+	SightConfig->PeripheralVisionAngleDegrees = 90.f;
+	SightConfig->DetectionByAffiliation.bDetectEnemies = true;
+	SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
+	SightConfig->DetectionByAffiliation.bDetectFriendlies = false;
+	SightConfig->SetMaxAge(0.f);
+	AIPerception->ConfigureSense(*SightConfig);
+
+	AIPerception->SetDominantSense(UAISense_Hearing::StaticClass());
+	AIPerception->OnTargetPerceptionUpdated.AddDynamic(this, &AHostileAIController::OnTargetPerceptionUpdated);
 }
 
 void AHostileAIController::OnPossess(APawn* InPawn)
@@ -47,6 +84,11 @@ void AHostileAIController::OnPossess(APawn* InPawn)
 	BurstShotsLeft = 0;
 	BurstResumeTime = 0.f;
 	State = EHostileBrainState::Idle;
+	AlertState = EHostileAlertState::Relaxed;
+	InvestigateMoveAt = 0.f;
+	SearchUntil = 0.f;
+	NextAlertBroadcastTime = 0.f;
+	SearchLookTimer = 0.f;
 	Role = EHostileSquadRole::Closer;
 	HomeLocation = InPawn ? InPawn->GetActorLocation() : FVector::ZeroVector;
 	if (AHostileAICharacter* Hostile = Cast<AHostileAICharacter>(InPawn))
@@ -98,6 +140,7 @@ void AHostileAIController::OnUnPossess()
 void AHostileAIController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	TickAlertDebug();
 	if (!HasAuthority()) return;
 	Think(DeltaSeconds);
 }
@@ -110,9 +153,21 @@ void AHostileAIController::HearNoise(const FVector& Location, float Loudness, AA
 	if (Cast<AHostileAICharacter>(NoiseInstigator)) return;
 	if (Me->GetMorale() == EHostileMorale::Surrender || Me->GetMorale() == EHostileMorale::Flee) return;
 
-	const float MaxRange = (Kind == AINoiseEvent::EKind::Gunshot)
-		? HearGunshotRange * Loudness
-		: HearFootstepRange * Loudness;
+	if (Kind == AINoiseEvent::EKind::SurrenderWarning)
+	{
+		const float MaxRange = AINoiseEvent::GetRadius(GetWorld(), Kind) * FMath::Clamp(Loudness, 0.05f, 1.f);
+		const float Dist = FVector::Dist(Me->GetActorLocation(), Location);
+		if (Dist > MaxRange) return;
+		if (!Me->IsInFlashSurrenderWindow()) return;
+
+		Me->SetMorale(EHostileMorale::Surrender);
+		SetCrouch(true);
+		SetState(EHostileBrainState::Surrender);
+		UE_LOG(LogTemp, Log, TEXT("[Hostile] %s heard surrender warning -> Surrender"), *GetNameSafe(Me));
+		return;
+	}
+
+	const float MaxRange = AINoiseEvent::GetRadius(GetWorld(), Kind) * FMath::Clamp(Loudness, 0.05f, 1.f);
 	const float Dist = FVector::Dist(Me->GetActorLocation(), Location);
 	if (Dist > MaxRange) return;
 
@@ -128,10 +183,37 @@ void AHostileAIController::HearNoise(const FVector& Location, float Loudness, AA
 		}
 	}
 
+	const float Now = GetWorld()->GetTimeSeconds();
 	InvestigatePoint = Location;
 	bHasInvestigate = true;
-	InvestigateUntil = GetWorld()->GetTimeSeconds() + InvestigateTimeout;
-	if (State == EHostileBrainState::Idle || State == EHostileBrainState::Investigate)
+
+	if (AINoiseEvent::IsLoud(Kind))
+	{
+		LastKnownEnemy = Location;
+		bHasLastKnown = true;
+		SetAlertState(EHostileAlertState::Alert);
+		NotifyLevelAlarm();
+		BroadcastAlert(Location, NoiseInstigator);
+		InvestigateUntil = Now + InvestigateTimeout;
+		InvestigateMoveAt = Now;
+		if (State == EHostileBrainState::Idle || State == EHostileBrainState::Investigate || State == EHostileBrainState::Search)
+		{
+			SetState(EHostileBrainState::Combat);
+		}
+		return;
+	}
+
+	if (AlertState == EHostileAlertState::Alert)
+	{
+		return;
+	}
+
+	const FAINoiseTuning Tuning = AINoiseEvent::GetTuning(GetWorld());
+	const bool bWasRelaxed = (AlertState == EHostileAlertState::Relaxed);
+	SetAlertState(EHostileAlertState::Suspicious);
+	InvestigateUntil = Now + InvestigateTimeout;
+	InvestigateMoveAt = bWasRelaxed ? (Now + FMath::Max(0.f, Tuning.RelaxedReactionDelay)) : Now;
+	if (State == EHostileBrainState::Idle || State == EHostileBrainState::Investigate || State == EHostileBrainState::Search)
 	{
 		SetState(EHostileBrainState::Investigate);
 	}
@@ -151,12 +233,22 @@ void AHostileAIController::NotifyTookDamage(AActor* DamageInstigator, const FVec
 	LastKnownEnemy = HitFrom;
 	bHasLastKnown = true;
 	UnderFireUntil = GetWorld()->GetTimeSeconds() + UnderFireDuration;
+	SetAlertState(EHostileAlertState::Alert);
+	NotifyLevelAlarm();
+	NotifyPlayerDetected();
+	BroadcastAlert(HitFrom, DamageInstigator);
 
 	if (Me->GetMorale() != EHostileMorale::Fighting) return;
 
-	const float SurrenderW = FMath::Max(0.f, SurrenderChance);
-	const float LastStandW = FMath::Max(0.f, LastStandChance);
-	const float FleeW = FMath::Max(0.f, FleeChance);
+	float SurrenderW = FMath::Max(0.f, SurrenderChance);
+	float LastStandW = FMath::Max(0.f, LastStandChance);
+	float FleeW = FMath::Max(0.f, FleeChance);
+	if (Me->IsInFlashSurrenderWindow())
+	{
+		SurrenderW = FMath::Max(0.f, FlashSurrenderChance);
+		LastStandW = FMath::Max(0.f, FlashLastStandChance);
+		FleeW = FMath::Max(0.f, FlashFleeChance);
+	}
 	const float Sum = SurrenderW + LastStandW + FleeW;
 	EHostileMorale Rolled = EHostileMorale::Flee;
 	if (Sum > KINDA_SMALL_NUMBER)
@@ -250,6 +342,7 @@ void AHostileAIController::Think(float DeltaSeconds)
 	const bool bHasTarget = IsValid(Target);
 	float Dist = TNumericLimits<float>::Max();
 	bool bCanSee = false;
+
 	if (bHasTarget)
 	{
 		Dist = FVector::Dist(Me->GetActorLocation(), Target->GetActorLocation());
@@ -259,6 +352,12 @@ void AHostileAIController::Think(float DeltaSeconds)
 			LastKnownEnemy = Target->GetActorLocation();
 			bHasLastKnown = true;
 			LostSightAt = -1.f;
+			if (Me->GetMorale() == EHostileMorale::Fighting || Me->GetMorale() == EHostileMorale::LastStand)
+			{
+				SetAlertState(EHostileAlertState::Alert);
+				NotifyLevelAlarm();
+				NotifyPlayerDetected();
+			}
 		}
 		else if (bHasLastKnown)
 		{
@@ -309,7 +408,20 @@ void AHostileAIController::Think(float DeltaSeconds)
 		if (!bHasInvestigate || Now > InvestigateUntil)
 		{
 			bHasInvestigate = false;
+			if (IsLevelAlarmRaised())
+			{
+				SetAlertState(EHostileAlertState::Suspicious);
+			}
+			else
+			{
+				SetAlertState(EHostileAlertState::Relaxed);
+			}
 			SetState(EHostileBrainState::Idle);
+			break;
+		}
+		if (Now < InvestigateMoveAt)
+		{
+			FaceLocation(InvestigatePoint);
 			break;
 		}
 		FVector Goal = InvestigatePoint;
@@ -317,9 +429,28 @@ void AHostileAIController::Think(float DeltaSeconds)
 		if (IsNear(Goal, 120.f))
 		{
 			bHasInvestigate = false;
-			// Linger briefly looking around then idle.
-			SetState(bHasLastKnown ? EHostileBrainState::Combat : EHostileBrainState::Idle);
+			if (AlertState == EHostileAlertState::Alert || (bHasLastKnown && IsLevelAlarmRaised()))
+			{
+				EnterSearch(bHasLastKnown ? LastKnownEnemy : InvestigatePoint);
+			}
+			else
+			{
+				if (IsLevelAlarmRaised())
+				{
+					SetAlertState(EHostileAlertState::Suspicious);
+				}
+				else
+				{
+					SetAlertState(EHostileAlertState::Relaxed);
+				}
+				SetState(EHostileBrainState::Idle);
+			}
 		}
+		break;
+	}
+	case EHostileBrainState::Search:
+	{
+		TickSearchLook(Now, DeltaSeconds);
 		break;
 	}
 	case EHostileBrainState::Combat:
@@ -358,10 +489,7 @@ void AHostileAIController::Think(float DeltaSeconds)
 			MoveToward(LastKnownEnemy, DeltaSeconds);
 			if (LostSightAt > 0.f && (Now - LostSightAt) > LoseSightGrace)
 			{
-				InvestigatePoint = LastKnownEnemy;
-				bHasInvestigate = true;
-				InvestigateUntil = Now + InvestigateTimeout;
-				SetState(EHostileBrainState::Investigate);
+				EnterSearch(LastKnownEnemy);
 				break;
 			}
 		}
@@ -456,13 +584,16 @@ void AHostileAIController::Think(float DeltaSeconds)
 			}
 			else if (bHasLastKnown)
 			{
-				InvestigatePoint = LastKnownEnemy;
-				bHasInvestigate = true;
-				InvestigateUntil = Now + InvestigateTimeout;
-				SetState(EHostileBrainState::Investigate);
+				EnterSearch(LastKnownEnemy);
+			}
+			else if (IsLevelAlarmRaised())
+			{
+				SetAlertState(EHostileAlertState::Suspicious);
+				SetState(EHostileBrainState::Idle);
 			}
 			else
 			{
+				SetAlertState(EHostileAlertState::Relaxed);
 				SetState(EHostileBrainState::Idle);
 			}
 		}
@@ -530,49 +661,175 @@ void AHostileAIController::Think(float DeltaSeconds)
 	PublishSquad(bCanSee ? Target : nullptr);
 }
 
-void AHostileAIController::TickFootstepSense(float Now)
+void AHostileAIController::TickFootstepSense(float /*Now*/)
 {
-	if (Now < NextFootSenseTime) return;
-	NextFootSenseTime = Now + 0.35f;
+	// Footsteps are reported from AShooterCharacter (authority), including dedicated servers.
+}
 
+void AHostileAIController::OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
+{
+	if (!Stimulus.WasSuccessfullySensed()) return;
+	if (Stimulus.Type == UAISense::GetSenseID<UAISense_Hearing>())
+	{
+		// Report() already iterates controllers; this is a hook for the perception component.
+		return;
+	}
+	// TODO(phase 2): sight / light stimulus.
+	(void)Actor;
+}
+
+void AHostileAIController::SetAlertState(EHostileAlertState NewState)
+{
+	if (AlertState == NewState) return;
+	if (NewState == EHostileAlertState::Relaxed && IsLevelAlarmRaised())
+	{
+		NewState = EHostileAlertState::Suspicious;
+	}
+	if (AlertState == NewState) return;
+	AlertState = NewState;
+	UE_LOG(LogTemp, Verbose, TEXT("[Hostile] %s alert -> %s"),
+		*GetNameSafe(GetPawn()),
+		*StaticEnum<EHostileAlertState>()->GetNameStringByValue(static_cast<int64>(AlertState)));
+}
+
+void AHostileAIController::EnterSearch(const FVector& Where)
+{
+	LastKnownEnemy = Where;
+	bHasLastKnown = true;
+	InvestigatePoint = Where;
+	bHasInvestigate = true;
+	const FAINoiseTuning Tuning = AINoiseEvent::GetTuning(GetWorld());
+	const float Now = GetWorld()->GetTimeSeconds();
+	SearchUntil = Now + FMath::Max(1.f, Tuning.SearchTimeout);
+	SearchLookTimer = 0.f;
+	SetAlertState(EHostileAlertState::Searching);
+	SetState(EHostileBrainState::Search);
+}
+
+void AHostileAIController::TickSearchLook(float Now, float DeltaSeconds)
+{
 	AHostileAICharacter* Me = Cast<AHostileAICharacter>(GetPawn());
 	if (!Me) return;
+	SetCrouch(false);
 
-	APawn* Best = nullptr;
-	float BestDist = HearFootstepRange;
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	if (Now > SearchUntil)
 	{
-		APlayerController* PC = It->Get();
-		if (!IsValid(PC)) continue;
-		APawn* P = PC->GetPawn();
-		if (!IsValid(P)) continue;
-		const UStatsComponent* Stats = UStatsComponent::FindStatsComponent(P);
-		if (Stats && Stats->DeathState != EDeathState::NotDead) continue;
-
-		const FVector Vel = P->GetVelocity();
-		const float Speed2D = Vel.Size2D();
-		if (Speed2D < 80.f) continue; // standing / quiet creep ignored
-
-		float Range = HearFootstepRange;
-		if (const ACharacter* Ch = Cast<ACharacter>(P))
+		bHasInvestigate = false;
+		SetAlertState(EHostileAlertState::Suspicious);
+		SetState(EHostileBrainState::Idle);
+		if (UCharacterMovementComponent* Move = Me->GetCharacterMovement())
 		{
-			if (Ch->bIsCrouched) Range *= 0.45f;
+			Move->StopMovementImmediately();
 		}
-		if (Speed2D > 450.f) Range *= 1.35f; // sprint louder
-
-		const float Dist = FVector::Dist(Me->GetActorLocation(), P->GetActorLocation());
-		if (Dist < Range && Dist < BestDist)
-		{
-			BestDist = Dist;
-			Best = P;
-		}
+		return;
 	}
 
-	if (!Best) return;
-	// Don't spam investigate if we already see them.
-	if (HasLineOfSightTo(Best)) return;
+	const FVector Goal = bHasLastKnown ? LastKnownEnemy : InvestigatePoint;
+	if (!IsNear(Goal, 120.f))
+	{
+		MoveToward(Goal, DeltaSeconds);
+		return;
+	}
 
-	HearNoise(Best->GetActorLocation(), 0.7f, Best, AINoiseEvent::EKind::Footstep);
+	if (UCharacterMovementComponent* Move = Me->GetCharacterMovement())
+	{
+		Move->StopMovementImmediately();
+	}
+	SearchLookTimer += DeltaSeconds;
+	const FVector To = (Goal - Me->GetActorLocation()).GetSafeNormal2D();
+	const FVector Base = To.IsNearlyZero() ? Me->GetActorForwardVector() : To;
+	const float Yaw = FMath::Sin(SearchLookTimer * 1.6f) * 70.f;
+	FaceLocation(Me->GetActorLocation() + Base.RotateAngleAxis(Yaw, FVector::UpVector) * 200.f);
+}
+
+void AHostileAIController::BroadcastAlert(const FVector& Location, AActor* InstigatorActor)
+{
+	UWorld* World = GetWorld();
+	APawn* Me = GetPawn();
+	if (!World || !Me) return;
+	const float Now = World->GetTimeSeconds();
+	if (Now < NextAlertBroadcastTime) return;
+	const float Radius = AINoiseEvent::GetTuning(World).AlertBroadcastRadius;
+	NextAlertBroadcastTime = Now + 0.75f;
+	for (TActorIterator<AHostileAIController> It(World); It; ++It)
+	{
+		AHostileAIController* Other = *It;
+		if (!IsValid(Other) || Other == this) continue;
+		const APawn* OtherPawn = Other->GetPawn();
+		if (!IsValid(OtherPawn)) continue;
+		if (FVector::Dist(Me->GetActorLocation(), OtherPawn->GetActorLocation()) > Radius) continue;
+		Other->ReceiveAllyAlert(Location, InstigatorActor);
+	}
+}
+
+void AHostileAIController::ReceiveAllyAlert(const FVector& Location, AActor* InstigatorActor)
+{
+	AHostileAICharacter* Me = Cast<AHostileAICharacter>(GetPawn());
+	if (!Me || !Me->IsHostileAlive()) return;
+	if (Me->GetMorale() == EHostileMorale::Surrender || Me->GetMorale() == EHostileMorale::Flee) return;
+
+	LastKnownEnemy = Location;
+	bHasLastKnown = true;
+	InvestigatePoint = Location;
+	bHasInvestigate = true;
+	SetAlertState(EHostileAlertState::Alert);
+	NotifyLevelAlarm();
+	if (Cast<APawn>(InstigatorActor) && !Cast<AHostileAICharacter>(InstigatorActor))
+	{
+		// Hearing a teammate's alarm is not itself a confirmed player sighting.
+	}
+	if (State == EHostileBrainState::Idle || State == EHostileBrainState::Investigate || State == EHostileBrainState::Search)
+	{
+		SetState(EHostileBrainState::Combat);
+	}
+}
+
+void AHostileAIController::NotifyLevelAlarm()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (ACoopCqbGameMode* GM = World->GetAuthGameMode<ACoopCqbGameMode>())
+		{
+			GM->NotifyAlarmRaised();
+		}
+	}
+}
+
+void AHostileAIController::NotifyPlayerDetected()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (ACoopCqbGameMode* GM = World->GetAuthGameMode<ACoopCqbGameMode>())
+		{
+			GM->NotifyPlayersDetected();
+		}
+	}
+}
+
+bool AHostileAIController::IsLevelAlarmRaised() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		if (const ACoopCqbGameState* GS = World->GetGameState<ACoopCqbGameState>())
+		{
+			return GS->IsAlarmRaised();
+		}
+	}
+	return false;
+}
+
+void AHostileAIController::TickAlertDebug() const
+{
+	if (!AINoiseEvent::IsAlertDebugEnabled()) return;
+	const APawn* Me = GetPawn();
+	UWorld* World = GetWorld();
+	if (!Me || !World) return;
+	const UEnum* AlertEnum = StaticEnum<EHostileAlertState>();
+	const UEnum* BrainEnum = StaticEnum<EHostileBrainState>();
+	const FString Label = FString::Printf(TEXT("%s / %s"),
+		AlertEnum ? *AlertEnum->GetNameStringByValue(static_cast<int64>(AlertState)) : TEXT("?"),
+		BrainEnum ? *BrainEnum->GetNameStringByValue(static_cast<int64>(State)) : TEXT("?"));
+	DrawDebugString(World, Me->GetActorLocation() + FVector(0.f, 0.f, 110.f), Label, nullptr, FColor::Cyan, 0.f, true, 1.15f);
 }
 
 APawn* AHostileAIController::FindBestPlayerTarget() const
@@ -690,13 +947,14 @@ bool AHostileAIController::IsHealthLow() const
 
 void AHostileAIController::FaceLocation(const FVector& Loc)
 {
-	APawn* Me = GetPawn();
+	AHostileAICharacter* Me = Cast<AHostileAICharacter>(GetPawn());
 	if (!Me) return;
 	const FVector To = (Loc - Me->GetActorLocation()).GetSafeNormal2D();
 	if (To.IsNearlyZero()) return;
 	const float Delta = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
 	const FRotator Desired = To.Rotation();
-	Me->SetActorRotation(FMath::RInterpConstantTo(Me->GetActorRotation(), Desired, Delta, AimTurnRate));
+	const float Turn = AimTurnRate * Me->GetArmInjuryTurnScale() * Me->GetStingerLookScale();
+	Me->SetActorRotation(FMath::RInterpConstantTo(Me->GetActorRotation(), Desired, Delta, Turn));
 }
 
 FVector AHostileAIController::ProjectToNav(const FVector& Point) const
@@ -1133,9 +1391,14 @@ void AHostileAIController::TryShoot(APawn* Target, float Now)
 	const FVector Aim = Target->GetActorLocation() + FVector(0.f, 0.f, AimZ);
 	FVector Dir = (Aim - Start).GetSafeNormal();
 	if (Dir.IsNearlyZero()) return;
-	if (AimSpreadDegrees > 0.f)
+	float Spread = AimSpreadDegrees;
+	if (IsValid(Me))
 	{
-		Dir = FMath::VRandCone(Dir, FMath::DegreesToRadians(AimSpreadDegrees));
+		Spread *= Me->GetArmInjurySpreadScale();
+	}
+	if (Spread > 0.f)
+	{
+		Dir = FMath::VRandCone(Dir, FMath::DegreesToRadians(Spread));
 	}
 	const FVector End = Start + Dir * 8000.f;
 	FHitResult Hit;
@@ -1151,6 +1414,23 @@ void AHostileAIController::TryShoot(APawn* Target, float Now)
 	if (!HitActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass())) return;
 	if (Cast<AHostileAICharacter>(HitActor)) return;
 
-	IPlayerInterface::Execute_DoDamage(HitActor, Me->ShotDamage, Me);
+	const FName Bone = ResolveDamageBone(Hit);
+	const EHitZone Zone = ResolveHitZone(Bone);
+	if (HitZoneCombat::IsHitZoneVictim(HitActor))
+	{
+		HitZoneCombat::ApplyBallisticToActor(HitActor, Me, Zone, false, 1.f, true);
+	}
+	else
+	{
+		IPlayerInterface::Execute_DoDamage(HitActor, Me->ShotDamage, Me);
+	}
+	if (Cast<AShooterCharacter>(HitActor) || Cast<AHostileAICharacter>(HitActor))
+	{
+		Me->Multicast_FleshHit(Hit.ImpactPoint, Hit.ImpactNormal);
+	}
+	if (UHitZoneVitalsComponent* OwnerVitals = UHitZoneVitalsComponent::Find(Me))
+	{
+		OwnerVitals->NoteCombatEvent();
+	}
 }
 

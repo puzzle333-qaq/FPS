@@ -1,4 +1,5 @@
 #include "Weapon/WeaponSting.h"
+#include "Weapon/ThrownProjectile.h"
 #include "ShooterGamePlayTags.h"
 
 AWeaponSting::AWeaponSting()
@@ -8,4 +9,5 @@ AWeaponSting::AWeaponSting()
 	MagCapacity = 1;
 	Ammo = 1;
 	StartingCarriedAmmo = 0;
+	ProjectileClass = AThrownStinger::StaticClass();
 }

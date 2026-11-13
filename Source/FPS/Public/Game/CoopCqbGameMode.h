@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ShooterGameModeBase.h"
+#include "Game/AINoiseEvent.h"
 #include "Game/CoopCqbTypes.h"
 #include "Game/MissionTypes.h"
 #include "CoopCqbGameMode.generated.h"
@@ -87,8 +88,15 @@ public:
 	/** Refresh living hostile count + check ClearEnemies. */
 	void Auth_RefreshObjectives();
 
+	void NotifyAlarmRaised();
+	void NotifyPlayersDetected();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|CoopCQB|AI|Stealth")
+	FAINoiseTuning NoiseTuning;
+
 	UFUNCTION(BlueprintCallable, Category = "FPS|CoopCQB")
 	void Auth_AbortMission();
+ void Auth_DeploymentViewReady(APlayerController* PC);
 
 protected:
 	virtual void ScoreKill(AShooterPlayerState* KillerPS, AShooterPlayerState* VictimPS) override;
@@ -96,6 +104,11 @@ protected:
 	virtual void OnPlayerKilled(AController* KillerController, AController* VictimController) override;
 
 private:
+	// Soft references let the cooker discover defaults without loading cinematic
+	// camera subobjects before the engine's typed-element registry exists.
+	UPROPERTY() TSoftClassPtr<AHostileAICharacter> DefaultHostileBlueprint;
+	UPROPERTY() TSoftClassPtr<APawn> DefaultPawnBlueprint;
+	UPROPERTY() TSoftClassPtr<APlayerController> DefaultControllerBlueprint;
 	void ResolveLoadout();
 	void BeginMissionFlow();
 	void StartBriefing();
@@ -103,6 +116,7 @@ private:
 	void EndMission(bool bOperatorsWon, ECoopCqbWinReason Reason);
 	void OpenDebrief();
  void CheckOperatorReadiness();
+ TSet<TWeakObjectPtr<APlayerController>> DeploymentViewReadyPlayers;
  void UpdateReport(bool bFinal = false, bool bWon = false);
  bool bRangeHub = false;
  int32 ExpectedOperators = 1;

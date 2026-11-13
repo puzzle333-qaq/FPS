@@ -16,18 +16,26 @@ Place on Lvl_boat
 2. Place actor class BreakableDoor (C++), or make BP child:
    Content Browser → right-click → Blueprint Class → BreakableDoor
    e.g. /Game/FPS/Coop/BP_ShipDoor
-3. Align actor ORIGIN / Hinge on the frame hinge edge (leaf swings around it).
-4. Details → FPS|Door|Mesh:
-   - Door Leaf Mesh = ship door, e.g.
+3. Leave the door FRAME as its own Static Mesh in the level.
+   Do NOT drag BP_ShipDoor onto that mesh or attach it as a child.
+   A child on a ship static-mesh instance removes the frame.
+4. Place BP_ShipDoor beside the frame. The green arrow is the hinge axis.
+   Move the actor until that arrow sits on the real hinge pin.
+5. Details → FPS|Door|Mesh:
+   - Door Leaf Mesh = the swinging panel only, e.g.
        /Game/Industrial_Ship/Assets/door_1/SM_door_1
        /Game/Industrial_Ship/Assets/door_2/SM_door_2
        /Game/Industrial_Ship/Assets/door_3/SM_door_3_A
-     or FPS_Controller SM_Door / SM_ExteriorDoor / SM_WarehouseDoor
-   - Tweak Door Leaf Relative Location / Rotation / Scale until leaf fills the frame.
-   - bAutoFitInteractBox usually OK; if F never hits, enlarge Interact Box Extent.
-5. Actor forward should face one side of the doorway (used for "open away").
-6. Optional FX: assign PushSound / KickSound / CloseSound in Details.
-7. PIE: aim at door, F. Look down for kick, look up for push.
+     SM_door_* is one mesh (panel + frame baked together). Using it as the leaf
+     swings the frame too. Keep the level frame mesh, and if the leaf mesh also
+     contains a frame, that copy will move. Prefer a panel-only mesh when you have one.
+   - bSnapLeafToHingeEdge puts the chosen Hinge Edge on the green arrow.
+     If the panel hangs off the wrong side, switch Hinge Edge (Negative Y / Positive Y / X).
+   - Door Frame Mesh is optional and never rotates. Leave it empty when the frame
+     is already placed in the level.
+6. Actor forward should face one side of the doorway (used for "open away").
+7. Optional FX: assign PushSound / KickSound / CloseSound in Details.
+8. PIE: aim at door, F. Look down for kick, look up for push.
 
 Quick test without placing
 --------------------------

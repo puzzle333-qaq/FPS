@@ -2,6 +2,13 @@
 
 
 #include "ShooterCharacter.h"
+#include "Vision/NightVisionProfile.h"
+#include "Game/CoopCqbGameState.h"
+#include "Game/AINoiseEvent.h"
+#include "Combat/HitZoneVitalsComponent.h"
+#include "World/BloodPool.h"
+#include "ShooterGameModeBase.h"
+#include "World/GlowStick.h"
 #include "Components/WidgetComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Ui/PlayerNameplateWidget.h"
@@ -256,6 +263,10 @@ AShooterCharacter::AShooterCharacter()
 	Stats = CreateDefaultSubobject<UStatsComponent>("Stats");
 	Stats->SetIsReplicated(true);
 
+	Vitals = CreateDefaultSubobject<UHitZoneVitalsComponent>(TEXT("HitZoneVitals"));
+	Vitals->SetIsReplicated(true);
+	Vitals->bOutOfCombatTorsoRecovery = true;
+
 	Nameplate = CreateDefaultSubobject<UWidgetComponent>(TEXT("PlayerNameplate"));
 	Nameplate->SetupAttachment(GetCapsuleComponent());
 	Nameplate->SetRelativeLocation(FVector(0.f, 0.f, 104.f));
@@ -344,11 +355,11 @@ void AShooterCharacter::BeginPlay()
 	}
 	if (BloodFootprintDecal.IsNull())
 	{
-		BloodFootprintDecal = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat")));
+		BloodFootprintDecal = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/FPS/FX/Blood/MI_BloodPuddle_Wet.MI_BloodPuddle_Wet")));
 	}
 	if (BloodHitDecal.IsNull())
 	{
-		BloodHitDecal = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat")));
+		BloodHitDecal = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/FPS/FX/Blood/MI_BloodPuddle_Wet.MI_BloodPuddle_Wet")));
 	}
 	if (BloodHitNiagara.IsNull())
 	{
@@ -1183,6 +1194,7 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 
 	EnsureLeanInput(ShooterInputComponent);
 	EnsureFireModeInput(ShooterInputComponent);
+	EnsureGlowStickInput();
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanLeft_Started);
 	ShooterInputComponent->BindAction(LeanLeftAction, ETriggerEvent::Completed, this, &ThisClass::Input_LeanLeft_Completed);
 	ShooterInputComponent->BindAction(LeanRightAction, ETriggerEvent::Started, this, &ThisClass::Input_LeanRight_Started);
@@ -1193,6 +1205,7 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	ShooterInputComponent->BindAction(AimWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_Aim_Released);
 	ShooterInputComponent->BindAction(ReloadWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_ReloadWeapon_Started);
 	ShooterInputComponent->BindAction(ReloadWeaponAction, ETriggerEvent::Completed, this, &ThisClass::Input_ReloadWeapon_Completed);
+	ShooterInputComponent->BindAction(ReloadWeaponAction, ETriggerEvent::Canceled, this, &ThisClass::ClearReloadGestureTimers);
 	ShooterInputComponent->BindAction(EquipMainWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipMainWeapon);
 	ShooterInputComponent->BindAction(EquipSeconedaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipSeconedaryWeapon);
 	ShooterInputComponent->BindAction(EquipMeleeWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_EquipMeleeWeapon);
@@ -1211,6 +1224,10 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	if (SwitchFireModeAction)
 	{
 		ShooterInputComponent->BindAction(SwitchFireModeAction, ETriggerEvent::Started, this, &ThisClass::Input_SwitchFireMode);
+	}
+	if (GlowStickAction)
+	{
+		ShooterInputComponent->BindAction(GlowStickAction, ETriggerEvent::Started, this, &ThisClass::Input_DropGlowStick);
 	}
 	// Free inspect removed: mag check is hold-R (see Input_ReloadWeapon_*).
 	// VersionWeaponAction intentionally unbound.
@@ -1333,13 +1350,16 @@ bool AShooterCharacter::DoDamage_Implementation(float DamageAmout, AActor* Damag
 		return false;
 	}
 
-	Stats->ChangeHealthByAmout(-DamageAmout, DamageInstigator);
+	// Untyped DoDamage (legacy / environmental) maps to a torso-weight hit. Ballistic/explosive
+	// callers use HitZoneCombat directly and do not come through here.
+	if (Vitals)
+	{
+		const bool bDied = Vitals->ApplyUnspecifiedHit(DamageInstigator, 1.f);
+		return bDied || (Stats->DeathState != EDeathState::NotDead);
+	}
+
 	Multicast_NotifyBloodyFeet();
 	if (ShooterGM) ShooterGM->NotifyDamage(InstigatorController, GetController());
-	if (ShooterGM && Stats->DeathState != EDeathState::NotDead)
-	{
-		ShooterGM->OnPlayerKilled(InstigatorController, GetController());
-	}
 	//calculate whether or not damage lethal
 
 	const bool bSelfDamage = DamageInstigator == this;
@@ -1477,6 +1497,7 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AShooterCharacter, FactionLook);
 	DOREPLIFETIME(AShooterCharacter, bHasRadar);
 	DOREPLIFETIME(AShooterCharacter, bHasFlashGoggles);
+	DOREPLIFETIME(AShooterCharacter, GlowStickCount);
 }
 
 // ===== 趴下 / 趴行 (Prone) =====
@@ -1956,6 +1977,74 @@ void AShooterCharacter::EnsureFireModeInput(UEnhancedInputComponent* InputComp)
 	}
 }
 
+void AShooterCharacter::EnsureGlowStickInput()
+{
+	if (!IsLocallyControlled()) return;
+	if (!GlowStickAction)
+	{
+		GlowStickAction = NewObject<UInputAction>(this, TEXT("IA_GlowStick_Runtime"));
+		GlowStickAction->ValueType = EInputActionValueType::Boolean;
+	}
+	if (!GlowStickIMC)
+	{
+		GlowStickIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_GlowStick_Runtime"));
+		GlowStickIMC->MapKey(GlowStickAction, EKeys::G);
+	}
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+			{
+				if (!Subsystem->HasMappingContext(GlowStickIMC))
+				{
+					Subsystem->AddMappingContext(GlowStickIMC, 2);
+				}
+			}
+		}
+	}
+}
+
+void AShooterCharacter::Input_DropGlowStick()
+{
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (PC->bShowMouseCursor) return;
+	}
+	if (GlowStickCount <= 0)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(99211, 1.2f, FColor::Green, TEXT("荧光棒用完了"));
+		}
+		return;
+	}
+	Server_DropGlowStick();
+}
+
+void AShooterCharacter::Server_DropGlowStick_Implementation()
+{
+	if (GlowStickCount <= 0) return;
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	const FVector Dir = GetControlRotation().Vector().GetSafeNormal();
+	const FVector Origin = GetPawnViewLocation();
+	const FVector SpawnLoc = Origin + Dir * 45.f + FVector(0.f, 0.f, -12.f);
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.Instigator = this;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	AGlowStick* Stick = World->SpawnActor<AGlowStick>(AGlowStick::StaticClass(), SpawnLoc, Dir.Rotation(), Params);
+	if (!IsValid(Stick)) return;
+	Stick->Launch(Dir + FVector(0.f, 0.f, 0.22f), 360.f);
+	--GlowStickCount;
+	OnEquipmentHudChanged.Broadcast();
+}
+
+void AShooterCharacter::OnRep_GlowStickCount() { OnEquipmentHudChanged.Broadcast(); }
+
 void AShooterCharacter::UpdateAltPeek()
 {
 	const bool bWasPeek = bAltPeekCrouch;
@@ -2265,30 +2354,19 @@ void AShooterCharacter::ClearReloadGestureTimers()
 		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
 		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
 	}
+	bReloadKeyHeld = false;
+	bReloadHoldTriggered = false;
+	bReloadAwaitingDouble = false;
+	bReloadDoubleClick = false;
 }
 
 void AShooterCharacter::Input_ReloadWeapon_Started()
 {
-	// Second press inside the double-click window -> mark double (tactical on release).
-	if (bReloadAwaitingDouble)
-	{
-		bReloadAwaitingDouble = false;
-		bReloadDoubleClick = true;
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-		}
-	}
-	else
-	{
-		bReloadDoubleClick = false;
-	}
-
+	if (bReloadKeyHeld) return;
+	ClearReloadGestureTimers();
 	bReloadKeyHeld = true;
-	bReloadHoldTriggered = false;
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
 		World->GetTimerManager().SetTimer(
 			ReloadHoldTimer, this, &AShooterCharacter::OnReloadHoldThreshold,
 			FMath::Max(0.05f, ReloadHoldThreshold), false);
@@ -2299,58 +2377,21 @@ void AShooterCharacter::OnReloadHoldThreshold()
 {
 	if (!bReloadKeyHeld || bReloadHoldTriggered) return;
 	bReloadHoldTriggered = true;
-	bReloadAwaitingDouble = false;
-	bReloadDoubleClick = false;
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-	}
-	// HOLD R = mag check (no free inspect key)
 	if (IsValid(Combat)) Combat->Initiate_VersionWeapon();
 }
 
 void AShooterCharacter::OnReloadSingleClickTimeout()
 {
-	if (bReloadKeyHeld || bReloadHoldTriggered || bReloadDoubleClick) return;
-	bReloadAwaitingDouble = false;
-	// SINGLE R = reload (keep partial mag / Empty montage)
-	if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(false);
+	// Kept for compatibility with older cooked classes. R no longer schedules a
+	// double-tap/drop gesture: every short release retains its partial magazine.
 }
 
 void AShooterCharacter::Input_ReloadWeapon_Completed()
 {
-	bReloadKeyHeld = false;
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(ReloadHoldTimer);
-	}
-	if (bReloadHoldTriggered)
-	{
-		bReloadHoldTriggered = false;
-		return; // hold already fired mag check
-	}
-	if (bReloadDoubleClick)
-	{
-		bReloadDoubleClick = false;
-		bReloadAwaitingDouble = false;
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-		}
-		// DOUBLE R = tactical reload (drop mag / Tactical montage)
-		if (IsValid(Combat)) Combat->Initiate_ReloadWeapon(true);
-		return;
-	}
-	// Wait briefly for a possible second tap before committing single reload.
-	bReloadAwaitingDouble = true;
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(ReloadDoubleClickTimer);
-		World->GetTimerManager().SetTimer(
-			ReloadDoubleClickTimer, this, &AShooterCharacter::OnReloadSingleClickTimeout,
-			FMath::Max(0.05f, ReloadDoubleClickWindow), false);
-	}
-	else if (IsValid(Combat))
+	const bool bWasHeld = bReloadKeyHeld;
+	const bool bWasInspection = bReloadHoldTriggered;
+	ClearReloadGestureTimers();
+	if (bWasHeld && !bWasInspection && IsValid(Combat))
 	{
 		Combat->Initiate_ReloadWeapon(false);
 	}
@@ -2644,7 +2685,7 @@ void AShooterCharacter::Input_Heal()
 	{
 		return;
 	}
-	HealPlayer(HealAmout);
+	// HP heal path removed — bandage (hold) clears limb injuries only.
 }
 
 void AShooterCharacter::Input_VersionWeapon()
@@ -3043,11 +3084,6 @@ void AShooterCharacter::UpdateFootsteps(float DeltaTime)
 	{
 		return;
 	}
-	// 专用服务器不播；死亡不播
-	if (GetNetMode() == NM_DedicatedServer)
-	{
-		return;
-	}
 	if (IsValid(Stats) && Stats->DeathState != EDeathState::NotDead)
 	{
 		FootstepDistanceAccum = 0.f;
@@ -3104,6 +3140,26 @@ void AShooterCharacter::UpdateFootsteps(float DeltaTime)
 	}
 	FootstepDistanceAccum = 0.f;
 	bFootstepLeft = !bFootstepLeft;
+
+	if (HasAuthority())
+	{
+		AINoiseEvent::EKind StepKind = AINoiseEvent::EKind::WalkFootstep;
+		if (bIsProne || bIsCrouched || bUseWalkGait)
+		{
+			StepKind = AINoiseEvent::EKind::CrouchFootstep;
+		}
+		else if (bSprinting)
+		{
+			StepKind = AINoiseEvent::EKind::SprintFootstep;
+		}
+		AINoiseEvent::Report(GetWorld(), GetActorLocation(), 1.f, this, StepKind);
+	}
+
+	// Audio is skipped on dedicated servers; noise was already reported above.
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
 
 	const EPhysicalSurface Surface = TraceFootstepSurface();
 	USoundBase* Sound = ResolveFootstepSound(Surface);
@@ -3882,8 +3938,7 @@ void AShooterCharacter::Input_Bandage_Started()
 		BeginBandage();
 		return;
 	}
-	// Not injured: keep old HealAction behavior (hotkey 5 / HP heal).
-	Input_Heal();
+	// Not injured: HP heal removed (pure hit-zone). Bandage only clears limb injuries.
 }
 
 void AShooterCharacter::Input_Bandage_Completed()
@@ -4115,7 +4170,7 @@ void AShooterCharacter::ToggleNVG()
 	{
 		return;
 	}
-	// Alt+K: NVG on/off only (Thermal stays console CycleVision / Vision 2).
+	// N: NVG on/off only (Thermal stays console CycleVision / Vision 2).
 	if (TacticalVisionMode == ETacticalVisionMode::NVG)
 	{
 		SetTacticalVisionMode(ETacticalVisionMode::Off);
@@ -4123,6 +4178,20 @@ void AShooterCharacter::ToggleNVG()
 	else
 	{
 		SetTacticalVisionMode(ETacticalVisionMode::NVG);
+	}
+}
+
+void AShooterCharacter::CycleNVGHousing()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+	NVGHousing = NVGHousing == ENVGHousing::Quad ? ENVGHousing::Dual : ENVGHousing::Quad;
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(99203, 1.6f, FColor::Green,
+			NVGHousing == ENVGHousing::Quad ? TEXT("夜视仪：四目") : TEXT("夜视仪：双目"));
 	}
 }
 
@@ -4147,15 +4216,9 @@ void AShooterCharacter::SetTacticalVisionMode(ETacticalVisionMode NewMode)
 		return;
 	}
 	TacticalVisionMode = NewMode;
+	OnEquipmentHudChanged.Broadcast();
 	ApplyTacticalVisionEffects();
-	if (GEngine)
-	{
-		const TCHAR* Name =
-			TacticalVisionMode == ETacticalVisionMode::NVG ? TEXT("NVG") :
-			TacticalVisionMode == ETacticalVisionMode::Thermal ? TEXT("Thermal") : TEXT("Off");
-		GEngine->AddOnScreenDebugMessage(99202, 2.5f, FColor::Cyan,
-			FString::Printf(TEXT("Vision -> %s (battery %.0f%%)"), Name, GetVisionBatteryNormalized() * 100.f));
-	}
+	// Equipment status is presented by the HUD; diagnostics stay in the log.
 	UE_LOG(LogTemp, Log, TEXT("[Vision] mode=%d battery=%.1f"), static_cast<int32>(TacticalVisionMode), VisionBatterySeconds);
 }
 
@@ -4269,6 +4332,12 @@ void AShooterCharacter::ClearTacticalVisionEffects()
 	PPS.bOverride_ColorGammaShadows = false;
 	PPS.bOverride_ColorGainShadows = false;
 	PPS.bOverride_ColorOffset = false;
+	PPS.bOverride_ColorGain = false;
+	PPS.bOverride_ColorContrastHighlights = false;
+	PPS.bOverride_ColorGainHighlights = false;
+	PPS.bOverride_BloomThreshold = false;
+	PPS.bOverride_LocalExposureMethod = false;
+	PPS.bOverride_LocalExposureHighlightContrastScale = false;
 	FirstPersonCamera->PostProcessBlendWeight = 1.f;
 	AppliedVisionMode = ETacticalVisionMode::Off;
 }
@@ -4298,41 +4367,47 @@ void AShooterCharacter::ApplyTacticalVisionEffects()
 
 	if (TacticalVisionMode == ETacticalVisionMode::NVG)
 	{
-		// NVGTube: classic tube look - grayscale -> green phosphor, dark vignette edges.
-		PPS.bOverride_ColorSaturation = true;
-		PPS.ColorSaturation = FVector4(0.05f, 0.05f, 0.05f, 1.f);
-		PPS.bOverride_SceneColorTint = true;
-		PPS.SceneColorTint = FLinearColor(0.35f, 1.0f, 0.40f);
-		PPS.bOverride_ColorContrast = true;
-		PPS.ColorContrast = FVector4(1.12f, 1.12f, 1.12f, 1.f);
-		PPS.bOverride_AutoExposureMethod = true;
-		PPS.AutoExposureMethod = EAutoExposureMethod::AEM_Histogram;
-		PPS.bOverride_AutoExposureMinBrightness = true;
-		PPS.AutoExposureMinBrightness = -1.5f;
-		PPS.bOverride_AutoExposureMaxBrightness = true;
-		PPS.AutoExposureMaxBrightness = 1.5f;
-		PPS.bOverride_AutoExposureBias = true;
-		PPS.AutoExposureBias = (1.3f + 0.4f * Batt) + Wash * 2.f;
-		PPS.bOverride_ColorGammaShadows = true;
-		PPS.ColorGammaShadows = FVector4(1.2f, 1.2f, 1.2f, 1.f);
-		PPS.bOverride_ColorGainShadows = true;
-		PPS.ColorGainShadows = FVector4(1.35f, 1.35f, 1.35f, 1.f);
-		PPS.bOverride_ColorOffset = true;
-		PPS.ColorOffset = FVector4(0.0f, 0.004f, 0.0f, 0.f);
-		PPS.bOverride_BloomIntensity = true;
-		PPS.BloomIntensity = 1.2f + Wash * 8.f;
-		PPS.bOverride_VignetteIntensity = true;
-		PPS.VignetteIntensity = 0.95f;
-		PPS.bOverride_FilmGrainIntensity = true;
-		PPS.FilmGrainIntensity = 0.3f + (1.f - Batt) * 0.2f;
+		// Phosphor tube. The material turns the picture green and blows out lights.
+		// Dual housing is a screen mask; quad leaves the whole frame open.
+		NightVisionProfile::Apply(PPS,Batt,Wash);
 
 		if (bModeChanged)
 		{
-			if (UMaterialInterface* NVGMat = LoadSoftMaterial(NVGPostProcessMaterial))
+			UMaterialInterface* NVGMat = LoadSoftMaterial(NVGPostProcessMaterial);
+			if (!NVGMat)
+			{
+				NVGMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/FPS/Materials/M_NVG_Phosphor.M_NVG_Phosphor"));
+			}
+			if (NVGMat)
 			{
 				FirstPersonCamera->AddOrUpdateBlendable(NVGMat, 1.f);
 				ActiveVisionBlendable = NVGMat;
 			}
+		}
+
+		if (!ActiveVisionBlendable.IsValid())
+		{
+			// No phosphor material yet: force green and flatten highlight detail.
+			PPS.bOverride_ColorSaturation = true;
+			PPS.ColorSaturation = FVector4(0.f, 0.f, 0.f, 1.f);
+			PPS.bOverride_ColorGain = true;
+			PPS.ColorGain = FVector4(0.10f, 1.55f, 0.08f, 1.f);
+			PPS.bOverride_SceneColorTint = true;
+			PPS.SceneColorTint = FLinearColor(0.04f, 1.f, 0.05f);
+			PPS.bOverride_ColorContrast = true;
+			PPS.ColorContrast = FVector4(1.2f, 1.2f, 1.2f, 1.f);
+			PPS.bOverride_ColorContrastHighlights = true;
+			PPS.ColorContrastHighlights = FVector4(0.02f, 0.02f, 0.02f, 1.f);
+			PPS.bOverride_ColorGainHighlights = true;
+			PPS.ColorGainHighlights = FVector4(2.4f, 3.1f, 2.1f, 1.f);
+			PPS.bOverride_LocalExposureMethod = true;
+			PPS.LocalExposureMethod = ELocalExposureMethod::Bilateral;
+			PPS.bOverride_LocalExposureHighlightContrastScale = true;
+			PPS.LocalExposureHighlightContrastScale = 0.f;
+			PPS.BloomThreshold = 0.22f;
+			PPS.BloomIntensity = 3.4f + Wash * 8.f;
+			PPS.bOverride_ColorOffset = true;
+			PPS.ColorOffset = FVector4(0.f, 0.012f, 0.f, 0.f);
 		}
 	}
 	else if (TacticalVisionMode == ETacticalVisionMode::Thermal)
@@ -4384,12 +4459,15 @@ void AShooterCharacter::UpdateTacticalVision(float DeltaTime)
 		VisionFlashWash = FMath::Max(0.f, VisionFlashWash - DeltaTime * 1.25f);
 	}
 
-	if (TacticalVisionMode != ETacticalVisionMode::Off)
+ const auto* Flow=GetWorld()->GetGameState<ACoopCqbGameState>();
+ const bool Preview=Flow&&!Flow->bRangeHub&&GetWorld()->GetMapName().Contains(TEXT("Factory"))&&(Flow->GetCoopPhase()==ECoopCqbPhase::Waiting||Flow->GetCoopPhase()==ECoopCqbPhase::Briefing);
+	if (TacticalVisionMode != ETacticalVisionMode::Off && !Preview)
 	{
 		VisionBatterySeconds = FMath::Max(0.f, VisionBatterySeconds - VisionBatteryDrainPerSecond * DeltaTime);
 		if (VisionBatterySeconds <= 0.f)
 		{
 			TacticalVisionMode = ETacticalVisionMode::Off;
+			OnEquipmentHudChanged.Broadcast();
 			if (GEngine)
 			{
 				GEngine->AddOnScreenDebugMessage(99201, 2.5f, FColor::Orange, TEXT("Vision battery depleted -> Off"));
@@ -4550,7 +4628,12 @@ void AShooterCharacter::SpawnBloodImpactFX(UObject* WorldContext, FVector Impact
 	if (!DecalMat)
 	{
 		DecalMat = LoadObject<UMaterialInterface>(nullptr,
-			TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat"));
+			TEXT("/Game/FPS/FX/Blood/MI_BloodPuddle_Wet.MI_BloodPuddle_Wet"));
+	}
+	if (!DecalMat)
+	{
+		DecalMat = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/FPS_Controller/Environment/Materials/MI_Oil_Puddle_Decal.MI_Oil_Puddle_Decal"));
 	}
 
 	const FVector N = ImpactNormal.GetSafeNormal().IsNearlyZero() ? FVector::UpVector : ImpactNormal.GetSafeNormal();
@@ -4600,6 +4683,7 @@ void AShooterCharacter::SpawnBloodImpactFX(UObject* WorldContext, FVector Impact
 	if (bFloor)
 	{
 		SpawnBloodDecal(FloorHit.ImpactPoint, FloorHit.ImpactNormal, 1.f);
+		ABloodPool::NotifyFloorHit(World, FloorHit.ImpactPoint, FloorHit.ImpactNormal);
 	}
 }
 void AShooterCharacter::MarkBloodyFeet(int32 ExtraSteps)
@@ -4622,7 +4706,12 @@ void AShooterCharacter::SpawnBloodFootprint()
 	if (!Mat)
 	{
 		Mat = LoadObject<UMaterialInterface>(nullptr,
-			TEXT("/Game/DEFINITIVE_FPS_KIT/NPC/Zombies/Decal_Particles/M_blood_decal_Mat.M_blood_decal_Mat"));
+			TEXT("/Game/FPS/FX/Blood/MI_BloodPuddle_Wet.MI_BloodPuddle_Wet"));
+	}
+	if (!Mat)
+	{
+		Mat = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/FPS_Controller/Environment/Materials/MI_Oil_Puddle_Decal.MI_Oil_Puddle_Decal"));
 	}
 	if (!Mat) return;
 
@@ -5332,3 +5421,89 @@ void AShooterCharacter::ApplyFactionSleeves1P()
 		bAlready ? 1 : 0, *GetNameSafe(Mesh1P));
 }
 
+
+
+float AShooterCharacter::GetArmInjuryAnimPlayRate() const
+{
+	return bArmInjured ? FMath::Clamp(ArmInjuryReloadPlayRate, 0.2f, 1.f) : 1.f;
+}
+
+float AShooterCharacter::GetStingerLookScale() const
+{
+	const UWorld* World = GetWorld();
+	if (!World) return 1.f;
+	const float Now = World->GetTimeSeconds();
+	if (Now < StingerLockUntil)
+	{
+		return FMath::Clamp(1.f - StingerStrength, 0.f, 1.f);
+	}
+	if (Now < StingerRecoverUntil)
+	{
+		const float Window = FMath::Max(0.01f, StingerRecoverUntil - StingerLockUntil);
+		const float T = FMath::Clamp((Now - StingerLockUntil) / Window, 0.f, 1.f);
+		const float Ease = T * T * (3.f - 2.f * T);
+		return FMath::Lerp(1.f - StingerStrength, 1.f, Ease);
+	}
+	return 1.f;
+}
+
+void AShooterCharacter::ApplyStingerEffect(float Strength, float LockDuration, float RecoverDuration)
+{
+	Strength = FMath::Clamp(Strength, 0.f, 1.f);
+	if (Strength < 0.08f) return;
+	const UWorld* World = GetWorld();
+	if (!World) return;
+	const float Now = World->GetTimeSeconds();
+	StingerStrength = Strength;
+	const float Lock = LockDuration > 0.f ? LockDuration : StingerLockDuration;
+	const float Recover = RecoverDuration >= 0.f ? RecoverDuration : StingerRecoverDuration;
+	// Refresh (do not stack): restart lock + recover from now.
+	StingerLockUntil = Now + Lock;
+	StingerRecoverUntil = StingerLockUntil + Recover;
+}
+
+void AShooterCharacter::Client_ReceiveStinger_Implementation(float Strength, float LockDuration, float RecoverDuration)
+{
+	ApplyStingerEffect(Strength, LockDuration, RecoverDuration);
+}
+
+void AShooterCharacter::Auth_OnHitZoneDamaged(AActor* DamageInstigator, bool bLethal)
+{
+	if (!HasAuthority() || !IsValid(Stats)) return;
+	const bool bWasAlive = Stats->DeathState == EDeathState::NotDead;
+	if (!bWasAlive) return;
+
+	AController* InstigatorController = nullptr;
+	if (const APawn* InstigatorPawn = Cast<APawn>(DamageInstigator))
+	{
+		InstigatorController = InstigatorPawn->GetController();
+	}
+	AShooterGameModeBase* ShooterGM = GetWorld() ? GetWorld()->GetAuthGameMode<AShooterGameModeBase>() : nullptr;
+	if (ShooterGM && !ShooterGM->CanDamage(InstigatorController, GetController()))
+	{
+		return;
+	}
+
+	Multicast_NotifyBloodyFeet();
+	if (ShooterGM) ShooterGM->NotifyDamage(InstigatorController, GetController());
+
+	const bool bSelfDamage = DamageInstigator == this;
+	const bool bHasSource = IsValid(DamageInstigator) && !bSelfDamage;
+	EHitReactDirection Direction = EHitReactDirection::Front;
+	if (bHasSource)
+	{
+		Direction = ComputeHitReactDirection(DamageInstigator->GetActorLocation());
+	}
+	const TArray<TObjectPtr<UAnimMontage>>& Pool = GetHitReactPool(Direction);
+	if (Pool.Num() > 0)
+	{
+		Multicast_HitReact(Direction, FMath::RandRange(0, Pool.Num() - 1));
+	}
+
+	if (bLethal && bWasAlive)
+	{
+		Stats->StartDeath();
+		if (Vitals) Vitals->NoteCombatEvent();
+		if (ShooterGM) ShooterGM->OnPlayerKilled(InstigatorController, GetController());
+	}
+}

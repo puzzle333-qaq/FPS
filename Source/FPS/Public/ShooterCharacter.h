@@ -8,6 +8,7 @@
 #include "GameFramework/Character.h"
 #include "CombatComponent.h"
 #include "Stats/StatsComponent.h"
+#include "Combat/HitZoneVitalsComponent.h"
 #include "ShooterType/ShooterType.h"
 #include "Interface/PlayerInterface.h"
 #include "Engine/NetSerialization.h"
@@ -81,6 +82,10 @@ class FPS_API AShooterCharacter : public ACharacter,public IPlayerInterface
 	GENERATED_BODY()
 
 public:
+ FSimpleMulticastDelegate OnEquipmentHudChanged;
+ int32 GetGlowStickCount() const { return GlowStickCount; }
+ UFUNCTION() void OnRep_GlowStickCount();
+
 	AShooterCharacter();
 
 	virtual void Tick(float DeltaTime) override;
@@ -268,8 +273,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
 	void ToggleNVG();
 
+	// Tap N toggles the tubes. Hold N swaps dual housing and fullscreen quad.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
+	void CycleNVGHousing();
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
 	ETacticalVisionMode GetTacticalVisionMode() const { return TacticalVisionMode; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
+	ENVGHousing GetNVGHousing() const { return NVGHousing; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
 	float GetVisionBatteryNormalized() const;
@@ -349,6 +361,9 @@ public:
 	// ===== Tactical vision (NVG / Thermal) - local camera only =====
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Vision")
 	ETacticalVisionMode TacticalVisionMode = ETacticalVisionMode::Off;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Vision")
+	ENVGHousing NVGHousing = ENVGHousing::Dual;
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Vision", meta = (ClampMin = "5"))
 	float VisionBatteryMaxSeconds = 60.f;
@@ -629,6 +644,21 @@ public:
 	bool IsMuzzleDipped() const { return MuzzleDipAlpha > 0.35f; }
 	bool IsArmInjured() const { return bArmInjured; }
 	bool IsLegInjured() const { return bLegInjured; }
+	UStatsComponent* GetStats() const { return Stats; }
+	UHitZoneVitalsComponent* GetHitZoneVitals() const { return Vitals; }
+
+	/** 1 when healthy, <1 when arm is injured (slower reload / raise). */
+	float GetArmInjuryAnimPlayRate() const;
+
+	/** 0 = cannot turn (full stinger), 1 = normal. Refresh (does not stack). */
+	float GetStingerLookScale() const;
+	void ApplyStingerEffect(float Strength, float LockDuration, float RecoverDuration);
+
+	UFUNCTION(Client, Reliable)
+	void Client_ReceiveStinger(float Strength, float LockDuration, float RecoverDuration);
+
+	/** Server: hit react, bloody feet, optional StartDeath + OnPlayerKilled. */
+	void Auth_OnHitZoneDamaged(AActor* DamageInstigator, bool bLethal);
 	/** HUD: head/torso marked after hit; arm/leg also true while injured. */
 	bool IsHitZoneMarked(EHitZone Zone) const;
 	bool IsBandaging() const { return bIsBandaging; }
@@ -684,12 +714,19 @@ public:
 	float ArmInjuryAdsTimeMultiplier = 1.8f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Injury")
 	float ArmInjurySwayMultiplier = 2.5f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Injury", meta = (ClampMin = "0.2", ClampMax = "1"))
+	float ArmInjuryReloadPlayRate = 0.65f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Injury")
 	float LimpBobAmount = 1.2f;
 
 	// Hold HealAction (~6s). Clears arm+leg only (not HP). Key = character HealAction binding.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Bandage", meta = (ClampMin = "1"))
 	float BandageHoldDuration = 6.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Stinger", meta = (ClampMin = "0.05"))
+	float StingerLockDuration = 0.7f;
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Stinger", meta = (ClampMin = "0"))
+	float StingerRecoverDuration = 0.9f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Bandage")
 	float BandageSpeedMultiplier = 0.35f;
 
@@ -855,6 +892,9 @@ public:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Health")
 	TObjectPtr<UStatsComponent>Stats;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|HitZone")
+	TObjectPtr<UHitZoneVitalsComponent> Vitals;
 
 
 
@@ -1127,6 +1167,21 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> FireModeRuntimeIMC;
 	void EnsureFireModeInput(class UEnhancedInputComponent* InputComp);
+
+	UPROPERTY(ReplicatedUsing=OnRep_GlowStickCount)
+	int32 GlowStickCount = 10;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> GlowStickAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> GlowStickIMC;
+
+	void EnsureGlowStickInput();
+	void Input_DropGlowStick();
+
+	UFUNCTION(Server, Reliable)
+	void Server_DropGlowStick();
 	void Input_ReloadWeapon_Started();
 	void Input_ReloadWeapon_Completed();
 	void Input_ReloadWeapon(); // legacy alias -> Started
@@ -1304,6 +1359,10 @@ private:
 	bool bIsBandaging = false;
 	bool bBandageHoldInput = false;
 	float BandageHoldElapsed = 0.f;
+
+	float StingerStrength = 0.f;
+	float StingerLockUntil = 0.f;
+	float StingerRecoverUntil = 0.f;
 	float WeaponBlockAlpha = 0.f;
 	FVector WeaponBlockLocCurrent = FVector::ZeroVector;
 	FRotator WeaponBlockRotCurrent = FRotator::ZeroRotator;

@@ -1,5 +1,12 @@
 #include "ShooterPlayerController.h"
+#include "Ui/DeploymentDroneComponent.h"
+#include "Camera/CameraActor.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Ui/MissionFlowWidget.h"
+#include "Ui/MissionTabletActor.h"
+#include "Ui/SettingsScreen.h"
 #include "World/MissionDeployPoint.h"
 #include "Game/CoopCqbGameMode.h"
 #include "Game/CoopCqbGameState.h"
@@ -16,6 +23,12 @@
 #include "TimerManager.h"
 #include "UObject/UObjectGlobals.h"
 
+#if WITH_EDITOR
+static TAutoConsoleVariable<float> UIReadyDelay(TEXT("fps.UI.ReadyDelay"),0.f,TEXT("QA only: local readiness delay in seconds."),ECVF_Cheat);
+static TAutoConsoleVariable<float> UIReadyDelayClient(TEXT("fps.UI.ReadyDelayClient"),-1.f,TEXT("QA: override remote client's local readiness delay."),ECVF_Cheat);
+static TAutoConsoleVariable<float> UIReadyDelayListen(TEXT("fps.UI.ReadyDelayListen"),-1.f,TEXT("QA: override listen host's local readiness delay."),ECVF_Cheat);
+#endif
+
 void AShooterPlayerController::InitializeMissionInput()
 {
  if (!IsLocalController()) return;
@@ -25,17 +38,30 @@ void AShooterPlayerController::InitializeMissionInput()
   TabletAction->ValueType = EInputActionValueType::Boolean;
   TabletIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_MissionTablet"));
   TabletIMC->MapKey(TabletAction, EKeys::Tab);
+  TabletScrollUpAction=NewObject<UInputAction>(this,TEXT("IA_TabletScrollUp"));
+  TabletScrollDownAction=NewObject<UInputAction>(this,TEXT("IA_TabletScrollDown"));
+  TabletScrollUpAction->ValueType=TabletScrollDownAction->ValueType=EInputActionValueType::Boolean;
+  TabletScrollUpAction->bConsumeInput=TabletScrollDownAction->bConsumeInput=false;
+  TabletIMC->MapKey(TabletScrollUpAction,EKeys::MouseScrollUp);
+  TabletIMC->MapKey(TabletScrollUpAction,EKeys::PageUp);
+  TabletIMC->MapKey(TabletScrollDownAction,EKeys::MouseScrollDown);
+  TabletIMC->MapKey(TabletScrollDownAction,EKeys::PageDown);
  }
  if (auto* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
   if (!Subsystem->HasMappingContext(TabletIMC)) Subsystem->AddMappingContext(TabletIMC, 5);
  if (auto* Input = Cast<UEnhancedInputComponent>(InputComponent))
+ {
   Input->BindAction(TabletAction, ETriggerEvent::Started, this, &ThisClass::ToggleMissionTablet);
+  Input->BindAction(TabletScrollUpAction,ETriggerEvent::Started,this,&ThisClass::ScrollTabletUp);
+  Input->BindAction(TabletScrollDownAction,ETriggerEvent::Started,this,&ThisClass::ScrollTabletDown);
+ }
 }
 void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
  GetWorldTimerManager().ClearTimer(MissionServiceTimer);
  if (BoundMissionState) BoundMissionState->OnMissionUpdated.RemoveDynamic(this, &ThisClass::OnMissionStateUpdated);
  if (MissionWidget) { MissionWidget->RemoveFromParent(); MissionWidget = nullptr; }
+ if (MissionTablet) { MissionTablet->Close(false); MissionTablet = nullptr; }
  if (auto* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
   if (TabletIMC) Subsystem->RemoveMappingContext(TabletIMC);
  Super::EndPlay(EndPlayReason);
@@ -53,6 +79,14 @@ void AShooterPlayerController::ServiceMissionReadiness()
   OnMissionStateUpdated();
  }
  if (GS->bRangeHub) { GetWorldTimerManager().ClearTimer(MissionServiceTimer); return; }
+ float Delay=0;
+#if WITH_EDITOR
+ Delay=UIReadyDelay.GetValueOnGameThread();
+ const float RoleDelay=GetNetMode()==NM_Client?UIReadyDelayClient.GetValueOnGameThread():UIReadyDelayListen.GetValueOnGameThread();
+ if(RoleDelay>=0)Delay=RoleDelay;
+#endif
+ if(FParse::Param(FCommandLine::Get(),TEXT("UIQA")))FParse::Value(FCommandLine::Get(),TEXT("UIReadyDelay="),Delay);
+ if(GetWorld()->GetTimeSeconds()<FMath::Max(0.f,Delay))return;
  if (bMissionLoadAcknowledged || !GetPawn() || !GetPawn()->HasActorBegunPlay() || IsAsyncLoading()) return;
  for (const ULevelStreaming* Level : GetWorld()->GetStreamingLevels())
  {
@@ -73,13 +107,21 @@ void AShooterPlayerController::OnMissionStateUpdated()
 {
  if (!IsLocalController() || !BoundMissionState) return;
  auto* GS = BoundMissionState.Get();
+ if(MissionTablet)
+ {
+  if(!GS->IsMissionLive())CloseMissionPanel();
+  else MissionTablet->RefreshMission();
+ }
  if (GS->bRangeHub)
  {
   if (MissionWidget && MissionWidget->Panel == EMissionPanel::Loading) CloseMissionPanel();
   return;
  }
  if (GS->GetCoopPhase() == ECoopCqbPhase::Waiting || GS->GetCoopPhase() == ECoopCqbPhase::Briefing)
+ {
   ShowMissionPanel(uint8(EMissionPanel::Loading));
+  if(DeploymentDrone&&DeploymentDrone->HasLeftRecon())HideDeploymentOverlayForRaise();
+ }
  else if (GS->GetCoopPhase() == ECoopCqbPhase::PostMission)
   ShowMissionPanel(uint8(EMissionPanel::Debrief));
  else if (MissionWidget && MissionWidget->Panel == EMissionPanel::Loading) CloseMissionPanel();
@@ -87,20 +129,38 @@ void AShooterPlayerController::OnMissionStateUpdated()
 }
 void AShooterPlayerController::ToggleMissionTablet()
 {
+ if(MissionTablet){MissionTablet->Close();return;}
  if (MissionWidget)
  {
   if (MissionWidget->Panel == EMissionPanel::Tablet) CloseMissionPanel();
   return;
  }
  const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>();
- if (!GS || GS->bRangeHub || !GS->IsMissionLive() || bRangeBenchOpen) return;
+ if (!GS || GS->bRangeHub || !GS->IsMissionLive() || !bPawnAlive || bMatchOver || bSpectating || bRangeBenchOpen || IsPauseMenuOpen() || (SettingsScreen && SettingsScreen->IsInViewport())) return;
  ShowMissionPanel(uint8(EMissionPanel::Tablet));
 }
+void AShooterPlayerController::ScrollTabletUp(){if(MissionTablet)MissionTablet->ScrollBriefing(-160);}
+void AShooterPlayerController::ScrollTabletDown(){if(MissionTablet)MissionTablet->ScrollBriefing(160);}
 void AShooterPlayerController::ShowMissionPanel(uint8 Panel, AMissionDeployPoint* Deploy)
 {
  if (!IsLocalController()) return;
  if (bRangeBenchOpen) LeaveRangeBench();
  const auto NewPanel = EMissionPanel(Panel);
+ if(NewPanel==EMissionPanel::Tablet)
+ {
+  if(MissionTablet){MissionTablet->RefreshMission();return;}
+  FActorSpawnParameters Spawn;Spawn.Owner=GetPawn();Spawn.ObjectFlags|=RF_Transient;
+  Spawn.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  MissionTablet=GetWorld()->SpawnActor<AMissionTabletActor>(AMissionTabletActor::StaticClass(),FTransform::Identity,Spawn);
+  if(!MissionTablet||!MissionTablet->OpenFor(this))
+  {
+   if(MissionTablet)MissionTablet->Close(false);
+   MissionTablet=nullptr;return;
+  }
+ }
+ else if(MissionTablet)CloseMissionPanel();
+ if(NewPanel!=EMissionPanel::Tablet)
+ {
  if (MissionWidget && MissionWidget->Panel == NewPanel && MissionWidget->Deploy == Deploy)
  {
   MissionWidget->Refresh(); return;
@@ -113,6 +173,7 @@ void AShooterPlayerController::ShowMissionPanel(uint8 Panel, AMissionDeployPoint
   MissionWidget->AddToViewport(400);
  }
  else MissionWidget->Configure(NewPanel, Deploy);
+ }
  if (!bMissionInputMuted)
  {
   SetIgnoreMoveInput(true); SetIgnoreLookInput(true); bMissionInputMuted = true;
@@ -127,6 +188,11 @@ void AShooterPlayerController::ShowMissionPanel(uint8 Panel, AMissionDeployPoint
    if (auto* Char = Cast<ACharacter>(ControlledPawn)) Char->GetCharacterMovement()->StopMovementImmediately();
   }
  }
+ if(NewPanel==EMissionPanel::Tablet)
+ {
+  SetInputMode(FInputModeGameOnly());bShowMouseCursor=false;
+  return;
+ }
  FInputModeGameAndUI Mode;
  Mode.SetWidgetToFocus(MissionWidget->TakeWidget());
  Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
@@ -135,8 +201,9 @@ void AShooterPlayerController::ShowMissionPanel(uint8 Panel, AMissionDeployPoint
 }
 void AShooterPlayerController::CloseMissionPanel()
 {
- if (!MissionWidget) return;
- MissionWidget->RemoveFromParent(); MissionWidget = nullptr;
+ if (!MissionWidget && !MissionTablet) return;
+ if(MissionTablet){MissionTablet->Close(false);MissionTablet=nullptr;}
+ if(MissionWidget){MissionWidget->RemoveFromParent();MissionWidget=nullptr;}
  if (bMissionInputMuted)
  {
   SetIgnoreMoveInput(false); SetIgnoreLookInput(false); bMissionInputMuted = false;
@@ -155,4 +222,36 @@ void AShooterPlayerController::Server_SelectMission_Implementation(AMissionDeplo
 void AShooterPlayerController::Server_CancelMissionDeploy_Implementation(AMissionDeployPoint* Deploy)
 {
  if (IsValid(Deploy)) Deploy->Auth_Cancel(this);
+}
+
+void AShooterPlayerController::Server_DeploymentViewReady_Implementation()
+{
+ if(auto* GM=GetWorld()->GetAuthGameMode<ACoopCqbGameMode>())GM->Auth_DeploymentViewReady(this);
+}
+void AShooterPlayerController::HideDeploymentOverlayForRaise()
+{
+ if(MissionWidget&&MissionWidget->Panel==EMissionPanel::Loading)MissionWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+void AShooterPlayerController::LockDeploymentPresentation()
+{
+ if(!IsLocalController())return;
+ const auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();
+ if(!GS||GS->bRangeHub||!GetWorld()->GetMapName().Contains(TEXT("Factory"))||GS->IsMissionLive()||GS->GetCoopPhase()==ECoopCqbPhase::PostMission)return;
+ ShowMissionPanel(uint8(EMissionPanel::Loading));
+ // ClientRestart resets these native counters after initial possession. Restore
+ // our existing lock without adding a second contribution to the counter.
+ if(!IsMoveInputIgnored())SetIgnoreMoveInput(true);
+ if(!IsLookInputIgnored())SetIgnoreLookInput(true);
+ if(GetPawn())GetPawn()->DisableInput(this);
+ if(DeploymentDrone&&DeploymentDrone->HasLeftRecon())HideDeploymentOverlayForRaise();
+}
+void AShooterPlayerController::ClientRestart_Implementation(APawn* NewPawn)
+{
+ Super::ClientRestart_Implementation(NewPawn);LockDeploymentPresentation();
+}
+void AShooterPlayerController::AutoManageActiveCameraTarget(AActor* Suggested)
+{
+ if(DeploymentDrone&&!DeploymentDrone->HasLeftRecon()&&DeploymentDrone->GetDroneCamera())
+  Super::AutoManageActiveCameraTarget(DeploymentDrone->GetDroneCamera());
+ else Super::AutoManageActiveCameraTarget(Suggested);
 }

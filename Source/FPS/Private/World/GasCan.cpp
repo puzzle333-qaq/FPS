@@ -1,4 +1,5 @@
 #include "World/GasCan.h"
+#include "Combat/HitZoneVitalsComponent.h"
 #include "World/TrapPlacement.h"
 
 #include "Components/SceneComponent.h"
@@ -208,8 +209,14 @@ void AGasCan::ApplyExplosionDamage(AActor* DamageInstigator)
 		const float Applied = ExplosionDamage * Scale;
 		if (Applied < 1.f) continue;
 
-		// Direct DoDamage — explosives ignore body armor.
-		IPlayerInterface::Execute_DoDamage(Actor, Applied, InstigatorActor);
+		if (HitZoneCombat::IsHitZoneVictim(Actor))
+		{
+			HitZoneCombat::ApplyExplosiveToActor(Actor, InstigatorActor, Dist, InnerRadius, DamageRadius);
+		}
+		else
+		{
+			IPlayerInterface::Execute_DoDamage(Actor, Applied, InstigatorActor);
+		}
 	}
 }
 
@@ -243,7 +250,14 @@ void AGasCan::Auth_FireTick()
 		if (!IsValid(Actor) || Hit.Contains(Actor)) continue;
 		if (!Actor->Implements<UPlayerInterface>()) continue;
 		Hit.Add(Actor);
-		IPlayerInterface::Execute_DoDamage(Actor, FireTickDamage, InstigatorActor);
+		if (HitZoneCombat::IsHitZoneVictim(Actor))
+		{
+			HitZoneCombat::ApplyFireTickToActor(Actor, InstigatorActor);
+		}
+		else
+		{
+			IPlayerInterface::Execute_DoDamage(Actor, FireTickDamage, InstigatorActor);
+		}
 	}
 
 	if (FireTimeLeft <= 0.f)

@@ -6,6 +6,7 @@
 #include "Online/PartySubsystem.h"
 #include "Styling/CoreStyle.h"
 #include "Ui/TacticalUIStyle.h"
+#include "Ui/OperationUIStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -17,27 +18,31 @@ namespace
 {
 	FLinearColor PortraitColor(const FString& Name)
 	{
-		return FLinearColor::MakeFromHSV8(static_cast<uint8>(GetTypeHash(Name) & 255), 150, 210);
+		return FOperationUIStyle::Dim;
 	}
 }
 
 TSharedRef<SWidget> UPartyRosterWidget::RebuildWidget()
 {
-	PanelBrush = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::Panel, 8.f, 1.f);
+	LastSignature.Reset();
+	PanelBrush = FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Panel, 2.f, 1.f);
 	ButtonStyle = FTacticalUIStyle::MakeButtonStyle();
+ ButtonStyle.Normal=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Panel,2,1);
+ ButtonStyle.Hovered=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Dim,2,1);
+ ButtonStyle.Pressed=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Panel,2,1);
 	return SNew(SOverlay)
 		.Visibility(EVisibility::SelfHitTestInvisible)
 		+ SOverlay::Slot()
 		.HAlign(HAlign_Right)
 		.VAlign(VAlign_Top)
-		.Padding(FMargin(0.f, 28.f, 28.f, 0.f))
+		.Padding(FMargin(0.f, 40.f, 48.f, 0.f))
 		[
 			SNew(SBox)
 			.WidthOverride(260.f)
 			[
 				SNew(SBorder)
 				.BorderImage(&PanelBrush)
-				.Padding(FMargin(12.f, 10.f))
+				.Padding(FMargin(16.f, 8.f))
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
@@ -47,8 +52,9 @@ TSharedRef<SWidget> UPartyRosterWidget::RebuildWidget()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 8.f, 0.f, 6.f)
 					[
 						SAssignNew(StatusText, STextBlock)
-						.Font(FTacticalUIStyle::MakeFont(12))
-						.ColorAndOpacity(FTacticalUIStyle::TextMuted)
+						.Font(FOperationUIStyle::MakeFont(12))
+						.ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))
+						.ColorAndOpacity(FOperationUIStyle::TextMuted)
 						.AutoWrapText(true)
 					]
 					+ SVerticalBox::Slot().AutoHeight()
@@ -62,8 +68,9 @@ TSharedRef<SWidget> UPartyRosterWidget::RebuildWidget()
 							[
 								SNew(STextBlock)
 								.Text(NSLOCTEXT("Party", "Invite", "邀请好友"))
-								.Font(FTacticalUIStyle::MakeFont(16, true))
-								.ColorAndOpacity(FTacticalUIStyle::Text)
+								.Font(FOperationUIStyle::MakeFont(16, true))
+								.ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))
+								.ColorAndOpacity(FOperationUIStyle::Text)
 							]
 						]
 						+ SHorizontalBox::Slot().AutoWidth()
@@ -75,8 +82,9 @@ TSharedRef<SWidget> UPartyRosterWidget::RebuildWidget()
 							[
 								SNew(STextBlock)
 								.Text(NSLOCTEXT("Party", "Leave", "离开"))
-								.Font(FTacticalUIStyle::MakeFont(16, true))
-								.ColorAndOpacity(FTacticalUIStyle::Text)
+								.Font(FOperationUIStyle::MakeFont(16, true))
+								.ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))
+								.ColorAndOpacity(FOperationUIStyle::Text)
 							]
 						]
 					]
@@ -126,7 +134,9 @@ void UPartyRosterWidget::RefreshRoster()
 	if (!Rows || !StatusText) return;
 	UGameInstance* GI = GetGameInstance();
 	UPartySubsystem* Party = GI ? GI->GetSubsystem<UPartySubsystem>() : nullptr;
-	StatusText->SetText(FText::FromString(Party ? Party->GetStatusText() : FString(TEXT("房间未连接"))));
+	FString Status=Party?Party->GetStatusText():FString(TEXT("房间未连接"));
+ if(Status.Contains(TEXT("failed"),ESearchCase::IgnoreCase)||Status.Contains(TEXT("登录失败"))) Status=TEXT("好友服务暂不可用");
+ StatusText->SetText(FText::FromString(Status));
 	const bool bInRoom = Party && Party->IsInRoom();
 	const bool bHost = !Party || !bInRoom || Party->IsRoomHost();
 	if (InviteButton) InviteButton->SetVisibility(bHost ? EVisibility::Visible : EVisibility::Collapsed);
@@ -182,7 +192,8 @@ void UPartyRosterWidget::RefreshRoster()
 						[
 							SNew(STextBlock)
 							.Text(FText::FromString(Letter))
-							.Font(FTacticalUIStyle::MakeFont(16, true))
+							.Font(FOperationUIStyle::MakeFont(16, true))
+							.ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))
 							.ColorAndOpacity(FLinearColor::White)
 						]
 					]
@@ -195,15 +206,17 @@ void UPartyRosterWidget::RefreshRoster()
 				[
 					SNew(STextBlock)
 					.Text(FText::FromString(Name.IsEmpty() ? TEXT("…") : Name))
-					.Font(FTacticalUIStyle::MakeFont(15, true))
-					.ColorAndOpacity(FTacticalUIStyle::Text)
+					.Font(FOperationUIStyle::MakeFont(16))
+					.ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))
+					.ColorAndOpacity(FOperationUIStyle::Text)
 				]
 				+ SVerticalBox::Slot().AutoHeight()
 				[
 					SNew(STextBlock)
 					.Text(FText::FromString(bHostMark ? TEXT("房主") : TEXT("")))
-					.Font(FTacticalUIStyle::MakeFont(11, true))
-					.ColorAndOpacity(FTacticalUIStyle::TextGold)
+					.Font(FOperationUIStyle::MakeFont(12))
+					.ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))
+					.ColorAndOpacity(FOperationUIStyle::Text)
 					.Visibility(bHostMark ? EVisibility::HitTestInvisible : EVisibility::Collapsed)
 				]
 			]

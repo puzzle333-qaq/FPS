@@ -4,6 +4,7 @@
 #include "MissionFlowWidget.generated.h"
 class AMissionDeployPoint;
 class SVerticalBox;
+class SBorder;
 class STextBlock;
 class SButton;
 
@@ -29,6 +30,10 @@ protected:
  virtual void ReleaseSlateResources(bool bReleaseChildren) override;
 private:
  TSharedPtr<SVerticalBox> Rows;
+ TSharedPtr<SBorder> LegacyPanel;
+ TSharedPtr<SBorder> ReconPanel;
+ TSharedPtr<STextBlock> ReconMap,ReconTask,ReconCount;
+ FSlateBrush ReconBrush;
  TSharedPtr<SButton> FirstButton;
  TSharedPtr<STextBlock> Clock;
  FSlateBrush PanelBrush;

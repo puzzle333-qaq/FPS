@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShooterGameModeBase.h"
+#include "ShooterPlayerController.h"
 #include "Online/PartySubsystem.h"
 
 #include "Game/ShooterPlayerState.h"
@@ -104,6 +105,13 @@ void AShooterGameModeBase::OnPlayerKilled(AController* KillerController, AContro
 			if (WeakController.IsValid()) RespawnPlayer(WeakController.Get());
 		}), RespawnDelay, false);
 		if (VictimPS) VictimPS->SetRespawnServerTime(GetWorld()->GetTimeSeconds() + RespawnDelay);
+	}
+	else if (IsValid(VictimController) && !CanRespawn(VictimController))
+	{
+		if (AShooterPlayerController* VictimPC = Cast<AShooterPlayerController>(VictimController))
+		{
+			VictimPC->Auth_StartSpectating();
+		}
 	}
 }
 

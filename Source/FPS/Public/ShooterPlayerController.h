@@ -6,6 +6,8 @@
 #include "Loadout/LoadoutTypes.h"
 #include "ShooterPlayerController.generated.h"
 
+class UDeploymentDroneComponent;
+class AMissionTabletActor;
 class AMissionDeployPoint;
 class UMissionFlowWidget;
 class ACoopCqbGameState;
@@ -17,6 +19,10 @@ class UScreenEffectOverlay;
 class UCombatStatusHud;
 class UPartyRosterWidget;
 class UInteractPromptWidget;
+class UMagInspectWidget;
+class UControlHintWidget;
+class UNVGMaskWidget;
+class UTutorialPromptWidget;
 class UPauseMenuScreen;
 class USettingsScreen;
 class AGameStateBase;
@@ -36,12 +42,20 @@ class FPS_API AShooterPlayerController : public APlayerController
 	
 public:
 	AShooterPlayerController();
+ UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Mission") TObjectPtr<UDeploymentDroneComponent> DeploymentDrone;
+ UFUNCTION(Server,Reliable) void Server_DeploymentViewReady();
+ void HideDeploymentOverlayForRaise();
+ void LockDeploymentPresentation();
+ virtual void ClientRestart_Implementation(APawn* NewPawn)override;
+ bool IsMissionSceneReady()const{return bMissionLoadAcknowledged;}
+ virtual void AutoManageActiveCameraTarget(AActor* SuggestedTarget)override;
  UFUNCTION(Client, Reliable) void Client_OpenMissionSelection(AMissionDeployPoint* Deploy);
  UFUNCTION(Server, Reliable) void Server_SelectMission(AMissionDeployPoint* Deploy, int32 Index);
  UFUNCTION(Server, Reliable) void Server_CancelMissionDeploy(AMissionDeployPoint* Deploy);
  UFUNCTION(Server, Reliable) void Server_SubmitIdentity(const FString& DisplayName, const FString& PlatformId);
  UFUNCTION(Server, Reliable) void Server_MissionLoaded();
  void CloseMissionPanel();
+ bool IsMissionTabletOpen() const { return MissionTablet != nullptr; }
  UFUNCTION() void OnMissionStateUpdated();
 
 
@@ -174,6 +188,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Interact")
 	float InteractDistance = 250.f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Interact", meta = (ClampMin = "0.25"))
+	float SurrenderWarningCooldown = 2.5f;
+
 	// 本地：准星对着的可交互物（没有返回 nullptr）
 	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
 	AActor* TraceInteractable() const;
@@ -181,6 +198,15 @@ public:
 	// HUD 绑定：当前交互提示（门/人质/陷阱），没有则为空
 	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
 	FText GetInteractPromptText() const;
+
+	bool IsTacticalDeviceLaser() const { return bTacticalDeviceIsLaser; }
+
+	/** Local-only tutorial hint. Shown once per PromptId on this controller. */
+	UFUNCTION(BlueprintCallable, Category = "FPS|Tutorial")
+	void ShowTutorialPrompt(const FText& Text, FName PromptId, float Duration = 6.f);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Tutorial")
+	FText GetTutorialPromptText() const { return TutorialPromptText; }
 
 	// 靶场改枪台。服务器在交互时调用；本地打开镜头和抽屉，离开时提交配装。
 	void Auth_OpenRangeBench(ARangeLoadoutBench* Bench);
@@ -252,15 +278,21 @@ protected:
 private:
  void InitializeMissionInput();
  void ToggleMissionTablet();
+ void ScrollTabletUp();
+ void ScrollTabletDown();
  void ServiceMissionReadiness();
  void ShowMissionPanel(uint8 Panel, AMissionDeployPoint* Deploy = nullptr);
  UPROPERTY(Transient) TObjectPtr<UMissionFlowWidget> MissionWidget;
+ UPROPERTY(Transient) TObjectPtr<AMissionTabletActor> MissionTablet;
  UPROPERTY(Transient) TObjectPtr<UInputAction> TabletAction;
+ UPROPERTY(Transient) TObjectPtr<UInputAction> TabletScrollUpAction;
+ UPROPERTY(Transient) TObjectPtr<UInputAction> TabletScrollDownAction;
  UPROPERTY(Transient) TObjectPtr<UInputMappingContext> TabletIMC;
  UPROPERTY(Transient) TObjectPtr<ACoopCqbGameState> BoundMissionState;
  bool bMissionInputMuted = false;
  bool bMissionLoadAcknowledged = false;
  FTimerHandle MissionServiceTimer;
+ float NextSurrenderWarningTime = 0.f;
 
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
@@ -304,11 +336,17 @@ private:
 	// 同一战术配件的功能：false=手电，true=镭射。SideMouse2 短按开关，长按切换。
 	bool bTacticalDeviceIsLaser = false;
 
-	// NVG toggle (runtime Alt+K). Default Off; Thermal remains console-only for now.
+	// N: tap toggles night vision. Hold swaps dual tubes and fullscreen quad.
 	void EnsureNVGInput();
 	void EnsureWatchInput();
 	void Input_CheckWatch();
 	void Input_ToggleNVG();
+	void Input_NVG_Started();
+	void Input_NVG_Completed();
+	void Input_NVG_Hold();
+
+	FTimerHandle NVGHoldTimer;
+	bool bNVGHoldFired = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> NVGAction;
@@ -359,6 +397,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInteractPromptWidget> InteractPrompt;
+
+	TObjectPtr<UMagInspectWidget> MagInspect;
+
+	TObjectPtr<UControlHintWidget> ControlHints;
+
+	TObjectPtr<UNVGMaskWidget> NVGMask;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTutorialPromptWidget> TutorialPrompt;
+
+	FText TutorialPromptText;
+	TSet<FName> SeenTutorialPromptIds;
+	FTimerHandle TutorialPromptTimer;
+	void EnsureTutorialPromptWidget();
+	void ClearTutorialPrompt();
 
 	void SubmitLocalIdentity();
 
@@ -412,6 +465,10 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void Server_Interact(AActor* Target);
+
+	/** F with no interactable: police surrender shout (noise). */
+	UFUNCTION(Server, Reliable)
+	void Server_SurrenderWarning();
 
 	void EnsureInteractInput();
 

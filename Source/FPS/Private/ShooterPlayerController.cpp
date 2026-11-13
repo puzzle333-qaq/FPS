@@ -1,4 +1,6 @@
 #include "ShooterPlayerController.h"
+#include "Ui/DeploymentDroneComponent.h"
+#include "UObject/UObjectIterator.h"
 #include "Game/HostageActor.h"
 #include "Game/ShooterPlayerState.h"
 #include "ShooterCharacter.h"
@@ -22,6 +24,10 @@
 #include "Ui/CombatStatusHud.h"
 #include "Ui/PartyRosterWidget.h"
 #include "Ui/InteractPromptWidget.h"
+#include "Ui/MagInspectWidget.h"
+#include "Ui/ControlHintWidget.h"
+#include "Ui/NVGMaskWidget.h"
+#include "Ui/TutorialPromptWidget.h"
 #include "Ui/PauseMenuScreen.h"
 #include "Ui/SettingsScreen.h"
 #include "Ui/MissionFlowWidget.h"
@@ -32,6 +38,7 @@
 #include "Weapon/AttachmentData.h"
 #include "Game/ShooterGameState.h"
 #include "Game/CoopCqbGameState.h"
+#include "Game/AINoiseEvent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Interface/Interactable.h"
 #include "Range/RangeLoadoutBench.h"
@@ -51,6 +58,7 @@
 
 AShooterPlayerController::AShooterPlayerController()
 {
+	DeploymentDrone=CreateDefaultSubobject<UDeploymentDroneComponent>(TEXT("DeploymentDrone"));
 	bReplicates = true;
 	bPawnAlive = true;
 }
@@ -133,7 +141,7 @@ void AShooterPlayerController::BeginPlay()
 	}
 	EnsureCrouchInput();
 	EnsureNVGInput();
-	EnsureWatchInput();
+	// Watch input intentionally unbound; implementation retained.
 }
 
 void AShooterPlayerController::SetupInputComponent()
@@ -183,15 +191,17 @@ void AShooterPlayerController::SetupInputComponent()
 	}
 
 	EnsureNVGInput();
-	EnsureWatchInput();
+	// Watch input intentionally unbound; implementation retained.
 	if (NVGAction && !bNVGBound)
 	{
-		ShooterInputComponent->BindAction(NVGAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleNVG);
+		ShooterInputComponent->BindAction(NVGAction, ETriggerEvent::Started, this, &ThisClass::Input_NVG_Started);
+		ShooterInputComponent->BindAction(NVGAction, ETriggerEvent::Completed, this, &ThisClass::Input_NVG_Completed);
+		ShooterInputComponent->BindAction(NVGAction, ETriggerEvent::Canceled, this, &ThisClass::Input_NVG_Completed);
 		bNVGBound = true;
 	}
 	if (WatchAction)
 	{
-		ShooterInputComponent->BindAction(WatchAction, ETriggerEvent::Started, this, &ThisClass::Input_CheckWatch);
+		// Watch gesture disabled for the in-mission UI revision.
 	}
 	EnsureSpectateInput();
 	EnsureInteractInput();
@@ -226,7 +236,7 @@ void AShooterPlayerController::EnsureTacticalDeviceInput()
 
 void AShooterPlayerController::Input_TacticalDevice_Started()
 {
-	if (!bPawnAlive) return;
+	if (!bPawnAlive || IsMovementLocked()) return;
 	bTacticalDeviceHoldFired = false;
 	if (UWorld* World = GetWorld())
 	{
@@ -240,7 +250,7 @@ void AShooterPlayerController::Input_TacticalDevice_Completed()
 	{
 		World->GetTimerManager().ClearTimer(TacticalDeviceHoldTimer);
 	}
-	if (bTacticalDeviceHoldFired || !bPawnAlive) return;
+	if (bTacticalDeviceHoldFired || !bPawnAlive || IsMovementLocked()) return;
 
 	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
 	if (!IsValid(Combat)) return;
@@ -256,6 +266,7 @@ void AShooterPlayerController::Input_TacticalDevice_Completed()
 
 void AShooterPlayerController::Input_TacticalDevice_Hold()
 {
+ if(IsMovementLocked())return;
 	bTacticalDeviceHoldFired = true;
 	bTacticalDeviceIsLaser = !bTacticalDeviceIsLaser;
 	if (GEngine)
@@ -279,8 +290,7 @@ void AShooterPlayerController::EnsureNVGInput()
 	if (!NVGIMC)
 	{
 		NVGIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_NVG_Runtime"));
-		// Map K; Input_ToggleNVG requires Alt held (UE5.8 has no UInputModifierChordKey).
-		NVGIMC->MapKey(NVGAction, EKeys::K);
+		NVGIMC->MapKey(NVGAction, EKeys::N);
 	}
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
 	if (IsValid(Subsystem) && NVGIMC && !Subsystem->HasMappingContext(NVGIMC))
@@ -291,15 +301,40 @@ void AShooterPlayerController::EnsureNVGInput()
 
 void AShooterPlayerController::Input_ToggleNVG()
 {
-	if (!bPawnAlive) return;
-	// Require Alt+K (mapping is K; gate on Alt here).
-	if (!IsInputKeyDown(EKeys::LeftAlt) && !IsInputKeyDown(EKeys::RightAlt))
-	{
-		return;
-	}
+	if (!bPawnAlive || IsMovementLocked()) return;
 	if (AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn()))
 	{
 		Char->ToggleNVG();
+	}
+}
+
+void AShooterPlayerController::Input_NVG_Started()
+{
+	if (!bPawnAlive || IsMovementLocked()) return;
+	bNVGHoldFired = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(NVGHoldTimer, this, &ThisClass::Input_NVG_Hold, 0.4f, false);
+	}
+}
+
+void AShooterPlayerController::Input_NVG_Completed()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(NVGHoldTimer);
+	}
+	if (bNVGHoldFired || !bPawnAlive || IsMovementLocked()) return;
+	Input_ToggleNVG();
+}
+
+void AShooterPlayerController::Input_NVG_Hold()
+{
+ if(IsMovementLocked())return;
+	bNVGHoldFired = true;
+	if (AShooterCharacter* Char = Cast<AShooterCharacter>(GetPawn()))
+	{
+		Char->CycleNVGHousing();
 	}
 }
 
@@ -487,8 +522,13 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& InputActionVa
 		const UCombatComponent* Combat = UCombatComponent::FindCombatComponent(GetPawn());
 		if (Combat && Combat->bAiming) Scale *= SS->ADSSensitivityMultiplier;
 	}
-	AddYawInput(InputAxisVector.X * Scale);
-	AddPitchInput(InputAxisVector.Y * Scale * (bInvertY ? -1.f : 1.f));
+	float LookLock = 1.f;
+	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(GetPawn()))
+	{
+		LookLock = Shooter->GetStingerLookScale();
+	}
+	AddYawInput(InputAxisVector.X * Scale * LookLock);
+	AddPitchInput(InputAxisVector.Y * Scale * (bInvertY ? -1.f : 1.f) * LookLock);
 }
 
 void AShooterPlayerController::UpdateMovementSpeed()
@@ -816,27 +856,9 @@ void AShooterPlayerController::EnsureCombatHudKeepAlive()
 		ScreenEffectOverlay->AddToViewport(250);
 	}
 
-	// Auto-create BodyInjuryHud (bottom-left) if no WBP/instance of it is on screen.
-	{
-		TArray<UUserWidget*> Found;
-		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Found, UBodyInjuryHud::StaticClass(), false);
-		bool bOnScreen = false;
-		for (UUserWidget* W : Found) { if (W && W->IsInViewport()) { bOnScreen = true; break; } }
-		UE_LOG(LogTemp, Warning, TEXT("[BodyInjury] found=%d onScreen=%d"), Found.Num(), bOnScreen ? 1 : 0);
-		if (!bOnScreen)
-		{
-			if (UBodyInjuryHud* BI = CreateWidget<UBodyInjuryHud>(this, UBodyInjuryHud::StaticClass()))
-			{
-				BI->SetVisibility(ESlateVisibility::HitTestInvisible);
-				BI->AddToViewport(198);
-				BI->SetAnchorsInViewport(FAnchors(0.f, 1.f));
-				BI->SetAlignmentInViewport(FVector2D(0.f, 1.f));
-				BI->SetPositionInViewport(FVector2D(30.f, -30.f), false);
-				BI->SetDesiredSizeInViewport(FVector2D(180.f, 180.f));
-				UE_LOG(LogTemp, Warning, TEXT("[BodyInjury] auto-created, tex=%s"), BI->BodyTexture ? *BI->BodyTexture->GetName() : TEXT("NULL"));
-			}
-		}
-	}
+	// Reserved space above equipment states; injury data and widget APIs remain available.
+ for (TObjectIterator<UBodyInjuryHud> It; It; ++It)
+  if (IsValid(*It) && It->GetOwningPlayer()==this) It->SetVisibility(ESlateVisibility::Collapsed);
 
 	// RoN CombatStatusHud removed by request: never create; tear down if present.
 	if (IsValid(CombatStatusHud))
@@ -864,6 +886,44 @@ void AShooterPlayerController::EnsureCombatHudKeepAlive()
 		InteractPrompt->AddToViewport(210);
 		UE_LOG(LogTemp, Log, TEXT("[Interact] prompt on screen"));
 	}
+
+	if (!IsValid(MagInspect))
+	{
+		MagInspect = CreateWidget<UMagInspectWidget>(this, UMagInspectWidget::StaticClass());
+	}
+	if (IsValid(MagInspect) && !MagInspect->IsInViewport())
+	{
+		MagInspect->SetVisibility(ESlateVisibility::HitTestInvisible);
+		MagInspect->AddToViewport(207);
+	}
+
+	if (!IsValid(ControlHints))
+	{
+		ControlHints = CreateWidget<UControlHintWidget>(this, UControlHintWidget::StaticClass());
+	}
+	if (IsValid(ControlHints) && !ControlHints->IsInViewport())
+	{
+		ControlHints->SetVisibility(ESlateVisibility::HitTestInvisible);
+		ControlHints->AddToViewport(204);
+	}
+
+	if (!IsValid(NVGMask))
+	{
+		NVGMask = CreateWidget<UNVGMaskWidget>(this, UNVGMaskWidget::StaticClass());
+	}
+	if (IsValid(NVGMask) && !NVGMask->IsInViewport())
+	{
+		NVGMask->SetVisibility(ESlateVisibility::Collapsed);
+		NVGMask->AddToViewport(245);
+	}
+
+	EnsureTutorialPromptWidget();
+ const auto* Flow=GetWorld()->GetGameState<ACoopCqbGameState>();
+ const bool bRecon=Flow&&!Flow->bRangeHub&&(Flow->GetCoopPhase()==ECoopCqbPhase::Waiting||Flow->GetCoopPhase()==ECoopCqbPhase::Briefing);
+ const ESlateVisibility CombatVisibility=bRecon?ESlateVisibility::Collapsed:ESlateVisibility::HitTestInvisible;
+ for(UUserWidget* Widget:{static_cast<UUserWidget*>(PartyRoster.Get()),static_cast<UUserWidget*>(InteractPrompt.Get()),
+  static_cast<UUserWidget*>(MagInspect.Get()),static_cast<UUserWidget*>(ControlHints.Get()),static_cast<UUserWidget*>(ScreenEffectOverlay.Get())})
+  if(IsValid(Widget))Widget->SetVisibility(CombatVisibility);
 }
 
 void AShooterPlayerController::OnPossess(APawn* InPawn)
@@ -892,6 +952,7 @@ void AShooterPlayerController::OnPossess(APawn* InPawn)
 void AShooterPlayerController::AcknowledgePossession(APawn* P)
 {
 	Super::AcknowledgePossession(P);
+	LockDeploymentPresentation();
 	GetWorldTimerManager().SetTimerForNextTick(this, &ThisClass::RestoreWarehouseLoadout);
 	if (PlayerCameraManager)
 	{
@@ -949,6 +1010,34 @@ void AShooterPlayerController::Input_Interact_Started()
 	{
 		Server_Interact(Target);
 	}
+	else
+	{
+		Server_SurrenderWarning();
+	}
+}
+
+void AShooterPlayerController::Server_SurrenderWarning_Implementation()
+{
+	if (!bPawnAlive || IsMovementLocked()) return;
+	UWorld* World = GetWorld();
+	APawn* MyPawn = GetPawn();
+	if (!World || !MyPawn) return;
+
+	const float Now = World->GetTimeSeconds();
+	if (Now < NextSurrenderWarningTime) return;
+	NextSurrenderWarningTime = Now + FMath::Max(0.25f, SurrenderWarningCooldown);
+
+	FVector Loc = MyPawn->GetActorLocation();
+	if (const AController* Self = this)
+	{
+		FVector ViewLoc;
+		FRotator ViewRot;
+		Self->GetPlayerViewPoint(ViewLoc, ViewRot);
+		Loc = ViewLoc;
+	}
+
+	AINoiseEvent::Report(World, Loc, 1.f, MyPawn, AINoiseEvent::EKind::SurrenderWarning);
+	UE_LOG(LogTemp, Log, TEXT("[Interact] %s surrender warning"), *GetNameSafe(this));
 }
 
 void AShooterPlayerController::Auth_OpenRangeBench(ARangeLoadoutBench* Bench)
@@ -1118,6 +1207,7 @@ void AShooterPlayerController::Client_OnMatchEnded_Implementation(uint8 WinningT
 {
 	bMatchOver = true;
 	bPawnAlive = false;
+ if(IsMissionTabletOpen())CloseMissionPanel();
 	if (APawn* P = GetPawn())
 	{
 		P->DisableInput(this);
@@ -1320,6 +1410,7 @@ void AShooterPlayerController::ApplySpectateLocal()
 	if (bSpectating)
 	{
 		bPawnAlive = false;
+  if(IsMissionTabletOpen())CloseMissionPanel();
 		// 死亡黑屏是定时器加的，观战期间一直清掉
 		TWeakObjectPtr<AShooterPlayerController> WeakThis = this;
 		auto ClearFade = [WeakThis]()
@@ -1476,6 +1567,7 @@ bool AShooterPlayerController::CanTogglePauseMenu() const
 
 void AShooterPlayerController::Input_TogglePauseMenu()
 {
+ if(IsMissionTabletOpen()){CloseMissionPanel();return;}
 	if (!CanTogglePauseMenu()) return;
 	if (IsValid(SettingsScreen) && SettingsScreen->IsInViewport())
 	{
@@ -1923,7 +2015,7 @@ void AShooterPlayerController::EnsureWatchInput()
 	if (!WatchIMC)
 	{
 		WatchIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Watch_Runtime"));
-		// Map T; Input_CheckWatch requires Alt held (same pattern as Alt+K NVG).
+		// Map T; Input_CheckWatch requires Alt held.
 		WatchIMC->MapKey(WatchAction, EKeys::T);
 	}
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());
@@ -1993,3 +2085,35 @@ void AShooterPlayerController::MarkBlood(int32 Steps)
 		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("BloodyFeet marked — walk to leave prints"));
 	}
 }
+
+void AShooterPlayerController::ShowTutorialPrompt(const FText& Text, FName PromptId, float Duration)
+{
+	if (!IsLocalController()) return;
+	if (Text.IsEmpty()) return;
+	if (!PromptId.IsNone() && SeenTutorialPromptIds.Contains(PromptId)) return;
+	if (!PromptId.IsNone()) SeenTutorialPromptIds.Add(PromptId);
+	TutorialPromptText = Text;
+	EnsureTutorialPromptWidget();
+	GetWorldTimerManager().ClearTimer(TutorialPromptTimer);
+	const float ClampDur = FMath::Clamp(Duration, 1.f, 20.f);
+	GetWorldTimerManager().SetTimer(TutorialPromptTimer, this, &ThisClass::ClearTutorialPrompt, ClampDur, false);
+}
+
+void AShooterPlayerController::ClearTutorialPrompt()
+{
+	TutorialPromptText = FText::GetEmpty();
+}
+
+void AShooterPlayerController::EnsureTutorialPromptWidget()
+{
+	if (!IsLocalController()) return;
+	if (!IsValid(TutorialPrompt))
+	{
+		TutorialPrompt = CreateWidget<UTutorialPromptWidget>(this, UTutorialPromptWidget::StaticClass());
+	}
+	if (IsValid(TutorialPrompt) && !TutorialPrompt->IsInViewport())
+	{
+		TutorialPrompt->AddToViewport(205);
+	}
+}
+

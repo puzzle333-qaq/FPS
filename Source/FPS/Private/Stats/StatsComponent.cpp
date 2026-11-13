@@ -55,12 +55,7 @@ bool UStatsComponent::ChangeHealthByAmout(float Amout, AActor* Instigator)
 	float OldValue = Health;
 	Health = FMath::Clamp(Health + Amout, 0.f, MaxHealth);
 	OnHealthChanged.Broadcast(this, OldValue, Health, Instigator);
-
-	if (Health <= 0.f)
-	{
-		StartDeath();
-	}
-
+	// Death is decided by UHitZoneVitalsComponent (pure hit-zone). HP is derived/harmless.
 	return false;
 }
 

@@ -19,6 +19,8 @@ void ACoopCqbGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(ACoopCqbGameState, HostileTotalCount);
 	DOREPLIFETIME(ACoopCqbGameState, EvacEndServerTime);
 	DOREPLIFETIME(ACoopCqbGameState, bDebriefOpen);
+	DOREPLIFETIME(ACoopCqbGameState, bAlarmRaised);
+	DOREPLIFETIME(ACoopCqbGameState, bPlayersEverDetected);
 }
 
 void ACoopCqbGameState::SetCoopPhase(ECoopCqbPhase NewPhase)
@@ -95,4 +97,26 @@ void ACoopCqbGameState::OnRep_EvacState()
 void ACoopCqbGameState::OnRep_Mission()
 {
  OnMissionUpdated.Broadcast();
+}
+
+void ACoopCqbGameState::ResetStealthFlags()
+{
+	if (!HasAuthority()) return;
+	bAlarmRaised = false;
+	bPlayersEverDetected = false;
+	ForceNetUpdate();
+}
+
+void ACoopCqbGameState::SetAlarmRaised(bool bRaised)
+{
+	if (!HasAuthority() || bAlarmRaised == bRaised) return;
+	bAlarmRaised = bRaised;
+	ForceNetUpdate();
+}
+
+void ACoopCqbGameState::SetPlayersEverDetected(bool bDetected)
+{
+	if (!HasAuthority() || bPlayersEverDetected == bDetected) return;
+	bPlayersEverDetected = bDetected;
+	ForceNetUpdate();
 }

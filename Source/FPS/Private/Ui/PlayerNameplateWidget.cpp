@@ -7,7 +7,7 @@
 #include "Components/TextBlock.h"
 #include "GameFramework/PlayerState.h"
 #include "ShooterCharacter.h"
-#include "Ui/TacticalUIStyle.h"
+#include "Ui/OperationUIStyle.h"
 
 void UPlayerNameplateWidget::SetSubject(AShooterCharacter* Subject)
 {
@@ -38,11 +38,11 @@ void UPlayerNameplateWidget::BuildPlate()
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("NameRoot"));
 	WidgetTree->RootWidget = Root;
 	NameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("NameLabel"));
-	NameText->SetFont(FTacticalUIStyle::MakeFont(14, true));
-	NameText->SetColorAndOpacity(FTacticalUIStyle::Text);
+	NameText->SetFont(FOperationUIStyle::MakeFont(13));
+	NameText->SetColorAndOpacity(FOperationUIStyle::Text);
 	NameText->SetJustification(ETextJustify::Center);
-	NameText->SetShadowOffset(FVector2D(1.f, 1.f));
-	NameText->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.85f));
+	NameText->SetShadowOffset(FVector2D(0.f, 1.f));
+	NameText->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.6f));
 	if (UCanvasPanelSlot* LabelSlot = Root->AddChildToCanvas(NameText))
 	{
 		LabelSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));

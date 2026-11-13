@@ -1,4 +1,5 @@
 #include "Ui/RangeLoadoutWidget.h"
+#include "Weapon/WeaponSting.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Blueprint/WidgetTree.h"
@@ -558,6 +559,7 @@ void URangeLoadoutWidget::CollectCatalog()
 	};
 	PrimaryClasses.Sort(ByName);
 	SecondaryClasses.Sort(ByName);
+	ThrowableClasses.AddUnique(AWeaponSting::StaticClass());
 	ThrowableClasses.Sort(ByName);
 }
 

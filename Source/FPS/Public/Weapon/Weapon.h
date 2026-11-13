@@ -139,6 +139,8 @@ class FPS_API AWeapon : public AActor, public IRecoilModifier   // 实现后座�
 	GENERATED_BODY()
 	
 public:
+ FSimpleMulticastDelegate OnDeviceHudChanged;
+
 	// 观战切换时按本机视角重新切 1P/3P 网格
 	void RefreshViewMeshVisibility() { SetMeshVisibility(GetInstigator()); }
 	
@@ -407,6 +409,15 @@ public:
 
 	/** Re-apply authored + Mesh*AttachRelative* after AttachToComponent (Mesh1P is root). */
 	void ApplyMeshAttachRelative(USkeletalMeshComponent* WeaponMesh, bool bFirstPerson);
+
+	/** Optional third-person mount. None preserves the WeaponData GripPoints path. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach|ThirdPerson")
+	FName Mesh3PAttachSocket = NAME_None;
+
+	/** Weapon origin relative to Mesh3PAttachSocket, calibrated from the authored grip pose.
+	 * Independent of first-person settings and the weapon mesh component's preview transform. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach|ThirdPerson")
+	FTransform Mesh3PAttachTransform = FTransform::Identity;
 
 	// Sequence fallbacks when DA montages are empty (PlaySlotAnimationAsDynamicMontage / PlayAnimation).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")

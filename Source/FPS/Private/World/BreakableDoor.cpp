@@ -1,5 +1,7 @@
 ﻿#include "World/BreakableDoor.h"
+#include "ShooterCharacter.h"
 
+#include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -26,6 +28,18 @@ ABreakableDoor::ABreakableDoor()
 
 	Hinge = CreateDefaultSubobject<USceneComponent>(TEXT("Hinge"));
 	Hinge->SetupAttachment(SceneRoot);
+
+	DoorFrame = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DoorFrame"));
+	DoorFrame->SetupAttachment(SceneRoot);
+	DoorFrame->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DoorFrame->SetCanEverAffectNavigation(false);
+
+	HingeAxis = CreateDefaultSubobject<UArrowComponent>(TEXT("HingeAxis"));
+	HingeAxis->SetupAttachment(Hinge);
+	HingeAxis->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
+	HingeAxis->SetArrowColor(FLinearColor(0.2f, 1.f, 0.35f));
+	HingeAxis->ArrowSize = 2.f;
+	HingeAxis->SetHiddenInGame(true);
 
 	DoorLeaf = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DoorLeaf"));
 	DoorLeaf->SetupAttachment(Hinge);
@@ -65,6 +79,12 @@ void ABreakableDoor::ApplyDoorMeshAndBox()
 {
 	if (!IsValid(DoorLeaf)) return;
 
+	if (IsValid(DoorFrame))
+	{
+		DoorFrame->SetStaticMesh(DoorFrameMesh);
+		DoorFrame->SetVisibility(IsValid(DoorFrameMesh));
+	}
+
 	if (IsValid(DoorLeafMesh))
 	{
 		if (DoorLeaf->GetStaticMesh() != DoorLeafMesh)
@@ -73,7 +93,26 @@ void ABreakableDoor::ApplyDoorMeshAndBox()
 		}
 	}
 
-	DoorLeaf->SetRelativeLocation(DoorLeafRelativeLocation);
+	FVector LeafLocation = DoorLeafRelativeLocation;
+	if (bSnapLeafToHingeEdge && IsValid(DoorLeaf->GetStaticMesh()))
+	{
+		const FBoxSphereBounds Bounds = DoorLeaf->GetStaticMesh()->GetBounds();
+		const FVector Scale = DoorLeafRelativeScale.GetAbs();
+		const FVector Origin = Bounds.Origin * Scale;
+		const FVector Extent = Bounds.BoxExtent * Scale;
+		FVector Edge = Origin;
+		switch (HingeEdge)
+		{
+		case EDoorHingeEdge::PositiveX: Edge += FVector(Extent.X, 0.f, 0.f); break;
+		case EDoorHingeEdge::NegativeX: Edge += FVector(-Extent.X, 0.f, 0.f); break;
+		case EDoorHingeEdge::PositiveY: Edge += FVector(0.f, Extent.Y, 0.f); break;
+		default:                        Edge += FVector(0.f, -Extent.Y, 0.f); break;
+		}
+		LeafLocation = DoorLeafRelativeRotation.RotateVector(-Edge);
+		LeafLocation.Z += DoorLeafRelativeLocation.Z;
+	}
+
+	DoorLeaf->SetRelativeLocation(LeafLocation);
 	DoorLeaf->SetRelativeRotation(DoorLeafRelativeRotation);
 	DoorLeaf->SetRelativeScale3D(DoorLeafRelativeScale);
 
@@ -156,6 +195,14 @@ EDoorOpenMode ABreakableDoor::ResolveOpenMode(APawn* InteractingPawn) const
 	else
 	{
 		InteractingPawn->GetActorEyesViewPoint(ViewLoc, ViewRot);
+	}
+
+	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(InteractingPawn))
+	{
+		if (Shooter->IsLegInjured())
+		{
+			return EDoorOpenMode::Push;
+		}
 	}
 
 	const float Pitch = ViewRot.Pitch;
@@ -245,9 +292,9 @@ void ABreakableDoor::Auth_SetTargetOpenSigned(float SignedDegrees, float InterpS
 		AINoiseEvent::Report(
 			GetWorld(),
 			GetActorLocation(),
-			NoiseLoudness,
+			1.f,
 			NoiseInstigator,
-			bKickNoise ? AINoiseEvent::EKind::Gunshot : AINoiseEvent::EKind::Footstep);
+			bKickNoise ? AINoiseEvent::EKind::DoorKick : AINoiseEvent::EKind::DoorPush);
 	}
 }
 
@@ -275,6 +322,15 @@ void ABreakableDoor::Auth_PushOpen(APawn* InstigatorPawn)
 
 void ABreakableDoor::Auth_KickOpen(APawn* InstigatorPawn)
 {
+	if (const AShooterCharacter* Kicker = Cast<AShooterCharacter>(InstigatorPawn))
+	{
+		if (Kicker->IsLegInjured())
+		{
+			Auth_PushOpen(InstigatorPawn);
+			return;
+		}
+	}
+
 	if (!HasAuthority() || bDestroyed) return;
 	const float Dir = ResolveOpenDirectionAwayFrom(InstigatorPawn);
 	Auth_SetTargetOpenSigned(OpenAngleDegrees * Dir, KickInterpSpeed, KickSound.Get(), KickSoundVolume, KickNoiseLoudness, InstigatorPawn, true);

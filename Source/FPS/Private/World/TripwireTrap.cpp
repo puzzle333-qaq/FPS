@@ -1,4 +1,5 @@
 #include "World/TripwireTrap.h"
+#include "Combat/HitZoneVitalsComponent.h"
 #include "World/TrapPlacement.h"
 
 #include "Components/BoxComponent.h"
@@ -295,8 +296,14 @@ void ATripwireTrap::ApplyExplosionDamage(AActor* PreferredVictim)
 		const float Applied = ExplosionDamage * Scale;
 		if (Applied < 1.f) return;
 
-		// Direct DoDamage — bypasses ScaleDamageByArmor (ballistic-only).
-		IPlayerInterface::Execute_DoDamage(Actor, Applied, DamageInstigator);
+		if (HitZoneCombat::IsHitZoneVictim(Actor))
+		{
+			HitZoneCombat::ApplyExplosiveToActor(Actor, DamageInstigator, Dist, InnerRadius, DamageRadius);
+		}
+		else
+		{
+			IPlayerInterface::Execute_DoDamage(Actor, Applied, DamageInstigator);
+		}
 	};
 
 	if (IsValid(PreferredVictim))

@@ -1,5 +1,13 @@
-﻿#include "Ui/ShooterLoadingScreen.h"
-#include "Ui/TacticalUIStyle.h"
+#include "Ui/ShooterLoadingScreen.h"
+#include "Ui/OperationUIStyle.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/PackageName.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "Misc/FileHelper.h"
+#include "HAL/PlatformProcess.h"
+#include "HAL/FileManager.h"
 
 #include "Engine/GameInstance.h"
 #include "Engine/Engine.h"
@@ -24,170 +32,64 @@ namespace
 	TSharedPtr<SWidget> GViewportWidget;
 	FString GLoadingMapPackage;
 	bool GRegistered = false;
-
-	FString FriendlyMapName(const FString& MapPath)
+	void TraceLoading(const TCHAR* Event)
 	{
-		FString Name = MapPath;
-		int32 Slash = INDEX_NONE;
-		if (Name.FindLastChar(TEXT('/'), Slash))
-		{
-			Name = Name.Mid(Slash + 1);
-		}
-		Name.RemoveFromStart(TEXT("Lvl_"));
-		Name.RemoveFromStart(TEXT("LVL_"));
-		return Name.IsEmpty() ? TEXT("地图") : Name;
+		if (!FParse::Param(FCommandLine::Get(), TEXT("UIQA"))) return;
+		const FString Line = FString::Printf(TEXT("{\"event\":\"%s\",\"map\":\"%s\"}\n"), Event, *GLoadingMapPackage);
+		FFileHelper::SaveStringToFile(Line, *(FPaths::ProjectSavedDir()/FString::Printf(TEXT("UIQA_Loading_%u.jsonl"), FPlatformProcess::GetCurrentProcessId())),
+			FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append);
 	}
 
-	class SShooterLoadingScreenWidget : public SCompoundWidget
-	{
-	public:
-		SLATE_BEGIN_ARGS(SShooterLoadingScreenWidget) {}
-			SLATE_ARGUMENT(FString, MapName)
-		SLATE_END_ARGS()
 
-		void Construct(const FArguments& InArgs)
-		{
-			MapPackage = InArgs._MapName;
-			DisplayProgress = 0.05f;
-			MaxDisplayedProgress = 0.05f;
-			AnimTime = 0.f;
-
-			BgBrush = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::BgDim, 0.f, 0.f);
-			PanelBrush = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::Panel, 8.f, 1.f);
-
-			const FProgressBarStyle& DefaultPB = FCoreStyle::Get().GetWidgetStyle<FProgressBarStyle>("ProgressBar");
-			OwnedBarStyle = DefaultPB;
-			OwnedBarStyle.BackgroundImage = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::Row, 3.f, 1.f);
-			OwnedBarStyle.FillImage = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::Accent, 3.f, 0.f);
-			OwnedBarStyle.MarqueeImage = OwnedBarStyle.FillImage;
-
-			ChildSlot
-			[
-				SNew(SOverlay)
-				+ SOverlay::Slot()
-				[
-					SNew(SBorder)
-					.BorderImage(&BgBrush)
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Fill)
-				]
-				+ SOverlay::Slot()
-				.HAlign(HAlign_Center)
-				.VAlign(VAlign_Center)
-				[
-					SNew(SBox)
-					.WidthOverride(520.f)
-					[
-						SNew(SBorder)
-						.BorderImage(&PanelBrush)
-						.Padding(FMargin(28.f, 24.f))
-						[
-							SNew(SVerticalBox)
-							+ SVerticalBox::Slot()
-							.AutoHeight()
-							.HAlign(HAlign_Left)
-							[
-								SNew(STextBlock)
-								.Text(FText::FromString(TEXT("加载中…")))
-								.Font(FTacticalUIStyle::MakeFont(22, true))
-								.ColorAndOpacity(FSlateColor(FTacticalUIStyle::TextGold))
-							]
-							+ SVerticalBox::Slot()
-							.AutoHeight()
-							.Padding(0.f, 8.f, 0.f, 0.f)
-							[
-								SNew(STextBlock)
-								.Text(this, &SShooterLoadingScreenWidget::GetSubtitleText)
-								.Font(FTacticalUIStyle::MakeFont(14, false))
-								.ColorAndOpacity(FSlateColor(FTacticalUIStyle::TextMuted))
-							]
-							+ SVerticalBox::Slot()
-							.AutoHeight()
-							.Padding(0.f, 20.f, 0.f, 0.f)
-							[
-								SNew(SBox)
-								.HeightOverride(14.f)
-								[
-									SNew(SProgressBar)
-									.Style(&OwnedBarStyle)
-									.Percent(this, &SShooterLoadingScreenWidget::GetProgressPercent)
-								]
-							]
-							+ SVerticalBox::Slot()
-							.AutoHeight()
-							.Padding(0.f, 10.f, 0.f, 0.f)
-							.HAlign(HAlign_Right)
-							[
-								SNew(STextBlock)
-								.Text(this, &SShooterLoadingScreenWidget::GetPercentText)
-								.Font(FTacticalUIStyle::MakeFont(13, false))
-								.ColorAndOpacity(FSlateColor(FTacticalUIStyle::Text))
-							]
-						]
-					]
-				]
-			];
-		}
-
-		virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override
-		{
-			SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
-			AnimTime += InDeltaTime;
-
-			float Raw = 0.f;
-			bool bHaveRaw = false;
-			if (!MapPackage.IsEmpty())
-			{
-				const float AsyncPct = GetAsyncLoadPercentage(FName(*MapPackage));
-				if (AsyncPct >= 0.f)
-				{
-					Raw = FMath::Clamp(AsyncPct / 100.f, 0.f, 0.99f);
-					bHaveRaw = true;
-				}
-			}
-
-			if (bHaveRaw)
-			{
-				// Never let a later lower package % pull the bar backward
-				MaxDisplayedProgress = FMath::Max(MaxDisplayedProgress, Raw);
-			}
-			else
-			{
-				// Indeterminate: crawl forward only (never oscillate / regress)
-				const float Crawl = FMath::Min(MaxDisplayedProgress + InDeltaTime * 0.07f, 0.88f);
-				MaxDisplayedProgress = FMath::Max(MaxDisplayedProgress, Crawl);
-			}
-
-			// Displayed bar is monotonic — never lower than previous frame
-			const float Smoothed = FMath::FInterpTo(DisplayProgress, MaxDisplayedProgress, InDeltaTime, 8.f);
-			DisplayProgress = FMath::Max(DisplayProgress, Smoothed);
-		}
-
-	private:
-		TOptional<float> GetProgressPercent() const
-		{
-			return DisplayProgress;
-		}
-
-		FText GetPercentText() const
-		{
-			const int32 Pct = FMath::Clamp(FMath::RoundToInt(DisplayProgress * 100.f), 0, 99);
-			return FText::FromString(FString::Printf(TEXT("%d%%"), Pct));
-		}
-
-		FText GetSubtitleText() const
-		{
-			return FText::FromString(FString::Printf(TEXT("正在进入 %s"), *FriendlyMapName(MapPackage)));
-		}
-
-		FString MapPackage;
-		float DisplayProgress = 0.f;
-		float MaxDisplayedProgress = 0.05f;
-		float AnimTime = 0.f;
-		FProgressBarStyle OwnedBarStyle;
-		FSlateBrush BgBrush;
-		FSlateBrush PanelBrush;
-	};
+ class SShooterLoadingScreenWidget : public SCompoundWidget
+ {
+ public:
+  SLATE_BEGIN_ARGS(SShooterLoadingScreenWidget){} SLATE_ARGUMENT(FString,MapName) SLATE_END_ARGS()
+  void Construct(const FArguments& A)
+  {
+   MapPackage=FPackageName::ObjectPathToPackageName(A._MapName);
+   Bg=FOperationUIStyle::MakePanelBrush(FLinearColor::Black,0,0);
+   Bar.BackgroundImage=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Outline,0,0);
+   Bar.FillImage=FOperationUIStyle::MakePanelBrush(FOperationUIStyle::Text.CopyWithNewOpacity(.8f),0,0);
+   Bar.MarqueeImage=Bar.FillImage;
+   ChildSlot[SNew(SOverlay)
+    +SOverlay::Slot()[SNew(SBorder).BorderImage(&Bg).Padding(0)]
+    +SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(FMargin(48,0,48,40))
+    [SNew(SVerticalBox)
+     +SVerticalBox::Slot().AutoHeight().Padding(FMargin(0,0,0,8))
+      [SNew(STextBlock).Text(FText::FromString(TEXT("行 动 准 备"))).Font(FOperationUIStyle::MakeFont(13)).ColorAndOpacity(FOperationUIStyle::TextMuted)
+       .ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))]
+     +SVerticalBox::Slot().AutoHeight()
+      [SNew(STextBlock).Text(FText::FromString(ShooterLoadingScreen::GetTaskName(MapPackage))).Font(FOperationUIStyle::MakeFont(20)).ColorAndOpacity(FOperationUIStyle::Text)
+       .ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))]]
+    +SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(FMargin(48,0,48,40))
+     [SNew(STextBlock).Text_Lambda([this]{
+       FString Dots=TEXT("…");
+       if(SinceChange>5.f)Dots=FString::ChrN(1+FMath::FloorToInt(AnimationTime*1.5f)%3,TCHAR(0x00B7));
+       return FText::FromString(TEXT("正在部署")+Dots);
+      }).Font(FOperationUIStyle::MakeFont(16)).ColorAndOpacity(FOperationUIStyle::Text)
+       .ShadowOffset(FVector2D(0,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.6f))]
+    +SOverlay::Slot().VAlign(VAlign_Bottom)
+     [SNew(SBox).HeightOverride(2)[SNew(SProgressBar).Style(&Bar).BorderPadding(FVector2D::ZeroVector)
+       .BarFillStyle(EProgressBarFillStyle::Scale).Percent_Lambda([this]{return TOptional<float>(Progress);})]]];
+  }
+  virtual void Tick(const FGeometry& G,double T,float D)override
+  {
+   SCompoundWidget::Tick(G,T,D);AnimationTime+=D;SinceChange+=D;
+   const float Raw=GetAsyncLoadPercentage(FName(*MapPackage));
+   // Unknown means hold. There is no clock-driven progress, initial head start or 99% cap.
+   if(Raw>=0.f)
+   {
+    const float Measured=FMath::Clamp(Raw/100.f,0.f,1.f);
+    if(Measured>Progress){Progress=Measured;SinceChange=0;}
+   }
+  }
+ private:
+  FString MapPackage;
+  float Progress=0,AnimationTime=0,SinceChange=0;
+  FSlateBrush Bg;
+  FProgressBarStyle Bar;
+ };
 
 	TSharedRef<SWidget> MakeLoadingWidget(const FString& MapName)
 	{
@@ -203,16 +105,26 @@ namespace
 		GViewportWidget.Reset();
 	}
 
+#if WITH_EDITOR
+ // Editor-only layout/stall inspection, using an actually idle async-loader (unknown -> hold).
+ FAutoConsoleCommand LoadingPreview(TEXT("fps.UI.PreviewLoading"),TEXT("Toggle the deployment loading widget for visual QA."),
+  FConsoleCommandDelegate::CreateLambda([] {
+   if(GViewportWidget.IsValid()){HideViewportFallback();return;}
+   if(GEngine&&GEngine->GameViewport){GViewportWidget=MakeLoadingWidget(TEXT("/Game/Maps/Lvl_Factory_Whitebox"));GEngine->GameViewport->AddViewportWidgetContent(GViewportWidget.ToSharedRef(),10000);}
+  }));
+#endif
 	void BeginLoading(const FString& MapName)
 	{
 		GLoadingMapPackage = MapName;
+		TraceLoading(TEXT("Begin"));
 		UE_LOG(LogTemp, Log, TEXT("[Loading] Begin %s"), *MapName);
 
 		const TSharedRef<SWidget> Widget = MakeLoadingWidget(MapName);
 
 		FLoadingScreenAttributes Attr;
 		Attr.bAutoCompleteWhenLoadingCompletes = true;
-		Attr.MinimumLoadingScreenDisplayTime = 0.35f;
+		Attr.MinimumLoadingScreenDisplayTime = 0.f;
+		// Slate-only blocking-travel chrome. No MoviePaths/video or drone footage.
 		Attr.bAllowEngineTick = true;
 		Attr.WidgetLoadingScreen = Widget;
 
@@ -234,6 +146,7 @@ namespace
 
 	void EndLoading(UWorld* /*World*/)
 	{
+		TraceLoading(TEXT("End"));
 		UE_LOG(LogTemp, Log, TEXT("[Loading] End %s"), *GLoadingMapPackage);
 		GLoadingMapPackage.Reset();
 		HideViewportFallback();
@@ -288,3 +201,16 @@ void ShooterLoadingScreen::Unregister()
 	GRegistered = false;
 }
 
+
+FString ShooterLoadingScreen::GetTaskName(const FString& MapPath)
+{
+ FString Task=MapPath.Contains(TEXT("Factory"))?TEXT("清剿行动 — 清光匪徒"):TEXT("行动部署");
+ if(GConfig)GConfig->GetString(TEXT("FPS.MissionUI"),MapPath.Contains(TEXT("Factory"))?TEXT("FactoryTask"):TEXT("DefaultTask"),Task,GGameIni);
+ return Task;
+}
+FString ShooterLoadingScreen::GetMapName(const FString& MapPath)
+{
+ FString Name=MapPath.Contains(TEXT("Factory"))?TEXT("工厂"):TEXT("行动区域");
+ if(GConfig)GConfig->GetString(TEXT("FPS.MissionUI"),MapPath.Contains(TEXT("Factory"))?TEXT("FactoryMapName"):TEXT("DefaultMapName"),Name,GGameIni);
+ return Name;
+}

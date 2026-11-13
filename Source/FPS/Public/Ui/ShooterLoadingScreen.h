@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 
@@ -10,4 +10,6 @@ namespace ShooterLoadingScreen
 	void Register(UGameInstance* GameInstance);
 	void Unregister();
 	void Hide();
+ FString GetTaskName(const FString& MapPath);
+ FString GetMapName(const FString& MapPath);
 }

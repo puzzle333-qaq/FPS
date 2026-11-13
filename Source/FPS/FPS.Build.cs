@@ -1,4 +1,4 @@
-﻿using UnrealBuildTool;
+using UnrealBuildTool;
 
 public class FPS : ModuleRules
 {
@@ -14,7 +14,7 @@ public class FPS : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"Slate", "SlateCore", "NavigationSystem",
-			"MoviePlayer", "AssetRegistry",
+			"MoviePlayer", "AssetRegistry", "LevelSequence", "MovieScene", "MovieSceneTracks",
 			"OnlineSubsystem", "OnlineSubsystemUtils"
 		});
 

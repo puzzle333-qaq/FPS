@@ -8,6 +8,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "Ui/ShooterLoadingScreen.h"
 #include "UObject/SoftObjectPath.h"
+#include "Containers/Ticker.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 namespace
 {
@@ -76,6 +79,19 @@ void UShooterGameInstance::Init()
 	Super::Init();
 	ShooterLoadingScreen::Register(this);
 	EnsureCoopCqbDefaults(this);
+	// Explicit opt-in packaged QA uses the normal squad travel path, including Shipping.
+	if (FParse::Param(FCommandLine::Get(), TEXT("UIQA")) && FParse::Param(FCommandLine::Get(), TEXT("UIQATravel")))
+	{
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this, [this](float)
+		{
+			UWorld* World = GetWorld();
+			if (!World || !World->IsGameWorld() || World->GetTimeSeconds() < 8.f) return true;
+			if (World->GetNetMode() != NM_Client && World->GetMapName().Contains(TEXT("Lvl_Range")))
+				TravelSquadTo(TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/Maps/Lvl_Factory_Whitebox.Lvl_Factory_Whitebox"))),
+					TSoftClassPtr<AGameModeBase>(FSoftObjectPath(GCoopGameModePath)), {TEXT("ExpectedOperators=1")});
+			return false;
+		}), .2f);
+	}
 
 	if (GEngine)
 	{
@@ -157,10 +173,16 @@ bool UShooterGameInstance::JoinByIP(const FString& Address)
 	return true;
 }
 
+TSoftClassPtr<AGameModeBase> UShooterGameInstance::GetRangeGameMode() const
+{
+	if (!RangeGameMode.IsNull()) return RangeGameMode;
+	return TSoftClassPtr<AGameModeBase>(FSoftObjectPath(TEXT("/Script/FPS.CoopCqbGameMode")));
+}
+
 bool UShooterGameInstance::OpenRange()
 {
 	bPracticeMode = false;
-	return TravelTo(RangeMap, RangeGameMode, false);
+	return TravelTo(RangeMap, GetRangeGameMode(), false);
 }
 
 bool UShooterGameInstance::StartPractice(EShooterGameMode Mode)
@@ -318,7 +340,7 @@ bool UShooterGameInstance::HostLocalListen(FString Target)
 		return false;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[LocalMP] HostLocalListen -> range"));
-	return TravelTo(RangeMap, RangeGameMode, true);
+	return TravelTo(RangeMap, GetRangeGameMode(), true);
 }
 
 bool UShooterGameInstance::JoinLocalhost(FString Address)

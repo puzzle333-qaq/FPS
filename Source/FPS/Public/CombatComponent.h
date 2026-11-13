@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -51,6 +51,11 @@ class FPS_API UCombatComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:		
+ DECLARE_MULTICAST_DELEGATE_OneParam(FInspectionChanged, bool);
+ FInspectionChanged OnInspectionChanged;
+ FSimpleMulticastDelegate OnInspectionHudChanged;
+ bool BeginDeploymentRaise();
+ bool IsDeploymentRaisePlaying()const;
 	UCombatComponent();
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

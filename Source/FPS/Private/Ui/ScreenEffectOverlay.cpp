@@ -1,6 +1,7 @@
 #include "Ui/ScreenEffectOverlay.h"
 
 #include "ShooterCharacter.h"
+#include "Ui/OperationUIStyle.h"
 #include "Styling/CoreStyle.h"
 
 UScreenEffectOverlay::UScreenEffectOverlay(const FObjectInitializer& ObjectInitializer)
@@ -47,7 +48,7 @@ int32 UScreenEffectOverlay::NativePaint(const FPaintArgs& Args, const FGeometry&
 			const float Fade = FMath::Pow(1.f - T0, 2.6f);
 			if (Fade < 0.03f) continue;
 
-			const FLinearColor Color(0.78f, 0.02f, 0.015f, Blood * 0.9f * Fade);
+			const FLinearColor Color=FOperationUIStyle::Warning.CopyWithNewOpacity(Blood*.9f*Fade);
 			const FLinearColor Tint = Color * InWidgetStyle.GetColorAndOpacityTint();
 			const float Y0 = T0 * Reach;
 			const float Band = (T1 - T0) * Reach;

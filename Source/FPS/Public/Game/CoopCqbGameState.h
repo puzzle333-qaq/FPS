@@ -40,6 +40,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|CoopCQB")
 	bool IsMissionLive() const { return CoopPhase == ECoopCqbPhase::InProgress; }
 
+	UFUNCTION(BlueprintPure, Category = "FPS|CoopCQB|Stealth")
+	bool IsAlarmRaised() const { return bAlarmRaised; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|CoopCQB|Stealth")
+	bool WerePlayersEverDetected() const { return bPlayersEverDetected; }
+
 	UFUNCTION(BlueprintPure, Category = "FPS|CoopCQB")
 	float GetEvacSecondsRemaining() const;
 
@@ -73,6 +79,10 @@ public:
 	void BeginEvac(float DelaySeconds);
 	void OpenDebrief();
 
+	void ResetStealthFlags();
+	void SetAlarmRaised(bool bRaised);
+	void SetPlayersEverDetected(bool bDetected);
+
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CoopPhase)
 	ECoopCqbPhase CoopPhase = ECoopCqbPhase::Waiting;
@@ -97,6 +107,12 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_EvacState)
 	bool bDebriefOpen = false;
+
+	UPROPERTY(Replicated)
+	bool bAlarmRaised = false;
+
+	UPROPERTY(Replicated)
+	bool bPlayersEverDetected = false;
 
 	UFUNCTION()
 	void OnRep_CoopPhase();

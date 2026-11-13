@@ -6,6 +6,8 @@
 #include "HostileSpawner.generated.h"
 
 class AHostileAICharacter;
+class AWeapon;
+class USkeletalMesh;
 
 /** Place in graybox. Coop GameMode calls Auth_SpawnHostiles at mission start. */
 UCLASS()
@@ -28,6 +30,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Hostile")
 	TSubclassOf<AHostileAICharacter> OverrideClass;
+
+	/** Optional Bandit (or other) body applied to every hostile from this point. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Hostile|Look")
+	TSoftObjectPtr<USkeletalMesh> BodyMeshOverride;
+
+	/** Skins to pick from. Empty = any Bandit preset. Ignored when Body Mesh Override is set. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Hostile|Look")
+	TArray<TSoftObjectPtr<USkeletalMesh>> LookPresets;
+
+	/** Guns to pick from. Empty = AK, RAR, AK105, TR15, Viper, X24. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Hostile|Weapon")
+	TArray<TSoftClassPtr<AWeapon>> WeaponClasses;
 
 	/**
 	 * Hands out Suppressor, Closer, Flanker across every spawner in the level.

@@ -19,7 +19,8 @@ enum class EThrownEffect : uint8
 	Frag     UMETA(DisplayName = "Frag"),
 	Smoke    UMETA(DisplayName = "Smoke"),
 	Molotov  UMETA(DisplayName = "Molotov"),
-	Flash    UMETA(DisplayName = "Flash")
+	Flash    UMETA(DisplayName = "Flash"),
+	Stinger  UMETA(DisplayName = "Stinger")
 };
 
 class UTexture2D;
@@ -107,6 +108,7 @@ protected:
 	void ApplyThrownEffect();
 	void ApplyFragDamage();
 	void ApplyFlashWash();
+	void ApplyStingerWash();
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_OnDetonate();
@@ -124,6 +126,13 @@ class FPS_API AThrownFlash : public AThrownProjectile
 public:
 	AThrownFlash();
 
+	/** After flash, hostiles stay in a high-surrender window (server). */
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Throwable|Flash", meta = (ClampMin = "1"))
+	float FlashSurrenderWindowMin = 15.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Throwable|Flash", meta = (ClampMin = "1"))
+	float FlashSurrenderWindowMax = 20.f;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Throwable")
 	TObjectPtr<USkeletalMeshComponent> FlashMesh;
@@ -138,4 +147,22 @@ class FPS_API AThrownMolotov : public AThrownProjectile
 	GENERATED_BODY()
 public:
 	AThrownMolotov();
+};
+
+/** Stinger / sting grenade: locks look / AI turn. No damage, no whiteout. */
+UCLASS()
+class FPS_API AThrownStinger : public AThrownProjectile
+{
+	GENERATED_BODY()
+public:
+	AThrownStinger();
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Throwable|Stinger", meta = (ClampMin = "0.05"))
+	float LockDuration = 0.7f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Throwable|Stinger", meta = (ClampMin = "0"))
+	float RecoverDuration = 0.9f;
+
+protected:
+	virtual void OnDetonate_Implementation() override;
 };

@@ -1,6 +1,9 @@
 #include "Weapon/ThrownProjectile.h"
+#include "Game/AINoiseEvent.h"
 #include "ShooterCharacter.h"
 #include "ShooterGameModeBase.h"
+#include "Combat/HitZoneVitalsComponent.h"
+#include "Game/HostileAICharacter.h"
 
 #include "Interface/PlayerInterface.h"
 #include "FPSTraceChannels.h"
@@ -141,6 +144,7 @@ void AThrownProjectile::Detonate()
 	if (HasAuthority())
 	{
 		ApplyThrownEffect();
+		AINoiseEvent::Report(GetWorld(), GetActorLocation(), 1.f, GetInstigator(), AINoiseEvent::EKind::Explosion);
 		Multicast_OnDetonate();
 	}
 
@@ -183,6 +187,9 @@ void AThrownProjectile::ApplyThrownEffect()
 	case EThrownEffect::Flash:
 		ApplyFlashWash();
 		break;
+	case EThrownEffect::Stinger:
+		ApplyStingerWash();
+		break;
 	default:
 		break;
 	}
@@ -193,6 +200,14 @@ void AThrownProjectile::ApplyFlashWash()
 	UWorld* World = GetWorld();
 	if (!IsValid(World)) return;
 
+	float WindowMin = 15.f;
+	float WindowMax = 20.f;
+	if (const AThrownFlash* AsFlash = Cast<AThrownFlash>(this))
+	{
+		WindowMin = AsFlash->FlashSurrenderWindowMin;
+		WindowMax = AsFlash->FlashSurrenderWindowMax;
+	}
+
 	const FVector Origin = GetActorLocation();
 	const float Radius = FMath::Max(DamageRadius, 600.f);
 	TArray<FOverlapResult> Overlaps;
@@ -202,44 +217,79 @@ void AThrownProjectile::ApplyFlashWash()
 	ObjectQuery.AddObjectTypesToQuery(ECC_Pawn);
 	World->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, ObjectQuery, FCollisionShape::MakeSphere(Radius), QueryParams);
 
+	TSet<AActor*> Seen;
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
-		AShooterCharacter* Char = Cast<AShooterCharacter>(Overlap.GetActor());
-		if (!IsValid(Char)) continue;
-		const float Dist = FVector::Dist(Origin, Char->GetActorLocation());
+		AActor* Actor = Overlap.GetActor();
+		if (!IsValid(Actor) || Seen.Contains(Actor)) continue;
+		Seen.Add(Actor);
+
+		const float Dist = FVector::Dist(Origin, Actor->GetActorLocation());
 		if (Dist > Radius) continue;
+
 		float Amount = 2.5f;
 		if (Dist > InnerRadius)
 		{
 			const float Range = FMath::Max(1.f, Radius - InnerRadius);
 			Amount *= 1.f - (Dist - InnerRadius) / Range;
 		}
-		float Facing = 0.35f;
-		if (const AController* Viewer = Char->GetController())
-		{
-			FVector ViewLoc;
-			FRotator ViewRot;
-			Viewer->GetPlayerViewPoint(ViewLoc, ViewRot);
-			const FVector ToFlash = (Origin - ViewLoc).GetSafeNormal();
-			const float Dot = FVector::DotProduct(ViewRot.Vector(), ToFlash);
-			if (Dot >= 0.35f) Facing = 1.f;
-			else if (Dot >= -0.1f) Facing = 0.42f;
-			else Facing = 0.12f;
-		}
+		if (Amount < 0.08f) continue;
 
 		FCollisionQueryParams SightParams(SCENE_QUERY_STAT(ThrownFlashSight), false, this);
 		SightParams.AddIgnoredActor(this);
-		SightParams.AddIgnoredActor(Char);
+		SightParams.AddIgnoredActor(Actor);
 		FHitResult SightHit;
-		const FVector Eye = Char->GetPawnViewLocation();
+		FVector Eye = Actor->GetActorLocation() + FVector(0.f, 0.f, 70.f);
+		if (const APawn* Pawn = Cast<APawn>(Actor))
+		{
+			Eye = Pawn->GetPawnViewLocation();
+		}
 		if (World->LineTraceSingleByChannel(SightHit, Origin, Eye, ECC_Visibility, SightParams))
 		{
 			continue;
 		}
 
-		const float Strength = FMath::Clamp((Amount / 2.5f) * Facing, 0.f, 1.f);
-		if (Strength < 0.08f) continue;
-		Char->Client_ReceiveFlashbang(Strength);
+		if (AShooterCharacter* Char = Cast<AShooterCharacter>(Actor))
+		{
+			float Facing = 0.35f;
+			if (const AController* Viewer = Char->GetController())
+			{
+				FVector ViewLoc;
+				FRotator ViewRot;
+				Viewer->GetPlayerViewPoint(ViewLoc, ViewRot);
+				const FVector ToFlash = (Origin - ViewLoc).GetSafeNormal();
+				const float Dot = FVector::DotProduct(ViewRot.Vector(), ToFlash);
+				if (Dot >= 0.35f) Facing = 1.f;
+				else if (Dot >= -0.1f) Facing = 0.42f;
+				else Facing = 0.12f;
+			}
+
+			const float Strength = FMath::Clamp((Amount / 2.5f) * Facing, 0.f, 1.f);
+			if (Strength < 0.08f) continue;
+			Char->Client_ReceiveFlashbang(Strength);
+			continue;
+		}
+
+		if (AHostileAICharacter* Hostile = Cast<AHostileAICharacter>(Actor))
+		{
+			if (!Hostile->IsHostileAlive()) continue;
+
+			FVector ViewForward = Hostile->GetActorForwardVector();
+			if (const AController* Brain = Hostile->GetController())
+			{
+				ViewForward = Brain->GetControlRotation().Vector();
+			}
+			const FVector ToFlash = (Origin - Eye).GetSafeNormal();
+			const float Dot = FVector::DotProduct(ViewForward.GetSafeNormal(), ToFlash);
+			float Facing = 0.35f;
+			if (Dot >= 0.35f) Facing = 1.f;
+			else if (Dot >= -0.1f) Facing = 0.42f;
+			else Facing = 0.12f;
+
+			const float Strength = FMath::Clamp((Amount / 2.5f) * Facing, 0.f, 1.f);
+			if (Strength < 0.08f) continue;
+			Hostile->Auth_BeginFlashSurrenderWindow(WindowMin, WindowMax);
+		}
 	}
 }
 
@@ -306,7 +356,14 @@ void AThrownProjectile::ApplyFragDamage()
 
 		AShooterGameModeBase* DamageGM = GetWorld() ? GetWorld()->GetAuthGameMode<AShooterGameModeBase>() : nullptr;
 		if (DamageGM) DamageGM->SetPendingDamageIcon(KillFeedIcon);
-		IPlayerInterface::Execute_DoDamage(Actor, Applied, GetInstigator());
+		if (HitZoneCombat::IsHitZoneVictim(Actor))
+		{
+			HitZoneCombat::ApplyExplosiveToActor(Actor, GetInstigator(), Dist, InnerRadius, DamageRadius);
+		}
+		else
+		{
+			IPlayerInterface::Execute_DoDamage(Actor, Applied, GetInstigator());
+		}
 		if (DamageGM) DamageGM->ClearPendingDamageIcon();
 	}
 }
@@ -355,4 +412,94 @@ AThrownMolotov::AThrownMolotov()
 	DamageRadius = 260.f;
 	bRequireLineOfSight = false;
 	bShouldBounce = false;
+}
+
+
+void AThrownProjectile::ApplyStingerWash()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World)) return;
+
+	const FVector Origin = GetActorLocation();
+	const float Radius = FMath::Max(DamageRadius, 600.f);
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ThrownStinger), false, this);
+	QueryParams.AddIgnoredActor(this);
+	FCollisionObjectQueryParams ObjectQuery;
+	ObjectQuery.AddObjectTypesToQuery(ECC_Pawn);
+	World->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, ObjectQuery, FCollisionShape::MakeSphere(Radius), QueryParams);
+
+	float LockDur = 0.7f;
+	float RecDur = 0.9f;
+	if (const AThrownStinger* AsStinger = Cast<AThrownStinger>(this))
+	{
+		LockDur = AsStinger->LockDuration;
+		RecDur = AsStinger->RecoverDuration;
+	}
+
+	TSet<AActor*> Seen;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Actor = Overlap.GetActor();
+		if (!IsValid(Actor) || Seen.Contains(Actor)) continue;
+		Seen.Add(Actor);
+
+		const float Dist = FVector::Dist(Origin, Actor->GetActorLocation());
+		if (Dist > Radius) continue;
+
+		float Amount = 1.f;
+		if (Dist > InnerRadius)
+		{
+			const float Range = FMath::Max(1.f, Radius - InnerRadius);
+			Amount *= 1.f - (Dist - InnerRadius) / Range;
+		}
+
+		FCollisionQueryParams SightParams(SCENE_QUERY_STAT(ThrownStingerSight), false, this);
+		SightParams.AddIgnoredActor(this);
+		SightParams.AddIgnoredActor(Actor);
+		FHitResult SightHit;
+		FVector Eye = Actor->GetActorLocation() + FVector(0.f, 0.f, 70.f);
+		if (const APawn* Pawn = Cast<APawn>(Actor))
+		{
+			Eye = Pawn->GetPawnViewLocation();
+		}
+		if (bRequireLineOfSight && World->LineTraceSingleByChannel(SightHit, Origin, Eye, ECC_Visibility, SightParams))
+		{
+			if (SightHit.GetActor() != Actor)
+			{
+				continue;
+			}
+		}
+
+		const float Strength = FMath::Clamp(Amount, 0.f, 1.f);
+		if (Strength < 0.08f) continue;
+
+		if (AShooterCharacter* Char = Cast<AShooterCharacter>(Actor))
+		{
+			Char->Client_ReceiveStinger(Strength, LockDur, RecDur);
+		}
+		if (AHostileAICharacter* Hostile = Cast<AHostileAICharacter>(Actor))
+		{
+			Hostile->ApplyStingerEffect(Strength, LockDur, RecDur);
+		}
+	}
+}
+
+AThrownStinger::AThrownStinger()
+{
+	EffectType = EThrownEffect::Stinger;
+	FuseTime = 1.4f;
+	bDetonateOnImpact = false;
+	Damage = 0.f;
+	InnerRadius = 200.f;
+	DamageRadius = 900.f;
+	bRequireLineOfSight = true;
+	LockDuration = 0.7f;
+	RecoverDuration = 0.9f;
+}
+
+void AThrownStinger::OnDetonate_Implementation()
+{
+	if (IsValid(Mesh)) Mesh->SetHiddenInGame(true);
+	Super::OnDetonate_Implementation();
 }

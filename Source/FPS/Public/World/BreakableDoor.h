@@ -12,6 +12,16 @@ class UStaticMeshComponent;
 class UBoxComponent;
 class USoundBase;
 class UStaticMesh;
+class UArrowComponent;
+
+UENUM(BlueprintType)
+enum class EDoorHingeEdge : uint8
+{
+	NegativeY UMETA(DisplayName = "Negative Y"),
+	PositiveY UMETA(DisplayName = "Positive Y"),
+	NegativeX UMETA(DisplayName = "Negative X"),
+	PositiveX UMETA(DisplayName = "Positive X")
+};
 
 /**
  * Reusable CQB door for doorframes (Lvl_boat etc).
@@ -86,6 +96,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Door")
 	TObjectPtr<UStaticMeshComponent> DoorLeaf;
 
+	/** Stays on the actor root. Never swings. Leave empty if the frame is already a level Static Mesh. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Door")
+	TObjectPtr<UStaticMeshComponent> DoorFrame;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Door")
+	TObjectPtr<UArrowComponent> HingeAxis;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Door")
 	TObjectPtr<UBoxComponent> InteractBox;
 
@@ -93,9 +110,25 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
 	TObjectPtr<UStaticMesh> DoorLeafMesh;
 
-	/** Leaf offset from hinge (cm). Default assumes hinge on -Y edge of a ~100cm-wide door. */
+	/** Optional frame mesh on the root. It does not rotate. The level's own frame mesh should stay where it is. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
-	FVector DoorLeafRelativeLocation = FVector(0.f, 50.f, 0.f);
+	TObjectPtr<UStaticMesh> DoorFrameMesh;
+
+	/**
+	 * Which edge of the leaf bounds sits on the hinge.
+	 * The green arrow is the axis. Put that arrow on the real hinge; the frame Static Mesh stays in the level.
+	 * Do not attach this actor as a child of the frame, or the frame instance is removed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	EDoorHingeEdge HingeEdge = EDoorHingeEdge::NegativeY;
+
+	/** Shift the leaf so Hinge Edge lies on the green arrow. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	bool bSnapLeafToHingeEdge = true;
+
+	/** Extra lift after the snap (cm). X/Y are filled from the mesh bounds while snap is on. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
+	FVector DoorLeafRelativeLocation = FVector::ZeroVector;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Door|Mesh")
 	FRotator DoorLeafRelativeRotation = FRotator::ZeroRotator;

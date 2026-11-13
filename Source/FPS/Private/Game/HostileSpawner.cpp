@@ -2,6 +2,7 @@
 
 #include "Game/HostileAICharacter.h"
 #include "Game/HostileSquadSubsystem.h"
+#include "Weapon/Weapon.h"
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 
@@ -40,6 +41,34 @@ int32 AHostileSpawner::Auth_SpawnHostiles(TSubclassOf<AHostileAICharacter> Defau
 		{
 			H->SquadRole = Squad->TakeNextRole();
 			H->bAutoSquadRole = true;
+		}
+		if (!BodyMeshOverride.IsNull())
+		{
+			H->BodyMesh = BodyMeshOverride;
+		}
+		else if (LookPresets.Num() > 0)
+		{
+			TArray<TSoftObjectPtr<USkeletalMesh>> Pool = LookPresets;
+			Pool.RemoveAll([](const TSoftObjectPtr<USkeletalMesh>& Mesh) { return Mesh.IsNull(); });
+			if (Pool.Num() > 0)
+			{
+				H->BodyMesh = Pool[FMath::RandRange(0, Pool.Num() - 1)];
+			}
+		}
+		if (!H->WeaponClass && WeaponClasses.Num() > 0)
+		{
+			TArray<TSubclassOf<AWeapon>> Guns;
+			for (const TSoftClassPtr<AWeapon>& Soft : WeaponClasses)
+			{
+				if (UClass* GunClass = Soft.LoadSynchronous())
+				{
+					Guns.Add(GunClass);
+				}
+			}
+			if (Guns.Num() > 0)
+			{
+				H->WeaponClass = Guns[FMath::RandRange(0, Guns.Num() - 1)];
+			}
 		}
 		H->FinishSpawning(Xform);
 		++Spawned;

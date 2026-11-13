@@ -1,10 +1,11 @@
-﻿#include "Ui/CombatHudKeepAlive.h"
+#include "Ui/CombatHudKeepAlive.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "UObject/UObjectIterator.h"
 #include "Components/Widget.h"
 #include "Ui/CombatStatusHud.h"
 #include "ShooterPlayerController.h"
+#include "Game/CoopCqbGameState.h"
 
 namespace
 {
@@ -99,36 +100,36 @@ void UCombatHudKeepAlive::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 
 	if (UUserWidget* Overlay = CachedOverlay.Get())
 	{
-		ForceVisible(Overlay);
-		// PRIORITY: never leave player HUD-less.
-		// Only hide old health/ammo chrome when CombatStatusHud is actually on screen.
-		const bool bShowLegacy = !bStatusOk;
-		ForceNamedChild(Overlay, TEXT("WB_Health"), bShowLegacy);
-		ForceNamedChild(Overlay, TEXT("WBP_ReserveAmmo"), bShowLegacy);
-		ForceNamedChild(Overlay, TEXT("Health"), bShowLegacy);
-		ForceNamedChild(Overlay, TEXT("ReserveAmmo"), bShowLegacy);
-		ForceNamedChild(Overlay, TEXT("Ammo"), bShowLegacy);
+        const auto* Flow=GetWorld()->GetGameState<ACoopCqbGameState>();
+        const bool bRecon=Flow&&!Flow->bRangeHub&&(Flow->GetCoopPhase()==ECoopCqbPhase::Waiting||Flow->GetCoopPhase()==ECoopCqbPhase::Briefing);
+        if(bRecon) ForceCollapsed(Overlay);else ForceVisible(Overlay);
+		// Health bar removed by request. Never restore WB_Health / Health.
+		// Keep reserve ammo when CombatStatusHud is off (it is always off).
+		const bool bShowAmmo = false;
+		ForceNamedChild(Overlay, TEXT("WB_Health"), false);
+		ForceNamedChild(Overlay, TEXT("Health"), false);
+		ForceNamedChild(Overlay, TEXT("WB_Stamina"), false);
+		ForceNamedChild(Overlay, TEXT("Stamina"), false);
+		ForceNamedChild(Overlay, TEXT("WBP_ReserveAmmo"), bShowAmmo);
+		ForceNamedChild(Overlay, TEXT("ReserveAmmo"), bShowAmmo);
+		ForceNamedChild(Overlay, TEXT("Ammo"), bShowAmmo);
 		if (UWidgetTree* Tree = Overlay->WidgetTree)
 		{
-			Tree->ForEachWidget([bShowLegacy](UWidget* Child)
+			Tree->ForEachWidget([bShowAmmo](UWidget* Child)
 			{
 				if (!IsValid(Child)) return;
 				const FString N = Child->GetName();
-				if (N.Contains(TEXT("Health")) || N.Contains(TEXT("Ammo")) || N.Contains(TEXT("Reserve")))
+				if (N.Contains(TEXT("BodyInjury")) || N.Contains(TEXT("Watch")) || N.Contains(TEXT("Stamina")) || (N.Contains(TEXT("Health")) && !N.Contains(TEXT("BodyInjury"))))
 				{
-					if (bShowLegacy) ForceVisible(Child);
+					ForceCollapsed(Child);
+					return;
+				}
+				if (N.Contains(TEXT("Ammo")) || N.Contains(TEXT("Reserve")))
+				{
+					if (bShowAmmo) ForceVisible(Child);
 					else ForceCollapsed(Child);
 				}
 			});
-		}
-		if (bShowLegacy)
-		{
-			static bool bLoggedLegacy = false;
-			if (!bLoggedLegacy)
-			{
-				bLoggedLegacy = true;
-				UE_LOG(LogTemp, Warning, TEXT("[HUD] CombatStatusHud missing — restoring WBP_ShooterOverlay health/ammo"));
-			}
 		}
 	}
 }

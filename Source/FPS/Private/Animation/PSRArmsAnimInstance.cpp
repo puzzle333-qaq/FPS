@@ -1,10 +1,13 @@
 ﻿#include "Animation/PSRArmsAnimInstance.h"
-#include "UObject/ConstructorHelpers.h"
+#include "Misc/PackageName.h"
 
 UPSRArmsAnimInstance::UPSRArmsAnimInstance()
 {
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Idle(TEXT("/Game/PrecisionSniperRifle/Character/Animations/Anim_IdleLoop.Anim_IdleLoop"));
-	if (Idle.Succeeded()) IdleAnim = Idle.Object;
+	// The optional source pack is absent in this checkout. Keep authored overrides,
+	// and register the legacy default only when its package is actually installed.
+	const FString Package = TEXT("/Game/PrecisionSniperRifle/Character/Animations/Anim_IdleLoop");
+	if (FPackageName::DoesPackageExist(Package))
+		IdleAnimSoft = TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(Package + TEXT(".Anim_IdleLoop")));
 }
 
 void FPSRArmsAnimInstanceProxy::Initialize(UAnimInstance* InAnimInstance)

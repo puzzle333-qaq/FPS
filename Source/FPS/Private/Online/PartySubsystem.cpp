@@ -89,6 +89,7 @@ void UPartySubsystem::Deinitialize()
 			Session->ClearOnCreateSessionCompleteDelegate_Handle(CreateHandle);
 			Session->ClearOnJoinSessionCompleteDelegate_Handle(JoinHandle);
 			Session->ClearOnSessionUserInviteAcceptedDelegate_Handle(EosInviteHandle);
+			Session->ClearOnDestroySessionCompleteDelegate_Handle(DestroyHandle);
 		}
 	}
 	if (IOnlineSubsystem* Steam = SteamOss())
@@ -284,6 +285,26 @@ void UPartySubsystem::HostRoom()
 	{
 		GI->LocalPlayerName = GetLocalDisplayName();
 	}
+	if (Session->GetNamedSession(NAME_GameSession))
+	{
+		bCreateRoomAfterDestroy = true;
+		bJoinAfterDestroy = false;
+		StatusText = TEXT("正在关闭旧房间…");
+		RunAfterSessionDestroyed();
+		return;
+	}
+	CreateEosRoom();
+}
+
+void UPartySubsystem::CreateEosRoom()
+{
+	IOnlineSubsystem* Eos = EosOss();
+	IOnlineSessionPtr Session = Eos ? Eos->GetSessionInterface() : nullptr;
+	if (!Session.IsValid())
+	{
+		StatusText = TEXT("EOS 还没就绪");
+		return;
+	}
 	UseEosDriver();
 	FOnlineSessionSettings Settings;
 	Settings.bIsLANMatch = false;
@@ -299,6 +320,7 @@ void UPartySubsystem::HostRoom()
 	Settings.bUseLobbiesVoiceChatIfAvailable = false;
 	Settings.bIsDedicated = false;
 	Settings.Set(SETTING_MAPNAME, FString(TEXT("Lvl_Range")), EOnlineDataAdvertisementType::ViaOnlineService);
+	Settings.Set(SETTING_HOST_MIGRATION, false, EOnlineDataAdvertisementType::ViaOnlineService);
 	bOpenInviteAfterTravel = true;
 	bSteamLobbyPublished = false;
 	StatusText = TEXT("正在创建房间…");
@@ -342,7 +364,7 @@ void UPartySubsystem::BeginListenTravel()
 		Map = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/FPS/Level/Lvl_Range.Lvl_Range")));
 	}
 	UseEosDriver();
-	GI->TravelTo(Map, GI->RangeGameMode, true, {TEXT("RangeHub=1")});
+	GI->TravelTo(Map, GI->GetRangeGameMode(), true, {TEXT("RangeHub=1")});
 }
 
 void UPartySubsystem::OnMapLoaded(UWorld* LoadedWorld)
@@ -354,12 +376,24 @@ void UPartySubsystem::OnMapLoaded(UWorld* LoadedWorld)
 		const FString Pkg = LoadedWorld->GetOutermost() ? LoadedWorld->GetOutermost()->GetName() : FString();
 		if (Pkg.Contains(TEXT("Lvl_Range"))) StatusText = TEXT("在自己的靶场");
 	}
-	if (bIsHost && bInRoom && LoadedWorld->GetNetMode() == NM_ListenServer)
+	if (bIsHost && bInRoom)
 	{
-		StartListenSession();
-		PublishSteamLobby();
+		if (LoadedWorld->GetNetMode() == NM_ListenServer)
+		{
+			StartListenSession();
+			PublishSteamLobby();
+		}
+		else if (LoadedWorld->GetNetMode() == NM_Standalone)
+		{
+			bInRoom = false;
+			bIsHost = false;
+			bOpenInviteAfterTravel = false;
+			DestroyAdvertisedRooms();
+			StatusText = TEXT("靶场没有以联机方式打开");
+		}
+		return;
 	}
-	else if (bLoggedIn)
+	if (bLoggedIn)
 	{
 		EnterOwnRangeIfNeeded();
 	}
@@ -383,25 +417,40 @@ void UPartySubsystem::StartListenSession()
 	}
 }
 
+void UPartySubsystem::FinishInviteAfterTravel()
+{
+	if (!bOpenInviteAfterTravel) return;
+	bOpenInviteAfterTravel = false;
+	OpenInvite();
+}
+
 void UPartySubsystem::PublishSteamLobby()
 {
-	if (bSteamLobbyPublished) return;
+	if (bSteamLobbyPublished)
+	{
+		FinishInviteAfterTravel();
+		return;
+	}
 	IOnlineSubsystem* Steam = SteamOss();
 	IOnlineSessionPtr SteamSession = Steam ? Steam->GetSessionInterface() : nullptr;
 	IOnlineSessionPtr EosSession = EosOss() ? EosOss()->GetSessionInterface() : nullptr;
 	if (!SteamSession.IsValid() || !EosSession.IsValid())
 	{
-		if (bOpenInviteAfterTravel)
-		{
-			bOpenInviteAfterTravel = false;
-			OpenInvite();
-		}
+		FinishInviteAfterTravel();
 		return;
 	}
 	FNamedOnlineSession* Named = EosSession->GetNamedSession(NAME_GameSession);
-	if (!Named || !Named->SessionInfo.IsValid()) return;
+	if (!Named || !Named->SessionInfo.IsValid())
+	{
+		FinishInviteAfterTravel();
+		return;
+	}
 	const FString EosId = Named->SessionInfo->GetSessionId().ToString();
-	if (EosId.IsEmpty()) return;
+	if (EosId.IsEmpty())
+	{
+		FinishInviteAfterTravel();
+		return;
+	}
 	FOnlineSessionSettings Settings;
 	Settings.bIsLANMatch = false;
 	Settings.NumPublicConnections = 4;
@@ -411,10 +460,12 @@ void UPartySubsystem::PublishSteamLobby()
 	Settings.bUsesPresence = true;
 	Settings.bAllowJoinViaPresence = true;
 	Settings.bUseLobbiesIfAvailable = true;
+	Settings.Set(SETTING_HOST_MIGRATION, false, EOnlineDataAdvertisementType::ViaOnlineService);
 	Settings.Set(GEosSessionSetting, EosId, EOnlineDataAdvertisementType::ViaOnlineService);
 	if (!SteamSession->CreateSession(0, GSteamRoomName, Settings))
 	{
 		StatusText = TEXT("房间已开。Steam 邀请没建起来");
+		FinishInviteAfterTravel();
 	}
 }
 
@@ -432,11 +483,7 @@ void UPartySubsystem::OnSteamSessionCreated(FName SessionName, bool bWasSuccessf
 		StatusText = TEXT("房间已开，可以邀请好友");
 		UE_LOG(LogTemp, Log, TEXT("[Party] Steam lobby ready"));
 	}
-	if (bOpenInviteAfterTravel)
-	{
-		bOpenInviteAfterTravel = false;
-		OpenInvite();
-	}
+	FinishInviteAfterTravel();
 }
 
 void UPartySubsystem::OpenInvite()
@@ -551,6 +598,27 @@ void UPartySubsystem::JoinFromEosResult(const FOnlineSessionSearchResult& Result
 		StatusText = TEXT("EOS 会话不可用");
 		return;
 	}
+	if (Session->GetNamedSession(NAME_GameSession))
+	{
+		PendingJoinResult = Result;
+		bJoinAfterDestroy = true;
+		bCreateRoomAfterDestroy = false;
+		StatusText = TEXT("正在离开上一间房…");
+		RunAfterSessionDestroyed();
+		return;
+	}
+	StartJoin(Result);
+}
+
+void UPartySubsystem::StartJoin(const FOnlineSessionSearchResult& Result)
+{
+	IOnlineSessionPtr Session = EosOss() ? EosOss()->GetSessionInterface() : nullptr;
+	if (!Session.IsValid())
+	{
+		bJoinInProgress = false;
+		StatusText = TEXT("EOS 会话不可用");
+		return;
+	}
 	UseEosDriver();
 	bJoinInProgress = true;
 	bReturningHome = false;
@@ -560,6 +628,69 @@ void UPartySubsystem::JoinFromEosResult(const FOnlineSessionSearchResult& Result
 	{
 		bJoinInProgress = false;
 		StatusText = TEXT("加入房间失败");
+	}
+}
+
+void UPartySubsystem::DestroyAdvertisedRooms()
+{
+	bSteamLobbyPublished = false;
+	if (IOnlineSessionPtr Session = EosOss() ? EosOss()->GetSessionInterface() : nullptr)
+	{
+		if (Session->GetNamedSession(NAME_GameSession)) Session->DestroySession(NAME_GameSession);
+	}
+	if (IOnlineSessionPtr Session = SteamOss() ? SteamOss()->GetSessionInterface() : nullptr)
+	{
+		if (Session->GetNamedSession(GSteamRoomName)) Session->DestroySession(GSteamRoomName);
+	}
+}
+
+void UPartySubsystem::RunAfterSessionDestroyed()
+{
+	IOnlineSessionPtr Session = EosOss() ? EosOss()->GetSessionInterface() : nullptr;
+	if (!Session.IsValid() || !Session->GetNamedSession(NAME_GameSession))
+	{
+		OnRoomSessionCleared();
+		return;
+	}
+	if (DestroyHandle.IsValid())
+	{
+		Session->ClearOnDestroySessionCompleteDelegate_Handle(DestroyHandle);
+		DestroyHandle.Reset();
+	}
+	DestroyHandle = Session->AddOnDestroySessionCompleteDelegate_Handle(
+		FOnDestroySessionCompleteDelegate::CreateUObject(this, &UPartySubsystem::OnDestroySessionComplete));
+	if (!Session->DestroySession(NAME_GameSession))
+	{
+		Session->ClearOnDestroySessionCompleteDelegate_Handle(DestroyHandle);
+		DestroyHandle.Reset();
+		OnRoomSessionCleared();
+	}
+}
+
+void UPartySubsystem::OnDestroySessionComplete(FName SessionName, bool bWasSuccessful)
+{
+	(void)bWasSuccessful;
+	if (SessionName != NAME_GameSession) return;
+	if (IOnlineSessionPtr Session = EosOss() ? EosOss()->GetSessionInterface() : nullptr)
+	{
+		Session->ClearOnDestroySessionCompleteDelegate_Handle(DestroyHandle);
+	}
+	DestroyHandle.Reset();
+	OnRoomSessionCleared();
+}
+
+void UPartySubsystem::OnRoomSessionCleared()
+{
+	if (bCreateRoomAfterDestroy)
+	{
+		bCreateRoomAfterDestroy = false;
+		CreateEosRoom();
+		return;
+	}
+	if (bJoinAfterDestroy)
+	{
+		bJoinAfterDestroy = false;
+		StartJoin(PendingJoinResult);
 	}
 }
 
@@ -610,19 +741,12 @@ void UPartySubsystem::LeaveRoom()
 	bOpenInviteAfterTravel = false;
 	bHostAfterLogin = false;
 	bSteamLobbyPublished = false;
+	bCreateRoomAfterDestroy = false;
+	bJoinAfterDestroy = false;
 	bReturningHome = true;
 	PendingEosSessionId.Reset();
-	if (bWasHost)
-	{
-		if (IOnlineSessionPtr Session = EosOss() ? EosOss()->GetSessionInterface() : nullptr)
-		{
-			Session->DestroySession(NAME_GameSession);
-		}
-		if (IOnlineSessionPtr Session = SteamOss() ? SteamOss()->GetSessionInterface() : nullptr)
-		{
-			Session->DestroySession(GSteamRoomName);
-		}
-	}
+	(void)bWasHost;
+	DestroyAdvertisedRooms();
 	StatusText = TEXT("正在回到自己的靶场");
 	OpenOwnRange();
 }
@@ -667,8 +791,11 @@ bool UPartySubsystem::HandleNetworkFailure()
 	bInRoom = false;
 	bIsHost = false;
 	bJoinInProgress = false;
-	bSteamLobbyPublished = false;
+	bOpenInviteAfterTravel = false;
+	bCreateRoomAfterDestroy = false;
+	bJoinAfterDestroy = false;
 	bReturningHome = true;
+	DestroyAdvertisedRooms();
 	StatusText = TEXT("连接断开，正在回到自己的靶场");
 	OpenOwnRange();
 	return true;
@@ -676,17 +803,18 @@ bool UPartySubsystem::HandleNetworkFailure()
 
 bool UPartySubsystem::HandleTravelFailure()
 {
-	StatusText = TEXT("跳转失败");
-	if (bReturningHome || bJoinInProgress)
-	{
-		bJoinInProgress = false;
-		bInRoom = false;
-		bIsHost = false;
-		bReturningHome = true;
-		OpenOwnRange();
-		return true;
-	}
-	return bInRoom;
+	StatusText = TEXT("跳转失败，正在回到自己的靶场");
+	if (!(bReturningHome || bJoinInProgress || bInRoom || bOpenInviteAfterTravel)) return false;
+	bJoinInProgress = false;
+	bInRoom = false;
+	bIsHost = false;
+	bOpenInviteAfterTravel = false;
+	bCreateRoomAfterDestroy = false;
+	bJoinAfterDestroy = false;
+	bReturningHome = true;
+	DestroyAdvertisedRooms();
+	OpenOwnRange();
+	return true;
 }
 
 void UPartySubsystem::RegisterJoinedPlayer(APlayerController* Joining)

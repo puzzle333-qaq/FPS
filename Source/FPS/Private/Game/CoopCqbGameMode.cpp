@@ -27,6 +27,10 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Loadout/LoadoutTypes.h"
 #include "ShooterType/ShooterType.h"
+#include "HAL/IConsoleManager.h"
+#if WITH_EDITOR
+static TAutoConsoleVariable<int32> UIExpectedOperators(TEXT("fps.UI.ExpectedOperators"),0,TEXT("Editor QA: expected deployment roster; zero uses travel URL."),ECVF_Cheat);
+#endif
 
 ACoopCqbGameMode::ACoopCqbGameMode()
 {
@@ -36,11 +40,7 @@ ACoopCqbGameMode::ACoopCqbGameMode()
 	MaxOperators = 4;
 	PrimaryObjective = ECoopCqbObjectiveType::ClearEnemies;
 	HostileClass = AHostileAICharacter::StaticClass();
-	static ConstructorHelpers::FClassFinder<AHostileAICharacter> HostileBP(TEXT("/Game/FPS/Coop/BP_Hostile"));
-	if (HostileBP.Succeeded())
-	{
-		HostileClass = HostileBP.Class;
-	}
+	DefaultHostileBlueprint = TSoftClassPtr<AHostileAICharacter>(FSoftObjectPath(TEXT("/Game/FPS/Coop/BP_Hostile.BP_Hostile_C")));
 
 	OperatorWeapons = {
 		TSoftClassPtr<AWeapon>(FSoftObjectPath(TEXT("/Game/FPS/Weapon/RAR/BP_FPS_RAR.BP_FPS_RAR_C"))),
@@ -52,28 +52,53 @@ ACoopCqbGameMode::ACoopCqbGameMode()
 	};
 	OperatorArmorLevel = 1;
 
-	static ConstructorHelpers::FClassFinder<APawn> PawnBP(TEXT("/Game/FPS/Character/BP_ShooterCharacter"));
-	if (PawnBP.Succeeded())
-	{
-		DefaultPawnClass = PawnBP.Class;
-	}
-	static ConstructorHelpers::FClassFinder<APlayerController> ControllerBP(TEXT("/Game/FPS/Player/BP_ShooterPlayerController"));
-	if (ControllerBP.Succeeded())
-	{
-		PlayerControllerClass = ControllerBP.Class;
-	}
+	DefaultPawnClass = AShooterCharacter::StaticClass();
+	PlayerControllerClass = AShooterPlayerController::StaticClass();
+	DefaultPawnBlueprint = TSoftClassPtr<APawn>(FSoftObjectPath(TEXT("/Game/FPS/Character/BP_ShooterCharacter.BP_ShooterCharacter_C")));
+	DefaultControllerBlueprint = TSoftClassPtr<APlayerController>(FSoftObjectPath(TEXT("/Game/FPS/Player/BP_ShooterPlayerController.BP_ShooterPlayerController_C")));
 }
 
 void ACoopCqbGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
+ if(HostileClass==AHostileAICharacter::StaticClass())
+  if(UClass* Class=DefaultHostileBlueprint.LoadSynchronous())HostileClass=Class;
+ if(DefaultPawnClass==AShooterCharacter::StaticClass())
+  if(UClass* Class=DefaultPawnBlueprint.LoadSynchronous())DefaultPawnClass=Class;
+ if(PlayerControllerClass==AShooterPlayerController::StaticClass())
+  if(UClass* Class=DefaultControllerBlueprint.LoadSynchronous())PlayerControllerClass=Class;
  Super::InitGame(MapName, Options, ErrorMessage);
  bRangeHub = MapName.Contains(TEXT("Lvl_Range")) || UGameplayStatics::HasOption(Options, TEXT("RangeHub"));
  ExpectedOperators = FMath::Clamp(UGameplayStatics::GetIntOption(Options, TEXT("ExpectedOperators"), 1), 1, MaxOperators);
+#if WITH_EDITOR
+ if(UIExpectedOperators.GetValueOnGameThread()>0)ExpectedOperators=FMath::Clamp(UIExpectedOperators.GetValueOnGameThread(),1,MaxOperators);
+#endif
 }
 
 void ACoopCqbGameMode::InitGameState()
 {
 	Super::InitGameState();
+ // Older factory art maps have no PlayerStart. Supply transient deployment starts
+ // before login instead of letting GameMode attempt a blocked origin spawn.
+ if(GetWorld()->GetMapName().Contains(TEXT("Factory")))
+ {
+  bool HasOperatorStart=false;
+  for(TActorIterator<APlayerStart> It(GetWorld());It;++It)
+   if(It->PlayerStartTag==OperatorStartTag||It->PlayerStartTag==OperatorStartTagAlt||It->Tags.Contains(OperatorStartTag)||It->Tags.Contains(OperatorStartTagAlt)){HasOperatorStart=true;break;}
+  if(!HasOperatorStart)
+  {
+   APawn* Template=DefaultPawnClass?DefaultPawnClass->GetDefaultObject<APawn>():nullptr;
+   for(int32 Index=0;Index<4;++Index)
+   {
+    FVector Position(4100+Index*200,800,120);const FRotator Facing(0,-90,0);
+    FHitResult Ground;FCollisionQueryParams Query(SCENE_QUERY_STAT(DeploymentGround),false);
+    if(GetWorld()->LineTraceSingleByChannel(Ground,FVector(Position.X,Position.Y,500),FVector(Position.X,Position.Y,-1000),ECC_Visibility,Query))Position.Z=Ground.ImpactPoint.Z+120;
+    if(Template&&!GetWorld()->FindTeleportSpot(Template,Position,Facing))continue;
+    FActorSpawnParameters Spawn;Spawn.ObjectFlags|=RF_Transient;Spawn.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    if(APlayerStart* Start=GetWorld()->SpawnActor<APlayerStart>(Position,Facing,Spawn))
+    {Start->PlayerStartTag=OperatorStartTag;Start->Tags.AddUnique(OperatorStartTagAlt);UE_LOG(LogTemp,Log,TEXT("[DeploymentStart] slot=%d location=%s"),Index,*Position.ToString());}
+   }
+  }
+ }
 	if (ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>())
 	{
 		GS->bRangeHub = bRangeHub;
@@ -150,6 +175,12 @@ void ACoopCqbGameMode::StartBriefing()
 		GS->SetCoopPhase(ECoopCqbPhase::Briefing);
 		GS->SetMatchState(EShooterMatchState::WaitingToStart);
 	}
+ if(GetWorld()->GetMapName().Contains(TEXT("Factory")))
+ {
+  DeploymentViewReadyPlayers.Reset();
+  UE_LOG(LogTemp,Log,TEXT("[DeploymentView] all operators ready; waiting for local camera/Raise barriers"));
+  return;
+ }
 	const float Delay = FMath::Max(0.1f, BriefingDuration);
 	GetWorldTimerManager().SetTimer(BriefingTimer, this, &ACoopCqbGameMode::StartMission, Delay, false);
 	UE_LOG(LogTemp, Log, TEXT("[CoopCQB] Briefing %.1fs"), Delay);
@@ -165,6 +196,7 @@ void ACoopCqbGameMode::StartMission()
  if (auto* GS = GetGameState<ACoopCqbGameState>()) GS->Report.OperatorsTotal = CountLivingOperators();
 	if (ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>())
 	{
+		GS->ResetStealthFlags();
 		GS->SetCoopPhase(ECoopCqbPhase::InProgress);
 		GS->SetMatchState(EShooterMatchState::InProgress);
 		GS->SetMatchStartServerTime(GetWorld()->GetTimeSeconds());
@@ -558,7 +590,7 @@ void ACoopCqbGameMode::CheckOperatorReadiness()
   GetWorldTimerManager().ClearTimer(ReadinessTimer);
   StartBriefing();
  }
- else if (GetWorld()->GetTimeSeconds() - LoadStartedAt > LoadTimeout)
+ else if (!GetWorld()->GetMapName().Contains(TEXT("Factory")) && LoadTimeout>0 && GetWorld()->GetTimeSeconds() - LoadStartedAt > LoadTimeout)
  {
   GS->MissionStatus = TEXT("队员加载超时，任务取消，即将返回靶场");
   EndMission(false, ECoopCqbWinReason::LoadTimeout);
@@ -590,5 +622,32 @@ void ACoopCqbGameMode::Auth_ReturnToRange()
  if (!GI) return;
  TSoftObjectPtr<UWorld> Map = GI->RangeMap;
  if (Map.IsNull()) Map = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/FPS/Level/Lvl_Range.Lvl_Range")));
- GI->TravelSquadTo(Map, GI->RangeGameMode, {TEXT("RangeHub=1")});
+ GI->TravelSquadTo(Map, GI->GetRangeGameMode(), {TEXT("RangeHub=1")});
+}
+
+void ACoopCqbGameMode::NotifyAlarmRaised()
+{
+	ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>();
+	if (!GS || GS->IsAlarmRaised()) return;
+	GS->SetAlarmRaised(true);
+	UE_LOG(LogTemp, Log, TEXT("[Stealth] Alarm raised"));
+}
+
+void ACoopCqbGameMode::NotifyPlayersDetected()
+{
+	ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>();
+	if (!GS || GS->WerePlayersEverDetected()) return;
+	GS->SetPlayersEverDetected(true);
+	UE_LOG(LogTemp, Log, TEXT("[Stealth] Players detected"));
+}
+
+void ACoopCqbGameMode::Auth_DeploymentViewReady(APlayerController* PC)
+{
+ auto* GS=GetGameState<ACoopCqbGameState>();
+ if(!PC||!PC->GetPawn()||!GS||GS->GetCoopPhase()!=ECoopCqbPhase::Briefing||!ReadyPlayers.Contains(PC))return;
+ DeploymentViewReadyPlayers.Add(PC);
+ int32 Connected=0,Ready=0;
+ for(FConstPlayerControllerIterator It=GetWorld()->GetPlayerControllerIterator();It;++It)
+  if(APlayerController* P=It->Get()){++Connected;if(DeploymentViewReadyPlayers.Contains(P))++Ready;}
+ if(Connected>=ExpectedOperators&&Ready==Connected)StartMission();
 }

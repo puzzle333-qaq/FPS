@@ -1,4 +1,10 @@
 #include "Game/HostileAICharacter.h"
+#include "Combat/HitZoneVitalsComponent.h"
+#include "World/BloodPool.h"
+#include "ShooterCharacter.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/DecalComponent.h"
+#include "Materials/MaterialInterface.h"
 
 #include "Game/CoopCqbGameMode.h"
 #include "Game/CoopCqbGameState.h"
@@ -11,13 +17,14 @@
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/SkeletalMesh.h"
+#include "Weapon/Weapon.h"
 
 FName AHostileAICharacter::HostileTag(TEXT("FPS_Hostile"));
 
 AHostileAICharacter::AHostileAICharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
 	SetReplicateMovement(true);
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
@@ -26,6 +33,9 @@ AHostileAICharacter::AHostileAICharacter(const FObjectInitializer& ObjectInitial
 	Tags.AddUnique(HostileTag);
 
 	Stats = CreateDefaultSubobject<UStatsComponent>(TEXT("Stats"));
+	Vitals = CreateDefaultSubobject<UHitZoneVitalsComponent>(TEXT("HitZoneVitals"));
+	Vitals->SetIsReplicated(true);
+	Vitals->bOutOfCombatTorsoRecovery = false;
 
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.f);
  GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
@@ -54,7 +64,12 @@ void AHostileAICharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AHostileAICharacter, bDead);
 	DOREPLIFETIME(AHostileAICharacter, Morale);
- DOREPLIFETIME(AHostileAICharacter, bArrested);
+	DOREPLIFETIME(AHostileAICharacter, bArrested);
+	DOREPLIFETIME(AHostileAICharacter, bArmInjured);
+	DOREPLIFETIME(AHostileAICharacter, bLegInjured);
+	DOREPLIFETIME(AHostileAICharacter, BodyArmor);
+	DOREPLIFETIME(AHostileAICharacter, BodyMesh);
+	DOREPLIFETIME(AHostileAICharacter, CarriedWeapon);
 }
 
 void AHostileAICharacter::BeginPlay()
@@ -66,12 +81,125 @@ void AHostileAICharacter::BeginPlay()
 		Stats->Health = MaxHealth;
 		Stats->DeathState = EDeathState::NotDead;
 	}
-	if (!BodyMesh.IsNull())
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
 	{
-		if (USkeletalMesh* Loaded = BodyMesh.LoadSynchronous())
+		BaseWalkSpeed = Move->MaxWalkSpeed;
+		BaseWalkSpeedCrouched = Move->MaxWalkSpeedCrouched;
+	}
+	RefreshInjuryMovement();
+	if (HasAuthority())
+	{
+		ChooseDefaultLookAndWeapon();
+		SpawnCarriedWeapon();
+	}
+	ApplyBodyMesh();
+	AttachCarriedWeapon();
+ RefreshDeploymentVisibility();
+}
+
+USkeletalMeshComponent* AHostileAICharacter::GetMesh3P_Implementation() const
+{
+	return GetMesh();
+}
+
+void AHostileAICharacter::OnRep_BodyMesh()
+{
+	ApplyBodyMesh();
+	AttachCarriedWeapon();
+}
+
+void AHostileAICharacter::OnRep_CarriedWeapon()
+{
+	AttachCarriedWeapon();
+}
+
+void AHostileAICharacter::ChooseDefaultLookAndWeapon()
+{
+	const FString Existing = BodyMesh.ToSoftObjectPath().ToString();
+	const bool bNeedsLook = BodyMesh.IsNull() || Existing.Contains(TEXT("Manny")) || Existing.Contains(TEXT("Mannequin"));
+	if (bNeedsLook)
+	{
+		TArray<FSoftObjectPath> Presets;
+		Presets.Reserve(24);
+		for (int32 Index = 1; Index <= 24; ++Index)
 		{
-			GetMesh()->SetSkeletalMesh(Loaded);
+			const FString Name = Index == 3
+				? TEXT("SKM_Bandit_Preset_3")
+				: FString::Printf(TEXT("SKM_Bandit_Preset_%02d"), Index);
+			Presets.Add(FSoftObjectPath(FString::Printf(TEXT("/Game/Bandits/Mesh/Preset/%s.%s"), *Name, *Name)));
 		}
+		BodyMesh = TSoftObjectPtr<USkeletalMesh>(Presets[FMath::RandRange(0, Presets.Num() - 1)]);
+	}
+
+	if (WeaponClass) return;
+	static const TCHAR* Guns[] = {
+		TEXT("/Game/FPS/Weapon/BP_Weapon_AK.BP_Weapon_AK_C"),
+		TEXT("/Game/FPS/Weapon/RAR/BP_FPS_RAR.BP_FPS_RAR_C"),
+		TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_AK105.BP_Weapon_AK105_C"),
+		TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_TR15.BP_Weapon_TR15_C"),
+		TEXT("/Game/FPS/Weapon/Kinemation/BP_Weapon_Viper.BP_Weapon_Viper_C"),
+		TEXT("/Game/FPS/Weapon/BP_Weapon_X24.BP_Weapon_X24_C"),
+	};
+	TArray<UClass*> Loaded;
+	for (const TCHAR* Path : Guns)
+	{
+		if (UClass* GunClass = LoadClass<AWeapon>(nullptr, Path))
+		{
+			Loaded.Add(GunClass);
+		}
+	}
+	if (Loaded.Num() > 0)
+	{
+		WeaponClass = Loaded[FMath::RandRange(0, Loaded.Num() - 1)];
+	}
+}
+
+void AHostileAICharacter::ApplyBodyMesh()
+{
+	if (BodyMesh.IsNull() || !GetMesh()) return;
+	if (USkeletalMesh* Loaded = BodyMesh.LoadSynchronous())
+	{
+		GetMesh()->SetSkeletalMesh(Loaded);
+	}
+}
+
+void AHostileAICharacter::SpawnCarriedWeapon()
+{
+	if (!HasAuthority() || IsValid(CarriedWeapon) || !WeaponClass) return;
+	UWorld* World = GetWorld();
+	if (!World) return;
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.Instigator = this;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	CarriedWeapon = World->SpawnActor<AWeapon>(WeaponClass, GetActorTransform(), Params);
+	AttachCarriedWeapon();
+}
+
+void AHostileAICharacter::AttachCarriedWeapon()
+{
+	if (!IsValid(CarriedWeapon) || !GetMesh()) return;
+	static const FName Grips[] = {
+		TEXT("RifleSocketak"), TEXT("RifleSocket"), TEXT("hand_r"), TEXT("weapon_r")
+	};
+	FName Grip = TEXT("hand_r");
+	for (const FName& Name : Grips)
+	{
+		if (GetMesh()->DoesSocketExist(Name) || GetMesh()->GetBoneIndex(Name) != INDEX_NONE)
+		{
+			Grip = Name;
+			break;
+		}
+	}
+	CarriedWeapon->SetInstigator(this);
+	CarriedWeapon->AttachToPawnSocket(GetMesh(), Grip);
+	if (USkeletalMeshComponent* Gun3P = CarriedWeapon->GetMesh3P())
+	{
+		Gun3P->SetHiddenInGame(false);
+	}
+	if (USkeletalMeshComponent* Gun1P = CarriedWeapon->GetMesh1P())
+	{
+		Gun1P->SetHiddenInGame(true);
 	}
 }
 
@@ -109,18 +237,17 @@ bool AHostileAICharacter::DoDamage_Implementation(float DamageAmout, AActor* Dam
   if (!GS->IsMissionLive() || GS->bRangeHub) return false;
  }
 
-	Stats->ChangeHealthByAmout(-DamageAmout, DamageInstigator);
 	if (AHostileAIController* Brain = Cast<AHostileAIController>(GetController()))
 	{
 		const FVector From = IsValid(DamageInstigator) ? DamageInstigator->GetActorLocation() : GetActorLocation();
 		Brain->NotifyTookDamage(DamageInstigator, From);
 	}
-	if (Stats->Health <= 0.f || Stats->DeathState != EDeathState::NotDead)
+	if (Vitals)
 	{
-		Auth_Die(DamageInstigator);
-		return true;
+		return Vitals->ApplyUnspecifiedHit(DamageInstigator, 1.f);
 	}
-	return false;
+	Auth_Die(DamageInstigator);
+	return true;
 }
 
 float AHostileAICharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
@@ -225,4 +352,185 @@ void AHostileAICharacter::OnRep_Arrested()
   Brain->SetActorTickEnabled(false);
  }
  // Keep the pawn and its crouching animation in place after restraint.
+}
+
+
+void AHostileAICharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+ RefreshDeploymentVisibility();
+	if (GetNetMode() == NM_DedicatedServer) return;
+	if (bDead || BloodyFootstepsRemaining <= 0) return;
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	const float Speed2D = Move ? Move->Velocity.Size2D() : 0.f;
+	if (Speed2D < 20.f) return;
+	FootstepDistanceAccum += Speed2D * DeltaSeconds;
+	if (FootstepDistanceAccum < 70.f) return;
+	FootstepDistanceAccum = 0.f;
+	bFootstepLeft = !bFootstepLeft;
+	SpawnBloodFootprint();
+	--BloodyFootstepsRemaining;
+}
+
+void AHostileAICharacter::Auth_ApplyHitZoneInjury(EHitZone Zone)
+{
+	if (!HasAuthority() || !IsHostileAlive()) return;
+	bool bChanged = false;
+	if (Zone == EHitZone::Arm && !bArmInjured)
+	{
+		bArmInjured = true;
+		bChanged = true;
+		OnRep_ArmInjured();
+	}
+	else if (Zone == EHitZone::Leg && !bLegInjured)
+	{
+		bLegInjured = true;
+		bChanged = true;
+		OnRep_LegInjured();
+	}
+	if (bChanged)
+	{
+		RefreshInjuryMovement();
+		ForceNetUpdate();
+	}
+}
+
+void AHostileAICharacter::OnRep_ArmInjured()
+{
+}
+
+void AHostileAICharacter::OnRep_LegInjured()
+{
+	RefreshInjuryMovement();
+}
+
+void AHostileAICharacter::RefreshInjuryMovement()
+{
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		const float Mul = bLegInjured ? LegInjurySpeedMultiplier : 1.f;
+		Move->MaxWalkSpeed = BaseWalkSpeed * Mul;
+		Move->MaxWalkSpeedCrouched = BaseWalkSpeedCrouched * Mul;
+	}
+}
+
+void AHostileAICharacter::MarkBloodyFeet(int32 ExtraSteps)
+{
+	if (GetNetMode() == NM_DedicatedServer) return;
+	const int32 Add = ExtraSteps > 0 ? ExtraSteps : BloodyFootstepsOnHit;
+	BloodyFootstepsRemaining = FMath::Max(BloodyFootstepsRemaining, Add);
+}
+
+void AHostileAICharacter::SpawnBloodFootprint()
+{
+	UWorld* World = GetWorld();
+	if (!World || GetNetMode() == NM_DedicatedServer) return;
+	UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/FPS/FX/Blood/MI_BloodPuddle_Wet.MI_BloodPuddle_Wet"));
+	if (!Mat)
+	{
+		Mat = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/FPS_Controller/Environment/Materials/MI_Oil_Puddle_Decal.MI_Oil_Puddle_Decal"));
+	}
+	if (!Mat) return;
+
+	const UCapsuleComponent* Cap = GetCapsuleComponent();
+	const float Half = IsValid(Cap) ? Cap->GetScaledCapsuleHalfHeight() : 90.f;
+	const FVector Start = GetActorLocation();
+	const FVector End = Start - FVector(0.f, 0.f, Half + 60.f);
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AIBloodFootprint), false, this);
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	{
+		FCollisionObjectQueryParams Obj;
+		Obj.AddObjectTypesToQuery(ECC_WorldStatic);
+		Obj.AddObjectTypesToQuery(ECC_WorldDynamic);
+		if (!World->LineTraceSingleByObjectType(Hit, Start, End, Obj, Params)) return;
+	}
+	const float Side = bFootstepLeft ? -10.f : 10.f;
+	const FVector Loc = Hit.ImpactPoint + Hit.ImpactNormal * 1.5f + GetActorRightVector() * Side;
+	const FRotator DecalRot = FRotationMatrix::MakeFromZX(Hit.ImpactNormal, GetActorForwardVector()).Rotator();
+	UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(
+		World, Mat, FVector(18.f * 0.35f, 18.f, 18.f), Loc, DecalRot, 14.f);
+	if (IsValid(Decal))
+	{
+		Decal->SetFadeScreenSize(0.001f);
+		Decal->SetFadeOut(14.f * 0.55f, 14.f * 0.45f, false);
+	}
+}
+
+void AHostileAICharacter::Auth_BeginFlashSurrenderWindow(float WindowMinSeconds, float WindowMaxSeconds)
+{
+	if (!HasAuthority()) return;
+	const float MinS = FMath::Max(1.f, FMath::Min(WindowMinSeconds, WindowMaxSeconds));
+	const float MaxS = FMath::Max(MinS, FMath::Max(WindowMinSeconds, WindowMaxSeconds));
+	const float Duration = FMath::FRandRange(MinS, MaxS);
+	const UWorld* World = GetWorld();
+	if (!World) return;
+	const float Now = World->GetTimeSeconds();
+	FlashSurrenderWindowUntil = FMath::Max(FlashSurrenderWindowUntil, Now + Duration);
+}
+
+bool AHostileAICharacter::IsInFlashSurrenderWindow() const
+{
+	const UWorld* World = GetWorld();
+	return World && World->GetTimeSeconds() < FlashSurrenderWindowUntil;
+}
+
+void AHostileAICharacter::ApplyStingerEffect(float Strength, float LockDuration, float RecoverDuration)
+{
+	Strength = FMath::Clamp(Strength, 0.f, 1.f);
+	if (Strength < 0.08f) return;
+	const UWorld* World = GetWorld();
+	if (!World) return;
+	const float Now = World->GetTimeSeconds();
+	StingerStrength = Strength;
+	const float Lock = LockDuration > 0.f ? LockDuration : StingerLockDuration;
+	const float Recover = RecoverDuration >= 0.f ? RecoverDuration : StingerRecoverDuration;
+	StingerLockUntil = Now + Lock;
+	StingerRecoverUntil = StingerLockUntil + Recover;
+}
+
+float AHostileAICharacter::GetStingerLookScale() const
+{
+	const UWorld* World = GetWorld();
+	if (!World) return 1.f;
+	const float Now = World->GetTimeSeconds();
+	if (Now < StingerLockUntil) return FMath::Clamp(1.f - StingerStrength, 0.f, 1.f);
+	if (Now < StingerRecoverUntil)
+	{
+		const float Window = FMath::Max(0.01f, StingerRecoverUntil - StingerLockUntil);
+		const float T = FMath::Clamp((Now - StingerLockUntil) / Window, 0.f, 1.f);
+		const float Ease = T * T * (3.f - 2.f * T);
+		return FMath::Lerp(1.f - StingerStrength, 1.f, Ease);
+	}
+	return 1.f;
+}
+
+float AHostileAICharacter::GetArmInjurySpreadScale() const
+{
+	return bArmInjured ? ArmInjurySpreadMultiplier : 1.f;
+}
+
+float AHostileAICharacter::GetArmInjuryTurnScale() const
+{
+	return bArmInjured ? ArmInjuryTurnMultiplier : 1.f;
+}
+
+void AHostileAICharacter::Multicast_FleshHit_Implementation(FVector ImpactPoint, FVector ImpactNormal)
+{
+	AShooterCharacter::SpawnBloodImpactFX(this, ImpactPoint, ImpactNormal, this);
+}
+
+void AHostileAICharacter::RefreshDeploymentVisibility()
+{
+ const auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();
+ const bool Hide=GS&&!GS->bRangeHub&&GetWorld()->GetMapName().Contains(TEXT("Factory"))&&(GS->GetCoopPhase()==ECoopCqbPhase::Waiting||GS->GetCoopPhase()==ECoopCqbPhase::Briefing);
+ if(Hide||bDeploymentHidden)
+ {
+  SetActorHiddenInGame(Hide);if(CarriedWeapon)CarriedWeapon->SetActorHiddenInGame(Hide);
+  TArray<AActor*> Attached;GetAttachedActors(Attached,true,true);
+  for(AActor* Actor:Attached)if(Cast<AWeapon>(Actor))Actor->SetActorHiddenInGame(Hide);
+  bDeploymentHidden=Hide;
+ }
 }

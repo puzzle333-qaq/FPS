@@ -48,6 +48,14 @@ enum class ETacticalVisionMode : uint8
 	Thermal UMETA(DisplayName = "Thermal")
 };
 
+// Dual: two tubes and a black housing. Quad: panoramic, the whole screen.
+UENUM(BlueprintType)
+enum class ENVGHousing : uint8
+{
+	Dual UMETA(DisplayName = "Dual"),
+	Quad UMETA(DisplayName = "Quad")
+};
+
 
 // Bone from the weapon hit, then a damage scale. Empty or unknown bones count as torso.
 EHitZone ResolveHitZone(FName BoneName);

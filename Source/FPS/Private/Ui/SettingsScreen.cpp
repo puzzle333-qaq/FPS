@@ -1,4 +1,4 @@
-﻿#include "Ui/SettingsScreen.h"
+#include "Ui/SettingsScreen.h"
 
 #include "Components/ComboBoxString.h"
 #include "Components/Button.h"
@@ -236,6 +236,8 @@ void USettingsScreen::InstallPrettyLayout()
 	AddSettingsRow(Controls, NSLOCTEXT("Settings", "Ads", "开镜灵敏度"), Combo_ADSSensitivity);
 	AddSettingsRow(Controls, NSLOCTEXT("Settings", "Invert", "反转 Y"), Combo_InvertY);
 	AddSettingsRow(Controls, NSLOCTEXT("Settings", "Fov", "视野"), Combo_FOV);
+ UComboBoxString* LowAmmo=WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(),TEXT("Combo_LowAmmoHint"));
+ AddSettingsRow(Controls,NSLOCTEXT("Settings","LowAmmoHint","低弹量提醒（检视时）"),LowAmmo);
 
 	UVerticalBox* Graphics = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Panel_Graphics"));
 	Panel_Graphics = Graphics;
@@ -463,6 +465,7 @@ void USettingsScreen::BuildOptions()
 	FillSteps(Combo_ADSSensitivity, ADSSteps);
 	FillSteps(Combo_FOV, FOVSteps);
 	Fill(Combo_InvertY, { OnLabel, OffLabel });
+ Fill(Cast<UComboBoxString>(GetWidgetFromName(TEXT("Combo_LowAmmoHint"))),{OnLabel,OffLabel});
 }
 
 void USettingsScreen::RefreshFromCurrent()
@@ -490,7 +493,8 @@ void USettingsScreen::RefreshFromCurrent()
 	SelectQuality(Combo_Reflections, S->GetReflectionQuality());
 	UpdateOverallFromIndividual();
 
-	Select(Combo_RayTracing, GetSavedBool(TEXT("bRayTracing"), false) ? OnLabel : OffLabel);
+	Select(Cast<UComboBoxString>(GetWidgetFromName(TEXT("Combo_LowAmmoHint"))),GetSavedBool(TEXT("bLowAmmoHint"),false)?OnLabel:OffLabel);
+ Select(Combo_RayTracing, GetSavedBool(TEXT("bRayTracing"), false) ? OnLabel : OffLabel);
 
 	float Normalized = 0.f, Current = 100.f, Min = 50.f, Max = 100.f;
 	S->GetResolutionScaleInformationEx(Normalized, Current, Min, Max);
@@ -628,6 +632,7 @@ void USettingsScreen::ResetToDefaults(bool bBenchmark)
 	TGuardValue<bool> Guard(bUpdating, true);
 	Select(Combo_RayTracing, OffLabel);
 	Select(Combo_DLSS, DLSSNames()[0]);
+ Select(Cast<UComboBoxString>(GetWidgetFromName(TEXT("Combo_LowAmmoHint"))),OffLabel);
 }
 
 void USettingsScreen::Back()
@@ -718,7 +723,9 @@ void USettingsScreen::ApplyControls()
 	SS->ADSSensitivityMultiplier = Read(Combo_ADSSensitivity, ADSSteps, SS->ADSSensitivityMultiplier);
 	SS->FieldOfView = Read(Combo_FOV, FOVSteps, SS->FieldOfView);
 	if (Combo_InvertY) SS->bInvertY = Combo_InvertY->GetSelectedOption() == OnLabel;
-	SS->SaveSettings();
+	if(UComboBoxString* Hint=Cast<UComboBoxString>(GetWidgetFromName(TEXT("Combo_LowAmmoHint"))))
+  if(GConfig){GConfig->SetBool(Section,TEXT("bLowAmmoHint"),Hint->GetSelectedOption()==OnLabel,GGameUserSettingsIni);GConfig->Flush(false,GGameUserSettingsIni);}
+ SS->SaveSettings();
 	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
 	{
 		PC->ApplyControlSettings();
