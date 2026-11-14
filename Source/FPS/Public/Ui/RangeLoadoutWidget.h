@@ -4,6 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "GameplayTagContainer.h"
 #include "Loadout/LoadoutTypes.h"
+#include "Character/PoliceAppearanceTypes.h"
 #include "Weapon/Weapon.h"
 #include "RangeLoadoutWidget.generated.h"
 
@@ -180,9 +181,14 @@ public:
 	// 关掉界面，并把当前主武器、副武器、弹匣数量、投掷物数量写回身上。F 和 Esc 也会走这里。
 	UFUNCTION(BlueprintCallable, Category = "FPS|改枪台", meta = (DisplayName = "离开并装备"))
 	void CloseBench();
+ UFUNCTION(BlueprintCallable,Category="FPS|角色防护") void SelectFaceProtection(EPoliceFaceProtection Face);
+ UFUNCTION(BlueprintCallable,Category="FPS|角色防护") void SelectBodyArmor(EBodyArmorType Armor);
 
 protected:
 	virtual void NativeConstruct() override;
+ virtual void NativeDestruct() override;
+ void RefreshProtectionPreview();
+ UPROPERTY(Transient) TObjectPtr<class UPoliceAppearanceComponent> ProtectionPreview;
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	UFUNCTION()
@@ -205,7 +211,9 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "FPS|改枪台", meta = (DisplayName = "选择变了"))
 	void OnSelectionChanged();
 
-private:
+protected:
+ virtual bool UsesNativePresentation() const { return false; }
+ virtual void RefreshNativePresentation() {}
 	void CollectCatalog();
 	void SeedFromPawn();
 	void SeedDefaults(FWeaponPreset& Preset) const;

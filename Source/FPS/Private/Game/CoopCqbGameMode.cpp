@@ -3,6 +3,8 @@
 #include "Game/CoopCqbGameState.h"
 #include "Game/HostageActor.h"
 #include "World/MissionObjective.h"
+#include "World/FactoryMissionObjective.h"
+#include "Game/MissionRadioComponent.h"
 #include "ShooterGameInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Game/HostileAICharacter.h"
@@ -189,6 +191,16 @@ void ACoopCqbGameMode::StartBriefing()
 void ACoopCqbGameMode::StartMission()
 {
 	if (bMissionEnded) return;
+ if(const auto* GS=GetGameState<ACoopCqbGameState>();GS&&GS->IsMissionLive())return;
+ TArray<AFactoryMissionObjective*> Ledgers;
+ for(TActorIterator<AFactoryMissionObjective> It(GetWorld());It;++It)
+  if(It->Task==EFactoryTask::Ledger)Ledgers.Add(*It);
+ bFactoryEvidenceMission=GetWorld()->GetMapName().Contains(TEXT("Factory"))&&!Ledgers.IsEmpty();
+ if(bFactoryEvidenceMission)
+ {
+  const int32 Selected=FMath::RandRange(0,Ledgers.Num()-1);
+  for(int32 I=0;I<Ledgers.Num();++I)if(I!=Selected)Ledgers[I]->Destroy();
+ }
  SpawnHostilesFromLevel();
  for (TActorIterator<AHostileAICharacter> It(GetWorld()); It; ++It) MissionSuspects.Add(*It);
  for (TActorIterator<AHostageActor> It(GetWorld()); It; ++It) MissionHostages.Add(*It);
@@ -202,6 +214,8 @@ void ACoopCqbGameMode::StartMission()
 		GS->SetMatchStartServerTime(GetWorld()->GetTimeSeconds());
 	}
 	Auth_RefreshObjectives();
+ if(GetWorld()->GetMapName().Contains(TEXT("Factory")))
+  if(auto* GS=GetGameState<ACoopCqbGameState>();GS&&GS->MissionRadio)GS->MissionRadio->QueueCue(EMissionVoiceCue::Opening,true);
 	UE_LOG(LogTemp, Log, TEXT("[CoopCQB] Mission live. Hostiles=%d"), CountLivingHostiles());
 	if (GEngine)
 	{
@@ -432,6 +446,7 @@ void ACoopCqbGameMode::NotifyHostileKilled(AHostileAICharacter* Hostile)
 {
  if (!HasAuthority() || bMissionEnded || bRangeHub) return;
  if (Hostile && Hostile->GetMorale() == EHostileMorale::Surrender) UnlawfulKills.Add(Hostile);
+ if(auto* GS=GetGameState<ACoopCqbGameState>();GS&&GS->MissionRadio)GS->MissionRadio->QueueCue(EMissionVoiceCue::SuspectDown);
  Auth_RefreshObjectives();
 }
 
@@ -492,15 +507,16 @@ void ACoopCqbGameMode::UpdateReport(bool bFinal, bool bWon)
  }
  R.MarkedTotal = R.MarkedCompleted = R.HiddenCompleted = 0;
  GS->ObjectiveDescriptions.Reset();
+ GS->CompletedHiddenRecords.Reset(); GS->HiddenRecordTotal=0;
  for (const auto& Ref : MissionObjectives)
  {
   if (const auto* O = Ref.Get())
   {
    if (O->bHiddenObjective) OptionalObjectives.Add(Ref);
    if (O->bCompleted) CompletedObjectives.Add(Ref);
-   if (!O->bHiddenObjective || O->bCompleted) GS->ObjectiveDescriptions.Add(FText::Format(
+   if (!O->bHiddenObjective) GS->ObjectiveDescriptions.Add(FText::Format(
     NSLOCTEXT("Mission", "ObjectiveStatus", "{0} {1}"), FText::FromString(O->bCompleted ? TEXT("✓") : TEXT("○")), O->ObjectiveName));
-   if (O->bHiddenObjective) { if (O->bCompleted) ++R.HiddenCompleted; }
+   if (O->bHiddenObjective) { if(bFinal)++GS->HiddenRecordTotal; if (O->bCompleted) {++R.HiddenCompleted; if(bFinal)GS->CompletedHiddenRecords.Add(O->ObjectiveName);} }
    else { ++R.MarkedTotal; if (O->bCompleted) ++R.MarkedCompleted; }
   }
   else if (OptionalObjectives.Contains(Ref)) { if (CompletedObjectives.Contains(Ref)) ++R.HiddenCompleted; }
@@ -510,6 +526,13 @@ void ACoopCqbGameMode::UpdateReport(bool bFinal, bool bWon)
  R.SurrenderedKilled = UnlawfulKills.Num();
  R.bPrimaryComplete = R.SuspectsTotal == R.Neutralized + R.Arrested && R.Rescued == R.HostagesTotal
   && R.MarkedCompleted == R.MarkedTotal && R.HostagesLost == 0;
+ if(bFactoryEvidenceMission)R.bPrimaryComplete=R.MarkedTotal>0&&R.MarkedCompleted==R.MarkedTotal&&R.HostagesLost==0;
+ if(bFinal&&bWon&&bFactoryEvidenceMission&&!GS->WerePlayersEverDetected()&&!GS->IsAlarmRaised())
+ {
+  ++R.HiddenCompleted;GS->CompletedHiddenRecords.Add(NSLOCTEXT("Factory","SilentComplete","无声行动"));
+ }
+ if(bFinal&&bFactoryEvidenceMission)++GS->HiddenRecordTotal;
+ if(bFinal)GS->FinalMissionSeconds=FMath::Max(0.f,GS->GetServerWorldTimeSeconds()-GS->GetMatchStartServerTime());
  R.Calculate(ScoreRules, bWon, bFinal);
  GS->SetHostileCounts(FMath::Max(0, R.SuspectsTotal - R.Neutralized - R.Arrested), R.SuspectsTotal);
  GS->PublishMission();
@@ -542,6 +565,8 @@ void ACoopCqbGameMode::EndMission(bool bOperatorsWon, ECoopCqbWinReason Reason)
 		GS->SetMatchState(EShooterMatchState::PostMatch);
 		GS->SetWinningTeam(bOperatorsWon ? CoopCqbTeams::Operators : 255);
 		GS->BeginEvac(PostMissionDelay);
+  if(bOperatorsWon&&bFactoryEvidenceMission&&!GS->WerePlayersEverDetected()&&!GS->IsAlarmRaised()&&GS->MissionRadio)
+   GS->MissionRadio->QueueCue(EMissionVoiceCue::HiddenSilent,true);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[CoopCQB] Mission end won=%d reason=%d"), bOperatorsWon ? 1 : 0, (int32)Reason);
@@ -552,9 +577,9 @@ void ACoopCqbGameMode::OpenDebrief()
 {
 	if (ACoopCqbGameState* GS = GetGameState<ACoopCqbGameState>())
 	{
-		GS->ReturnEndServerTime = GS->GetServerWorldTimeSeconds() + FMath::Max(5.f, DebriefDuration);
+  GS->ReturnEndServerTime = -1.f;
   GS->OpenDebrief();
-  GetWorldTimerManager().SetTimer(ReturnTimer, this, &ThisClass::Auth_ReturnToRange, FMath::Max(5.f, DebriefDuration), false);
+  GetWorldTimerManager().ClearTimer(ReturnTimer);
 	}
 }
 
@@ -623,6 +648,17 @@ void ACoopCqbGameMode::Auth_ReturnToRange()
  TSoftObjectPtr<UWorld> Map = GI->RangeMap;
  if (Map.IsNull()) Map = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/FPS/Level/Lvl_Range.Lvl_Range")));
  GI->TravelSquadTo(Map, GI->GetRangeGameMode(), {TEXT("RangeHub=1")});
+}
+
+void ACoopCqbGameMode::Auth_RetryMission()
+{
+ if(!HasAuthority()||!bMissionEnded)return;
+ if(auto* GI=Cast<UShooterGameInstance>(GetGameInstance()))
+ {
+  const FString Package=UWorld::RemovePIEPrefix(GetWorld()->GetOutermost()->GetName());
+  GI->TravelSquadTo(TSoftObjectPtr<UWorld>(FSoftObjectPath(Package)),TSoftClassPtr<AGameModeBase>(GetClass()),
+   {FString::Printf(TEXT("ExpectedOperators=%d"),FMath::Max(1,GetNumPlayers()))});
+ }
 }
 
 void ACoopCqbGameMode::NotifyAlarmRaised()

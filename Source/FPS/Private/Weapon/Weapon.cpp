@@ -727,6 +727,11 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 		}
 	}
 
+ if(!bFirstPerson&&bHasThirdPersonLeftHandGrip&&IsValid(WeaponMesh))
+ {
+  OutWorld=ThirdPersonLeftHandGrip*WeaponMesh->GetComponentTransform();
+  return true;
+ }
 	return false;
 }
 
@@ -1394,6 +1399,7 @@ void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal
 void AWeapon::AttachCosmeticThirdPerson(USceneComponent* Parent, FName SocketName, FTransform RelativeTransform)
 {
 	if (!IsValid(Parent)) return;
+ CaptureAuthoredMeshRelative();
 
 	SetActorEnableCollision(false);
 	SetActorTickEnabled(false);
@@ -1441,6 +1447,16 @@ void AWeapon::AttachCosmeticThirdPerson(USceneComponent* Parent, FName SocketNam
 
 	AttachToComponent(Parent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
 	SetActorRelativeTransform(RelativeTransform);
+ if(auto* Body=Cast<USkeletalMeshComponent>(Parent);Body&&Mesh3P)
+ {
+  FName Mount=SocketName;
+  if(!Mesh3PAttachSocket.IsNone()&&IsUsableAttachPoint(Body,Mesh3PAttachSocket))Mount=Mesh3PAttachSocket;
+  else if(WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_AK))Mount=ResolveAttachPoint(Body,TEXT("RifleSocketak"));
+  else Mount=ResolveAttachPoint(Body,Mount);
+  Mesh3P->AttachToComponent(Body,FAttachmentTransformRules::SnapToTargetNotIncludingScale,Mount);
+  ApplyMeshAttachRelative(Mesh3P,false);
+  Mesh3P->SetRelativeTransform(Mesh3P->GetRelativeTransform()*RelativeTransform);
+ }
 }
 
 void AWeapon::PlayCosmeticFire(const FVector& ImpactPoint)
@@ -4182,7 +4198,9 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn)
 	if (!IsValid(OwningPawn)) return;
 
 	const AShooterCharacter* ShooterOwner = Cast<AShooterCharacter>(OwningPawn);
-	const bool bLocal = OwningPawn->IsLocallyControlled() || (ShooterOwner && ShooterOwner->IsFirstPersonViewedLocally());
+	const bool bLocal = (OwningPawn->IsLocallyControlled() || (ShooterOwner && ShooterOwner->IsFirstPersonViewedLocally()))
+  && !(ShooterOwner && ShooterOwner->IsDebugThirdPerson());
+	Mesh3P->SetOwnerNoSee(bLocal);
 	Mesh1P->SetHiddenInGame(!bLocal, true);
 	Mesh3P->SetHiddenInGame(bLocal, true);
 

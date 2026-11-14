@@ -359,6 +359,10 @@ public:
 	bool bSavedSpringArmLength = false;
 
 	// ===== Tactical vision (NVG / Thermal) - local camera only =====
+	/** Local infrared assist: never replicated and enabled only for the owning NVG view. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Vision")
+	TObjectPtr<class USpotLightComponent> NVGIlluminator;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Vision")
 	ETacticalVisionMode TacticalVisionMode = ETacticalVisionMode::Off;
 
@@ -678,6 +682,8 @@ public:
 	// PIE/debug: 0=None 1=Light 2=Heavy. Replicated via Server_SetBodyArmor.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Armor")
 	void SetBodyArmorLocal(EBodyArmorType NewArmor);
+ UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="FPS|Look")
+ TObjectPtr<class UPoliceAppearanceComponent> PoliceAppearance;
 	UFUNCTION(Server, Reliable)
 	void Server_SetBodyArmor(EBodyArmorType NewArmor);
 
@@ -787,6 +793,8 @@ public:
 	float HeavyArmorPistolShotgunTorsoMultiplier = 0.25f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.2", ClampMax = "1"))
 	float HeavyArmorMoveSpeedMultiplier = 0.78f;
+ UPROPERTY(EditDefaultsOnly,Category="FPS|Armor",meta=(ClampMin="0.2",ClampMax="1"))
+ float BallisticMaskMoveSpeedMultiplier = 0.95f;
 	/** Criminals with no armor run faster than armored police (MVP). Applied in GetArmorSpeedMultiplier. */
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "1.0", ClampMax = "1.5"))
 	float UnarmoredCriminalSpeedMultiplier = 1.12f;

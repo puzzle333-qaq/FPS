@@ -40,6 +40,7 @@ bool UWarehouseLoadoutSaveGame::SaveLoadout(const FLoadoutPreset& Loadout, const
 {
 	if (Loadout.Weapons.IsEmpty() || Loadout.Weapons.Num() > 8) return false;
 	UWarehouseLoadoutSaveGame* Save = NewObject<UWarehouseLoadoutSaveGame>();
+ Save->PresetName=Loadout.Name;Save->bIncludesProtection=Loadout.bIncludesProtection;Save->FaceProtection=Loadout.FaceProtection;Save->BodyArmor=Loadout.BodyArmor;
 	for (const FWeaponPreset& Preset : Loadout.Weapons)
 	{
 		if (!Preset.WeaponClass) continue;
@@ -86,7 +87,8 @@ bool UWarehouseLoadoutSaveGame::LoadLoadout(FLoadoutPreset& OutLoadout, const FS
 	UWarehouseLoadoutSaveGame* Save = ReadSave(Path);
 	if (!Save) Save = ReadSave(Path + TEXT(".bak"));
 	if (!Save) return false;
-	OutLoadout.Name = NSLOCTEXT("Warehouse", "SavedLoadout", "仓库配装");
+ OutLoadout.Name=Save->PresetName.IsEmpty()?NSLOCTEXT("Warehouse", "SavedLoadout", "仓库配装"):Save->PresetName;
+ OutLoadout.bIncludesProtection=Save->bIncludesProtection;OutLoadout.FaceProtection=Save->FaceProtection;OutLoadout.BodyArmor=Save->BodyArmor;
 	OutLoadout.bReplaceThrowables = true;
 	for (const FWarehouseSavedWeapon& Saved : Save->Weapons)
 	{

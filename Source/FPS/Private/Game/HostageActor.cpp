@@ -12,6 +12,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Game/CoopCqbGameMode.h"
 #include "Game/CoopCqbGameState.h"
+#include "Game/MissionRadioComponent.h"
 
 AHostageActor::AHostageActor()
 {
@@ -74,6 +75,7 @@ void AHostageActor::Interact_Implementation(APawn* InteractingPawn)
  FollowTarget = nullptr;
  OnRep_RescueState();
  ForceNetUpdate();
+ if(auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();GS&&GS->MissionRadio)GS->MissionRadio->QueueCue(EMissionVoiceCue::CivilianSecured);
  if (auto* GM = GetWorld()->GetAuthGameMode<ACoopCqbGameMode>()) GM->Auth_RefreshObjectives();
 }
 void AHostageActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

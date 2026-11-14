@@ -11,10 +11,15 @@
 #include "TimerManager.h"
 #include "EngineUtils.h"
 #include "Misc/PackageName.h"
+#include "GameFramework/PlayerState.h"
+#include "Game/MissionRadioComponent.h"
+#include "Ui/ShooterLoadingScreen.h"
+#include "Misc/ConfigCacheIni.h"
 
 AMissionDeployPoint::AMissionDeployPoint()
 {
 	PrimaryActorTick.bCanEverTick = false;
+ BriefingRadio=CreateDefaultSubobject<UMissionRadioComponent>(TEXT("BriefingRadio"));
  bReplicates = true;
  bAlwaysRelevant = true;
 
@@ -68,17 +73,26 @@ void AMissionDeployPoint::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
  DOREPLIFETIME(AMissionDeployPoint, CountdownEndServerTime);
  DOREPLIFETIME(AMissionDeployPoint, SelectedMission);
  DOREPLIFETIME(AMissionDeployPoint, DeploymentError);
+ DOREPLIFETIME(AMissionDeployPoint, DeploymentRoster);
+ DOREPLIFETIME(AMissionDeployPoint, ReadyPlayers);
 }
 int32 AMissionDeployPoint::GetDestinationCount() const { return Missions.IsEmpty() ? (MissionMap.IsNull() ? 0 : 1) : Missions.Num(); }
 FMissionDestination AMissionDeployPoint::GetDestination(int32 Index) const
 {
- if (Missions.IsValidIndex(Index)) return Missions[Index];
  FMissionDestination D;
+ if(Missions.IsValidIndex(Index))D=Missions[Index];
  if (Missions.IsEmpty() && Index == 0)
  {
   D.Title = NSLOCTEXT("Mission", "TestMission", "CQB · 现场处置");
   D.Briefing = NSLOCTEXT("Mission", "TestBriefing", "控制现场，处置全部嫌疑人，解救人质并完成标定目标。尽量活捉，确保小队存活。隐藏目标为可选加分。 ");
   D.Map = MissionMap; D.GameMode = MissionGameMode;
+ }
+ if(D.Map.ToSoftObjectPath().GetLongPackageName().Contains(TEXT("Factory")))
+ {
+  D.Title=FText::FromString(ShooterLoadingScreen::GetTaskName(TEXT("Factory")));
+  FString Text;
+  GConfig->GetString(TEXT("FPS.MissionUI"),TEXT("FactoryBriefing"),Text,GGameIni);
+  Text.ReplaceInline(TEXT("\\n"),TEXT("\n"));D.Briefing=FText::FromString(Text);
  }
  return D;
 }
@@ -91,24 +105,29 @@ bool AMissionDeployPoint::Auth_SelectMission(APlayerController* PC, int32 Index)
  const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>();
  if (GS && !GS->bRangeHub) return false;
  for (TActorIterator<AMissionDeployPoint> It(GetWorld()); It; ++It)
-  if (It->CountdownEndServerTime > 0) return false;
+  if (*It!=this&&It->SelectedMission!=INDEX_NONE) return false;
  const FMissionDestination D = GetDestination(Index);
  if (D.Map.IsNull() || !FPackageName::DoesPackageExist(D.Map.ToSoftObjectPath().GetLongPackageName())) return false;
  SelectedMission = Index;
  DeploymentError.Reset();
  DeploymentLeader = PC;
- const auto* TimeGS = GetWorld()->GetGameState();
- CountdownEndServerTime = (TimeGS ? TimeGS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds()) + FMath::Max(1.f, CountdownDuration);
+ StopCountdown();ReadyPlayers.Reset();UpdateRoster();
+ if(BriefingRadio)
+ {
+  if(D.Map.ToSoftObjectPath().GetLongPackageName().Contains(TEXT("Factory")))BriefingRadio->PlayImmediate(EMissionVoiceCue::Briefing);
+  else BriefingRadio->StopBriefing();
+ }
  OnRep_Deployment(); ForceNetUpdate();
  Multicast_ShowCountdown();
- GetWorldTimerManager().SetTimer(DeployTimer, this, &ThisClass::DeploySquad, FMath::Max(1.f, CountdownDuration), false);
+ GetWorldTimerManager().SetTimer(RosterTimer,this,&ThisClass::ServiceReadyRoster,.25f,true);
  return true;
 }
 void AMissionDeployPoint::Auth_Cancel(APlayerController* PC)
 {
- if (!HasAuthority() || !IsRoomHost(PC) || DeploymentLeader.Get() != PC || CountdownEndServerTime < 0) return;
- GetWorldTimerManager().ClearTimer(DeployTimer);
- CountdownEndServerTime = -1; SelectedMission = INDEX_NONE; DeploymentLeader.Reset();
+ if (!HasAuthority() || !IsRoomHost(PC) || DeploymentLeader.Get() != PC || SelectedMission==INDEX_NONE) return;
+ StopCountdown();GetWorldTimerManager().ClearTimer(RosterTimer);
+ BriefingRadio->StopBriefing();
+ SelectedMission = INDEX_NONE; DeploymentLeader.Reset();ReadyPlayers.Reset();DeploymentRoster.Reset();
  OnRep_Deployment(); ForceNetUpdate();
 }
 void AMissionDeployPoint::Multicast_ShowCountdown_Implementation()
@@ -118,6 +137,10 @@ void AMissionDeployPoint::Multicast_ShowCountdown_Implementation()
 }
 void AMissionDeployPoint::DeploySquad()
 {
+ if(UpdateRoster()||ReadyPlayers.Num()!=DeploymentRoster.Num()||DeploymentRoster.IsEmpty())
+ {
+  StopCountdown();DeploymentError=TEXT("队伍发生变化，请重新按 Y 就绪。");OnRep_Deployment();ForceNetUpdate();return;
+ }
  if (!DeploymentLeader.IsValid())
  {
   DeploymentError = TEXT("发起人已离线，出发取消");
@@ -131,6 +154,72 @@ void AMissionDeployPoint::DeploySquad()
  if (!GI || !GI->TravelSquadTo(D.Map, Mode, {FString::Printf(TEXT("ExpectedOperators=%d"), FMath::Max(1, Operators))}))
  {
   DeploymentError = TEXT("地图切换失败，请重试");
-  CountdownEndServerTime = -1; OnRep_Deployment(); ForceNetUpdate();
+  StopCountdown();ReadyPlayers.Reset();OnRep_Deployment(); ForceNetUpdate();
  }
+ else GetWorldTimerManager().ClearTimer(RosterTimer);
+}
+
+bool AMissionDeployPoint::IsPlayerReady(const APlayerController* PC) const
+{
+ return PC&&PC->PlayerState&&ReadyPlayers.Contains(PC->PlayerState);
+}
+bool AMissionDeployPoint::UpdateRoster()
+{
+ TArray<TObjectPtr<APlayerState>> Current;
+ for(auto It=GetWorld()->GetPlayerControllerIterator();It;++It)
+  if(auto* PC=It->Get();PC&&PC->PlayerState&&!PC->PlayerState->IsOnlyASpectator())Current.AddUnique(PC->PlayerState);
+ bool Changed=Current.Num()!=DeploymentRoster.Num();
+ for(const auto& PS:Current)if(!DeploymentRoster.Contains(PS)){Changed=true;break;}
+ if(Changed){DeploymentRoster=MoveTemp(Current);ReadyPlayers.Reset();}
+ return Changed;
+}
+bool AMissionDeployPoint::Auth_ToggleReady(APlayerController* PC)
+{
+ if(!HasAuthority()||SelectedMission==INDEX_NONE||!IsValid(PC)||!PC->GetPawn()||!PC->PlayerState)return false;
+ const auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();
+ if(GS?!GS->bRangeHub:!GetWorld()->GetMapName().Contains(TEXT("Lvl_Range")))return false;
+ if(UpdateRoster())StopCountdown();
+ if(!DeploymentRoster.Contains(PC->PlayerState))return false;
+ if(ReadyPlayers.Contains(PC->PlayerState)){ReadyPlayers.Remove(PC->PlayerState);StopCountdown();}
+ else ReadyPlayers.Add(PC->PlayerState);
+ DeploymentError.Reset();
+ if(ReadyPlayers.Num()==DeploymentRoster.Num()&&!DeploymentRoster.IsEmpty())BeginCountdown();
+ OnRep_Deployment();ForceNetUpdate();return true;
+}
+void AMissionDeployPoint::BeginCountdown()
+{
+ if(CountdownEndServerTime>0)return;
+ const auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();
+ float Seconds=FMath::Max(1.f,CountdownDuration);
+ if(GetDestination(SelectedMission).Map.ToSoftObjectPath().GetLongPackageName().Contains(TEXT("Factory")))
+ {
+  if(BriefingRadio->Transmission.Cue==EMissionVoiceCue::Briefing)
+   Seconds=FMath::Max(Seconds,BriefingRadio->GetRemainingSeconds()+.15f);
+ }
+ CountdownEndServerTime=(GS?GS->GetServerWorldTimeSeconds():GetWorld()->GetTimeSeconds())+Seconds;
+ GetWorldTimerManager().SetTimer(DeployTimer,this,&ThisClass::DeploySquad,Seconds,false);
+}
+void AMissionDeployPoint::StopCountdown()
+{
+ GetWorldTimerManager().ClearTimer(DeployTimer);CountdownEndServerTime=-1;
+}
+void AMissionDeployPoint::ServiceReadyRoster()
+{
+ if(!DeploymentLeader.IsValid())
+ {
+  BriefingRadio->StopBriefing();
+  StopCountdown();SelectedMission=INDEX_NONE;ReadyPlayers.Reset();DeploymentRoster.Reset();
+  DeploymentError=TEXT("发起人已离线，部署取消。");GetWorldTimerManager().ClearTimer(RosterTimer);
+  OnRep_Deployment();ForceNetUpdate();return;
+ }
+ if(UpdateRoster())
+ {
+  StopCountdown();DeploymentError=TEXT("队伍发生变化，请全队重新按 Y 就绪。");
+  OnRep_Deployment();ForceNetUpdate();Multicast_ShowCountdown();
+ }
+}
+void AMissionDeployPoint::EndPlay(const EEndPlayReason::Type Reason)
+{
+ GetWorldTimerManager().ClearTimer(DeployTimer);GetWorldTimerManager().ClearTimer(RosterTimer);
+ Super::EndPlay(Reason);
 }

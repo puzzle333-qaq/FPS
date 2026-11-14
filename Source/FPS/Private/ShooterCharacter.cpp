@@ -2,6 +2,7 @@
 
 
 #include "ShooterCharacter.h"
+#include "Character/PoliceAppearanceComponent.h"
 #include "Vision/NightVisionProfile.h"
 #include "Game/CoopCqbGameState.h"
 #include "Game/AINoiseEvent.h"
@@ -19,6 +20,7 @@
 #include "Game/ShooterGameState.h"
 #include "Engine/DecalActor.h"
 #include "Components/DecalComponent.h"
+#include "Components/SpotLightComponent.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -96,7 +98,7 @@ namespace
 			return false;
 		}
 		const FString Path = Mesh->GetPathName();
-		return Path.Contains(TEXT("Bandit")) || Path.Contains(TEXT("Arms_Gloves"));
+		return Path.Contains(TEXT("Bandit")) || Path.Contains(TEXT("Arms_Gloves")) || Path.StartsWith(TEXT("/Game/FPS/Characters/Police/"));
 	}
 
 	USkeletalMesh* LoadCanonicalArms1PSource()
@@ -191,6 +193,19 @@ AShooterCharacter::AShooterCharacter()
 
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
 	FirstPersonCamera->SetupAttachment(SpringArm);
+	NVGIlluminator = CreateDefaultSubobject<USpotLightComponent>(TEXT("NVGIlluminator"));
+	NVGIlluminator->SetupAttachment(FirstPersonCamera);
+	NVGIlluminator->SetRelativeLocation(FVector(25.f, 0.f, 0.f));
+	NVGIlluminator->SetMobility(EComponentMobility::Movable);
+	NVGIlluminator->SetIntensityUnits(ELightUnits::Candelas);
+	NVGIlluminator->SetIntensity(3.f);
+	NVGIlluminator->SetAttenuationRadius(4000.f);
+	NVGIlluminator->SetInnerConeAngle(50.f);
+	NVGIlluminator->SetOuterConeAngle(65.f);
+	NVGIlluminator->SetIndirectLightingIntensity(0.f);
+	NVGIlluminator->SetVolumetricScatteringIntensity(0.f);
+	NVGIlluminator->SetCastShadows(true);
+	NVGIlluminator->SetVisibility(false);
 	FirstPersonCamera->bUsePawnControlRotation = false;
 
 	//ArmMesh
@@ -222,6 +237,7 @@ AShooterCharacter::AShooterCharacter()
 	GetMesh()->bReceivesDecals = false;
 
 	// CharGen modular 3P parts (LeaderPose followers). Hidden until Police look.
+ PoliceAppearance=CreateDefaultSubobject<UPoliceAppearanceComponent>(TEXT("PoliceAppearance"));
 	Mesh3P_Head = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P_Head"));
 	Mesh3P_Head->SetupAttachment(GetMesh());
 	Mesh3P_Head->bOnlyOwnerSee = false;
@@ -1051,7 +1067,8 @@ float AShooterCharacter::GetBandageSpeedMultiplier() const
 
 float AShooterCharacter::GetArmorSpeedMultiplier() const
 {
-	return BodyArmor == EBodyArmorType::Heavy ? HeavyArmorMoveSpeedMultiplier : 1.f;
+ const float Armor=BodyArmor==EBodyArmorType::Heavy?HeavyArmorMoveSpeedMultiplier:1.f;
+ return Armor*(PoliceAppearance&&PoliceAppearance->FaceProtection==EPoliceFaceProtection::GogglesAndMask?BallisticMaskMoveSpeedMultiplier:1.f);
 }
 
 float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
@@ -2874,6 +2891,7 @@ void AShooterCharacter::StartDeathView()
 	if (USkeletalMeshComponent* Body = GetMesh())
 	{
 		Body->SetOwnerNoSee(false);
+  if(PoliceAppearance)PoliceAppearance->RefreshAppearance();
 	}
 	if (IsValid(Combat))
 	{
@@ -2971,7 +2989,7 @@ void AShooterCharacter::SetFirstPersonViewedLocally(bool bViewed)
 	}
 	if (IsValid(Mesh1P))
 	{
-		Mesh1P->VisibilityBasedAnimTickOption = bViewed ? EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones
+		Mesh1P->VisibilityBasedAnimTickOption = (bViewed || IsLocallyControlled()) ? EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones
 			: EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 	}
 	if (IsValid(Combat))
@@ -3026,6 +3044,7 @@ void AShooterCharacter::SetDebugThirdPerson(bool bThirdPerson)
 	SetBodyOwnerSee(Mesh3P_BodyUp.Get());
 	SetBodyOwnerSee(Mesh3P_Pants.Get());
 	SetBodyOwnerSee(Mesh3P_Jacket.Get());
+ if(PoliceAppearance)PoliceAppearance->RefreshAppearance();
 
 	if (IsValid(Combat))
 	{
@@ -3444,6 +3463,7 @@ void AShooterCharacter::Server_SetBodyArmor_Implementation(EBodyArmorType NewArm
 
 void AShooterCharacter::OnRep_BodyArmor()
 {
+ if(PoliceAppearance)PoliceAppearance->RefreshAppearance();
 	UE_LOG(LogTemp, Log, TEXT("[Armor] %s BodyArmor=%d"), *GetNameSafe(this), static_cast<int32>(BodyArmor));
 }
 
@@ -3457,9 +3477,9 @@ void AShooterCharacter::EnsureFactionLookDefaults()
 		CriminalMesh3P = TSoftObjectPtr<USkeletalMesh>(BanditMesh);
 	}
 	// Police: Bandits Preset_13 (beige gorka, black gloves) - same UE5 Epic skeleton as Preset_05.
-	const FSoftObjectPath PoliceBanditMesh(TEXT("/Game/Bandits/Mesh/Preset/SKM_Bandit_Preset_13.SKM_Bandit_Preset_13"));
+	const FSoftObjectPath PoliceBanditMesh(TEXT("/Game/FPS/Characters/Police/SKM_Police_Preset_07.SKM_Police_Preset_07"));
 	const FString PolicePath = PoliceMesh3P.ToSoftObjectPath().ToString();
-	if (PoliceMesh3P.IsNull() || PolicePath.Contains(TEXT("CharGen")) || PolicePath.Contains(TEXT("Preset_02")))
+	if (PoliceMesh3P.IsNull() || PolicePath.Contains(TEXT("CharGen")) || PolicePath.Contains(TEXT("/Game/Bandits/")))
 	{
 		PoliceMesh3P = TSoftObjectPtr<USkeletalMesh>(PoliceBanditMesh);
 	}
@@ -3499,7 +3519,7 @@ void AShooterCharacter::EnsureFactionLookDefaults()
 	// Police arms forced to match Preset_13 (uses M_Arms_Gloves_Black)
 	{
 		PoliceArmsMesh1P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
-			TEXT("/Game/Bandits/Mesh/Arms/Arms_Gloves/SKM_Arms_Gloves_Black.SKM_Arms_Gloves_Black")));
+			TEXT("/Game/FPS/Characters/Police/SKM_Police_Arms_Gloves.SKM_Police_Arms_Gloves")));
 	}
 	if (CriminalSleeveMesh1P.IsNull())
 	{
@@ -3512,11 +3532,11 @@ void AShooterCharacter::EnsureFactionLookDefaults()
 		CriminalSleeveMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(
 			TEXT("/Game/Bandits/Materials/Cloth/Bomber/M_Bomber_Brown.M_Bomber_Brown")));
 	}
-	if (PoliceSleeveMesh1P.IsNull())
+	if (PoliceSleeveMesh1P.IsNull() || PoliceSleeveMesh1P.ToSoftObjectPath().ToString().Contains(TEXT("/Game/Bandits/")))
 	{
 		// Preset_13 outer cloth = Gorka beige.
 		PoliceSleeveMesh1P = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
-			TEXT("/Game/Bandits/Mesh/Cloth/Jacket_Gorka/SKM_Jacket_Gorka_Bege.SKM_Jacket_Gorka_Bege")));
+			TEXT("/Game/FPS/Characters/Police/SKM_Police_Sleeves.SKM_Police_Sleeves")));
 	}
 }
 
@@ -3662,6 +3682,7 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 			EnsureSkeletonCompat(DefaultSkel, BanditSkel);
 		}
 
+  if(MeshAsset->GetPathName().StartsWith(TEXT("/Game/FPS/Characters/Police/")))Body->EmptyOverrideMaterials();
 		Body->SetSkeletalMesh(MeshAsset, /*bReinitPose=*/true);
 		Body->SetRelativeScale3D(FVector::OneVector);
 		Body->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
@@ -3801,6 +3822,7 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 	}
 
 	ConfigureWeaponHitCollision();
+ if(PoliceAppearance)PoliceAppearance->RefreshAppearance();
 
 	if (IsValid(Combat))
 	{
@@ -4085,6 +4107,7 @@ void AShooterCharacter::Client_ReceiveFlashbang_Implementation(float Strength)
 void AShooterCharacter::SetHasFlashGoggles(bool bEnable)
 {
 	bHasFlashGoggles = bEnable;
+	if(HasAuthority()&&PoliceAppearance)PoliceAppearance->SyncFlashGoggles(bEnable);
 	if (!HasAuthority())
 	{
 		Server_SetHasFlashGoggles(bEnable);
@@ -4094,6 +4117,7 @@ void AShooterCharacter::SetHasFlashGoggles(bool bEnable)
 void AShooterCharacter::Server_SetHasFlashGoggles_Implementation(bool bEnable)
 {
 	bHasFlashGoggles = bEnable;
+ if(PoliceAppearance)PoliceAppearance->SyncFlashGoggles(bEnable);
 }
 
 float AShooterCharacter::GetHitBloodAlpha() const
@@ -4283,6 +4307,8 @@ void AShooterCharacter::RefreshThermalOverlays()
 		Mark(Other->Mesh3P_BodyUp);
 		Mark(Other->Mesh3P_Pants);
 		Mark(Other->Mesh3P_Jacket);
+  if(Other->PoliceAppearance)
+   for(USkeletalMeshComponent* Part:Other->PoliceAppearance->Parts)Mark(Part);
 	}
 
 	// Range dummies also light up under thermal (handy in PIE without a second pawn).
@@ -4306,6 +4332,7 @@ void AShooterCharacter::RefreshThermalOverlays()
 
 void AShooterCharacter::ClearTacticalVisionEffects()
 {
+	if (NVGIlluminator) NVGIlluminator->SetVisibility(false);
 	ClearThermalOverlays();
 	if (!IsValid(FirstPersonCamera))
 	{
@@ -4346,6 +4373,7 @@ void AShooterCharacter::ApplyTacticalVisionEffects()
 {
 	if (!IsLocallyControlled() || !IsValid(FirstPersonCamera))
 	{
+		if (NVGIlluminator) NVGIlluminator->SetVisibility(false);
 		return;
 	}
 
@@ -4354,6 +4382,10 @@ void AShooterCharacter::ApplyTacticalVisionEffects()
 	{
 		ClearTacticalVisionEffects();
 		AppliedVisionMode = TacticalVisionMode;
+	}
+	if (NVGIlluminator)
+	{
+		NVGIlluminator->SetVisibility(TacticalVisionMode == ETacticalVisionMode::NVG && VisionBatterySeconds > 0.f);
 	}
 
 	if (TacticalVisionMode == ETacticalVisionMode::Off)
@@ -4451,6 +4483,7 @@ void AShooterCharacter::UpdateTacticalVision(float DeltaTime)
 {
 	if (!IsLocallyControlled())
 	{
+		if (NVGIlluminator) NVGIlluminator->SetVisibility(false);
 		return;
 	}
 

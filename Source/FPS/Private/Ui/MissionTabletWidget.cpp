@@ -177,7 +177,7 @@ void UMissionTabletWidget::RefreshMission()
  FString Active=TEXT("控制现场");
  bool FoundPending=false;
  auto Row=[&](const FString& Name,const FString& Detail,bool Done){AddObjective(FText::FromString(Name),FText::FromString(Detail),Done);if(!Done&&!FoundPending){Active=Name;FoundPending=true;}};
- Row(TEXT("控制现场"),R.bPrimaryComplete?TEXT("必要目标已完成"):TEXT("完成现场全部必要目标"),R.bPrimaryComplete);
+ Row(Factory?TEXT("取得账本并撤离"):TEXT("控制现场"),R.bPrimaryComplete?TEXT("必要目标已完成"):TEXT("完成现场全部必要目标"),R.bPrimaryComplete);
  if(R.SuspectsTotal>0)Row(TEXT("处置嫌疑人"),FString::Printf(TEXT("已处置 %d / %d · 已拘捕 %d"),Resolved,R.SuspectsTotal,R.Arrested),Resolved>=R.SuspectsTotal);
  if(R.HostagesTotal>0)Row(TEXT("解救人质"),FString::Printf(TEXT("已解救 %d / %d"),R.Rescued,R.HostagesTotal),R.Rescued>=R.HostagesTotal);
  for(const FText& Description:GS->ObjectiveDescriptions)

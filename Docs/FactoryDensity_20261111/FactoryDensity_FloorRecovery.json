@@ -1,0 +1,38 @@
+{
+  "detected": {
+    "location": [
+      0.0,
+      0.0,
+      19.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "restored": {
+    "location": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "reason": "Frozen original floor moved by 19cm outside the dressing plan; restored accepted baseline before continuing",
+  "backup": "C:\\Users\\ASUS\\Documents\\Unreal Projects\\FPS\\Saved\\AssetBackup_20261111_111700_DensityFloorDrift"
+}

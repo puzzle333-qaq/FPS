@@ -1,0 +1,344 @@
+[
+  {
+    "name": "SM_FA_Factory_W400_H60",
+    "family": "Factory",
+    "width": 400,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      400.0,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 46,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W210_H60",
+    "family": "Factory",
+    "width": 210.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      209.99999046325684,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 29,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W300_H60",
+    "family": "Factory",
+    "width": 300.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      300.0,
+      10.000000149011612,
+      60.000014305114746
+    ],
+    "polygons": 34,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W145_H60",
+    "family": "Factory",
+    "width": 145.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      145.00000476837158,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 26,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W255_H60",
+    "family": "Factory",
+    "width": 255.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      254.99999523162842,
+      10.000000149011612,
+      60.000014305114746
+    ],
+    "polygons": 34,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W155_H60",
+    "family": "Factory",
+    "width": 155.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      154.99999523162842,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 26,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W355_H60",
+    "family": "Factory",
+    "width": 355.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      354.9999952316284,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 38,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W205_H60",
+    "family": "Factory",
+    "width": 205.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      204.99999523162842,
+      10.000000149011612,
+      60.000014305114746
+    ],
+    "polygons": 29,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W320_H60",
+    "family": "Factory",
+    "width": 320.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      320.0000047683716,
+      10.000000149011612,
+      60.00000834465027
+    ],
+    "polygons": 34,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W245_H60",
+    "family": "Factory",
+    "width": 245.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      245.00000476837158,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 34,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W220_H60",
+    "family": "Factory",
+    "width": 220,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      220.00000476837158,
+      10.000000149011612,
+      60.000014305114746
+    ],
+    "polygons": 31,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W10_H60",
+    "family": "Factory",
+    "width": 10.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000000894069672,
+      0.0
+    ],
+    "max": [
+      9.999999403953552,
+      10.000000149011612,
+      60.00000834465027
+    ],
+    "polygons": 12,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W290_H60",
+    "family": "Factory",
+    "width": 290.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      290.00000953674316,
+      10.000000149011612,
+      60.000014305114746
+    ],
+    "polygons": 34,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W140_H60",
+    "family": "Factory",
+    "width": 140.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      139.9999976158142,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 26,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W340_H60",
+    "family": "Factory",
+    "width": 340.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      340.00000953674316,
+      10.000000894069672,
+      60.00000238418579
+    ],
+    "polygons": 38,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W20_H60",
+    "family": "Factory",
+    "width": 20,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000000894069672,
+      0.0
+    ],
+    "max": [
+      20.000000298023224,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 12,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W305_H60",
+    "family": "Factory",
+    "width": 305.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      304.9999952316284,
+      10.000000149011612,
+      60.000014305114746
+    ],
+    "polygons": 34,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W240_H60",
+    "family": "Factory",
+    "width": 240.0,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      240.00000953674316,
+      10.000000149011612,
+      60.000014305114746
+    ],
+    "polygons": 34,
+    "collision": "visual only; keep verified original collision"
+  },
+  {
+    "name": "SM_FA_Factory_W110_H60",
+    "family": "Factory",
+    "width": 109.99999999999909,
+    "height": 60,
+    "min": [
+      -3.6739405577555036e-15,
+      -10.000002384185791,
+      0.0
+    ],
+    "max": [
+      110.00000238418579,
+      10.000000149011612,
+      60.00000238418579
+    ],
+    "polygons": 21,
+    "collision": "visual only; keep verified original collision"
+  }
+]

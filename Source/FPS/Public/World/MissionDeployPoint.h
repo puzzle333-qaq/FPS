@@ -20,6 +20,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDeploymentUpdated);
 class UBoxComponent;
 class UStaticMeshComponent;
 class APlayerController;
+class APlayerState;
 
 /** Range mission selection and server-owned squad countdown. */
 UCLASS()
@@ -29,12 +30,19 @@ class FPS_API AMissionDeployPoint : public AActor, public IInteractable
 
 public:
 	AMissionDeployPoint();
+ UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="FPS|Deploy") TObjectPtr<class UMissionRadioComponent> BriefingRadio;
  virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
  UPROPERTY(EditAnywhere, Replicated, Category="FPS|Deploy") TArray<FMissionDestination> Missions;
  UPROPERTY(EditAnywhere, Category="FPS|Deploy", meta=(ClampMin="1")) float CountdownDuration = 5.f;
  UPROPERTY(ReplicatedUsing=OnRep_Deployment, BlueprintReadOnly, Category="FPS|Deploy") float CountdownEndServerTime = -1.f;
  UPROPERTY(ReplicatedUsing=OnRep_Deployment, BlueprintReadOnly, Category="FPS|Deploy") int32 SelectedMission = INDEX_NONE;
  UPROPERTY(ReplicatedUsing=OnRep_Deployment, BlueprintReadOnly, Category="FPS|Deploy") FString DeploymentError;
+ UPROPERTY(ReplicatedUsing=OnRep_Deployment,BlueprintReadOnly,Category="FPS|Deploy") TArray<TObjectPtr<APlayerState>> DeploymentRoster;
+ UPROPERTY(ReplicatedUsing=OnRep_Deployment,BlueprintReadOnly,Category="FPS|Deploy") TArray<TObjectPtr<APlayerState>> ReadyPlayers;
+ bool IsPlayerReady(const APlayerController* PC) const;
+ bool Auth_ToggleReady(APlayerController* PC);
+ void ServiceReadyRoster();
+ virtual void EndPlay(const EEndPlayReason::Type Reason) override;
  UPROPERTY(BlueprintAssignable) FDeploymentUpdated OnDeploymentUpdated;
  UFUNCTION() void OnRep_Deployment();
  FMissionDestination GetDestination(int32 Index) const;
@@ -46,6 +54,10 @@ public:
 private:
  void DeploySquad();
  FTimerHandle DeployTimer;
+ FTimerHandle RosterTimer;
+ void BeginCountdown();
+ void StopCountdown();
+ bool UpdateRoster();
  TWeakObjectPtr<APlayerController> DeploymentLeader;
 public:
 

@@ -5,6 +5,7 @@
 #include "Game/CoopCqbGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Pawn.h"
+#include "Game/MissionRadioComponent.h"
 
 AMissionObjective::AMissionObjective()
 {
@@ -42,6 +43,13 @@ void AMissionObjective::CompleteObjective()
  const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>();
  if (!GM || !GS || !GS->IsMissionLive() || GS->bRangeHub) return;
  bCompleted = true;
+ OnRep_Completed();
  ForceNetUpdate();
+ if(GS->MissionRadio)
+ {
+  GS->MissionRadio->QueueCue(CompletionVoice);
+  GS->MissionRadio->QueueCue(CommanderResponse,true);
+ }
  GM->Auth_RefreshObjectives();
 }
+void AMissionObjective::OnRep_Completed(){}

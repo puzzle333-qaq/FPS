@@ -29,6 +29,7 @@ protected:
  virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
  virtual void ReleaseSlateResources(bool bReleaseChildren) override;
 private:
+ TSharedPtr<SWidget> DebriefScreen;
  TSharedPtr<SVerticalBox> Rows;
  TSharedPtr<SBorder> LegacyPanel;
  TSharedPtr<SBorder> ReconPanel;

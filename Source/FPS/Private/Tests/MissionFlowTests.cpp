@@ -62,6 +62,10 @@ bool FMissionObjectiveFlowTest::RunTest(const FString& Parameters)
  TestTrue(TEXT("Rescued hostage stays exactly in place"), Hostage->GetActorLocation().Equals(HostageLocation));
  Hostage->Interact_Implementation(Operator);
  GM->UpdateReport();
+ Hidden->bCompleted=true;GM->UpdateReport();
+ TestEqual(TEXT("Completed secret remains unnamed during mission"),GS->ObjectiveDescriptions.Num(),1);
+ TestTrue(TEXT("No hidden names replicated before final report"),GS->CompletedHiddenRecords.IsEmpty());
+ Hidden->bCompleted=false;
  TestEqual(TEXT("Repeated rescue cannot award points twice"), GS->Report.Rescued, 1);
  Marked->bCompleted = true;
  Suspect->SetMorale(EHostileMorale::Surrender);
@@ -78,6 +82,9 @@ bool FMissionObjectiveFlowTest::RunTest(const FString& Parameters)
  TestEqual(TEXT("Arrests counted separately"), GS->Report.Arrested, 1);
  TestEqual(TEXT("Arrest never counts as kill"), GS->Report.Neutralized, 0);
  TestEqual(TEXT("Undiscovered hidden objective stays off tablet"), GS->ObjectiveDescriptions.Num(), 1);
+ TestEqual(TEXT("Debrief counts unrevealed hidden record"),GS->HiddenRecordTotal,1);
+ TestTrue(TEXT("Debrief does not reveal unfinished secret name"),GS->CompletedHiddenRecords.IsEmpty());
+ TestTrue(TEXT("Debrief waits for host instead of automatic travel"),GS->ReturnEndServerTime<0);
  TestFalse(TEXT("Postmission interaction is blocked"), Hostage->CanInteract_Implementation(Operator));
  World->DestroyWorld(false);
  return true;

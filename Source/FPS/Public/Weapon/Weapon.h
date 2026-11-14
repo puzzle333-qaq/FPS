@@ -418,6 +418,11 @@ public:
 	 * Independent of first-person settings and the weapon mesh component's preview transform. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Attach|ThirdPerson")
 	FTransform Mesh3PAttachTransform = FTransform::Identity;
+ /** Authored left-hand bone pose relative to the weapon origin, when no mesh grip socket exists. */
+ UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FPS|Weapon|Attach|ThirdPerson")
+ bool bHasThirdPersonLeftHandGrip = false;
+ UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FPS|Weapon|Attach|ThirdPerson",meta=(EditCondition="bHasThirdPersonLeftHandGrip"))
+ FTransform ThirdPersonLeftHandGrip = FTransform::Identity;
 
 	// Sequence fallbacks when DA montages are empty (PlaySlotAnimationAsDynamicMontage / PlayAnimation).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")

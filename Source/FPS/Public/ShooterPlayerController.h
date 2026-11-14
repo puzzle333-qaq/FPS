@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Character/PoliceAppearanceTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "Loadout/LoadoutTypes.h"
 #include "ShooterPlayerController.generated.h"
@@ -41,6 +42,7 @@ class FPS_API AShooterPlayerController : public APlayerController
 	GENERATED_BODY()
 	
 public:
+ UFUNCTION(Server,Reliable) void Server_SetPoliceProtection(EPoliceFaceProtection Face,EBodyArmorType Armor);
 	AShooterPlayerController();
  UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Mission") TObjectPtr<UDeploymentDroneComponent> DeploymentDrone;
  UFUNCTION(Server,Reliable) void Server_DeploymentViewReady();
@@ -52,6 +54,8 @@ public:
  UFUNCTION(Client, Reliable) void Client_OpenMissionSelection(AMissionDeployPoint* Deploy);
  UFUNCTION(Server, Reliable) void Server_SelectMission(AMissionDeployPoint* Deploy, int32 Index);
  UFUNCTION(Server, Reliable) void Server_CancelMissionDeploy(AMissionDeployPoint* Deploy);
+ UFUNCTION(Server,Reliable) void Server_ToggleMissionReady(AMissionDeployPoint* Deploy);
+ UFUNCTION(BlueprintCallable,Category="Mission") void ToggleMissionReady();
  UFUNCTION(Server, Reliable) void Server_SubmitIdentity(const FString& DisplayName, const FString& PlatformId);
  UFUNCTION(Server, Reliable) void Server_MissionLoaded();
  void CloseMissionPanel();
@@ -193,7 +197,7 @@ public:
 
 	// 本地：准星对着的可交互物（没有返回 nullptr）
 	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
-	AActor* TraceInteractable() const;
+	AActor* TraceInteractable(bool bIncludeUnavailable=false) const;
 
 	// HUD 绑定：当前交互提示（门/人质/陷阱），没有则为空
 	UFUNCTION(BlueprintPure, Category = "FPS|Interact")
@@ -282,9 +286,13 @@ private:
  void ScrollTabletDown();
  void ServiceMissionReadiness();
  void ShowMissionPanel(uint8 Panel, AMissionDeployPoint* Deploy = nullptr);
+public:
+ UFUNCTION(Server,Reliable) void Server_DebriefAction(bool bRetry);
+private:
  UPROPERTY(Transient) TObjectPtr<UMissionFlowWidget> MissionWidget;
  UPROPERTY(Transient) TObjectPtr<AMissionTabletActor> MissionTablet;
  UPROPERTY(Transient) TObjectPtr<UInputAction> TabletAction;
+ UPROPERTY(Transient) TObjectPtr<UInputAction> MissionReadyAction;
  UPROPERTY(Transient) TObjectPtr<UInputAction> TabletScrollUpAction;
  UPROPERTY(Transient) TObjectPtr<UInputAction> TabletScrollDownAction;
  UPROPERTY(Transient) TObjectPtr<UInputMappingContext> TabletIMC;
@@ -293,6 +301,7 @@ private:
  bool bMissionLoadAcknowledged = false;
  FTimerHandle MissionServiceTimer;
  float NextSurrenderWarningTime = 0.f;
+ int32 PreviousWarningIndex = -1;
 
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")

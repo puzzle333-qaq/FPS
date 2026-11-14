@@ -15,7 +15,7 @@ public class FPS : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"Slate", "SlateCore", "NavigationSystem",
 			"MoviePlayer", "AssetRegistry", "LevelSequence", "MovieScene", "MovieSceneTracks",
-			"OnlineSubsystem", "OnlineSubsystemUtils"
+			"OnlineSubsystem", "OnlineSubsystemUtils", "Sockets"
 		});
 
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "Steamworks");

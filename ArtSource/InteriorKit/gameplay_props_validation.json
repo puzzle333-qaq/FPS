@@ -1,0 +1,179 @@
+[
+  {
+    "name": "SM_Door_Panel_105",
+    "dimensions_cm": [
+      105.0,
+      14.0,
+      215.0
+    ],
+    "bounds_cm": [
+      [
+        -0.0,
+        -7.0,
+        0.0
+      ],
+      [
+        105.0,
+        7.0,
+        215.0
+      ]
+    ],
+    "pivot_cm": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "pivot_description": "铰链侧底边厚度中心；X=0，沿+X延伸；板体105×5×215，把手总厚14",
+    "uv_layers": [
+      "UV0",
+      "UV1"
+    ],
+    "material_slots": [
+      "M_Door_Wood",
+      "M_Door_Metal"
+    ],
+    "collision_boxes": 1,
+    "status": "PASS"
+  },
+  {
+    "name": "SM_Door_Frame_110",
+    "dimensions_cm": [
+      130.0,
+      24.0,
+      230.0
+    ],
+    "bounds_cm": [
+      [
+        -65.0,
+        -12.0,
+        0.0
+      ],
+      [
+        65.0,
+        12.0,
+        230.0
+      ]
+    ],
+    "pivot_cm": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "pivot_description": "门洞底边中心；净空X=±55、Z=0至220，无底槛",
+    "uv_layers": [
+      "UV0",
+      "UV1"
+    ],
+    "material_slots": [
+      "M_Wall_Trim"
+    ],
+    "collision_boxes": 3,
+    "status": "PASS"
+  },
+  {
+    "name": "SM_Boiler_Blockout",
+    "dimensions_cm": [
+      180.0,
+      300.0,
+      280.0
+    ],
+    "bounds_cm": [
+      [
+        -90.0,
+        -150.0,
+        0.0
+      ],
+      [
+        90.0,
+        150.0,
+        280.0
+      ]
+    ],
+    "pivot_cm": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "pivot_description": "底面中心；圆筒沿Y；前端-Y；主体实心盒碰撞，3个UCX",
+    "uv_layers": [
+      "UV0",
+      "UV1"
+    ],
+    "material_slots": [
+      "M_Boiler_Metal",
+      "M_Pipe_Metal"
+    ],
+    "collision_boxes": 3,
+    "status": "PASS"
+  },
+  {
+    "name": "SM_ElecCabinet_Tall",
+    "dimensions_cm": [
+      120.0,
+      60.0,
+      200.0
+    ],
+    "bounds_cm": [
+      [
+        -60.0,
+        -30.0,
+        0.0
+      ],
+      [
+        60.0,
+        30.0,
+        200.0
+      ]
+    ],
+    "pivot_cm": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "pivot_description": "底面中心；柜门、把手、铭牌朝-Y",
+    "uv_layers": [
+      "UV0",
+      "UV1"
+    ],
+    "material_slots": [
+      "M_Cabinet_Metal"
+    ],
+    "collision_boxes": 1,
+    "status": "PASS"
+  },
+  {
+    "name": "SM_ElecCabinet_Low",
+    "dimensions_cm": [
+      80.0,
+      60.0,
+      110.0
+    ],
+    "bounds_cm": [
+      [
+        -40.0,
+        -30.0,
+        0.0
+      ],
+      [
+        40.0,
+        30.0,
+        110.0
+      ]
+    ],
+    "pivot_cm": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "pivot_description": "底面中心；柜门、把手、铭牌朝-Y",
+    "uv_layers": [
+      "UV0",
+      "UV1"
+    ],
+    "material_slots": [
+      "M_Cabinet_Metal"
+    ],
+    "collision_boxes": 1,
+    "status": "PASS"
+  }
+]

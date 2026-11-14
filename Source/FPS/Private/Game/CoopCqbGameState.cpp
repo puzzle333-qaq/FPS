@@ -1,10 +1,19 @@
 #include "Game/CoopCqbGameState.h"
 #include "Net/UnrealNetwork.h"
+#include "Game/MissionRadioComponent.h"
+
+ACoopCqbGameState::ACoopCqbGameState()
+{
+ MissionRadio=CreateDefaultSubobject<UMissionRadioComponent>(TEXT("MissionRadio"));
+}
 
 void ACoopCqbGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ACoopCqbGameState, Report);
+ DOREPLIFETIME(ACoopCqbGameState, CompletedHiddenRecords);
+ DOREPLIFETIME(ACoopCqbGameState, HiddenRecordTotal);
+ DOREPLIFETIME(ACoopCqbGameState, FinalMissionSeconds);
  DOREPLIFETIME(ACoopCqbGameState, ObjectiveDescriptions);
  DOREPLIFETIME(ACoopCqbGameState, bRangeHub);
  DOREPLIFETIME(ACoopCqbGameState, ExpectedOperators);

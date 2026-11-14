@@ -1,0 +1,563 @@
+{
+  "world": "/Game/Maps/UEDPIE_0_Lvl_Factory_Whitebox.Lvl_Factory_Whitebox",
+  "pawn": "/Game/Maps/UEDPIE_0_Lvl_Factory_Whitebox.Lvl_Factory_Whitebox:PersistentLevel.SpectatorPawn_0",
+  "door_count": 30,
+  "phase": "complete",
+  "samples": [
+    {
+      "phase": "push",
+      "doors": [
+        {
+          "label": "D10_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D01_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D02_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D11_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D12_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D13_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D14_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D15_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D16_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D17_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D18_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D19_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D20_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D03_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D21_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D22_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D23_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D24_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D25_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D26_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D27_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D28_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D29_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D30_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D04_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D05_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D06_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D07_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D08_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D09_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        }
+      ]
+    },
+    {
+      "phase": "close",
+      "doors": [
+        {
+          "label": "D10_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D01_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D02_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D11_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D12_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D13_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D14_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D15_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D16_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D17_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D18_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D19_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D20_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D03_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D21_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D22_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D23_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D24_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D25_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D26_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D27_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D28_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D29_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D30_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D04_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D05_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D06_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D07_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D08_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D09_FactoryDoor",
+          "is_open": false,
+          "hinge_yaw": 0.0,
+          "target_sign": -1.0
+        }
+      ]
+    },
+    {
+      "phase": "kick",
+      "doors": [
+        {
+          "label": "D10_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D01_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D02_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D11_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D12_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D13_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D14_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D15_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D16_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D17_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D18_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D19_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D20_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D03_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D21_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D22_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D23_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D24_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D25_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D26_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D27_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D28_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D29_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D30_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D04_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D05_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 90.00000000000001,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D06_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D07_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        },
+        {
+          "label": "D08_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": 89.99999999999999,
+          "target_sign": 1.0
+        },
+        {
+          "label": "D09_FactoryDoor",
+          "is_open": true,
+          "hinge_yaw": -89.99999999999999,
+          "target_sign": -1.0
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,7 @@
 
 #include "Game/CoopCqbGameMode.h"
 #include "Game/CoopCqbGameState.h"
+#include "Game/MissionRadioComponent.h"
 #include "Game/HostileAIController.h"
 #include "Stats/StatsComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -337,6 +338,7 @@ void AHostileAICharacter::Interact_Implementation(APawn* Pawn)
 {
  if (!HasAuthority() || !CanInteract_Implementation(Pawn)) return;
  bArrested = true;
+ if(auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();GS&&GS->MissionRadio)GS->MissionRadio->QueueCue(EMissionVoiceCue::TargetSecured);
  Crouch();
  OnRep_Arrested();
  ForceNetUpdate();

@@ -814,6 +814,11 @@ void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
 	CacheDefaultFirstPersonArms();
 	if (!bCachedDefaultArms) return;
 
+ // Local arms must advance even while the deployment camera cannot see them.
+ // Otherwise a lowered draw pose can cull itself and never reach the view.
+ if(const APawn* Pawn=Cast<APawn>(Owner);Pawn&&Pawn->IsLocallyControlled())
+  Arms->VisibilityBasedAnimTickOption=EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
 	// Bandits faction look owns Mesh1P gloves + patched grip sockets. Do not let weapon OverrideArms
 	// swap back to Ironbelly/pack arms (that drops sockets and breaks rifle/pistol 1P mount).
 	// Pack guns stay on the shared RAR/AK arms ABP; set anim sequences on the weapon BP instead.
@@ -3909,8 +3914,14 @@ void UCombatComponent::PlaySpectated1PReload(EReloadType ReloadType)
 bool UCombatComponent::BeginDeploymentRaise()
 {
  if(!CurrentWeapon||!WeaponData)return false;
+ if(GetOwner()&&GetOwner()->Implements<UPlayerInterface>())
+  if(auto* Arms=IPlayerInterface::Execute_GetMesh1P(GetOwner()))
+   Arms->VisibilityBasedAnimTickOption=EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
  CancelInspect();StopActiveEquipMontages();PlayEquipMontage(CurrentWeapon,true);
- return IsDeploymentRaisePlaying();
+ // Accepted is distinct from playing: equip animations are optional. The
+ // camera state machine checks playback on the following tick and proceeds
+ // immediately when no montage exists, rather than restarting forever.
+ return true;
 }
 bool UCombatComponent::IsDeploymentRaisePlaying()const
 {

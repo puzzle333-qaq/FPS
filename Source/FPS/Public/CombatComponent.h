@@ -54,6 +54,7 @@ public:
  DECLARE_MULTICAST_DELEGATE_OneParam(FInspectionChanged, bool);
  FInspectionChanged OnInspectionChanged;
  FSimpleMulticastDelegate OnInspectionHudChanged;
+ // True means the request was accepted; an optional missing montage completes immediately.
  bool BeginDeploymentRaise();
  bool IsDeploymentRaisePlaying()const;
 	UCombatComponent();

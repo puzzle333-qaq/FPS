@@ -46,11 +46,14 @@ class FPS_API UPouchInventoryComponent : public UActorComponent
 
 public:
     UPouchInventoryComponent();
+    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     static constexpr int32 SlotCount = 13;
 
     UFUNCTION(BlueprintCallable, Category = "FPS|Pouch")
-    int32 GetSlotCount() const { return SlotCount; }
+    int32 GetSlotCount() const;
+    UFUNCTION(BlueprintPure,Category="FPS|Pouch") int32 GetReservedSlotCount() const;
+    void ReconcileCapacity();
 
     UFUNCTION(BlueprintCallable, Category = "FPS|Pouch")
     FPouchSlot GetSlot(int32 Index) const;
@@ -69,7 +72,7 @@ public:
 
 private:
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Pouch", meta = (AllowPrivateAccess = "true"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "FPS|Pouch", meta = (AllowPrivateAccess = "true"))
     TArray<FPouchSlot> Slots;
 
     int32 FindEmptySlot() const;

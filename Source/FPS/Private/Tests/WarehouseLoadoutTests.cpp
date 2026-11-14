@@ -19,6 +19,8 @@ bool FWarehouseLoadoutPersistenceTest::RunTest(const FString& Parameters)
 	const FString Slot = TEXT("WarehouseTest_") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
 	const FString Path = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames"), Slot + TEXT(".sav"));
 	FLoadoutPreset Loadout;
+ Loadout.Name=FText::FromString(TEXT("Night entry"));Loadout.bIncludesProtection=true;
+ Loadout.FaceProtection=EPoliceFaceProtection::GasMask;Loadout.BodyArmor=EBodyArmorType::Heavy;
 	Loadout.bReplaceThrowables = true;
 	FWeaponPreset Flash;
 	Flash.WeaponClass = AWeaponFlash::StaticClass();
@@ -36,6 +38,10 @@ bool FWarehouseLoadoutPersistenceTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Preserve weapon class"), Restored.Weapons[0].WeaponClass.Get(), AWeaponFlash::StaticClass());
 		TestEqual(TEXT("Preserve throwable count"), Restored.Weapons[0].StackCount, 2);
 		TestTrue(TEXT("Explicit pouch counts survive"), Restored.bReplaceThrowables);
+  TestEqual(TEXT("Named preset survives"),Restored.Name.ToString(),Loadout.Name.ToString());
+  TestTrue(TEXT("Protection included"),Restored.bIncludesProtection);
+  TestEqual(TEXT("Gas mask restored"),Restored.FaceProtection,EPoliceFaceProtection::GasMask);
+  TestEqual(TEXT("Heavy armor restored"),Restored.BodyArmor,EBodyArmorType::Heavy);
 		TestEqual(TEXT("Both weapon slots survive"), Restored.Weapons.Num(), 2);
 		if (Restored.Weapons.Num() == 2) TestEqual(TEXT("Zero spare magazines stays zero"), Restored.Weapons[1].StackCount, 0);
 	}

@@ -1,4 +1,4 @@
-#include "Ui/MissionFlowWidget.h"
+﻿#include "Ui/MissionFlowWidget.h"
 #include "Ui/TacticalUIStyle.h"
 #include "Ui/OperationUIStyle.h"
 #include "Ui/ShooterLoadingScreen.h"
@@ -15,10 +15,13 @@
 #include "Widgets/Input/SButton.h"
 #include "TimerManager.h"
 #include "InputCoreTypes.h"
+#include "GameFramework/PlayerState.h"
+#include "Ui/MissionDebriefSlate.h"
 
 TSharedRef<SWidget> UMissionFlowWidget::RebuildWidget()
 {
  SetIsFocusable(true);
+ if(Panel==EMissionPanel::Debrief){DebriefScreen=MakeMissionDebriefScreen(Cast<AShooterPlayerController>(GetOwningPlayer()));return DebriefScreen.ToSharedRef();}
  PanelBrush = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::Panel, 12.f, 1.f);
  DimBrush = FTacticalUIStyle::MakePanelBrush(FTacticalUIStyle::BgDim, 0.f, 0.f);
  ButtonStyle = FTacticalUIStyle::MakeButtonStyle();
@@ -59,6 +62,7 @@ TSharedRef<SWidget> UMissionFlowWidget::RebuildWidget()
 }
 void UMissionFlowWidget::ReleaseSlateResources(bool bReleaseChildren)
 {
+ DebriefScreen.Reset();
  Super::ReleaseSlateResources(bReleaseChildren); Rows.Reset(); Clock.Reset(); FirstButton.Reset(); LegacyPanel.Reset();ReconPanel.Reset();ReconMap.Reset();ReconTask.Reset();ReconCount.Reset();
 }
 void UMissionFlowWidget::NativeConstruct()
@@ -112,17 +116,27 @@ void UMissionFlowWidget::Refresh()
   AddLine(TEXT("行动部署 / MISSION SELECT"), 28);
   if (!Deploy) { AddLine(TEXT("任务台不可用")); return; }
   const bool bHost = Deploy->IsRoomHost(PC);
-  if (Deploy->CountdownEndServerTime > 0)
+  if (Deploy->SelectedMission!=INDEX_NONE)
   {
    AddLine(Deploy->GetDestination(Deploy->SelectedMission).Title.ToString(), 24);
-   AddLine(TEXT("全队即将出发。倒计时结束后开始加载，所有队员就绪后任务才会开始。"));
-   Rows->AddSlot().AutoHeight().Padding(0, 12) [ SAssignNew(Clock, STextBlock).Font(FTacticalUIStyle::MakeFont(36, true)).ColorAndOpacity(FTacticalUIStyle::TextGold) ];
+   AddLine(Deploy->GetDestination(Deploy->SelectedMission).Briefing.ToString(),16);
+   AddLine(FString::Printf(TEXT("全队就绪：%d / %d"),Deploy->ReadyPlayers.Num(),Deploy->DeploymentRoster.Num()),20);
+   for(const auto& PS:Deploy->DeploymentRoster)
+    if(PS)AddLine(FString::Printf(TEXT("%s  %s"),Deploy->ReadyPlayers.Contains(PS)?TEXT("[已就绪]"):TEXT("[等待 Y]"),*PS->GetPlayerName()),16);
+   if(Deploy->CountdownEndServerTime>0)
+   {
+    AddLine(TEXT("全员已就绪。简介播放完成、倒计时结束后出发。"),16);
+    Rows->AddSlot().AutoHeight().Padding(0,12)[SAssignNew(Clock,STextBlock).Font(FTacticalUIStyle::MakeFont(36,true)).ColorAndOpacity(FTacticalUIStyle::TextGold)];
+   }
+   else AddLine(TEXT("任务简介已开始播放。每位队员按 Y 就绪，全部就绪后开始倒计时。"),16);
+   if(!Deploy->DeploymentError.IsEmpty())AddLine(Deploy->DeploymentError,16);
+   AddButton(Deploy->IsPlayerReady(PC)?NSLOCTEXT("Mission","Unready","取消就绪（Y）"):NSLOCTEXT("Mission","Ready","准备就绪（Y）"),[WeakPC](){if(WeakPC.IsValid())WeakPC->ToggleMissionReady();});
    if (bHost)
    {
     TWeakObjectPtr<AMissionDeployPoint> WeakDeploy(Deploy);
     AddButton(NSLOCTEXT("Mission", "CancelDeploy", "取消出发（房主）"), [WeakPC, WeakDeploy]() { if (WeakPC.IsValid()) WeakPC->Server_CancelMissionDeploy(WeakDeploy.Get()); });
    }
-   else AddLine(TEXT("等待房主确认出发。"));
+   AddButton(NSLOCTEXT("Mission","HideSelection","暂时收起（Esc）"),[WeakPC](){if(WeakPC.IsValid())WeakPC->CloseMissionPanel();});
   }
   else if (!bHost)
   {
@@ -201,9 +215,15 @@ FReply UMissionFlowWidget::NativeOnFocusReceived(const FGeometry& Geometry, cons
 }
 FReply UMissionFlowWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
 {
+ if(Panel==EMissionPanel::Debrief){if(SkipMissionDebriefAnimation(DebriefScreen))return FReply::Handled();return Super::NativeOnPreviewKeyDown(Geometry,Event);}
+ if(Panel==EMissionPanel::Selection&&Event.GetKey()==EKeys::Y)
+ {
+  if(!Event.IsRepeat())if(auto* PC=Cast<AShooterPlayerController>(GetOwningPlayer()))PC->ToggleMissionReady();
+  return FReply::Handled();
+ }
  if (Event.GetKey() == EKeys::Escape || Event.GetKey() == EKeys::Tab)
  {
-  if (Panel == EMissionPanel::Tablet || (Panel == EMissionPanel::Selection && Deploy && Deploy->CountdownEndServerTime < 0))
+  if (Panel == EMissionPanel::Tablet || Panel==EMissionPanel::Selection)
    if (auto* PC = Cast<AShooterPlayerController>(GetOwningPlayer())) PC->CloseMissionPanel();
   return FReply::Handled();
  }

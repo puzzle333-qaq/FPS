@@ -1,0 +1,16 @@
+{
+  "RoofTile": {
+    "MI_Roof_Test": "/Game/Factory/Materials/MaterialLayer/MI_Roof_Test.MI_Roof_Test"
+  },
+  "CeilingTile": {
+    "WorldGridMaterial": "/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial"
+  },
+  "WindowTile": {
+    "MI_Warehouse_Walls": "/Game/Factory/Materials/MaterialLayer/MI_Warehouse_Walls.MI_Warehouse_Walls",
+    "MI_Glass": "/Game/Factory/Materials/Instances/MI_Glass.MI_Glass",
+    "MI_Roof_Test": "/Game/Factory/Materials/MaterialLayer/MI_Roof_Test.MI_Roof_Test"
+  },
+  "FloorTile": {
+    "MI_Concrete": "/Game/Factory/Materials/Instances/MI_Concrete.MI_Concrete"
+  }
+}

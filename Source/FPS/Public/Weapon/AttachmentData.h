@@ -49,8 +49,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
 	FText DisplayName;
 
-	// 选择界面用的图标（可选）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment")
+	// Equipment detail rows (96x40) and inline candidates share this icon. Null keeps an empty frame.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment", meta=(DisplayName="配件图标", ToolTip="装备页与配件候选条共用。暂不填写时保留空图框，之后直接填入透明背景 Texture2D。"))
 	TObjectPtr<UTexture2D> Icon;
 
 	// ---------- 外观 ----------

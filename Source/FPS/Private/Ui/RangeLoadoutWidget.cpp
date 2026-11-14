@@ -1,4 +1,5 @@
-#include "Ui/RangeLoadoutWidget.h"
+﻿#include "Ui/RangeLoadoutWidget.h"
+#include "Character/PoliceAppearanceComponent.h"
 #include "Weapon/WeaponSting.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -138,6 +139,7 @@ void URangeLoadoutWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	SetIsFocusable(true);
+ if(UsesNativePresentation())return;
 	ResolveDrawerWidgets();
 	BindDrawerButtons();
 }
@@ -157,6 +159,7 @@ void URangeLoadoutWidget::Init(ARangeLoadoutBench* InBench)
 	Bench = InBench;
 	CollectCatalog();
 	SeedFromPawn();
+ RefreshProtectionPreview();
 	bDirty = false;
 	if (Primary.WeaponClass)
 	{
@@ -176,6 +179,40 @@ void URangeLoadoutWidget::CloseBench()
 	{
 		PC->LeaveRangeBench();
 	}
+}
+
+void URangeLoadoutWidget::NativeDestruct()
+{
+ if(IsValid(ProtectionPreview))ProtectionPreview->DestroyComponent();
+ ProtectionPreview=nullptr;Super::NativeDestruct();
+}
+void URangeLoadoutWidget::RefreshProtectionPreview()
+{
+ auto* Character=GetOwningPlayerPawn<AShooterCharacter>();
+ if(!Character||!Character->PoliceAppearance||!Bench||!Bench->GetPreviewMesh())return;
+ if(!ProtectionPreview)
+ {
+  ProtectionPreview=NewObject<UPoliceAppearanceComponent>(Bench);
+  ProtectionPreview->SetIsReplicated(false);Bench->AddInstanceComponent(ProtectionPreview);ProtectionPreview->RegisterComponent();
+  ProtectionPreview->InitializePreview(Bench->GetPreviewMesh(),Character->PoliceAppearance->FaceProtection,Character->GetBodyArmor());
+ }
+ else ProtectionPreview->SetPreviewProtection(Character->PoliceAppearance->FaceProtection,Character->GetBodyArmor());
+}
+void URangeLoadoutWidget::SelectFaceProtection(EPoliceFaceProtection Face)
+{
+ if(auto* Character=GetOwningPlayerPawn<AShooterCharacter>();Character&&Character->PoliceAppearance)
+ {
+  Character->PoliceAppearance->SetProtection(Face,Character->GetBodyArmor());
+  RefreshProtectionPreview();QueueSelectionChanged();
+ }
+}
+void URangeLoadoutWidget::SelectBodyArmor(EBodyArmorType Armor)
+{
+ if(auto* Character=GetOwningPlayerPawn<AShooterCharacter>();Character&&Character->PoliceAppearance)
+ {
+  Character->PoliceAppearance->SetProtection(Character->PoliceAppearance->FaceProtection,Armor);
+  RefreshProtectionPreview();QueueSelectionChanged();
+ }
 }
 
 FRangeWeaponChoice URangeLoadoutWidget::MakeWeaponChoice(TSubclassOf<AWeapon> WeaponClass, bool bSelected) const
@@ -318,10 +355,10 @@ bool URangeLoadoutWidget::SelectWeapon(FWeaponPreset& Held, TSubclassOf<AWeapon>
 	if (!CDO || CDO->WeaponKind != ExpectedKind) return false;
 	if (Held.WeaponClass != WeaponClass)
 	{
-		const int32 KeptMags = Held.StackCount;
+		const int32 KeptMags = Held.WeaponClass ? Held.StackCount : FMath::Min(ExpectedKind == EWeaponKind::Pistol ? 3 : 5,FMath::Max(0,PouchLimit()-PouchUsed()));
 		Held.WeaponClass = WeaponClass;
 		SeedDefaults(Held);
-		Held.StackCount = KeptMags > 0 ? KeptMags : (ExpectedKind == EWeaponKind::Pistol ? 3 : 5);
+		Held.StackCount = KeptMags;
 		bDirty = true;
 	}
 	PushPreview(&Held);
@@ -373,6 +410,7 @@ bool URangeLoadoutWidget::ToggleThrowable(TSubclassOf<AWeapon> WeaponClass)
 
 int32 URangeLoadoutWidget::PouchLimit() const
 {
+ if(const auto* C=GetOwningPlayerPawn<AShooterCharacter>())if(auto* P=C->GetPouch())return P->GetSlotCount();
 	return UPouchInventoryComponent::SlotCount;
 }
 
@@ -608,13 +646,11 @@ void URangeLoadoutWidget::SeedFromPawn()
 		if (Weapon->WeaponKind == EWeaponKind::LongGun && !Primary.WeaponClass)
 		{
 			Preset.StackCount = CountPouch(EPouchSlotKind::Magazine, Weapon->WeaponType, nullptr);
-			if (Preset.StackCount <= 0) Preset.StackCount = 5;
 			Primary = Preset;
 		}
 		else if (Weapon->WeaponKind == EWeaponKind::Pistol && !Secondary.WeaponClass)
 		{
 			Preset.StackCount = CountPouch(EPouchSlotKind::Magazine, Weapon->WeaponType, nullptr);
-			if (Preset.StackCount <= 0) Preset.StackCount = 3;
 			Secondary = Preset;
 		}
 		else if (Weapon->WeaponKind == EWeaponKind::Throwable && Throwables.Num() < GetMaxThrowables())
@@ -829,6 +865,8 @@ void URangeLoadoutWidget::ToggleDrawer(int32 Category)
 
 void URangeLoadoutWidget::ActivateRow(uint8 Kind, TSubclassOf<AWeapon> WeaponClass, UAttachmentData* Attachment, const FGameplayTag& InSlotTag)
 {
+ if(Kind>=20&&Kind<=22){SelectFaceProtection(EPoliceFaceProtection(Kind-19));return;}
+ if(Kind==30||Kind==31){SelectBodyArmor(Kind==30?EBodyArmorType::Light:EBodyArmorType::Heavy);return;}
 	if (Kind == 0 || Kind == 1)
 	{
 		if (DrawerWeapon == WeaponClass) DrawerWeapon = nullptr;
@@ -887,6 +925,7 @@ void URangeLoadoutWidget::ActivateRow(uint8 Kind, TSubclassOf<AWeapon> WeaponCla
 
 void URangeLoadoutWidget::RebuildDrawer()
 {
+ if(UsesNativePresentation()){RefreshNativePresentation();return;}
 	ResolveDrawerWidgets();
 	if (!BoxPrimary || !BoxSecondary || !BoxWarehouse)
 	{
@@ -998,6 +1037,15 @@ void URangeLoadoutWidget::AddCountRows(UVerticalBox* Target, float Indent, int32
 
 void URangeLoadoutWidget::FillWarehouse()
 {
+ if(auto* Character=GetOwningPlayerPawn<AShooterCharacter>();Character&&Character->PoliceAppearance)
+ {
+  const auto Face=Character->PoliceAppearance->FaceProtection;
+  AddDrawerRow(BoxWarehouse,0,FText::FromString(TEXT("角色防护")),nullptr,false,true,255,nullptr,nullptr,FGameplayTag());
+  const TCHAR* Names[]={TEXT("闪光防护眼镜"),TEXT("闪光防护眼镜＋防弹面罩"),TEXT("防毒面具")};
+  for(uint8 I=0;I<3;++I)AddDrawerRow(BoxWarehouse,0,FText::FromString(Names[I]),nullptr,uint8(Face)==I+1,false,20+I,nullptr,nullptr,FGameplayTag());
+  AddDrawerRow(BoxWarehouse,0,FText::FromString(TEXT("轻甲")),nullptr,Character->GetBodyArmor()==EBodyArmorType::Light,false,30,nullptr,nullptr,FGameplayTag());
+  AddDrawerRow(BoxWarehouse,0,FText::FromString(TEXT("重甲")),nullptr,Character->GetBodyArmor()==EBodyArmorType::Heavy,false,31,nullptr,nullptr,FGameplayTag());
+ }
 	AddDrawerRow(BoxWarehouse, 0.f, FText::FromString(FString::Printf(TEXT("背包  %d/%d"), PouchUsed(), PouchLimit())), nullptr, false, true, 255, nullptr, nullptr, FGameplayTag());
 	AddDrawerRow(BoxWarehouse, 0.f, FText::FromString(TEXT("投掷物")), nullptr, false, true, 255, nullptr, nullptr, FGameplayTag());
 	const int32 TypeCount = GetThrowableCount();
@@ -1127,6 +1175,7 @@ FLoadoutPreset URangeLoadoutWidget::BuildLoadout() const
 	FLoadoutPreset Loadout;
 	Loadout.Name = FText::FromString(TEXT("靶场配装"));
 	Loadout.bReplaceThrowables = true;
+ if(auto* C=GetOwningPlayerPawn<AShooterCharacter>()){Loadout.bIncludesProtection=true;Loadout.BodyArmor=C->GetBodyArmor();if(C->PoliceAppearance)Loadout.FaceProtection=C->PoliceAppearance->FaceProtection;}
 	if (Primary.WeaponClass) Loadout.Weapons.Add(Primary);
 	if (Secondary.WeaponClass) Loadout.Weapons.Add(Secondary);
 	for (const FWeaponPreset& Preset : Throwables)

@@ -1,10 +1,31 @@
 #include "Loadout/PouchInventoryComponent.h"
 #include "Weapon/Weapon.h"
+#include "Net/UnrealNetwork.h"
+#include "ShooterCharacter.h"
+#include "Character/PoliceAppearanceComponent.h"
+
+int32 UPouchInventoryComponent::GetReservedSlotCount() const
+{
+ const auto* C=Cast<AShooterCharacter>(GetOwner());
+ return C?int32(C->GetBodyArmor()==EBodyArmorType::Heavy)+int32(C->PoliceAppearance&&C->PoliceAppearance->FaceProtection==EPoliceFaceProtection::GogglesAndMask):0;
+}
+int32 UPouchInventoryComponent::GetSlotCount() const { return SlotCount-GetReservedSlotCount(); }
+void UPouchInventoryComponent::ReconcileCapacity()
+{
+ TArray<FPouchSlot> Packed;for(const auto& Entry:Slots)if(!Entry.IsEmpty())Packed.Add(Entry);
+ for(int32 I=0;I<Slots.Num();++I)Slots[I]=I<GetSlotCount()&&Packed.IsValidIndex(I)?Packed[I]:FPouchSlot();
+}
 
 UPouchInventoryComponent::UPouchInventoryComponent()
 {
+    SetIsReplicatedByDefault(true);
     PrimaryComponentTick.bCanEverTick = false;
     Slots.SetNum(SlotCount);
+}
+
+void UPouchInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+ Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(UPouchInventoryComponent,Slots);
 }
 
 const FPouchSlot& UPouchInventoryComponent::GetEmptySlot()
@@ -20,7 +41,7 @@ FPouchSlot UPouchInventoryComponent::GetSlot(int32 Index) const
 
 int32 UPouchInventoryComponent::FindEmptySlot() const
 {
-    for(int32 i = 0;i< Slots.Num(); ++i)
+    for(int32 i = 0;i< GetSlotCount(); ++i)
     {
         if (Slots[i].IsEmpty()) return i;
     }

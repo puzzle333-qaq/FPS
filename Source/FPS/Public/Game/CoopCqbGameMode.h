@@ -32,6 +32,7 @@ public:
  virtual void Logout(AController* Exiting) override;
  void Auth_OperatorReady(APlayerController* PC);
  void Auth_ReturnToRange();
+ void Auth_RetryMission();
  UPROPERTY(EditDefaultsOnly, Category="Mission") FMissionScoreRules ScoreRules;
  UPROPERTY(EditDefaultsOnly, Category="Mission", meta=(ClampMin="5")) float DebriefDuration = 20.f;
  UPROPERTY(EditDefaultsOnly, Category="Mission", meta=(ClampMin="10")) float LoadTimeout = 120.f;
@@ -119,6 +120,7 @@ private:
  TSet<TWeakObjectPtr<APlayerController>> DeploymentViewReadyPlayers;
  void UpdateReport(bool bFinal = false, bool bWon = false);
  bool bRangeHub = false;
+ bool bFactoryEvidenceMission = false;
  int32 ExpectedOperators = 1;
  float LoadStartedAt = 0.f;
  TSet<TWeakObjectPtr<APlayerController>> ReadyPlayers;

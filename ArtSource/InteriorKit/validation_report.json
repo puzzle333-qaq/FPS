@@ -1,0 +1,132 @@
+[
+  {
+    "file": "SM_IntWall_100.fbx",
+    "vertices": 8,
+    "quads": 6,
+    "collision_boxes": 1,
+    "dimensions_m": [
+      1.0,
+      0.20000000298023224,
+      3.0
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntWall_200.fbx",
+    "vertices": 8,
+    "quads": 6,
+    "collision_boxes": 1,
+    "dimensions_m": [
+      2.0,
+      0.20000000298023224,
+      3.0
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntWall_400.fbx",
+    "vertices": 8,
+    "quads": 6,
+    "collision_boxes": 1,
+    "dimensions_m": [
+      4.0,
+      0.20000000298023224,
+      3.0
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntWall_Door_200.fbx",
+    "vertices": 24,
+    "quads": 22,
+    "collision_boxes": 3,
+    "dimensions_m": [
+      2.0,
+      0.20000000298023224,
+      3.0
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntWall_DoubleDoor_400.fbx",
+    "vertices": 24,
+    "quads": 22,
+    "collision_boxes": 3,
+    "dimensions_m": [
+      4.0,
+      0.20000000298023224,
+      3.0
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntWall_Window_200.fbx",
+    "vertices": 32,
+    "quads": 32,
+    "collision_boxes": 4,
+    "dimensions_m": [
+      2.0,
+      0.20000000298023224,
+      3.0
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntWall_Corner.fbx",
+    "vertices": 8,
+    "quads": 6,
+    "collision_boxes": 1,
+    "dimensions_m": [
+      0.20000000298023224,
+      0.20000000298023224,
+      3.0
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntCeiling_200x200.fbx",
+    "vertices": 8,
+    "quads": 6,
+    "collision_boxes": 1,
+    "dimensions_m": [
+      2.0,
+      2.0,
+      0.10000000149011612
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntCeiling_400x400.fbx",
+    "vertices": 8,
+    "quads": 6,
+    "collision_boxes": 1,
+    "dimensions_m": [
+      4.0,
+      4.0,
+      0.10000000149011612
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  },
+  {
+    "file": "SM_IntDoorFrame_110.fbx",
+    "vertices": 24,
+    "quads": 22,
+    "collision_boxes": 3,
+    "dimensions_m": [
+      1.2599999904632568,
+      0.23999999463558197,
+      2.2799999713897705
+    ],
+    "topology": "closed manifold quads, positive volume",
+    "uv1": "isolated padded face cells"
+  }
+]

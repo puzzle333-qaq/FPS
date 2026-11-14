@@ -1,0 +1,439 @@
+{
+  "input_csv_rows": 361,
+  "scheduled_rows_placed": 361,
+  "missing_ids": [],
+  "new_actors": 470,
+  "pipe_and_support_actors": 143,
+  "dressing_actors": 327,
+  "all_scales_unit": true,
+  "full_cover_count": 31,
+  "full_cover_heights": [
+    {
+      "id": "FD_D090",
+      "height_cm": 169.48177302628756
+    },
+    {
+      "id": "FD_D101",
+      "height_cm": 169.48177302628756
+    },
+    {
+      "id": "FD_D112",
+      "height_cm": 169.48177302628756
+    },
+    {
+      "id": "FD_D122",
+      "height_cm": 169.48177302628756
+    },
+    {
+      "id": "FD_D145",
+      "height_cm": 169.48177302628756
+    },
+    {
+      "id": "FD_D155",
+      "height_cm": 169.48177302628756
+    },
+    {
+      "id": "FD_D175",
+      "height_cm": 169.48177302628756
+    },
+    {
+      "id": "FD_D213",
+      "height_cm": 200.0
+    },
+    {
+      "id": "FD_D234",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D235",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D236",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D237",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D238",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D239",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D240",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D241",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D242",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D243",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D244",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D257",
+      "height_cm": 200.0
+    },
+    {
+      "id": "FD_D258",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D259",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D260",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D261",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D273",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D274",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D275",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D288",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D289",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D298",
+      "height_cm": 258.77423095703125
+    },
+    {
+      "id": "FD_D299",
+      "height_cm": 258.77423095703125
+    }
+  ],
+  "half_cover_measured_heights": [
+    {
+      "id": "FD_D133",
+      "actual_height_cm": 128.8425246792064
+    },
+    {
+      "id": "FD_D163",
+      "actual_height_cm": 71.60314564593136
+    },
+    {
+      "id": "FD_D198",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D199",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D211",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D218",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D228",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D231",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D245",
+      "actual_height_cm": 94.45285339355469
+    },
+    {
+      "id": "FD_D247",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D248",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D264",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D278",
+      "actual_height_cm": 92.73370819091797
+    },
+    {
+      "id": "FD_D279",
+      "actual_height_cm": 92.73370819091797
+    },
+    {
+      "id": "FD_D280",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D287",
+      "actual_height_cm": 100.8772518157959
+    },
+    {
+      "id": "FD_D293",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D303",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D308",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D309",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D320",
+      "actual_height_cm": 110.0
+    },
+    {
+      "id": "FD_D323",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D328",
+      "actual_height_cm": 91.51233673095703
+    },
+    {
+      "id": "FD_D345",
+      "actual_height_cm": 91.51233673095703
+    }
+  ],
+  "half_cover_note": "Original 43 groups preserved. New sofa and pallet groups retain native size; this task explicitly checks full cover >=160cm, while all half-tag actual group heights are reported.",
+  "door_clearance_cm": 120,
+  "spawn_clearance_cm": 100,
+  "wall_floor_margin_cm": 10,
+  "ledger_clearance_cm": 100,
+  "main_workshop_existing_cover_clearance_cm": 120,
+  "warnings": [],
+  "warning_count": 0,
+  "pipe_networks": [
+    {
+      "room": "锅炉房",
+      "components": [
+        [
+          "FD_D001",
+          "FD_178",
+          "FD_DX_P003",
+          "FD_D007",
+          "FD_DX_P004",
+          "FD_D002",
+          "FD_D003",
+          "FD_D008",
+          "FD_DX_P005",
+          "FD_D006",
+          "FD_DX_P006",
+          "FD_D009",
+          "FD_DX_P001",
+          "FD_D004",
+          "FD_DX_P002",
+          "FD_D005"
+        ],
+        [
+          "FD_D010",
+          "FD_D012",
+          "FD_DX_P050",
+          "FD_DX_P051",
+          "FD_DX_P015",
+          "FD_D021",
+          "FD_D017",
+          "FD_D011",
+          "FD_DX_P007",
+          "FD_DX_P008",
+          "FD_DX_P009",
+          "FD_DX_P010",
+          "FD_DX_P011",
+          "FD_179",
+          "FD_DX_P013",
+          "FD_D013",
+          "FD_D022",
+          "FD_DX_P016",
+          "FD_D014",
+          "FD_D015",
+          "FD_D016",
+          "FD_DX_P017",
+          "FD_D018",
+          "FD_D024",
+          "FD_D020",
+          "FD_DX_P014",
+          "FD_D019",
+          "FD_180",
+          "FD_DX_P018",
+          "FD_D023",
+          "FD_DX_P012"
+        ]
+      ],
+      "isolated_components": [],
+      "method": "real render AABBs touching/overlapping within 1cm; paired fittings and sleeve insertion are intentional; final perspective review also required"
+    },
+    {
+      "room": "主车间",
+      "components": [
+        [
+          "FD_D025",
+          "FD_D044",
+          "FD_DX_P034",
+          "FD_D036",
+          "FD_D026",
+          "FD_D027",
+          "FD_D045",
+          "FD_DX_P035",
+          "FD_D028",
+          "FD_D038",
+          "FD_DX_P019",
+          "FD_DX_P020",
+          "FD_DX_P021",
+          "FD_DX_P023",
+          "FD_DX_P022",
+          "FD_D039",
+          "FD_D029",
+          "FD_D046",
+          "FD_DX_P036",
+          "FD_D030",
+          "FD_D031",
+          "FD_D047",
+          "FD_DX_P037",
+          "FD_DX_P024",
+          "FD_DX_P025",
+          "FD_DX_P026",
+          "FD_DX_P028",
+          "FD_DX_P027",
+          "FD_D041",
+          "FD_D040",
+          "FD_D032",
+          "FD_D033",
+          "FD_D048",
+          "FD_DX_P038",
+          "FD_DX_P029",
+          "FD_DX_P030",
+          "FD_DX_P031",
+          "FD_DX_P033",
+          "FD_DX_P032",
+          "FD_D043",
+          "FD_D042",
+          "FD_D034",
+          "FD_D049",
+          "FD_DX_P039",
+          "FD_D035",
+          "FD_D037"
+        ]
+      ],
+      "isolated_components": [],
+      "method": "real render AABBs touching/overlapping within 1cm; paired fittings and sleeve insertion are intentional; final perspective review also required"
+    },
+    {
+      "room": "泵房",
+      "components": [
+        [
+          "FD_D050",
+          "FD_198",
+          "FD_D052",
+          "FD_D053",
+          "FD_DX_P053",
+          "FD_DX_P054",
+          "FD_DX_P040",
+          "FD_D054",
+          "FD_DX_P042",
+          "FD_D055",
+          "FD_D056",
+          "FD_199",
+          "FD_DX_P044",
+          "FD_DX_P052",
+          "FD_D060",
+          "FD_D057",
+          "FD_D058",
+          "FD_D059",
+          "FD_DX_P041",
+          "FD_D051",
+          "FD_DX_P043"
+        ]
+      ],
+      "isolated_components": [],
+      "method": "real render AABBs touching/overlapping within 1cm; paired fittings and sleeve insertion are intentional; final perspective review also required"
+    },
+    {
+      "room": "配电室",
+      "components": [
+        [
+          "FD_D065",
+          "FD_210",
+          "FD_DX_P049",
+          "FD_D071",
+          "FD_D068",
+          "FD_D069",
+          "FD_D074",
+          "FD_DX_P045",
+          "FD_DX_P046",
+          "FD_D070",
+          "FD_D066",
+          "FD_D075",
+          "FD_DX_P047",
+          "FD_DX_P048",
+          "FD_D067"
+        ]
+      ],
+      "isolated_components": [],
+      "method": "real render AABBs touching/overlapping within 1cm; paired fittings and sleeve insertion are intentional; final perspective review also required"
+    },
+    {
+      "room": "楼梯间",
+      "components": [
+        [
+          "FD_D076",
+          "FD_191",
+          "FD_D079",
+          "FD_D080",
+          "FD_D081",
+          "FD_D082",
+          "FD_D084",
+          "FD_D077",
+          "FD_D078",
+          "FD_D083"
+        ]
+      ],
+      "isolated_components": [],
+      "method": "real render AABBs touching/overlapping within 1cm; paired fittings and sleeve insertion are intentional; final perspective review also required"
+    }
+  ],
+  "protected_originals": {
+    "stage": "FinalReload",
+    "original_actor_count": 1829,
+    "differences": []
+  },
+  "runtime_doors": "30 x push/close/kick at 90/0/90 degrees",
+  "runtime_stairs": "6/6 passed, 42cm radius / 96cm half-height / 45cm step",
+  "actual_bounds_source": "FactoryDensity_Actual.json",
+  "actual_bounds_sha256": "f3516ca0cea72137333cd35719a96327d7f135f8cbfa380678b5c5a95465445b"
+}

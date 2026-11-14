@@ -1,0 +1,7157 @@
+[
+  {
+    "id": "FD_D001",
+    "label": "FD_D001",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      4445.0,
+      -3720.0,
+      80.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 1/4 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D001",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "4445",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 1/4 段，禁止拉伸"
+    },
+    "bounds": [
+      4445.0,
+      -3759.999973297119,
+      40.000038146972656,
+      4645.0,
+      -3680.0,
+      119.9999885559082
+    ],
+    "ports": [
+      [
+        4445.0,
+        -3720.0,
+        80.0
+      ],
+      [
+        4645.0,
+        -3720.0,
+        80.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_178"
+    ]
+  },
+  {
+    "id": "FD_D002",
+    "label": "FD_D002",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      4645.0,
+      -3720.0,
+      80.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 2/4 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D002",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "4645",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 2/4 段，禁止拉伸"
+    },
+    "bounds": [
+      4645.0,
+      -3759.999973297119,
+      40.000038146972656,
+      4845.0,
+      -3680.0,
+      119.9999885559082
+    ],
+    "ports": [
+      [
+        4645.0,
+        -3720.0,
+        80.0
+      ],
+      [
+        4845.0,
+        -3720.0,
+        80.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D003",
+    "label": "FD_D003",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      4845.0,
+      -3720.0,
+      80.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 3/4 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D003",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "4845",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 3/4 段，禁止拉伸"
+    },
+    "bounds": [
+      4845.0,
+      -3759.999973297119,
+      40.000038146972656,
+      5045.0,
+      -3680.0,
+      119.9999885559082
+    ],
+    "ports": [
+      [
+        4845.0,
+        -3720.0,
+        80.0
+      ],
+      [
+        5045.0,
+        -3720.0,
+        80.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D004",
+    "label": "FD_D004",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      5045.0,
+      -3720.0,
+      80.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 4/4 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D004",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "5045",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 4/4 段，禁止拉伸"
+    },
+    "bounds": [
+      5045.0,
+      -3759.999973297119,
+      40.000038146972656,
+      5245.0,
+      -3680.0,
+      119.9999885559082
+    ],
+    "ports": [
+      [
+        5045.0,
+        -3720.0,
+        80.0
+      ],
+      [
+        5245.0,
+        -3720.0,
+        80.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D005",
+    "label": "FD_D005",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Valve.SM_L_Pipe_Valve",
+    "mesh_name": "SM_L_Pipe_Valve",
+    "location": [
+      5215,
+      -3720,
+      116
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "锅炉西侧接口阀门，对准法兰，不要穿进锅炉",
+    "requested": {
+      "id": "FD_D005",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_Valve",
+      "X_cm": "5245",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "锅炉西侧接口阀门，对准法兰，不要穿进锅炉"
+    },
+    "bounds": [
+      5185.955400466919,
+      -3749.045757293701,
+      111.8325080871582,
+      5244.044771194458,
+      -3690.955234527588,
+      142.67465209960938
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D006",
+    "label": "FD_D006",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_TJunction.SM_L_Pipe_TJunction",
+    "mesh_name": "SM_L_Pipe_TJunction",
+    "location": [
+      4945,
+      -3720,
+      80
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "锅炉进水管三通，与 FD_178 延长段共线",
+    "requested": {
+      "id": "FD_D006",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_tee",
+      "X_cm": "5045",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "锅炉进水管三通，与 FD_178 延长段共线"
+    },
+    "bounds": [
+      4937.876003265381,
+      -3769.343158721924,
+      30.6568603515625,
+      5156.722946166992,
+      -3670.6568603515625,
+      154.92305755615234
+    ],
+    "ports": [
+      [
+        4945,
+        -3720,
+        80
+      ],
+      [
+        5145,
+        -3720,
+        80
+      ],
+      [
+        5045,
+        -3720,
+        155
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P001",
+    "label": "FD_DX_P001",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Terminal.SM_L_Pipe_Terminal",
+    "mesh_name": "SM_L_Pipe_Terminal",
+    "location": [
+      5045,
+      -3720,
+      155
+    ],
+    "rotation": [
+      0,
+      0,
+      -90
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      4994.225944519043,
+      -3770.7740364074707,
+      145.41945362091064,
+      5095.774044036865,
+      -3669.2259559631348,
+      164.689790725708
+    ],
+    "ports": [
+      [
+        5045,
+        -3720,
+        155
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P002",
+    "label": "FD_DX_P002",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Terminal.SM_L_Pipe_Terminal",
+    "mesh_name": "SM_L_Pipe_Terminal",
+    "location": [
+      5235.3,
+      -3720,
+      80
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      5225.719453620911,
+      -3770.7740440368652,
+      29.225955963134766,
+      5244.989790725708,
+      -3669.225944519043,
+      130.7740364074707
+    ],
+    "ports": [
+      [
+        5235.3,
+        -3720,
+        80
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P003",
+    "label": "FD_DX_P003",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Terminal.SM_L_Pipe_Terminal",
+    "mesh_name": "SM_L_Pipe_Terminal",
+    "location": [
+      4245,
+      -3720,
+      80
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      4235.310209274292,
+      -3770.774055480957,
+      29.225955963134766,
+      4254.580546379089,
+      -3669.2259559631348,
+      130.7740364074707
+    ],
+    "ports": [
+      [
+        4245,
+        -3720,
+        80
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D007",
+    "label": "FD_D007",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4545.0,
+      -3720.0,
+      80.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D007",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "4545",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "FD_178 延长段管卡；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      4537.869010448456,
+      -3768.6753425598145,
+      31.324661254882812,
+      4552.130973339081,
+      -3671.3246574401855,
+      128.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P004",
+    "label": "FD_DX_P004",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      4537.057205669582,
+      -3661.9848137302324,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      4536.824876315892,
+      -3678.0400562686846,
+      0.0,
+      4553.175123684108,
+      -3661.9599437313154,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D008",
+    "label": "FD_D008",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4945.0,
+      -3720.0,
+      80.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D008",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "4945",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "FD_178 延长段管卡；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      4937.869010448456,
+      -3768.6753425598145,
+      31.324661254882812,
+      4952.130973339081,
+      -3671.3246574401855,
+      128.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P005",
+    "label": "FD_DX_P005",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      4937.057205669582,
+      -3661.9848137302324,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      4936.824876315892,
+      -3678.0400562686846,
+      0.0,
+      4953.175123684108,
+      -3661.9599437313154,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D009",
+    "label": "FD_D009",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      5145.0,
+      -3720.0,
+      80.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D009",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "5145",
+      "Y_cm": "-3720",
+      "Z_cm": "80",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "FD_178 延长段管卡；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      5137.869010448456,
+      -3768.6753425598145,
+      31.324661254882812,
+      5152.130973339081,
+      -3671.3246574401855,
+      128.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P006",
+    "label": "FD_DX_P006",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      5137.057205669582,
+      -3661.9848137302324,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      5136.824876315892,
+      -3678.0400562686846,
+      0.0,
+      5153.175123684108,
+      -3661.9599437313154,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D010",
+    "label": "FD_D010",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      4365,
+      -3945,
+      120
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "北墙管路，从西墙接到现有 FD_179（4645 到 4720 用短接，不要拉伸 2m 管）；2m 原尺寸阵列第 1/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D010",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "4245",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "北墙管路，从西墙接到现有 FD_179（4645 到 4720 用短接，不要拉伸 2m 管）；2m 原尺寸阵列第 1/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4365.0,
+      -3984.999973297119,
+      80.00003814697266,
+      4565.0,
+      -3905.0,
+      159.9999885559082
+    ],
+    "ports": [
+      [
+        4365,
+        -3945,
+        120
+      ],
+      [
+        4565,
+        -3945,
+        120
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D011",
+    "label": "FD_D011",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_1m_01.SM_L_Pipe_1m_01",
+    "mesh_name": "SM_L_Pipe_1m_01",
+    "location": [
+      4565,
+      -3945,
+      120
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "北墙管路，从西墙接到现有 FD_179（4645 到 4720 用短接，不要拉伸 2m 管）；2m 原尺寸阵列第 2/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D011",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "4445",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "北墙管路，从西墙接到现有 FD_179（4645 到 4720 用短接，不要拉伸 2m 管）；2m 原尺寸阵列第 2/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4565.0,
+      -3984.999973297119,
+      80.00003814697266,
+      4665.0,
+      -3905.0,
+      159.9999885559082
+    ],
+    "ports": [
+      [
+        4565,
+        -3945,
+        120
+      ],
+      [
+        4665,
+        -3945,
+        120
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P007",
+    "label": "FD_DX_P007",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4670.5,
+      -3940.0,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰套接补足非模数短距；相邻法兰有意套接；法兰壳内移避开北墙，套接原管",
+    "requested": {},
+    "bounds": [
+      4663.369010448456,
+      -3988.6753425598145,
+      71.32466125488281,
+      4677.630973339081,
+      -3891.3246574401855,
+      168.67534255981445
+    ],
+    "ports": [
+      [
+        4663.37,
+        -3945.0,
+        120.0
+      ],
+      [
+        4677.63,
+        -3945.0,
+        120.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P008",
+    "label": "FD_DX_P008",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4681.5,
+      -3940.0,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰套接补足非模数短距；相邻法兰有意套接；法兰壳内移避开北墙，套接原管",
+    "requested": {},
+    "bounds": [
+      4674.369010448456,
+      -3988.6753425598145,
+      71.32466125488281,
+      4688.630973339081,
+      -3891.3246574401855,
+      168.67534255981445
+    ],
+    "ports": [
+      [
+        4674.37,
+        -3945.0,
+        120.0
+      ],
+      [
+        4688.63,
+        -3945.0,
+        120.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P009",
+    "label": "FD_DX_P009",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4692.5,
+      -3940.0,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰套接补足非模数短距；相邻法兰有意套接；法兰壳内移避开北墙，套接原管",
+    "requested": {},
+    "bounds": [
+      4685.369010448456,
+      -3988.6753425598145,
+      71.32466125488281,
+      4699.630973339081,
+      -3891.3246574401855,
+      168.67534255981445
+    ],
+    "ports": [
+      [
+        4685.37,
+        -3945.0,
+        120.0
+      ],
+      [
+        4699.63,
+        -3945.0,
+        120.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P010",
+    "label": "FD_DX_P010",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4703.5,
+      -3940.0,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰套接补足非模数短距；相邻法兰有意套接；法兰壳内移避开北墙，套接原管",
+    "requested": {},
+    "bounds": [
+      4696.369010448456,
+      -3988.6753425598145,
+      71.32466125488281,
+      4710.630973339081,
+      -3891.3246574401855,
+      168.67534255981445
+    ],
+    "ports": [
+      [
+        4696.37,
+        -3945.0,
+        120.0
+      ],
+      [
+        4710.63,
+        -3945.0,
+        120.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P011",
+    "label": "FD_DX_P011",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4714.5,
+      -3940.0,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰套接补足非模数短距；相邻法兰有意套接；法兰壳内移避开北墙，套接原管",
+    "requested": {},
+    "bounds": [
+      4707.369010448456,
+      -3988.6753425598145,
+      71.32466125488281,
+      4721.630973339081,
+      -3891.3246574401855,
+      168.67534255981445
+    ],
+    "ports": [
+      [
+        4707.37,
+        -3945.0,
+        120.0
+      ],
+      [
+        4721.63,
+        -3945.0,
+        120.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D012",
+    "label": "FD_D012",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Bend.SM_L_Pipe_Bend",
+    "mesh_name": "SM_L_Pipe_Bend",
+    "location": [
+      4265,
+      -3845,
+      120
+    ],
+    "rotation": [
+      0,
+      -90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "西北角弯头，连接西墙立管/FD_178 方向，高低差 80→120 用短立管，不要拉伸",
+    "requested": {
+      "id": "FD_D012",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_elbow",
+      "X_cm": "4280",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "西北角弯头，连接西墙立管/FD_178 方向，高低差 80→120 用短立管，不要拉伸"
+    },
+    "bounds": [
+      4223.095977783203,
+      -3986.904754638672,
+      78.09080505371094,
+      4365.056015014648,
+      -3844.9396115615964,
+      161.90923309326172
+    ],
+    "ports": [
+      [
+        4265,
+        -3845,
+        120
+      ],
+      [
+        4365,
+        -3945,
+        120
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P012",
+    "label": "FD_DX_P012",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4925.0,
+      -3940.94846639768,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      -14.036243467926479,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰套接补足非模数短距；相邻法兰有意套接；法兰壳内移避开北墙，套接原管",
+    "requested": {},
+    "bounds": [
+      4906.276419336353,
+      -3989.9,
+      71.32466125488281,
+      4943.723564935248,
+      -3891.9969288632597,
+      168.67534255981445
+    ],
+    "ports": [
+      [
+        4918.082883973963,
+        -3944.520720993491,
+        120.0
+      ],
+      [
+        4931.917116026037,
+        -3947.979279006509,
+        120.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P013",
+    "label": "FD_DX_P013",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4935.0,
+      -3940.94846639768,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      -14.036243467926479,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰套接补足非模数短距；相邻法兰有意套接；法兰壳内移避开北墙，套接原管",
+    "requested": {},
+    "bounds": [
+      4916.276419336353,
+      -3989.9,
+      71.32466125488281,
+      4953.723564935248,
+      -3891.9969288632597,
+      168.67534255981445
+    ],
+    "ports": [
+      [
+        4928.082883973963,
+        -3947.020720993491,
+        120.0
+      ],
+      [
+        4941.917116026037,
+        -3950.479279006509,
+        120.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D013",
+    "label": "FD_D013",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      4940,
+      -3950,
+      120
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 1/3 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D013",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "4920",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 1/3 段，禁止拉伸"
+    },
+    "bounds": [
+      4940.0,
+      -3989.999973297119,
+      80.00003814697266,
+      5140.0,
+      -3910.0,
+      159.9999885559082
+    ],
+    "ports": [
+      [
+        4940,
+        -3950,
+        120
+      ],
+      [
+        5140,
+        -3950,
+        120
+      ]
+    ],
+    "allow_overlap": [
+      "FD_179"
+    ]
+  },
+  {
+    "id": "FD_D014",
+    "label": "FD_D014",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      5140,
+      -3950,
+      120
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 2/3 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D014",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "5120",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 2/3 段，禁止拉伸"
+    },
+    "bounds": [
+      5140.0,
+      -3989.999973297119,
+      80.00003814697266,
+      5340.0,
+      -3910.0,
+      159.9999885559082
+    ],
+    "ports": [
+      [
+        5140,
+        -3950,
+        120
+      ],
+      [
+        5340,
+        -3950,
+        120
+      ]
+    ],
+    "allow_overlap": [
+      "FD_179"
+    ]
+  },
+  {
+    "id": "FD_D015",
+    "label": "FD_D015",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_1m_01.SM_L_Pipe_1m_01",
+    "mesh_name": "SM_L_Pipe_1m_01",
+    "location": [
+      5340,
+      -3950,
+      120
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 3/3 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D015",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "5320",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 3/3 段，禁止拉伸"
+    },
+    "bounds": [
+      5340.0,
+      -3989.999973297119,
+      80.00003814697266,
+      5440.0,
+      -3910.0,
+      159.9999885559082
+    ],
+    "ports": [
+      [
+        5340,
+        -3950,
+        120
+      ],
+      [
+        5440,
+        -3950,
+        120
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D016",
+    "label": "FD_D016",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Bend.SM_L_Pipe_Bend",
+    "mesh_name": "SM_L_Pipe_Bend",
+    "location": [
+      5440,
+      -3948,
+      120
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "东北角弯头，转向沿东墙往南接到 FD_180",
+    "requested": {
+      "id": "FD_D016",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_elbow",
+      "X_cm": "5550",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "东北角弯头，转向沿东墙往南接到 FD_180"
+    },
+    "bounds": [
+      5439.939611561596,
+      -3989.904022216797,
+      78.09080505371094,
+      5581.904754638672,
+      -3847.9439849853516,
+      161.90923309326172
+    ],
+    "ports": [
+      [
+        5440,
+        -3948,
+        120
+      ],
+      [
+        5540,
+        -3848,
+        120
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D017",
+    "label": "FD_D017",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Terminal.SM_L_Pipe_Terminal",
+    "mesh_name": "SM_L_Pipe_Terminal",
+    "location": [
+      4265,
+      -3845,
+      120
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "若西端不进墙洞则加管帽；优先视为墙洞接口",
+    "requested": {
+      "id": "FD_D017",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_cap",
+      "X_cm": "4280",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "180",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "若西端不进墙洞则加管帽；优先视为墙洞接口"
+    },
+    "bounds": [
+      4214.225944519043,
+      -3854.5805463790894,
+      69.22595596313477,
+      4315.774044036865,
+      -3835.310209274292,
+      170.7740364074707
+    ],
+    "ports": [
+      [
+        4265,
+        -3845,
+        120
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D018",
+    "label": "FD_D018",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      5540,
+      -3845,
+      120
+    ],
+    "rotation": [
+      0.0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "东墙管路，从北向南接到 FD_180 北端（-3545 到 -3440 用短接，Z 120→100，不要穿楼梯）；2m 原尺寸阵列第 1/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D018",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "5550",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "东墙管路，从北向南接到 FD_180 北端（-3545 到 -3440 用短接，Z 120→100，不要穿楼梯）；2m 原尺寸阵列第 1/2 段，禁止拉伸"
+    },
+    "bounds": [
+      5500.0,
+      -3845.0,
+      80.00003814697266,
+      5579.999973297119,
+      -3645.0,
+      159.9999885559082
+    ],
+    "ports": [
+      [
+        5540,
+        -3845,
+        120
+      ],
+      [
+        5540,
+        -3645,
+        120
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D019",
+    "label": "FD_D019",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      5540,
+      -3638.746069143518,
+      120
+    ],
+    "rotation": [
+      -5.739170477266782,
+      87.11956557416171,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "东墙管路，从北向南接到 FD_180 北端（-3545 到 -3440 用短接，Z 120→100，不要穿楼梯）；2m 原尺寸阵列第 2/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D019",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "5550",
+      "Y_cm": "-3745",
+      "Z_cm": "120",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "东墙管路，从北向南接到 FD_180 北端（-3545 到 -3440 用短接，Z 120→100，不要穿楼梯）；2m 原尺寸阵列第 2/2 段，禁止拉伸"
+    },
+    "bounds": [
+      5499.849529603973,
+      -3644.751085924756,
+      60.200540471493774,
+      5590.150443861071,
+      -3433.994979209978,
+      159.79948609753723
+    ],
+    "ports": [
+      [
+        5540,
+        -3638.746069143518,
+        120
+      ],
+      [
+        5550,
+        -3440,
+        100
+      ]
+    ],
+    "allow_overlap": [
+      "FD_180"
+    ]
+  },
+  {
+    "id": "FD_DX_P014",
+    "label": "FD_DX_P014",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      5540.0,
+      -3641.873034571759,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰套接补足非模数短距；相邻法兰有意套接",
+    "requested": {},
+    "bounds": [
+      5491.324657440186,
+      -3649.004024123303,
+      71.32466125488281,
+      5588.675342559814,
+      -3634.742061232678,
+      168.67534255981445
+    ],
+    "ports": [
+      [
+        5540.0,
+        -3649.003034571759,
+        120.0
+      ],
+      [
+        5540.0,
+        -3634.743034571759,
+        120.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D020",
+    "label": "FD_D020",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Valve.SM_L_Pipe_Valve",
+    "mesh_name": "SM_L_Pipe_Valve",
+    "location": [
+      5540,
+      -3660,
+      156
+    ],
+    "rotation": [
+      0,
+      90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "东墙管路阀门",
+    "requested": {
+      "id": "FD_D020",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_Valve",
+      "X_cm": "5550",
+      "Y_cm": "-3645",
+      "Z_cm": "120",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "东墙管路阀门"
+    },
+    "bounds": [
+      5510.955234527588,
+      -3689.044599533081,
+      151.8325080871582,
+      5569.045757293701,
+      -3630.955228805542,
+      182.67465209960938
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D021",
+    "label": "FD_D021",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      4345.0,
+      -3940.0,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花；法兰壳内移避开北墙，套接原管",
+    "requested": {
+      "id": "FD_D021",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "4345",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "北墙管卡；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      4337.869010448456,
+      -3988.6753425598145,
+      71.32466125488281,
+      4352.130973339081,
+      -3891.3246574401855,
+      168.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P015",
+    "label": "FD_DX_P015",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      4337.057205669582,
+      -3886.9848137302324,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      4336.824876315892,
+      -3903.0400562686846,
+      0.0,
+      4353.175123684108,
+      -3886.9599437313154,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D022",
+    "label": "FD_D022",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      5120.0,
+      -3940.0,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花；法兰壳内移避开北墙，套接原管",
+    "requested": {
+      "id": "FD_D022",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "5120",
+      "Y_cm": "-3945",
+      "Z_cm": "120",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "北墙管卡；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      5112.869010448456,
+      -3988.6753425598145,
+      71.32466125488281,
+      5127.130973339081,
+      -3891.3246574401855,
+      168.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P016",
+    "label": "FD_DX_P016",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      5112.057205669582,
+      -3886.9848137302324,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      5111.824876315892,
+      -3903.0400562686846,
+      0.0,
+      5128.175123684108,
+      -3886.9599437313154,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D023",
+    "label": "FD_D023",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      5540,
+      -3845.0,
+      120.0
+    ],
+    "rotation": [
+      0.0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D023",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "5550",
+      "Y_cm": "-3845",
+      "Z_cm": "120",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "东墙管卡；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      5491.324657440186,
+      -3852.130989551544,
+      71.32466125488281,
+      5588.675342559814,
+      -3837.869026660919,
+      168.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P017",
+    "label": "FD_DX_P017",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      5492.057205669582,
+      -3836.9848137302324,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      5491.824876315892,
+      -3853.0400562686846,
+      0.0,
+      5508.175123684108,
+      -3836.9599437313154,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D024",
+    "label": "FD_D024",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      5540,
+      -3638.746069143518,
+      120
+    ],
+    "rotation": [
+      -5.710593137499643,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原2m东墙管以5.74度坡度消化20cm高差；法兰接到原FD_180，不拉伸、不动原管",
+    "requested": {
+      "id": "FD_D024",
+      "room": "锅炉房",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_elbow",
+      "X_cm": "4280",
+      "Y_cm": "-3745",
+      "Z_cm": "80",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "西墙弯头，靠近 FD_178 起点，用短立管接北墙管路，不要用 2m 管硬拉，不要穿墙"
+    },
+    "bounds": [
+      5491.324657440186,
+      -3650.6850461800495,
+      70.85666933506104,
+      5588.675342559814,
+      -3626.807107859414,
+      169.143336073905
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P018",
+    "label": "FD_DX_P018",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Terminal.SM_L_Pipe_Terminal",
+    "mesh_name": "SM_L_Pipe_Terminal",
+    "location": [
+      5539,
+      -3240,
+      100
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      5488.225944519043,
+      -3249.5805463790894,
+      49.225955963134766,
+      5589.774044036865,
+      -3230.310209274292,
+      150.7740364074707
+    ],
+    "ports": [
+      [
+        5539,
+        -3240,
+        100
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D025",
+    "label": "FD_D025",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      1550.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 1/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D025",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "1550",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 1/11 段，禁止拉伸"
+    },
+    "bounds": [
+      1550.0,
+      -119.99997329711914,
+      260.00003814697266,
+      1750.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        1550.0,
+        -80.0,
+        300.0
+      ],
+      [
+        1750.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D026",
+    "label": "FD_D026",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      1750.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 2/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D026",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "1750",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 2/11 段，禁止拉伸"
+    },
+    "bounds": [
+      1750.0,
+      -119.99997329711914,
+      260.00003814697266,
+      1950.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        1750.0,
+        -80.0,
+        300.0
+      ],
+      [
+        1950.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D027",
+    "label": "FD_D027",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      1950.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 3/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D027",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "1950",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 3/11 段，禁止拉伸"
+    },
+    "bounds": [
+      1950.0,
+      -119.99997329711914,
+      260.00003814697266,
+      2150.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        1950.0,
+        -80.0,
+        300.0
+      ],
+      [
+        2150.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D028",
+    "label": "FD_D028",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      2150.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 4/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D028",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "2150",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 4/11 段，禁止拉伸"
+    },
+    "bounds": [
+      2150.0,
+      -119.99997329711914,
+      260.00003814697266,
+      2350.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        2150.0,
+        -80.0,
+        300.0
+      ],
+      [
+        2350.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D029",
+    "label": "FD_D029",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      2350.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 5/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D029",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "2350",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 5/11 段，禁止拉伸"
+    },
+    "bounds": [
+      2350.0,
+      -119.99997329711914,
+      260.00003814697266,
+      2550.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        2350.0,
+        -80.0,
+        300.0
+      ],
+      [
+        2550.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D030",
+    "label": "FD_D030",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      2550.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 6/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D030",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "2550",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 6/11 段，禁止拉伸"
+    },
+    "bounds": [
+      2550.0,
+      -119.99997329711914,
+      260.00003814697266,
+      2750.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        2550.0,
+        -80.0,
+        300.0
+      ],
+      [
+        2750.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D031",
+    "label": "FD_D031",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      2750.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 7/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D031",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "2750",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 7/11 段，禁止拉伸"
+    },
+    "bounds": [
+      2750.0,
+      -119.99997329711914,
+      260.00003814697266,
+      2950.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        2750.0,
+        -80.0,
+        300.0
+      ],
+      [
+        2950.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D032",
+    "label": "FD_D032",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      2950.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 8/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D032",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "2950",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 8/11 段，禁止拉伸"
+    },
+    "bounds": [
+      2950.0,
+      -119.99997329711914,
+      260.00003814697266,
+      3150.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        2950.0,
+        -80.0,
+        300.0
+      ],
+      [
+        3150.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D033",
+    "label": "FD_D033",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      3150.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 9/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D033",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "3150",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 9/11 段，禁止拉伸"
+    },
+    "bounds": [
+      3150.0,
+      -119.99997329711914,
+      260.00003814697266,
+      3350.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        3150.0,
+        -80.0,
+        300.0
+      ],
+      [
+        3350.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D034",
+    "label": "FD_D034",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      3350.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 10/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D034",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "3350",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 10/11 段，禁止拉伸"
+    },
+    "bounds": [
+      3350.0,
+      -119.99997329711914,
+      260.00003814697266,
+      3550.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        3350.0,
+        -80.0,
+        300.0
+      ],
+      [
+        3550.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D035",
+    "label": "FD_D035",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      3550.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 11/11 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D035",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_2m_01",
+      "X_cm": "3550",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 11/11 段，禁止拉伸"
+    },
+    "bounds": [
+      3550.0,
+      -119.99997329711914,
+      260.00003814697266,
+      3750.0,
+      -40.0,
+      339.9999885559082
+    ],
+    "ports": [
+      [
+        3550.0,
+        -80.0,
+        300.0
+      ],
+      [
+        3750.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D036",
+    "label": "FD_D036",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Terminal.SM_L_Pipe_Terminal",
+    "mesh_name": "SM_L_Pipe_Terminal",
+    "location": [
+      1550.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "西端墙洞法兰/管帽，贴南墙内侧",
+    "requested": {
+      "id": "FD_D036",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_cap",
+      "X_cm": "1550",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "180",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "西端墙洞法兰/管帽，贴南墙内侧"
+    },
+    "bounds": [
+      1540.310209274292,
+      -130.77405548095703,
+      249.22595596313477,
+      1559.5805463790894,
+      -29.225955963134766,
+      350.7740364074707
+    ],
+    "ports": [
+      [
+        1550.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D037",
+    "label": "FD_D037",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Terminal.SM_L_Pipe_Terminal",
+    "mesh_name": "SM_L_Pipe_Terminal",
+    "location": [
+      3750.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "东端墙洞法兰/管帽，贴南墙内侧，勿越过 X=3800",
+    "requested": {
+      "id": "FD_D037",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_cap",
+      "X_cm": "3750",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "东端墙洞法兰/管帽，贴南墙内侧，勿越过 X=3800"
+    },
+    "bounds": [
+      3740.4194536209106,
+      -130.77404403686523,
+      249.22595596313477,
+      3759.689790725708,
+      -29.22594451904297,
+      350.7740364074707
+    ],
+    "ports": [
+      [
+        3750.0,
+        -80.0,
+        300.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D038",
+    "label": "FD_D038",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_TJunction.SM_L_Pipe_TJunction",
+    "mesh_name": "SM_L_Pipe_TJunction",
+    "location": [
+      2200,
+      -80,
+      300
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "三通，短接到FD_062料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体",
+    "requested": {
+      "id": "FD_D038",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_tee",
+      "X_cm": "2300",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "三通，短接到FD_062料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体"
+    },
+    "bounds": [
+      2192.876003265381,
+      -129.34315872192383,
+      250.6568603515625,
+      2411.722946166992,
+      -30.6568603515625,
+      374.92305755615234
+    ],
+    "ports": [
+      [
+        2200,
+        -80,
+        300
+      ],
+      [
+        2400,
+        -80,
+        300
+      ],
+      [
+        2300,
+        -80,
+        375
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D039",
+    "label": "FD_D039",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Valve.SM_L_Pipe_Valve",
+    "mesh_name": "SM_L_Pipe_Valve",
+    "location": [
+      2300,
+      -80,
+      380
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连接三通上升段的原尺寸阀门手轮",
+    "requested": {
+      "id": "FD_D039",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_Valve",
+      "X_cm": "2300",
+      "Y_cm": "-80",
+      "Z_cm": "280",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "FD_062 顶部附近阀门"
+    },
+    "bounds": [
+      2270.955400466919,
+      -109.04575729370117,
+      375.8325080871582,
+      2329.044771194458,
+      -50.95523452758789,
+      406.6746520996094
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P019",
+    "label": "FD_DX_P019",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Bend.SM_L_Pipe_Bend",
+    "mesh_name": "SM_L_Pipe_Bend",
+    "location": [
+      2300,
+      -80,
+      375
+    ],
+    "rotation": [
+      90,
+      0,
+      180
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      2258.090805053711,
+      -180.05601501464844,
+      374.9396115615964,
+      2341.9092330932617,
+      -38.09597778320312,
+      516.9047546386719
+    ],
+    "ports": [
+      [
+        2300,
+        -80,
+        375
+      ],
+      [
+        2300,
+        -180,
+        475
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P020",
+    "label": "FD_DX_P020",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_1m_01.SM_L_Pipe_1m_01",
+    "mesh_name": "SM_L_Pipe_1m_01",
+    "location": [
+      2300,
+      -180,
+      475
+    ],
+    "rotation": [
+      0.0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      2260.000026702881,
+      -280.0,
+      435.00003814697266,
+      2340.0,
+      -179.99999999999997,
+      514.9999885559082
+    ],
+    "ports": [
+      [
+        2300,
+        -180,
+        475
+      ],
+      [
+        2300,
+        -280,
+        475
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P021",
+    "label": "FD_DX_P021",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Bend.SM_L_Pipe_Bend",
+    "mesh_name": "SM_L_Pipe_Bend",
+    "location": [
+      2300,
+      -280,
+      475
+    ],
+    "rotation": [
+      0,
+      -90,
+      90
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      2258.090805053711,
+      -421.9047546386719,
+      374.94398498535156,
+      2341.9092330932617,
+      -279.9396115615964,
+      516.9040222167969
+    ],
+    "ports": [
+      [
+        2300,
+        -280,
+        475
+      ],
+      [
+        2300,
+        -380,
+        375
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P022",
+    "label": "FD_DX_P022",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_1m_01.SM_L_Pipe_1m_01",
+    "mesh_name": "SM_L_Pipe_1m_01",
+    "location": [
+      2300,
+      -380,
+      400.5
+    ],
+    "rotation": [
+      -90.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      2260.0000381469727,
+      -419.99997329711914,
+      300.5,
+      2339.999988555908,
+      -340.0,
+      400.5
+    ],
+    "ports": [
+      [
+        2300,
+        -380,
+        400.5
+      ],
+      [
+        2300,
+        -380,
+        300.5
+      ]
+    ],
+    "allow_overlap": [
+      "FD_062"
+    ]
+  },
+  {
+    "id": "FD_DX_P023",
+    "label": "FD_DX_P023",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      2300,
+      -380,
+      375
+    ],
+    "rotation": [
+      -90.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰包住短立管插接区，出口停在料斗顶部上方",
+    "requested": {},
+    "bounds": [
+      2251.324661254883,
+      -428.67534255981445,
+      367.8690266609192,
+      2348.6753425598145,
+      -331.32465744018555,
+      382.1309895515442
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D040",
+    "label": "FD_D040",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_TJunction.SM_L_Pipe_TJunction",
+    "mesh_name": "SM_L_Pipe_TJunction",
+    "location": [
+      2900,
+      -80,
+      300
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "三通，短接到FD_063料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体",
+    "requested": {
+      "id": "FD_D040",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_tee",
+      "X_cm": "3000",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "三通，短接到FD_063料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体"
+    },
+    "bounds": [
+      2892.876003265381,
+      -129.34315872192383,
+      250.6568603515625,
+      3111.722946166992,
+      -30.6568603515625,
+      374.92305755615234
+    ],
+    "ports": [
+      [
+        2900,
+        -80,
+        300
+      ],
+      [
+        3100,
+        -80,
+        300
+      ],
+      [
+        3000,
+        -80,
+        375
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D041",
+    "label": "FD_D041",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Valve.SM_L_Pipe_Valve",
+    "mesh_name": "SM_L_Pipe_Valve",
+    "location": [
+      3000,
+      -80,
+      380
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连接三通上升段的原尺寸阀门手轮",
+    "requested": {
+      "id": "FD_D041",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_Valve",
+      "X_cm": "3000",
+      "Y_cm": "-80",
+      "Z_cm": "280",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "FD_063 顶部附近阀门"
+    },
+    "bounds": [
+      2970.955400466919,
+      -109.04575729370117,
+      375.8325080871582,
+      3029.044771194458,
+      -50.95523452758789,
+      406.6746520996094
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P024",
+    "label": "FD_DX_P024",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Bend.SM_L_Pipe_Bend",
+    "mesh_name": "SM_L_Pipe_Bend",
+    "location": [
+      3000,
+      -80,
+      375
+    ],
+    "rotation": [
+      90,
+      0,
+      180
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      2958.090805053711,
+      -180.05601501464844,
+      374.9396115615964,
+      3041.9092330932617,
+      -38.09597778320312,
+      516.9047546386719
+    ],
+    "ports": [
+      [
+        3000,
+        -80,
+        375
+      ],
+      [
+        3000,
+        -180,
+        475
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P025",
+    "label": "FD_DX_P025",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_1m_01.SM_L_Pipe_1m_01",
+    "mesh_name": "SM_L_Pipe_1m_01",
+    "location": [
+      3000,
+      -180,
+      475
+    ],
+    "rotation": [
+      0.0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      2960.000026702881,
+      -280.0,
+      435.00003814697266,
+      3040.0,
+      -179.99999999999997,
+      514.9999885559082
+    ],
+    "ports": [
+      [
+        3000,
+        -180,
+        475
+      ],
+      [
+        3000,
+        -280,
+        475
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P026",
+    "label": "FD_DX_P026",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Bend.SM_L_Pipe_Bend",
+    "mesh_name": "SM_L_Pipe_Bend",
+    "location": [
+      3000,
+      -280,
+      475
+    ],
+    "rotation": [
+      0,
+      -90,
+      90
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      2958.090805053711,
+      -421.9047546386719,
+      374.94398498535156,
+      3041.9092330932617,
+      -279.9396115615964,
+      516.9040222167969
+    ],
+    "ports": [
+      [
+        3000,
+        -280,
+        475
+      ],
+      [
+        3000,
+        -380,
+        375
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P027",
+    "label": "FD_DX_P027",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_1m_01.SM_L_Pipe_1m_01",
+    "mesh_name": "SM_L_Pipe_1m_01",
+    "location": [
+      3000,
+      -380,
+      400.5
+    ],
+    "rotation": [
+      -90.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      2960.0000381469727,
+      -419.99997329711914,
+      300.5,
+      3039.999988555908,
+      -340.0,
+      400.5
+    ],
+    "ports": [
+      [
+        3000,
+        -380,
+        400.5
+      ],
+      [
+        3000,
+        -380,
+        300.5
+      ]
+    ],
+    "allow_overlap": [
+      "FD_063"
+    ]
+  },
+  {
+    "id": "FD_DX_P028",
+    "label": "FD_DX_P028",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      3000,
+      -380,
+      375
+    ],
+    "rotation": [
+      -90.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰包住短立管插接区，出口停在料斗顶部上方",
+    "requested": {},
+    "bounds": [
+      2951.324661254883,
+      -428.67534255981445,
+      367.8690266609192,
+      3048.6753425598145,
+      -331.32465744018555,
+      382.1309895515442
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D042",
+    "label": "FD_D042",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_TJunction.SM_L_Pipe_TJunction",
+    "mesh_name": "SM_L_Pipe_TJunction",
+    "location": [
+      3240,
+      -80,
+      300
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "三通，短接到FD_064料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体",
+    "requested": {
+      "id": "FD_D042",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_tee",
+      "X_cm": "3340",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "三通，短接到FD_064料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体"
+    },
+    "bounds": [
+      3232.876003265381,
+      -129.34315872192383,
+      250.6568603515625,
+      3451.722946166992,
+      -30.6568603515625,
+      374.92305755615234
+    ],
+    "ports": [
+      [
+        3240,
+        -80,
+        300
+      ],
+      [
+        3440,
+        -80,
+        300
+      ],
+      [
+        3340,
+        -80,
+        375
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D043",
+    "label": "FD_D043",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Valve.SM_L_Pipe_Valve",
+    "mesh_name": "SM_L_Pipe_Valve",
+    "location": [
+      3340,
+      -80,
+      380
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连接三通上升段的原尺寸阀门手轮",
+    "requested": {
+      "id": "FD_D043",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "SM_L_Pipe_Valve",
+      "X_cm": "3340",
+      "Y_cm": "-80",
+      "Z_cm": "280",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "FD_064 顶部附近阀门"
+    },
+    "bounds": [
+      3310.955400466919,
+      -109.04575729370117,
+      375.8325080871582,
+      3369.044771194458,
+      -50.95523452758789,
+      406.6746520996094
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P029",
+    "label": "FD_DX_P029",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Bend.SM_L_Pipe_Bend",
+    "mesh_name": "SM_L_Pipe_Bend",
+    "location": [
+      3340,
+      -80,
+      375
+    ],
+    "rotation": [
+      90,
+      0,
+      180
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      3298.090805053711,
+      -180.05601501464844,
+      374.9396115615964,
+      3381.9092330932617,
+      -38.09597778320312,
+      516.9047546386719
+    ],
+    "ports": [
+      [
+        3340,
+        -80,
+        375
+      ],
+      [
+        3340,
+        -180,
+        475
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P030",
+    "label": "FD_DX_P030",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_2m_01.SM_L_Pipe_2m_01",
+    "mesh_name": "SM_L_Pipe_2m_01",
+    "location": [
+      3340,
+      -180,
+      475
+    ],
+    "rotation": [
+      0.0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      3300.000026702881,
+      -380.0,
+      435.00003814697266,
+      3380.0,
+      -179.99999999999997,
+      514.9999885559082
+    ],
+    "ports": [
+      [
+        3340,
+        -180,
+        475
+      ],
+      [
+        3340,
+        -380,
+        475
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P031",
+    "label": "FD_DX_P031",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Bend.SM_L_Pipe_Bend",
+    "mesh_name": "SM_L_Pipe_Bend",
+    "location": [
+      3340,
+      -380,
+      475
+    ],
+    "rotation": [
+      0,
+      -90,
+      90
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      3298.090805053711,
+      -521.9047546386719,
+      374.94398498535156,
+      3381.9092330932617,
+      -379.9396115615964,
+      516.9040222167969
+    ],
+    "ports": [
+      [
+        3340,
+        -380,
+        475
+      ],
+      [
+        3340,
+        -480,
+        375
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P032",
+    "label": "FD_DX_P032",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_1m_01.SM_L_Pipe_1m_01",
+    "mesh_name": "SM_L_Pipe_1m_01",
+    "location": [
+      3340,
+      -480,
+      400.5
+    ],
+    "rotation": [
+      -90.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      3300.0000381469727,
+      -519.9999732971191,
+      300.5,
+      3379.999988555908,
+      -440.0,
+      400.5
+    ],
+    "ports": [
+      [
+        3340,
+        -480,
+        400.5
+      ],
+      [
+        3340,
+        -480,
+        300.5
+      ]
+    ],
+    "allow_overlap": [
+      "FD_064"
+    ]
+  },
+  {
+    "id": "FD_DX_P033",
+    "label": "FD_DX_P033",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      3340,
+      -480,
+      375
+    ],
+    "rotation": [
+      -90.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸法兰包住短立管插接区，出口停在料斗顶部上方",
+    "requested": {},
+    "bounds": [
+      3291.324661254883,
+      -528.6753425598145,
+      367.8690266609192,
+      3388.6753425598145,
+      -431.32465744018555,
+      382.1309895515442
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D044",
+    "label": "FD_D044",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      1750.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D044",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "1750",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      1742.8690104484558,
+      -128.67534255981445,
+      251.3246612548828,
+      1757.1309733390808,
+      -31.324657440185547,
+      348.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P034",
+    "label": "FD_DX_P034",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      1742.057205669582,
+      -21.984813730232418,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      1741.8248763158917,
+      -38.040056268684566,
+      0.0,
+      1758.1751236841083,
+      -21.959943731315434,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D045",
+    "label": "FD_D045",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      2150.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D045",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "2150",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      2142.869010448456,
+      -128.67534255981445,
+      251.3246612548828,
+      2157.130973339081,
+      -31.324657440185547,
+      348.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P035",
+    "label": "FD_DX_P035",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      2142.057205669582,
+      -21.984813730232418,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      2141.8248763158917,
+      -38.040056268684566,
+      0.0,
+      2158.1751236841083,
+      -21.959943731315434,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D046",
+    "label": "FD_D046",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      2550.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D046",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "2550",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      2542.869010448456,
+      -128.67534255981445,
+      251.3246612548828,
+      2557.130973339081,
+      -31.324657440185547,
+      348.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P036",
+    "label": "FD_DX_P036",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      2542.057205669582,
+      -21.984813730232418,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      2541.8248763158917,
+      -38.040056268684566,
+      0.0,
+      2558.1751236841083,
+      -21.959943731315434,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D047",
+    "label": "FD_D047",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      2950.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D047",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "2950",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      2942.869010448456,
+      -128.67534255981445,
+      251.3246612548828,
+      2957.130973339081,
+      -31.324657440185547,
+      348.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P037",
+    "label": "FD_DX_P037",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      2942.057205669582,
+      -21.984813730232418,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      2941.8248763158917,
+      -38.040056268684566,
+      0.0,
+      2958.1751236841083,
+      -21.959943731315434,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D048",
+    "label": "FD_D048",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      3350.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D048",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "3350",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      3342.869010448456,
+      -128.67534255981445,
+      251.3246612548828,
+      3357.130973339081,
+      -31.324657440185547,
+      348.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P038",
+    "label": "FD_DX_P038",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      3342.057205669582,
+      -21.984813730232418,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      3341.8248763158917,
+      -38.040056268684566,
+      0.0,
+      3358.1751236841083,
+      -21.959943731315434,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D049",
+    "label": "FD_D049",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Large/SM_L_Pipe_Joint.SM_L_Pipe_Joint",
+    "mesh_name": "SM_L_Pipe_Joint",
+    "location": [
+      3550.0,
+      -80.0,
+      300.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原包法兰环作管卡，与原尺寸吊链连接到天花",
+    "requested": {
+      "id": "FD_D049",
+      "room": "主车间",
+      "asset_pack": "Factory",
+      "asset_hint": "pipe_clamp",
+      "X_cm": "3550",
+      "Y_cm": "-80",
+      "Z_cm": "300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空"
+    },
+    "bounds": [
+      3542.869010448456,
+      -128.67534255981445,
+      251.3246612548828,
+      3557.130973339081,
+      -31.324657440185547,
+      348.67534255981445
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P039",
+    "label": "FD_DX_P039",
+    "room": "主车间",
+    "mesh": "/Game/Factory/Static_Mesh/Building_Kit/Warehouse/Girders/SM_NarrowBeam_4M.SM_NarrowBeam_4M",
+    "mesh_name": "SM_NarrowBeam_4M",
+    "location": [
+      3542.057205669582,
+      -21.984813730232418,
+      0.71099853515625
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "floor_support",
+    "reason": "原尺寸Factory钢支柱落地支承管卡；与管体保持约2cm，不使用悬空吊链",
+    "requested": {},
+    "bounds": [
+      3541.8248763158917,
+      -38.040056268684566,
+      0.0,
+      3558.1751236841083,
+      -21.959943731315434,
+      401.0226745605469
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D050",
+    "label": "FD_D050",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4245.0,
+      -3800.0,
+      -300.0
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_198 沿西墙往南（楼梯间方向），止于约 Y=-3400，不要挡 D28；2m 原尺寸阵列第 1/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D050",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4245",
+      "Y_cm": "-3800",
+      "Z_cm": "-300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_198 沿西墙往南（楼梯间方向），止于约 Y=-3400，不要挡 D28；2m 原尺寸阵列第 1/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4230.0,
+      -3800.0,
+      -315.0000009536743,
+      4260.0,
+      -3600.0,
+      -285.0000009536743
+    ],
+    "ports": [
+      [
+        4245.0,
+        -3800.0,
+        -300.0
+      ],
+      [
+        4245.0,
+        -3600.0,
+        -300.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_198"
+    ]
+  },
+  {
+    "id": "FD_D051",
+    "label": "FD_D051",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4245.0,
+      -3600.0,
+      -300.0
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_198 沿西墙往南（楼梯间方向），止于约 Y=-3400，不要挡 D28；2m 原尺寸阵列第 2/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D051",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4245",
+      "Y_cm": "-3600",
+      "Z_cm": "-300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_198 沿西墙往南（楼梯间方向），止于约 Y=-3400，不要挡 D28；2m 原尺寸阵列第 2/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4230.0,
+      -3600.0,
+      -315.0000009536743,
+      4260.0,
+      -3400.0,
+      -285.0000009536743
+    ],
+    "ports": [
+      [
+        4245.0,
+        -3600.0,
+        -300.0
+      ],
+      [
+        4245.0,
+        -3400.0,
+        -300.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_198"
+    ]
+  },
+  {
+    "id": "FD_D052",
+    "label": "FD_D052",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4245.0,
+      -4000.0,
+      -300.0
+    ],
+    "rotation": [
+      0,
+      -180.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_198 沿西墙往北，止于约 Y=-4400，再经北墙短接到 FD_199；2m 原尺寸阵列第 1/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D052",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4245",
+      "Y_cm": "-4000",
+      "Z_cm": "-300",
+      "yaw_deg": "180",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_198 沿西墙往北，止于约 Y=-4400，再经北墙短接到 FD_199；2m 原尺寸阵列第 1/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4230.0,
+      -4200.0,
+      -315.0000009536743,
+      4260.0,
+      -4000.0,
+      -285.0000009536743
+    ],
+    "ports": [
+      [
+        4245.0,
+        -4000.0,
+        -300.0
+      ],
+      [
+        4245.0,
+        -4200.0,
+        -300.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_198"
+    ]
+  },
+  {
+    "id": "FD_D053",
+    "label": "FD_D053",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4245.0,
+      -4200.0,
+      -300.0
+    ],
+    "rotation": [
+      0,
+      -180.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_198 沿西墙往北，止于约 Y=-4400，再经北墙短接到 FD_199；2m 原尺寸阵列第 2/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D053",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4245",
+      "Y_cm": "-4200",
+      "Z_cm": "-300",
+      "yaw_deg": "180",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_198 沿西墙往北，止于约 Y=-4400，再经北墙短接到 FD_199；2m 原尺寸阵列第 2/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4230.0,
+      -4400.0,
+      -315.0000009536743,
+      4260.0,
+      -4200.0,
+      -285.0000009536743
+    ],
+    "ports": [
+      [
+        4245.0,
+        -4200.0,
+        -300.0
+      ],
+      [
+        4245.0,
+        -4400.0,
+        -300.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_198"
+    ]
+  },
+  {
+    "id": "FD_DX_P040",
+    "label": "FD_DX_P040",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_1m.SM_Pipe02a_1m",
+    "mesh_name": "SM_Pipe02a_1m",
+    "location": [
+      4245,
+      -4405,
+      -300
+    ],
+    "rotation": [
+      0,
+      -180.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      4230.0,
+      -4504.999996185303,
+      -315.0000009536743,
+      4260.0,
+      -4404.999996185303,
+      -285.0000009536743
+    ],
+    "ports": [
+      [
+        4245,
+        -4405,
+        -300
+      ],
+      [
+        4245,
+        -4505,
+        -300
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D054",
+    "label": "FD_D054",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_joint_90elbow.SM_Pipe02a_joint_90elbow",
+    "mesh_name": "SM_Pipe02a_joint_90elbow",
+    "location": [
+      4245,
+      -4505,
+      -300
+    ],
+    "rotation": [
+      0,
+      180,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "泵房西北角弯头，西墙转到北墙；Z -300→-280 用短立管",
+    "requested": {
+      "id": "FD_D054",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_elbow_ut",
+      "X_cm": "4245",
+      "Y_cm": "-4555",
+      "Z_cm": "-290",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "泵房西北角弯头，西墙转到北墙；Z -300→-280 用短立管"
+    },
+    "bounds": [
+      4230.0,
+      -4569.999996185303,
+      -315.0000009536743,
+      4295.0000076293945,
+      -4504.999996185303,
+      -285.0000009536743
+    ],
+    "ports": [
+      [
+        4245,
+        -4505,
+        -300
+      ],
+      [
+        4295,
+        -4555,
+        -300
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P041",
+    "label": "FD_DX_P041",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_50cm.SM_Pipe02a_50cm",
+    "mesh_name": "SM_Pipe02a_50cm",
+    "location": [
+      4295,
+      -4555,
+      -300
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      -23.57817847799936
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      4288.999996885291,
+      -4570.0,
+      -313.74772948482456,
+      4346.82575733105,
+      -4540.0,
+      -266.25227378933016
+    ],
+    "ports": [
+      [
+        4295,
+        -4555,
+        -300
+      ],
+      [
+        4340.82575695,
+        -4555,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P042",
+    "label": "FD_DX_P042",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_50cm.SM_Pipe02a_50cm",
+    "mesh_name": "SM_Pipe02a_50cm",
+    "location": [
+      4295.0,
+      -4555.0,
+      -280.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸50cm短管插入接头消除非模数间隙，保持比例",
+    "requested": {},
+    "bounds": [
+      4294.999996185303,
+      -4570.0,
+      -295.0000009536743,
+      4345.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        4295.0,
+        -4555.0,
+        -280.0
+      ],
+      [
+        4345.0,
+        -4555.0,
+        -280.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D055",
+    "label": "FD_D055",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4345,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "北墙管路，从西墙接到现有 FD_199（4645 到 4700 用短接）；2m 原尺寸阵列第 1/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D055",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4245",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "北墙管路，从西墙接到现有 FD_199（4645 到 4700 用短接）；2m 原尺寸阵列第 1/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4345.0,
+      -4570.0,
+      -295.0000009536743,
+      4545.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        4345,
+        -4555,
+        -280
+      ],
+      [
+        4545,
+        -4555,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D056",
+    "label": "FD_D056",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4545,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "北墙管路，从西墙接到现有 FD_199（4645 到 4700 用短接）；2m 原尺寸阵列第 2/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D056",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4445",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "北墙管路，从西墙接到现有 FD_199（4645 到 4700 用短接）；2m 原尺寸阵列第 2/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4545.0,
+      -4570.0,
+      -295.0000009536743,
+      4745.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        4545,
+        -4555,
+        -280
+      ],
+      [
+        4745,
+        -4555,
+        -280
+      ]
+    ],
+    "allow_overlap": [
+      "FD_199"
+    ]
+  },
+  {
+    "id": "FD_D057",
+    "label": "FD_D057",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4745,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_199 沿北墙往东，止于约 X=5100，距东墙/D29 留空；2m 原尺寸阵列第 1/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D057",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4700",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_199 沿北墙往东，止于约 X=5100，距东墙/D29 留空；2m 原尺寸阵列第 1/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4745.0,
+      -4570.0,
+      -295.0000009536743,
+      4945.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        4745,
+        -4555,
+        -280
+      ],
+      [
+        4945,
+        -4555,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D058",
+    "label": "FD_D058",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4945,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_199 沿北墙往东，止于约 X=5100，距东墙/D29 留空；2m 原尺寸阵列第 2/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D058",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4900",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_199 沿北墙往东，止于约 X=5100，距东墙/D29 留空；2m 原尺寸阵列第 2/2 段，禁止拉伸"
+    },
+    "bounds": [
+      4945.0,
+      -4570.0,
+      -295.0000009536743,
+      5145.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        4945,
+        -4555,
+        -280
+      ],
+      [
+        5145,
+        -4555,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D059",
+    "label": "FD_D059",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      5145,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "北墙东端管帽，或改为墙洞接口",
+    "requested": {
+      "id": "FD_D059",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_cap_ut",
+      "X_cm": "5100",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "北墙东端管帽，或改为墙洞接口"
+    },
+    "bounds": [
+      5144.999996423721,
+      -4570.0,
+      -295.0000009536743,
+      5151.086354494095,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5145,
+        -4555,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D060",
+    "label": "FD_D060",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_joint_tjunc.SM_Pipe02a_joint_tjunc",
+    "mesh_name": "SM_Pipe02a_joint_tjunc",
+    "location": [
+      4700,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      270,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "三通，接入现有 FD_199 立向短段",
+    "requested": {
+      "id": "FD_D060",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_joint_tjunc",
+      "X_cm": "4700",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "三通，接入现有 FD_199 立向短段"
+    },
+    "bounds": [
+      4674.999998092651,
+      -4570.00005531311,
+      -294.99999237060547,
+      4725.000005722046,
+      -4529.999994277954,
+      -264.99999237060547
+    ],
+    "ports": [
+      [
+        4675,
+        -4555,
+        -280
+      ],
+      [
+        4725,
+        -4555,
+        -280
+      ],
+      [
+        4700,
+        -4530,
+        -280
+      ]
+    ],
+    "allow_overlap": [
+      "FD_199"
+    ]
+  },
+  {
+    "id": "FD_DX_P043",
+    "label": "FD_DX_P043",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      4245,
+      -3400,
+      -300
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      4230.0,
+      -3400.0000035762787,
+      -315.0000009536743,
+      4260.0,
+      -3393.913645505905,
+      -285.0000009536743
+    ],
+    "ports": [
+      [
+        4245,
+        -3400,
+        -300
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P044",
+    "label": "FD_DX_P044",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      4700,
+      -4355,
+      -280
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      4685.0,
+      -4355.000003576279,
+      -295.0000009536743,
+      4715.0,
+      -4348.913645505905,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        4700,
+        -4355,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D061",
+    "label": "FD_D061",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      4210,
+      -3600.0,
+      -310.0
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D061",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "4245",
+      "Y_cm": "-3600",
+      "Z_cm": "-300",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "泵房靠墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      4210.000024795532,
+      -3603.8212871551514,
+      -312.62499833106995,
+      4238.800024032593,
+      -3598.5000019073486,
+      -307.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D062",
+    "label": "FD_D062",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      4210,
+      -4200.0,
+      -310.0
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D062",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "4245",
+      "Y_cm": "-4200",
+      "Z_cm": "-300",
+      "yaw_deg": "180",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "泵房靠墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      4210.000024795532,
+      -4203.821287155151,
+      -312.62499833106995,
+      4238.800024032593,
+      -4198.500001907349,
+      -307.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D063",
+    "label": "FD_D063",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      4445.0,
+      -4590,
+      -290.0
+    ],
+    "rotation": [
+      0,
+      90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D063",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "4445",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "泵房靠墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      4443.500001907349,
+      -4589.999975204468,
+      -292.62499833106995,
+      4448.821287155151,
+      -4561.199975967407,
+      -287.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D064",
+    "label": "FD_D064",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      4900.0,
+      -4590,
+      -290.0
+    ],
+    "rotation": [
+      0,
+      90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D064",
+      "room": "泵房",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "4900",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "泵房靠墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      4898.500001907349,
+      -4589.999975204468,
+      -292.62499833106995,
+      4903.821287155151,
+      -4561.199975967407,
+      -287.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D065",
+    "label": "FD_D065",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5700.0,
+      -4555.0,
+      -280.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_210 沿北墙往东，止于约 X=6100，离东墙 10cm 以上；2m 原尺寸阵列第 1/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D065",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5700",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_210 沿北墙往东，止于约 X=6100，离东墙 10cm 以上；2m 原尺寸阵列第 1/2 段，禁止拉伸"
+    },
+    "bounds": [
+      5700.0,
+      -4570.0,
+      -295.0000009536743,
+      5900.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5700.0,
+        -4555.0,
+        -280.0
+      ],
+      [
+        5900.0,
+        -4555.0,
+        -280.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_210"
+    ]
+  },
+  {
+    "id": "FD_D066",
+    "label": "FD_D066",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5900.0,
+      -4555.0,
+      -280.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_210 沿北墙往东，止于约 X=6100，离东墙 10cm 以上；2m 原尺寸阵列第 2/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D066",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5900",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_210 沿北墙往东，止于约 X=6100，离东墙 10cm 以上；2m 原尺寸阵列第 2/2 段，禁止拉伸"
+    },
+    "bounds": [
+      5900.0,
+      -4570.0,
+      -295.0000009536743,
+      6100.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5900.0,
+        -4555.0,
+        -280.0
+      ],
+      [
+        6100.0,
+        -4555.0,
+        -280.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_210"
+    ]
+  },
+  {
+    "id": "FD_D068",
+    "label": "FD_D068",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5700.0,
+      -4555.0,
+      -280.0
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_210 沿北墙往西，止于约 X=5300，不要挡 D29；2m 原尺寸阵列第 1/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D068",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5700",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_210 沿北墙往西，止于约 X=5300，不要挡 D29；2m 原尺寸阵列第 1/2 段，禁止拉伸"
+    },
+    "bounds": [
+      5500.0,
+      -4570.0,
+      -295.0000009536743,
+      5700.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5700.0,
+        -4555.0,
+        -280.0
+      ],
+      [
+        5500.0,
+        -4555.0,
+        -280.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_210"
+    ]
+  },
+  {
+    "id": "FD_D069",
+    "label": "FD_D069",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5500.0,
+      -4555.0,
+      -280.0
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_210 沿北墙往西，止于约 X=5300，不要挡 D29；2m 原尺寸阵列第 2/2 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D069",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5500",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_210 沿北墙往西，止于约 X=5300，不要挡 D29；2m 原尺寸阵列第 2/2 段，禁止拉伸"
+    },
+    "bounds": [
+      5300.0,
+      -4570.0,
+      -295.0000009536743,
+      5500.0,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5500.0,
+        -4555.0,
+        -280.0
+      ],
+      [
+        5300.0,
+        -4555.0,
+        -280.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_210"
+    ]
+  },
+  {
+    "id": "FD_D067",
+    "label": "FD_D067",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      6100.0,
+      -4555.0,
+      -280.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "北墙东端管帽",
+    "requested": {
+      "id": "FD_D067",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_cap_ut",
+      "X_cm": "6100",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "北墙东端管帽"
+    },
+    "bounds": [
+      6099.999996423721,
+      -4570.0,
+      -295.0000009536743,
+      6106.086354494095,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        6100.0,
+        -4555.0,
+        -280.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D070",
+    "label": "FD_D070",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      5300.0,
+      -4555.0,
+      -280.0
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "北墙西端管帽，靠近 D29 一侧留出门洞",
+    "requested": {
+      "id": "FD_D070",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_cap_ut",
+      "X_cm": "5300",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "北墙西端管帽，靠近 D29 一侧留出门洞"
+    },
+    "bounds": [
+      5293.913645505905,
+      -4570.0,
+      -295.0000009536743,
+      5300.000003576279,
+      -4540.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5300.0,
+        -4555.0,
+        -280.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D071",
+    "label": "FD_D071",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_joint_tjunc.SM_Pipe02a_joint_tjunc",
+    "mesh_name": "SM_Pipe02a_joint_tjunc",
+    "location": [
+      5700,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      270,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "接入现有 FD_210 的北墙弯头/三通位置",
+    "requested": {
+      "id": "FD_D071",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_elbow_ut",
+      "X_cm": "5700",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "接入现有 FD_210 的北墙弯头/三通位置"
+    },
+    "bounds": [
+      5674.999998092651,
+      -4570.00005531311,
+      -294.99999237060547,
+      5725.000005722046,
+      -4529.999994277954,
+      -264.99999237060547
+    ],
+    "ports": [
+      [
+        5675,
+        -4555,
+        -280
+      ],
+      [
+        5725,
+        -4555,
+        -280
+      ],
+      [
+        5700,
+        -4530,
+        -280
+      ]
+    ],
+    "allow_overlap": [
+      "FD_210"
+    ]
+  },
+  {
+    "id": "FD_D072",
+    "label": "FD_D072",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      5500.0,
+      -4590,
+      -290.0
+    ],
+    "rotation": [
+      0,
+      90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D072",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "5500",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "配电室北墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      5498.500001907349,
+      -4589.999975204468,
+      -292.62499833106995,
+      5503.821287155151,
+      -4561.199975967407,
+      -287.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D073",
+    "label": "FD_D073",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      5900.0,
+      -4590,
+      -290.0
+    ],
+    "rotation": [
+      0,
+      90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D073",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "5900",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "配电室北墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      5898.500001907349,
+      -4589.999975204468,
+      -292.62499833106995,
+      5903.821287155151,
+      -4561.199975967407,
+      -287.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D074",
+    "label": "FD_D074",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_joint_tjunc.SM_Pipe02a_joint_tjunc",
+    "mesh_name": "SM_Pipe02a_joint_tjunc",
+    "location": [
+      5400,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      270,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "三通朝南对着 FD_205 高柜，短接不要穿进柜体",
+    "requested": {
+      "id": "FD_D074",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_joint_tjunc",
+      "X_cm": "5400",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "三通朝南对着 FD_205 高柜，短接不要穿进柜体"
+    },
+    "bounds": [
+      5374.999998092651,
+      -4570.00005531311,
+      -294.99999237060547,
+      5425.000005722046,
+      -4529.999994277954,
+      -264.99999237060547
+    ],
+    "ports": [
+      [
+        5375,
+        -4555,
+        -280
+      ],
+      [
+        5425,
+        -4555,
+        -280
+      ],
+      [
+        5400,
+        -4530,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P045",
+    "label": "FD_DX_P045",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_50cm.SM_Pipe02a_50cm",
+    "mesh_name": "SM_Pipe02a_50cm",
+    "location": [
+      5400,
+      -4530,
+      -280
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      5385.0,
+      -4530.000003814697,
+      -295.0000009536743,
+      5415.0,
+      -4480.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5400,
+        -4530,
+        -280
+      ],
+      [
+        5400,
+        -4480,
+        -280
+      ]
+    ],
+    "allow_overlap": [
+      "FD_205"
+    ]
+  },
+  {
+    "id": "FD_DX_P046",
+    "label": "FD_DX_P046",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      5400,
+      -4480,
+      -280
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      5385.0,
+      -4480.000003576279,
+      -295.0000009536743,
+      5415.0,
+      -4473.913645505905,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5400,
+        -4480,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D075",
+    "label": "FD_D075",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_joint_tjunc.SM_Pipe02a_joint_tjunc",
+    "mesh_name": "SM_Pipe02a_joint_tjunc",
+    "location": [
+      5960,
+      -4555,
+      -280
+    ],
+    "rotation": [
+      0,
+      270,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "三通朝南对着 FD_206 高柜，短接不要穿进柜体",
+    "requested": {
+      "id": "FD_D075",
+      "room": "配电室",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_joint_tjunc",
+      "X_cm": "5960",
+      "Y_cm": "-4555",
+      "Z_cm": "-280",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "三通朝南对着 FD_206 高柜，短接不要穿进柜体"
+    },
+    "bounds": [
+      5934.999998092651,
+      -4570.00005531311,
+      -294.99999237060547,
+      5985.000005722046,
+      -4529.999994277954,
+      -264.99999237060547
+    ],
+    "ports": [
+      [
+        5935,
+        -4555,
+        -280
+      ],
+      [
+        5985,
+        -4555,
+        -280
+      ],
+      [
+        5960,
+        -4530,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P047",
+    "label": "FD_DX_P047",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_50cm.SM_Pipe02a_50cm",
+    "mesh_name": "SM_Pipe02a_50cm",
+    "location": [
+      5960,
+      -4530,
+      -280
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      5945.0,
+      -4530.000003814697,
+      -295.0000009536743,
+      5975.0,
+      -4480.0,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5960,
+        -4530,
+        -280
+      ],
+      [
+        5960,
+        -4480,
+        -280
+      ]
+    ],
+    "allow_overlap": [
+      "FD_206"
+    ]
+  },
+  {
+    "id": "FD_DX_P048",
+    "label": "FD_DX_P048",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      5960,
+      -4480,
+      -280
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      5945.0,
+      -4480.000003576279,
+      -295.0000009536743,
+      5975.0,
+      -4473.913645505905,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5960,
+        -4480,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P049",
+    "label": "FD_DX_P049",
+    "room": "配电室",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      5700,
+      -4355,
+      -280
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      5685.0,
+      -4355.000003576279,
+      -295.0000009536743,
+      5715.0,
+      -4348.913645505905,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        5700,
+        -4355,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D076",
+    "label": "FD_D076",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5000.0,
+      -2625.0,
+      -320.0
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 1/3 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D076",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5000",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 1/3 段，禁止拉伸"
+    },
+    "bounds": [
+      4800.0,
+      -2640.0,
+      -335.0000009536743,
+      5000.0,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        5000.0,
+        -2625.0,
+        -320.0
+      ],
+      [
+        4800.0,
+        -2625.0,
+        -320.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_191"
+    ]
+  },
+  {
+    "id": "FD_D077",
+    "label": "FD_D077",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4800.0,
+      -2625.0,
+      -320.0
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 2/3 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D077",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4800",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 2/3 段，禁止拉伸"
+    },
+    "bounds": [
+      4600.0,
+      -2640.0,
+      -335.0000009536743,
+      4800.0,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        4800.0,
+        -2625.0,
+        -320.0
+      ],
+      [
+        4600.0,
+        -2625.0,
+        -320.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_191"
+    ]
+  },
+  {
+    "id": "FD_D078",
+    "label": "FD_D078",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      4600.0,
+      -2625.0,
+      -320.0
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 3/3 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D078",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "4600",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 3/3 段，禁止拉伸"
+    },
+    "bounds": [
+      4400.0,
+      -2640.0,
+      -335.0000009536743,
+      4600.0,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        4600.0,
+        -2625.0,
+        -320.0
+      ],
+      [
+        4400.0,
+        -2625.0,
+        -320.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_191"
+    ]
+  },
+  {
+    "id": "FD_D079",
+    "label": "FD_D079",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5200.0,
+      -2625.0,
+      -320.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 1/4 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D079",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5200",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 1/4 段，禁止拉伸"
+    },
+    "bounds": [
+      5200.0,
+      -2640.0,
+      -335.0000009536743,
+      5400.0,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        5200.0,
+        -2625.0,
+        -320.0
+      ],
+      [
+        5400.0,
+        -2625.0,
+        -320.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_191"
+    ]
+  },
+  {
+    "id": "FD_D080",
+    "label": "FD_D080",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5400.0,
+      -2625.0,
+      -320.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 2/4 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D080",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5400",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 2/4 段，禁止拉伸"
+    },
+    "bounds": [
+      5400.0,
+      -2640.0,
+      -335.0000009536743,
+      5600.0,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        5400.0,
+        -2625.0,
+        -320.0
+      ],
+      [
+        5600.0,
+        -2625.0,
+        -320.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_191"
+    ]
+  },
+  {
+    "id": "FD_D081",
+    "label": "FD_D081",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5600.0,
+      -2625.0,
+      -320.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 3/4 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D081",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5600",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 3/4 段，禁止拉伸"
+    },
+    "bounds": [
+      5600.0,
+      -2640.0,
+      -335.0000009536743,
+      5800.0,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        5600.0,
+        -2625.0,
+        -320.0
+      ],
+      [
+        5800.0,
+        -2625.0,
+        -320.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_191"
+    ]
+  },
+  {
+    "id": "FD_D082",
+    "label": "FD_D082",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_2m.SM_Pipe02a_2m",
+    "mesh_name": "SM_Pipe02a_2m",
+    "location": [
+      5800.0,
+      -2625.0,
+      -320.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe",
+    "reason": "接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 4/4 段，禁止拉伸",
+    "requested": {
+      "id": "FD_D082",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "SM_Pipe02a_2m",
+      "X_cm": "5800",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe",
+      "notes": "接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 4/4 段，禁止拉伸"
+    },
+    "bounds": [
+      5800.0,
+      -2640.0,
+      -335.0000009536743,
+      6000.0,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        5800.0,
+        -2625.0,
+        -320.0
+      ],
+      [
+        6000.0,
+        -2625.0,
+        -320.0
+      ]
+    ],
+    "allow_overlap": [
+      "FD_191"
+    ]
+  },
+  {
+    "id": "FD_D083",
+    "label": "FD_D083",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      4400,
+      -2625,
+      -320
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "西端管帽或墙洞接口，须留在房间内 10cm",
+    "requested": {
+      "id": "FD_D083",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_cap_ut",
+      "X_cm": "4420",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "90",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "西端管帽或墙洞接口，须留在房间内 10cm"
+    },
+    "bounds": [
+      4393.913645505905,
+      -2640.0,
+      -335.0000009536743,
+      4400.000003576279,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        4400,
+        -2625,
+        -320
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D084",
+    "label": "FD_D084",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      6000.0,
+      -2625.0,
+      -320.0
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "东端管帽；若 4 段只到 6000，剩余用短接，不要拉伸",
+    "requested": {
+      "id": "FD_D084",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_cap_ut",
+      "X_cm": "6000",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "270",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "东端管帽；若 4 段只到 6000，剩余用短接，不要拉伸"
+    },
+    "bounds": [
+      5999.999996423721,
+      -2640.0,
+      -335.0000009536743,
+      6006.086354494095,
+      -2610.0,
+      -305.0000009536743
+    ],
+    "ports": [
+      [
+        6000.0,
+        -2625.0,
+        -320.0
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D085",
+    "label": "FD_D085",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      4600.0,
+      -2610,
+      -330.0
+    ],
+    "rotation": [
+      0,
+      -90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D085",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "4600",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "楼梯间南墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      4596.178712844849,
+      -2638.800024032593,
+      -332.62499833106995,
+      4601.499998092651,
+      -2610.000024795532,
+      -327.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D086",
+    "label": "FD_D086",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      4800.0,
+      -2610,
+      -330.0
+    ],
+    "rotation": [
+      0,
+      -90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D086",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "4800",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "楼梯间南墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      4796.178712844849,
+      -2638.800024032593,
+      -332.62499833106995,
+      4801.499998092651,
+      -2610.000024795532,
+      -327.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D087",
+    "label": "FD_D087",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      5400.0,
+      -2610,
+      -330.0
+    ],
+    "rotation": [
+      0,
+      -90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D087",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "5400",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "楼梯间南墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      5396.178712844849,
+      -2638.800024032593,
+      -332.62499833106995,
+      5401.499998092651,
+      -2610.000024795532,
+      -327.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D088",
+    "label": "FD_D088",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      5600.0,
+      -2610,
+      -330.0
+    ],
+    "rotation": [
+      0,
+      -90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D088",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "5600",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "楼梯间南墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      5596.178712844849,
+      -2638.800024032593,
+      -332.62499833106995,
+      5601.499998092651,
+      -2610.000024795532,
+      -327.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_D089",
+    "label": "FD_D089",
+    "room": "楼梯间",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_bracket_C.SM_Pipe02a_bracket_C",
+    "mesh_name": "SM_Pipe02a_bracket_C",
+    "location": [
+      5800.0,
+      -2610,
+      -330.0
+    ],
+    "rotation": [
+      0,
+      -90,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "support",
+    "reason": "原尺寸28.8cm贴墙短托臂，接触主管下缘，墙面端齐平",
+    "requested": {
+      "id": "FD_D089",
+      "room": "楼梯间",
+      "asset_pack": "UndergroundTunnel",
+      "asset_hint": "pipe_clamp_ut",
+      "X_cm": "5800",
+      "Y_cm": "-2625",
+      "Z_cm": "-320",
+      "yaw_deg": "0",
+      "cover": "none",
+      "purpose": "pipe_fit",
+      "notes": "楼梯间南墙管卡；管卡贴墙，不要悬空"
+    },
+    "bounds": [
+      5796.178712844849,
+      -2638.800024032593,
+      -332.62499833106995,
+      5801.499998092651,
+      -2610.000024795532,
+      -327.37499833106995
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P050",
+    "label": "FD_DX_P050",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Medium/SM_M_Pipe_Bend.SM_M_Pipe_Bend",
+    "mesh_name": "SM_M_Pipe_Bend",
+    "location": [
+      4215,
+      -3795,
+      120
+    ],
+    "rotation": [
+      0,
+      0,
+      180
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸中管弯头接西墙接口与大管盲板法兰，作为墙面供给端",
+    "requested": {},
+    "bounds": [
+      4214.969805780798,
+      -3845.028007507324,
+      99.04538345336914,
+      4285.952377319336,
+      -3774.0479888916016,
+      140.95459747314453
+    ],
+    "ports": [
+      [
+        4215,
+        -3795,
+        120
+      ],
+      [
+        4265,
+        -3845,
+        120
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P051",
+    "label": "FD_DX_P051",
+    "room": "锅炉房",
+    "mesh": "/Game/Factory/Static_Mesh/Pipes/Medium/SM_M_Pipe_Terminal.SM_M_Pipe_Terminal",
+    "mesh_name": "SM_M_Pipe_Terminal",
+    "location": [
+      4215,
+      -3795,
+      120
+    ],
+    "rotation": [
+      0,
+      -90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸墙面接口盲板，背面距内墙约0.2cm，无穿墙",
+    "requested": {},
+    "bounds": [
+      4210.209726810455,
+      -3820.3870220184326,
+      94.61297798156738,
+      4219.844895362854,
+      -3769.6129722595215,
+      145.38701820373535
+    ],
+    "ports": [],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P052",
+    "label": "FD_DX_P052",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      4700,
+      -4348.9,
+      -280
+    ],
+    "rotation": [
+      0,
+      0.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      4685.0,
+      -4348.900003576278,
+      -295.0000009536743,
+      4715.0,
+      -4342.813645505905,
+      -265.0000009536743
+    ],
+    "ports": [
+      [
+        4700,
+        -4348.9,
+        -280
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P053",
+    "label": "FD_DX_P053",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_joint_tjunc.SM_Pipe02a_joint_tjunc",
+    "mesh_name": "SM_Pipe02a_joint_tjunc",
+    "location": [
+      4245,
+      -4402.5,
+      -300
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "原尺寸三通跨接实测5cm间隙，西支口封到墙面接口",
+    "requested": {},
+    "bounds": [
+      4219.999994277954,
+      -4427.500001907349,
+      -314.99999237060547,
+      4260.00005531311,
+      -4377.499994277954,
+      -284.99999237060547
+    ],
+    "ports": [
+      [
+        4245,
+        -4427.5,
+        -300
+      ],
+      [
+        4245,
+        -4377.5,
+        -300
+      ],
+      [
+        4220,
+        -4402.5,
+        -300
+      ]
+    ],
+    "allow_overlap": []
+  },
+  {
+    "id": "FD_DX_P054",
+    "label": "FD_DX_P054",
+    "room": "泵房",
+    "mesh": "/Game/UndergroundTunnel/Meshes/Props/SM_Pipe02a_cap.SM_Pipe02a_cap",
+    "mesh_name": "SM_Pipe02a_cap",
+    "location": [
+      4220,
+      -4402.5,
+      -300
+    ],
+    "rotation": [
+      0,
+      90.0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ],
+    "purpose": "pipe_fit",
+    "reason": "连续管路的补接与收口",
+    "requested": {},
+    "bounds": [
+      4213.913645505905,
+      -4417.5,
+      -315.0000009536743,
+      4220.000003576279,
+      -4387.5,
+      -285.0000009536743
+    ],
+    "ports": [
+      [
+        4220,
+        -4402.5,
+        -300
+      ]
+    ],
+    "allow_overlap": []
+  }
+]

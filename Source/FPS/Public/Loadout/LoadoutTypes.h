@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Character/PoliceAppearanceTypes.h"
 #include "LoadoutTypes.generated.h"
 
 class AWeapon;
@@ -67,6 +68,9 @@ USTRUCT(BlueprintType)
 struct FLoadoutPreset
 {
 	GENERATED_BODY()
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) bool bIncludesProtection=false;
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) EPoliceFaceProtection FaceProtection=EPoliceFaceProtection::FlashGoggles;
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) EBodyArmorType BodyArmor=EBodyArmorType::Light;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Loadout")
 	FText Name;

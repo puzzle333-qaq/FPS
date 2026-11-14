@@ -1,0 +1,97 @@
+{
+  "samples": [
+    {
+      "label": "baseline",
+      "tablet_visible": false,
+      "move_locked": false,
+      "look_locked": false,
+      "marked_total": 2,
+      "marked_completed": 0,
+      "descriptions": [
+        "○ 确认入口",
+        "○ 确认控制室"
+      ]
+    },
+    {
+      "label": "opened",
+      "tablet_visible": true,
+      "move_locked": true,
+      "look_locked": true,
+      "marked_total": 2,
+      "marked_completed": 0,
+      "descriptions": [
+        "○ 确认入口",
+        "○ 确认控制室"
+      ],
+      "screen_tick_enabled": false,
+      "draw_size": "<Struct 'Vector2D' (0x00000248F7E36A60) {x: 1280.000000, y: 888.000000}>",
+      "space": "<WidgetSpace.WORLD: 0>",
+      "manually_redraw": true,
+      "geometry": "<WidgetGeometryMode.PLANE: 0>"
+    },
+    {
+      "label": "objective_completed_live",
+      "tablet_visible": true,
+      "move_locked": true,
+      "look_locked": true,
+      "marked_total": 2,
+      "marked_completed": 1,
+      "descriptions": [
+        "✓ 确认入口",
+        "○ 确认控制室"
+      ],
+      "screen_tick_enabled": false,
+      "draw_size": "<Struct 'Vector2D' (0x00000248F7E36A60) {x: 1280.000000, y: 888.000000}>",
+      "space": "<WidgetSpace.WORLD: 0>",
+      "manually_redraw": true,
+      "geometry": "<WidgetGeometryMode.PLANE: 0>"
+    },
+    {
+      "label": "closed",
+      "tablet_visible": false,
+      "move_locked": false,
+      "look_locked": false,
+      "marked_total": 2,
+      "marked_completed": 1,
+      "descriptions": [
+        "✓ 确认入口",
+        "○ 确认控制室"
+      ]
+    },
+    {
+      "label": "reopened",
+      "tablet_visible": true,
+      "move_locked": true,
+      "look_locked": true,
+      "marked_total": 2,
+      "marked_completed": 1,
+      "descriptions": [
+        "✓ 确认入口",
+        "○ 确认控制室"
+      ],
+      "screen_tick_enabled": false,
+      "draw_size": "<Struct 'Vector2D' (0x00000248F7E36A60) {x: 1280.000000, y: 888.000000}>",
+      "space": "<WidgetSpace.WORLD: 0>",
+      "manually_redraw": true,
+      "geometry": "<WidgetGeometryMode.PLANE: 0>"
+    },
+    {
+      "label": "final_closed",
+      "tablet_visible": false,
+      "move_locked": false,
+      "look_locked": false
+    }
+  ],
+  "assertions": {
+    "tab_opens_world_widget": true,
+    "viewing_locks_gameplay": true,
+    "manual_redraw_sleeps": true,
+    "real_objective_completes_live": true,
+    "close_restores_input": true,
+    "reopen_retains_progress": true,
+    "final_close_restores_input": true,
+    "flash_effect_still_active": true
+  },
+  "flash_white_alpha": 0.1885097473859787,
+  "performance_report": "PerformanceQA.json"
+}

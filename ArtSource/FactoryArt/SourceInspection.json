@@ -1,0 +1,63 @@
+{
+  "FactoryWall": [
+    {
+      "name": "SM_Wall_4M",
+      "min": [
+        -50.048208236694336,
+        -400.01235008239746,
+        -0.04402637423481792
+      ],
+      "max": [
+        0.06327599985525012,
+        0.089828489581123,
+        400.0718593597412
+      ],
+      "faces": 252,
+      "materials": [
+        "MI_Warehouse_Walls"
+      ]
+    }
+  ],
+  "OfficeWall": [
+    {
+      "name": "SM_IntWall_400",
+      "min": [
+        -8.742278012618954e-07,
+        -9.999999403953552,
+        0.0
+      ],
+      "max": [
+        400.0,
+        10.000035166740417,
+        300.0
+      ],
+      "faces": 12,
+      "materials": [
+        "WorldGridMaterial",
+        "WorldGridMaterial_1"
+      ]
+    }
+  ],
+  "UndergroundWall": [
+    {
+      "name": "SM_Tunnel02a",
+      "min": [
+        -100.0,
+        -5.779357627034187,
+        -0.00024134574232448358
+      ],
+      "max": [
+        100.00048875808716,
+        510.00003814697266,
+        350.0000238418579
+      ],
+      "faces": 1015,
+      "materials": [
+        "MI_Env_ConcreteFloor02a",
+        "MI_Env_BrickWall01a",
+        "MI_Prop_ConcretePillar01b",
+        "MI_Env_Decal_ConcreteEdge01a"
+      ]
+    }
+  ]
+}

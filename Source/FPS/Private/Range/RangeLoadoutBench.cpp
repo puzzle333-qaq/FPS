@@ -1,4 +1,5 @@
 #include "Range/RangeLoadoutBench.h"
+#include "Camera/CameraTypes.h"
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimationAsset.h"
@@ -65,6 +66,17 @@ AActor* ARangeLoadoutBench::GetBenchViewTarget() const
 USkeletalMeshComponent* ARangeLoadoutBench::GetPreviewMesh() const
 {
 	return IsValid(ExternalPreviewMesh) ? ExternalPreviewMesh.Get() : CharacterMesh.Get();
+}
+void ARangeLoadoutBench::CalcCamera(float DeltaTime,FMinimalViewInfo& OutResult)
+{
+ if(auto* Mesh=GetPreviewMesh())
+ {
+  const FVector Feet=Mesh->GetComponentLocation();
+  OutResult.Location=Feet+Mesh->GetRightVector()*280.f+FVector(0,0,110);
+  OutResult.Rotation=(Feet+FVector(0,0,95)-OutResult.Location).Rotation();
+  OutResult.FOV=65.f;return;
+ }
+ Super::CalcCamera(DeltaTime,OutResult);
 }
 
 void ARangeLoadoutBench::Tick(float DeltaSeconds)

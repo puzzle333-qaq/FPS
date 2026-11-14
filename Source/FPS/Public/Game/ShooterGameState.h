@@ -117,6 +117,7 @@ public:
 	void SetMatchState(EShooterMatchState NewState);
 	void SetMatchEndServerTime(float ServerTime) { MatchEndServerTime = ServerTime; }
 	void SetMatchStartServerTime(float ServerTime) { MatchStartServerTime = ServerTime; }
+ float GetMatchStartServerTime() const { return MatchStartServerTime; }
 	void SetWinningTeam(uint8 Team) { WinningTeam = Team; }
 	void SetMatchRules(EShooterGameMode Mode);
 

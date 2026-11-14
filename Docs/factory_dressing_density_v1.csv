@@ -1,0 +1,362 @@
+﻿id,room,asset_pack,asset_hint,mesh,X_cm,Y_cm,Z_cm,yaw_deg,cover,purpose,notes
+FD_D001,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,4445,-3720,80,0,none,pipe,接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 1/4 段，禁止拉伸
+FD_D002,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,4645,-3720,80,0,none,pipe,接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 2/4 段，禁止拉伸
+FD_D003,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,4845,-3720,80,0,none,pipe,接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 3/4 段，禁止拉伸
+FD_D004,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,5045,-3720,80,0,none,pipe,接 FD_178 往东送到锅炉西侧法兰（止于约 X=5245，距锅炉 5cm，不要穿进机体）；2m 原尺寸阵列第 4/4 段，禁止拉伸
+FD_D005,锅炉房,Factory,SM_L_Pipe_Valve,SM_L_Pipe_Valve,5245,-3720,80,0,none,pipe_fit,锅炉西侧接口阀门，对准法兰，不要穿进锅炉
+FD_D006,锅炉房,Factory,pipe_tee,pipe_tee,5045,-3720,80,0,none,pipe_fit,锅炉进水管三通，与 FD_178 延长段共线
+FD_D007,锅炉房,Factory,pipe_clamp,pipe_clamp,4545,-3720,80,0,none,pipe_fit,FD_178 延长段管卡；管卡贴墙或贴梁，不要悬空
+FD_D008,锅炉房,Factory,pipe_clamp,pipe_clamp,4945,-3720,80,0,none,pipe_fit,FD_178 延长段管卡；管卡贴墙或贴梁，不要悬空
+FD_D009,锅炉房,Factory,pipe_clamp,pipe_clamp,5145,-3720,80,0,none,pipe_fit,FD_178 延长段管卡；管卡贴墙或贴梁，不要悬空
+FD_D010,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,4245,-3945,120,0,none,pipe,北墙管路，从西墙接到现有 FD_179（4645 到 4720 用短接，不要拉伸 2m 管）；2m 原尺寸阵列第 1/2 段，禁止拉伸
+FD_D011,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,4445,-3945,120,0,none,pipe,北墙管路，从西墙接到现有 FD_179（4645 到 4720 用短接，不要拉伸 2m 管）；2m 原尺寸阵列第 2/2 段，禁止拉伸
+FD_D012,锅炉房,Factory,pipe_elbow,pipe_elbow,4280,-3945,120,0,none,pipe_fit,西北角弯头，连接西墙立管/FD_178 方向，高低差 80→120 用短立管，不要拉伸
+FD_D013,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,4920,-3945,120,0,none,pipe,接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 1/3 段，禁止拉伸
+FD_D014,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,5120,-3945,120,0,none,pipe,接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 2/3 段，禁止拉伸
+FD_D015,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,5320,-3945,120,0,none,pipe,接 FD_179 沿北墙往东到东墙，末端约 5520，再到 X=5550 用短接；2m 原尺寸阵列第 3/3 段，禁止拉伸
+FD_D016,锅炉房,Factory,pipe_elbow,pipe_elbow,5550,-3945,120,90,none,pipe_fit,东北角弯头，转向沿东墙往南接到 FD_180
+FD_D017,锅炉房,Factory,pipe_cap,pipe_cap,4280,-3945,120,180,none,pipe_fit,若西端不进墙洞则加管帽；优先视为墙洞接口
+FD_D018,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,5550,-3945,120,90,none,pipe,东墙管路，从北向南接到 FD_180 北端（-3545 到 -3440 用短接，Z 120→100，不要穿楼梯）；2m 原尺寸阵列第 1/2 段，禁止拉伸
+FD_D019,锅炉房,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,5550,-3745,120,90,none,pipe,东墙管路，从北向南接到 FD_180 北端（-3545 到 -3440 用短接，Z 120→100，不要穿楼梯）；2m 原尺寸阵列第 2/2 段，禁止拉伸
+FD_D020,锅炉房,Factory,SM_L_Pipe_Valve,SM_L_Pipe_Valve,5550,-3645,120,90,none,pipe_fit,东墙管路阀门
+FD_D021,锅炉房,Factory,pipe_clamp,pipe_clamp,4345,-3945,120,0,none,pipe_fit,北墙管卡；管卡贴墙或贴梁，不要悬空
+FD_D022,锅炉房,Factory,pipe_clamp,pipe_clamp,5120,-3945,120,0,none,pipe_fit,北墙管卡；管卡贴墙或贴梁，不要悬空
+FD_D023,锅炉房,Factory,pipe_clamp,pipe_clamp,5550,-3845,120,90,none,pipe_fit,东墙管卡；管卡贴墙或贴梁，不要悬空
+FD_D024,锅炉房,Factory,pipe_elbow,pipe_elbow,4280,-3745,80,90,none,pipe_fit,西墙弯头，靠近 FD_178 起点，用短立管接北墙管路，不要用 2m 管硬拉，不要穿墙
+FD_D025,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,1550,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 1/11 段，禁止拉伸
+FD_D026,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,1750,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 2/11 段，禁止拉伸
+FD_D027,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,1950,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 3/11 段，禁止拉伸
+FD_D028,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,2150,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 4/11 段，禁止拉伸
+FD_D029,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,2350,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 5/11 段，禁止拉伸
+FD_D030,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,2550,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 6/11 段，禁止拉伸
+FD_D031,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,2750,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 7/11 段，禁止拉伸
+FD_D032,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,2950,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 8/11 段，禁止拉伸
+FD_D033,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,3150,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 9/11 段，禁止拉伸
+FD_D034,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,3350,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 10/11 段，禁止拉伸
+FD_D035,主车间,Factory,SM_L_Pipe_2m_01,SM_L_Pipe_2m_01,3550,-80,300,0,none,pipe,主车间南墙连续管路，行走面以上接到料斗顶部高度；两端视为南立面墙洞，禁止孤立短段、禁止拉伸；2m 原尺寸阵列第 11/11 段，禁止拉伸
+FD_D036,主车间,Factory,pipe_cap,pipe_cap,1550,-80,300,180,none,pipe_fit,西端墙洞法兰/管帽，贴南墙内侧
+FD_D037,主车间,Factory,pipe_cap,pipe_cap,3750,-80,300,0,none,pipe_fit,东端墙洞法兰/管帽，贴南墙内侧，勿越过 X=3800
+FD_D038,主车间,Factory,pipe_tee,pipe_tee,2300,-80,300,0,none,pipe_fit,三通，短接到FD_062料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体
+FD_D039,主车间,Factory,SM_L_Pipe_Valve,SM_L_Pipe_Valve,2300,-80,280,0,none,pipe_fit,FD_062 顶部附近阀门
+FD_D040,主车间,Factory,pipe_tee,pipe_tee,3000,-80,300,0,none,pipe_fit,三通，短接到FD_063料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体
+FD_D041,主车间,Factory,SM_L_Pipe_Valve,SM_L_Pipe_Valve,3000,-80,280,0,none,pipe_fit,FD_063 顶部附近阀门
+FD_D042,主车间,Factory,pipe_tee,pipe_tee,3340,-80,300,0,none,pipe_fit,三通，短接到FD_064料斗顶部法兰，不要用 2m 管硬拉，不要穿进机体
+FD_D043,主车间,Factory,SM_L_Pipe_Valve,SM_L_Pipe_Valve,3340,-80,280,0,none,pipe_fit,FD_064 顶部附近阀门
+FD_D044,主车间,Factory,pipe_clamp,pipe_clamp,1750,-80,300,0,none,pipe_fit,南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空
+FD_D045,主车间,Factory,pipe_clamp,pipe_clamp,2150,-80,300,0,none,pipe_fit,南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空
+FD_D046,主车间,Factory,pipe_clamp,pipe_clamp,2550,-80,300,0,none,pipe_fit,南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空
+FD_D047,主车间,Factory,pipe_clamp,pipe_clamp,2950,-80,300,0,none,pipe_fit,南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空
+FD_D048,主车间,Factory,pipe_clamp,pipe_clamp,3350,-80,300,0,none,pipe_fit,南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空
+FD_D049,主车间,Factory,pipe_clamp,pipe_clamp,3550,-80,300,0,none,pipe_fit,南墙管路管卡，贴墙或贴梁；管卡贴墙或贴梁，不要悬空
+FD_D050,泵房,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4245,-3800,-300,0,none,pipe,接 FD_198 沿西墙往南（楼梯间方向），止于约 Y=-3400，不要挡 D28；2m 原尺寸阵列第 1/2 段，禁止拉伸
+FD_D051,泵房,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4245,-3600,-300,0,none,pipe,接 FD_198 沿西墙往南（楼梯间方向），止于约 Y=-3400，不要挡 D28；2m 原尺寸阵列第 2/2 段，禁止拉伸
+FD_D052,泵房,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4245,-4000,-300,180,none,pipe,接 FD_198 沿西墙往北，止于约 Y=-4400，再经北墙短接到 FD_199；2m 原尺寸阵列第 1/2 段，禁止拉伸
+FD_D053,泵房,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4245,-4200,-300,180,none,pipe,接 FD_198 沿西墙往北，止于约 Y=-4400，再经北墙短接到 FD_199；2m 原尺寸阵列第 2/2 段，禁止拉伸
+FD_D054,泵房,UndergroundTunnel,pipe_elbow_ut,pipe_elbow_ut,4245,-4555,-290,0,none,pipe_fit,泵房西北角弯头，西墙转到北墙；Z -300→-280 用短立管
+FD_D055,泵房,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4245,-4555,-280,270,none,pipe,北墙管路，从西墙接到现有 FD_199（4645 到 4700 用短接）；2m 原尺寸阵列第 1/2 段，禁止拉伸
+FD_D056,泵房,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4445,-4555,-280,270,none,pipe,北墙管路，从西墙接到现有 FD_199（4645 到 4700 用短接）；2m 原尺寸阵列第 2/2 段，禁止拉伸
+FD_D057,泵房,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4700,-4555,-280,270,none,pipe,接 FD_199 沿北墙往东，止于约 X=5100，距东墙/D29 留空；2m 原尺寸阵列第 1/2 段，禁止拉伸
+FD_D058,泵房,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4900,-4555,-280,270,none,pipe,接 FD_199 沿北墙往东，止于约 X=5100，距东墙/D29 留空；2m 原尺寸阵列第 2/2 段，禁止拉伸
+FD_D059,泵房,UndergroundTunnel,pipe_cap_ut,pipe_cap_ut,5100,-4555,-280,270,none,pipe_fit,北墙东端管帽，或改为墙洞接口
+FD_D060,泵房,UndergroundTunnel,SM_Pipe02a_joint_tjunc,SM_Pipe02a_joint_tjunc,4700,-4555,-280,0,none,pipe_fit,三通，接入现有 FD_199 立向短段
+FD_D061,泵房,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,4245,-3600,-300,0,none,pipe_fit,泵房靠墙管卡；管卡贴墙，不要悬空
+FD_D062,泵房,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,4245,-4200,-300,180,none,pipe_fit,泵房靠墙管卡；管卡贴墙，不要悬空
+FD_D063,泵房,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,4445,-4555,-280,270,none,pipe_fit,泵房靠墙管卡；管卡贴墙，不要悬空
+FD_D064,泵房,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,4900,-4555,-280,270,none,pipe_fit,泵房靠墙管卡；管卡贴墙，不要悬空
+FD_D065,配电室,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5700,-4555,-280,270,none,pipe,接 FD_210 沿北墙往东，止于约 X=6100，离东墙 10cm 以上；2m 原尺寸阵列第 1/2 段，禁止拉伸
+FD_D066,配电室,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5900,-4555,-280,270,none,pipe,接 FD_210 沿北墙往东，止于约 X=6100，离东墙 10cm 以上；2m 原尺寸阵列第 2/2 段，禁止拉伸
+FD_D067,配电室,UndergroundTunnel,pipe_cap_ut,pipe_cap_ut,6100,-4555,-280,270,none,pipe_fit,北墙东端管帽
+FD_D068,配电室,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5700,-4555,-280,90,none,pipe,接 FD_210 沿北墙往西，止于约 X=5300，不要挡 D29；2m 原尺寸阵列第 1/2 段，禁止拉伸
+FD_D069,配电室,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5500,-4555,-280,90,none,pipe,接 FD_210 沿北墙往西，止于约 X=5300，不要挡 D29；2m 原尺寸阵列第 2/2 段，禁止拉伸
+FD_D070,配电室,UndergroundTunnel,pipe_cap_ut,pipe_cap_ut,5300,-4555,-280,90,none,pipe_fit,北墙西端管帽，靠近 D29 一侧留出门洞
+FD_D071,配电室,UndergroundTunnel,pipe_elbow_ut,pipe_elbow_ut,5700,-4555,-280,0,none,pipe_fit,接入现有 FD_210 的北墙弯头/三通位置
+FD_D072,配电室,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,5500,-4555,-280,90,none,pipe_fit,配电室北墙管卡；管卡贴墙，不要悬空
+FD_D073,配电室,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,5900,-4555,-280,270,none,pipe_fit,配电室北墙管卡；管卡贴墙，不要悬空
+FD_D074,配电室,UndergroundTunnel,SM_Pipe02a_joint_tjunc,SM_Pipe02a_joint_tjunc,5400,-4555,-280,0,none,pipe_fit,三通朝南对着 FD_205 高柜，短接不要穿进柜体
+FD_D075,配电室,UndergroundTunnel,SM_Pipe02a_joint_tjunc,SM_Pipe02a_joint_tjunc,5960,-4555,-280,0,none,pipe_fit,三通朝南对着 FD_206 高柜，短接不要穿进柜体
+FD_D076,楼梯间,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5000,-2625,-320,90,none,pipe,接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 1/3 段，禁止拉伸
+FD_D077,楼梯间,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4800,-2625,-320,90,none,pipe,接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 2/3 段，禁止拉伸
+FD_D078,楼梯间,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,4600,-2625,-320,90,none,pipe,接 FD_191 沿楼梯间南墙往西，2m 阵列，不要穿楼梯，不要挡门框；2m 原尺寸阵列第 3/3 段，禁止拉伸
+FD_D079,楼梯间,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5200,-2625,-320,270,none,pipe,接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 1/4 段，禁止拉伸
+FD_D080,楼梯间,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5400,-2625,-320,270,none,pipe,接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 2/4 段，禁止拉伸
+FD_D081,楼梯间,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5600,-2625,-320,270,none,pipe,接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 3/4 段，禁止拉伸
+FD_D082,楼梯间,UndergroundTunnel,SM_Pipe02a_2m,SM_Pipe02a_2m,5800,-2625,-320,270,none,pipe,接 FD_191 沿楼梯间南墙往东，2m 阵列，端到墙洞或管帽；2m 原尺寸阵列第 4/4 段，禁止拉伸
+FD_D083,楼梯间,UndergroundTunnel,pipe_cap_ut,pipe_cap_ut,4420,-2625,-320,90,none,pipe_fit,西端管帽或墙洞接口，须留在房间内 10cm
+FD_D084,楼梯间,UndergroundTunnel,pipe_cap_ut,pipe_cap_ut,6000,-2625,-320,270,none,pipe_fit,东端管帽；若 4 段只到 6000，剩余用短接，不要拉伸
+FD_D085,楼梯间,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,4600,-2625,-320,0,none,pipe_fit,楼梯间南墙管卡；管卡贴墙，不要悬空
+FD_D086,楼梯间,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,4800,-2625,-320,0,none,pipe_fit,楼梯间南墙管卡；管卡贴墙，不要悬空
+FD_D087,楼梯间,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,5400,-2625,-320,0,none,pipe_fit,楼梯间南墙管卡；管卡贴墙，不要悬空
+FD_D088,楼梯间,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,5600,-2625,-320,0,none,pipe_fit,楼梯间南墙管卡；管卡贴墙，不要悬空
+FD_D089,楼梯间,UndergroundTunnel,pipe_clamp_ut,pipe_clamp_ut,5800,-2625,-320,0,none,pipe_fit,楼梯间南墙管卡；管卡贴墙，不要悬空
+FD_D090,财务室,Modern_Abandoned_Office,SM_Bookcase_01,SM_Bookcase_01,30,-620,0,90,full,decor,西墙书架，贴墙，避开椅子和 S07，不要挡账本柜
+FD_D091,财务室,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,24,-1000,140,0,none,wall_hang,西墙挂柜，贴墙，避开窗洞门框，Z 在视线高度；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D092,财务室,Modern_Abandoned_Office,cardboard_box,SM_box_01,80,-1040,0,0,none,decor,西北角纸箱，远离 D05 和账本柜前方
+FD_D093,财务室,Modern_Abandoned_Office,cardboard_box,SM_box_01,80,-1040,40,15,none,decor,叠在纸箱上的第二只，有意码放，不要放大
+FD_D094,财务室,Modern_Abandoned_Office,trash_bin,trash_bin,430,-480,0,0,none,decor,东南角垃圾桶，远离 D04（中心 Y=-800）
+FD_D095,财务室,Modern_Abandoned_Office,printer,printer,400,-1040,0,180,none,decor,东北角打印机，避开 D05、D04 和账本柜前方
+FD_D096,财务室,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,488,-520,150,180,none,wall_hang,东墙公告板，贴墙，D04 以南，避开门框
+FD_D097,财务室,Modern_Abandoned_Office,keyboard,SM_Keyboard_01,150,-500,85,90,none,desk_clutter,现有书桌上的键盘
+FD_D098,财务室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,160,-560,85,90,none,desk_clutter,现有书桌上的散纸
+FD_D099,财务室,Modern_Abandoned_Office,coffee_mug,SM_Cup,130,-490,85,0,none,desk_clutter,现有书桌上的杯子
+FD_D100,财务室,Modern_Abandoned_Office,books,books,150,-545,85,90,none,desk_clutter,现有书桌上的书
+FD_D101,档案室,Modern_Abandoned_Office,SM_Bookcase_01,SM_Bookcase_01,40,-1200,0,90,full,decor,西墙北段书架，补充空墙，避开 S08 和账本柜前方
+FD_D102,档案室,Modern_Abandoned_Office,cardboard_box,SM_box_01,80,-1860,0,0,none,decor,西南角纸箱，书桌西侧
+FD_D103,档案室,Modern_Abandoned_Office,cardboard_box,SM_box_01,120,-1860,0,10,none,decor,西南角第二只纸箱，并排不穿插
+FD_D104,档案室,Modern_Abandoned_Office,trash_bin,trash_bin,80,-1140,0,0,none,decor,西北角垃圾桶，离 D05 大于 120cm
+FD_D105,档案室,Modern_Abandoned_Office,printer,printer,420,-1200,0,0,none,decor,东墙北段打印机，避开 D06 和账本柜前方
+FD_D106,档案室,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,24,-1640,140,0,none,wall_hang,西墙挂柜，两书架之间的空墙；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D107,档案室,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,488,-1280,150,180,none,wall_hang,东墙公告板，D06 以北，避开门框
+FD_D108,档案室,Modern_Abandoned_Office,keyboard,SM_Keyboard_01,320,-1770,85,180,none,desk_clutter,现有书桌键盘
+FD_D109,档案室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,300,-1770,85,180,none,desk_clutter,现有书桌散纸
+FD_D110,档案室,Modern_Abandoned_Office,coffee_mug,SM_Cup,350,-1780,85,0,none,desk_clutter,现有书桌杯子
+FD_D111,档案室,Modern_Abandoned_Office,books,books,340,-1760,85,0,none,desk_clutter,现有书桌书本
+FD_D112,经理室,Modern_Abandoned_Office,SM_Bookcase_01,SM_Bookcase_01,1360,-1640,0,90,full,decor,东墙书架，贴墙，不要挡账本柜，远离 D11
+FD_D113,经理室,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,1376,-1840,140,180,none,wall_hang,东墙南段挂柜，书桌以东空墙；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D114,经理室,Modern_Abandoned_Office,cardboard_box,SM_box_01,820,-1860,0,0,none,decor,西南角纸箱，远离 D10 和账本柜前方
+FD_D115,经理室,Modern_Abandoned_Office,trash_bin,trash_bin,1340,-1540,0,0,none,decor,东北角垃圾桶，离 D11 大于 120cm
+FD_D116,经理室,Modern_Abandoned_Office,printer,printer,1000,-1860,0,180,none,decor,南墙打印机，在现有弹药箱替代件东侧
+FD_D117,经理室,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,900,-1888,150,90,none,wall_hang,南墙公告板，贴墙，避开窗洞
+FD_D118,经理室,Modern_Abandoned_Office,keyboard,SM_Keyboard_01,1255,-1785,85,180,none,desk_clutter,经理书桌键盘
+FD_D119,经理室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,1220,-1785,85,180,none,desk_clutter,经理书桌散纸，不要放到账本柜上
+FD_D120,经理室,Modern_Abandoned_Office,coffee_mug,SM_Cup,1290,-1775,85,0,none,desk_clutter,经理书桌杯子
+FD_D121,经理室,Modern_Abandoned_Office,books,books,1270,-1800,85,0,none,desk_clutter,经理书桌书本
+FD_D122,前台,Modern_Abandoned_Office,SM_Bookcase_01,SM_Bookcase_01,200,-40,0,180,full,decor,北墙西段书架，贴墙，远离 D01
+FD_D123,前台,Modern_Abandoned_Office,cardboard_box,SM_box_01,280,-40,0,0,none,decor,北墙纸箱，远离 D01 和书架
+FD_D124,前台,Modern_Abandoned_Office,cardboard_box,SM_box_01,280,-40,40,20,none,decor,北墙叠放纸箱
+FD_D125,前台,Modern_Abandoned_Office,trash_bin,trash_bin,80,-360,0,0,none,decor,西南角垃圾桶，离 D01/D02 大于 120cm
+FD_D126,前台,Modern_Abandoned_Office,printer,printer,980,-40,0,180,none,decor,北墙打印机，避开 S06 和接待桌
+FD_D127,前台,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,200,-376,140,90,none,wall_hang,南墙西段挂柜，D02 以西，避开门框；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D128,前台,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,900,-388,150,90,none,wall_hang,南墙东段公告板，D02 以东、D03 以西
+FD_D129,前台,Modern_Abandoned_Office,keyboard,SM_Keyboard_01,440,-100,85,90,none,desk_clutter,前台桌键盘
+FD_D130,前台,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,460,-90,85,90,none,desk_clutter,前台桌散纸，放在桌面上不要压椅子
+FD_D131,前台,Modern_Abandoned_Office,coffee_mug,SM_Cup,420,-70,85,0,none,desk_clutter,前台桌杯子
+FD_D132,前台,Modern_Abandoned_Office,SM_Plant,SM_Plant,200,-200,0,0,none,decor,接待桌西侧植物，离 D01 ≥120cm
+FD_D133,开放办公室,Modern_Abandoned_Office,SM_Office_Workstation_03,SM_Office_Workstation_03,910,-880,0,90,half,cover,南侧补工位，不要只留北侧两张空桌；离 S09/柜/墙 ≥100/10cm
+FD_D134,开放办公室,Modern_Abandoned_Office,SM_armchair_top_01,SM_armchair_top_01,820,-820,0,90,none,decor,南侧工位椅子，避开现有文件柜
+FD_D135,开放办公室,Modern_Abandoned_Office,SM_Monitor_01,SM_Monitor_01,910,-880,80,90,none,desk_clutter,南侧工位显示器
+FD_D136,开放办公室,Modern_Abandoned_Office,keyboard,SM_Keyboard_01,910,-860,85,90,none,desk_clutter,南侧工位键盘
+FD_D137,开放办公室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,930,-900,85,90,none,desk_clutter,南侧工位散纸
+FD_D138,开放办公室,Modern_Abandoned_Office,coffee_mug,SM_Cup,890,-850,85,0,none,desk_clutter,南侧工位杯子
+FD_D139,开放办公室,Modern_Abandoned_Office,keyboard,SM_Keyboard_01,910,-500,85,90,none,desk_clutter,北侧西工位键盘
+FD_D140,开放办公室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,930,-540,85,90,none,desk_clutter,北侧西工位散纸
+FD_D141,开放办公室,Modern_Abandoned_Office,coffee_mug,SM_Cup,890,-490,85,0,none,desk_clutter,北侧西工位杯子
+FD_D142,开放办公室,Modern_Abandoned_Office,keyboard,SM_Keyboard_01,1230,-500,85,90,none,desk_clutter,北侧东工位键盘
+FD_D143,开放办公室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,1250,-540,85,90,none,desk_clutter,北侧东工位散纸
+FD_D144,开放办公室,Modern_Abandoned_Office,coffee_mug,SM_Cup,1210,-490,85,0,none,desk_clutter,北侧东工位杯子
+FD_D145,开放办公室,Modern_Abandoned_Office,SM_Bookcase_01,SM_Bookcase_01,740,-900,0,90,full,decor,西墙南段书架，避开 D07 和现有文件柜
+FD_D146,开放办公室,Modern_Abandoned_Office,cardboard_box,SM_box_01,780,-930,0,0,none,decor,西墙南段纸箱，避开 D07 和椅子
+FD_D147,开放办公室,Modern_Abandoned_Office,trash_bin,trash_bin,1360,-480,0,0,none,decor,东北角垃圾桶，避开 D08 和工位
+FD_D148,开放办公室,Modern_Abandoned_Office,printer,printer,1360,-900,0,90,none,decor,东南角打印机，避开 D08 和植物
+FD_D149,开放办公室,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,724,-480,140,0,none,wall_hang,西墙北段挂柜，D07 以北，避开门框；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D150,开放办公室,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,1388,-880,150,180,none,wall_hang,东墙南段公告板，避开 D08
+FD_D151,会议室,Modern_Abandoned_Office,SM_armchair_top_01,SM_armchair_top_01,1320,-1140,0,270,none,decor,会议桌东侧补椅子
+FD_D152,会议室,Modern_Abandoned_Office,SM_armchair_top_01,SM_armchair_top_01,1320,-1240,0,270,none,decor,会议桌东侧补椅子
+FD_D153,会议室,Modern_Abandoned_Office,SM_armchair_top_01,SM_armchair_top_01,1320,-1320,0,270,none,decor,会议桌东侧补椅子
+FD_D154,会议室,Modern_Abandoned_Office,SM_Whiteboard_01,SM_Whiteboard_01,1389,-1250,130,180,none,wall_hang,东墙补一块白板，贴墙
+FD_D155,会议室,Modern_Abandoned_Office,SM_Bookcase_01,SM_Bookcase_01,760,-1080,0,90,full,decor,西墙北段书架，避开 D09 和现有文件柜
+FD_D156,会议室,Modern_Abandoned_Office,cardboard_box,SM_box_01,760,-1420,0,0,none,decor,西南角纸箱，避开 D09/D11
+FD_D157,会议室,Modern_Abandoned_Office,cardboard_box,SM_box_01,800,-1420,0,15,none,decor,西南角并排纸箱，不要穿插
+FD_D158,会议室,Modern_Abandoned_Office,trash_bin,trash_bin,1340,-1040,0,0,none,decor,东北角垃圾桶
+FD_D159,会议室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,1240,-1220,85,90,none,desk_clutter,会议桌散纸
+FD_D160,会议室,Modern_Abandoned_Office,books,books,1240,-1180,85,0,none,desk_clutter,会议桌书本
+FD_D161,会议室,Modern_Abandoned_Office,coffee_mug,SM_Cup,1220,-1260,85,0,none,desk_clutter,会议桌杯子
+FD_D162,会议室,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,900,-1024,140,270,none,wall_hang,北墙挂柜，避开文件柜和门框；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D163,休息室,Modern_Abandoned_Office,sofa,SM_Sofa,1000,-2470,0,0,half,cover,南墙长沙发，视线高度，避开书架/植物/S12，不要移动已有桌子
+FD_D164,休息室,Modern_Abandoned_Office,coffee_table,SM_Coffee_table,1000,-2370,0,0,none,decor,沙发前茶几
+FD_D165,休息室,Modern_Abandoned_Office,magazine,magazine,1000,-2370,40,10,none,desk_clutter,茶几上的杂志
+FD_D166,休息室,Modern_Abandoned_Office,magazine,magazine,1020,-2355,40,30,none,desk_clutter,茶几上第二本杂志
+FD_D167,休息室,Modern_Abandoned_Office,SM_armchair_top_01,SM_armchair_top_01,860,-2370,0,90,none,decor,茶几西侧单椅
+FD_D168,休息室,Modern_Abandoned_Office,cardboard_box,SM_box_01,80,-2560,0,0,none,decor,西南角纸箱
+FD_D169,休息室,Modern_Abandoned_Office,trash_bin,trash_bin,80,-2300,0,0,none,decor,西墙垃圾桶，避开北门 D12 和植物
+FD_D170,休息室,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,24,-2300,140,0,none,wall_hang,西墙挂柜，贴墙；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D171,休息室,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,400,-2588,150,90,none,wall_hang,南墙西段公告板，书架以西
+FD_D172,休息室,Modern_Abandoned_Office,coffee_mug,SM_Cup,240,-2180,85,0,none,desk_clutter,北侧休息桌杯子
+FD_D173,休息室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,260,-2440,85,0,none,desk_clutter,南侧休息桌杂志/纸张
+FD_D174,休息室,Modern_Abandoned_Office,books,books,220,-2440,85,0,none,desk_clutter,南侧休息桌书本
+FD_D175,调度室,Modern_Abandoned_Office,SM_Bookcase_01,SM_Bookcase_01,5060,-200,0,90,full,decor,西墙北段书架，避开 D14/D15
+FD_D176,调度室,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,5024,-1000,140,0,none,wall_hang,西墙南段挂柜，避开 D14 和文件柜；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D177,调度室,Modern_Abandoned_Office,cardboard_box,SM_box_01,5540,-1340,0,0,none,decor,东南角纸箱
+FD_D178,调度室,Modern_Abandoned_Office,cardboard_box,SM_box_01,5500,-1340,0,20,none,decor,东南角并排纸箱
+FD_D179,调度室,Modern_Abandoned_Office,trash_bin,trash_bin,5080,-1340,0,0,none,decor,西南角垃圾桶，远离白板
+FD_D180,调度室,Modern_Abandoned_Office,printer,printer,5540,-500,0,90,none,decor,东墙打印机，书架以北、金属桌以南
+FD_D181,调度室,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,5588,-700,150,180,none,wall_hang,东墙公告板，避开书架
+FD_D182,调度室,Modern_Abandoned_Office,keyboard,SM_Keyboard_01,5300,-1160,85,180,none,desk_clutter,调度书桌键盘
+FD_D183,调度室,Modern_Abandoned_Office,paper_stack,SM_Sheets_01,5260,-1160,85,180,none,desk_clutter,调度书桌散纸
+FD_D184,调度室,Modern_Abandoned_Office,coffee_mug,SM_Cup,5340,-1145,85,0,none,desk_clutter,调度书桌杯子
+FD_D185,调度室,Modern_Abandoned_Office,SM_Plant,SM_Plant,5080,-80,0,0,none,decor,西北角植物，避开 D15 和 D14
+FD_D186,办公走廊,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,512,-1000,150,0,none,wall_hang,西墙公告板，D04 与 D06 之间，贴墙浅进深，不放地板物件
+FD_D187,办公走廊,Modern_Abandoned_Office,bulletin_board,SM_Whiteboard_02,688,-1450,150,180,none,wall_hang,东墙公告板，D09 与 D10 之间，贴墙，避开门框
+FD_D188,办公走廊,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,524,-500,140,0,none,wall_hang,西墙挂柜，D02 与 D04 之间，浅进深；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D189,办公走廊,Modern_Abandoned_Office,wall_cabinet,SM_Cabinet,676,-1000,140,180,none,wall_hang,东墙挂柜，D07 与 D09 之间；若 SM_Cabinet 为落地柜则放地面靠墙，不要悬空
+FD_D190,办公走廊,Modern_Abandoned_Office,cable_tray_2m,SM_CableTray,516,-1000,220,90,none,wall_hang,走廊天花/墙沿线槽，2m 原尺寸，不挡通行，避开灯具
+FD_D191,办公走廊,Modern_Abandoned_Office,cable_tray_2m,SM_CableTray,516,-1300,220,90,none,wall_hang,走廊南段线槽，2m 原尺寸阵列，不要拉伸
+FD_D192,主车间,Factory,cable_reel,cable_reel,1650,-50,0,0,none,decor,南墙西段线盘，贴墙，距料斗 ≥120cm，避开楼梯
+FD_D193,主车间,Factory,wooden_crate,SM_CargoCrate_01,1900,-50,0,0,none,decor,南墙木箱，料斗 FD_062 以西
+FD_D194,主车间,Factory,wooden_crate,SM_CargoCrate_01,1970,-50,0,10,none,decor,南墙并排木箱，间距拉开不要穿插
+FD_D195,主车间,Factory,sheet_stack,SM_Sheets_01,2600,-40,0,0,none,decor,南墙中段靠墙板材，两台料斗之间的墙边
+FD_D196,主车间,Factory,cable_reel,cable_reel,2750,-50,0,0,none,decor,南墙中段线盘
+FD_D197,主车间,Factory,wooden_crate,SM_CargoCrate_01,3280,-50,0,0,none,decor,南墙东段木箱，避开 FD_064
+FD_D198,主车间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,3550,-55,0,0,half,cover,南墙东段油桶，避开东楼梯和 FD_070
+FD_D199,主车间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,3620,-55,0,0,half,cover,南墙东段第二只油桶，并排不穿插
+FD_D200,主车间,FPS_Controller,parts_box,SM_Wooden_Box_01,2050,-45,0,0,none,decor,南墙零件箱
+FD_D201,主车间,Factory,warning_sign,SM_Caution_01_Decal,2500,-12,160,270,none,wall_hang,南墙警示牌，窗台以下，避开窗洞
+FD_D202,主车间,Factory,warning_sign,SM_Caution_01_Decal,3300,-12,160,270,none,wall_hang,南墙东段警示牌，窗台以下
+FD_D203,主车间,Factory,cable_tray_factory,SM_CableTray,2000,-16,220,0,none,wall_hang,南墙线槽 2m，贴墙，可与南墙管路平行
+FD_D204,主车间,Factory,cable_tray_factory,SM_CableTray,2800,-16,220,0,none,wall_hang,南墙线槽第 2 段，阵列不要拉伸
+FD_D205,主车间,FPS_Controller,tool_cart,SM_PlatformCart,1480,-450,0,90,none,decor,西墙 D03 与 D08 之间工具车，离门 ≥160cm
+FD_D206,主车间,FPS_Controller,SM_Tool_Box_01,SM_Tool_Box_01,1480,-520,0,90,none,decor,西墙工具箱，靠墙
+FD_D207,主车间,Factory,wooden_crate,SM_CargoCrate_01,1480,-380,0,0,none,decor,西墙木箱，D03 以南足够净距
+FD_D208,主车间,FPS_Controller,wall_tools,wall_tools,1414,-450,150,0,none,wall_hang,西墙挂板工具，贴墙，避开门框
+FD_D209,主车间,Factory,warning_sign,SM_Caution_01_Decal,1412,-1000,160,0,none,wall_hang,西墙中段警示牌，D08 以北、楼梯以南
+FD_D210,主车间,Factory,cable_reel,cable_reel,2180,-50,0,0,none,decor,南墙线盘，避开西墙窄口袋和 FD_069
+FD_D211,主车间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,2420,-50,0,0,half,cover,南墙油桶，西墙口袋放不下，改沿南墙
+FD_D212,主车间,FPS_Controller,parts_box,SM_Wooden_Box_01,1480,-1180,0,0,none,decor,西墙零件箱
+FD_D213,主车间,InteriorKit,SM_ElecCabinet_Tall,SM_ElecCabinet_Tall,1480,-1260,0,90,full,cover,西墙高配电柜（InteriorKit），原尺寸，不放大，不当锅炉白模用
+FD_D214,主车间,FPS_Controller,tool_cart,SM_PlatformCart,3720,-160,0,270,none,decor,东墙南段工具车，避开 D16 和 FD_070
+FD_D215,主车间,Factory,wooden_crate,SM_CargoCrate_01,3720,-90,0,0,none,decor,东南角木箱
+FD_D216,主车间,Factory,pump,SM_Gas_Pump,3720,-500,0,270,none,decor,东墙泵，原尺寸，作为南墙管路的设备端点之一
+FD_D217,主车间,Factory,motor,SM_MotorBase,3400,-50,0,0,none,decor,南墙东段电机，原尺寸，避开东墙泵和料斗
+FD_D218,主车间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,3720,-1240,0,0,half,cover,东墙油桶，楼梯以南、与 FD_072 留 120cm
+FD_D219,主车间,Factory,warning_sign,SM_Caution_01_Decal,3788,-250,160,180,none,wall_hang,东墙警示牌，D16 以南，避开门框
+FD_D220,主车间,Factory,cable_tray_factory,SM_CableTray,3784,-400,220,90,none,wall_hang,东墙线槽 2m，贴墙
+FD_D221,主车间,Factory,wooden_crate,SM_CargoCrate_01,1550,-2550,0,0,none,decor,北墙西段浅放木箱，D20 以西，不挡钢走廊通道
+FD_D222,主车间,FPS_Controller,parts_box,SM_Wooden_Box_01,2000,-2550,0,0,none,decor,北墙 D20 与 D21 之间零件箱，离门 ≥160cm
+FD_D223,主车间,FPS_Controller,SM_Tool_Box_01,SM_Tool_Box_01,2300,-2550,0,0,none,decor,北墙工具箱，靠墙浅放
+FD_D224,主车间,Factory,wooden_crate,SM_CargoCrate_01,3000,-2550,0,0,none,decor,北墙 D21 与 D22 之间木箱
+FD_D225,主车间,Factory,cable_reel,cable_reel,3300,-2550,0,0,none,decor,北墙线盘，靠墙
+FD_D226,主车间,Factory,warning_sign,SM_Caution_01_Decal,2300,-2588,160,90,none,wall_hang,北墙警示牌，两门之间，避开门框
+FD_D227,主车间,Factory,warning_sign,SM_Caution_01_Decal,3300,-2588,160,90,none,wall_hang,北墙东段警示牌
+FD_D228,主车间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,1980,-820,0,0,half,cover,近西柱脚油桶组，不铺车间中央
+FD_D229,主车间,Factory,wooden_crate,SM_CargoCrate_01,2050,-820,0,0,none,decor,近西柱脚木箱，与油桶成组
+FD_D230,主车间,FPS_Controller,parts_box,SM_Wooden_Box_01,2010,-880,0,0,none,decor,近西柱脚零件箱
+FD_D231,主车间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,3280,-900,0,0,half,cover,近东柱脚油桶，避开 FD_066/S14/楼梯
+FD_D232,主车间,Factory,wooden_crate,SM_CargoCrate_01,3380,-820,0,0,none,decor,近东柱脚木箱，与油桶错开
+FD_D233,主车间,FPS_Controller,SM_Tool_Box_01,SM_Tool_Box_01,3320,-820,0,0,none,decor,近东柱脚工具箱
+FD_D234,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,3860,-1550,0,0,full,cover,西墙补货架段，原尺寸拼接，不放大；避开 D18/D17/S04
+FD_D235,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,3860,-1700,0,0,full,cover,西墙货架第 2 段，与 FD_119 并列成排
+FD_D236,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,3860,-2100,0,0,full,cover,西墙南段货架，D18 以南、S04 以西
+FD_D237,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,3860,-2360,0,0,full,cover,西南角货架段，避开 FD_124 托盘
+FD_D238,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,4380,-1840,0,0,full,cover,中排补段，接 FD_120 北侧，原尺寸，不放大
+FD_D239,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,4380,-2200,0,0,full,cover,中排补段，接 FD_120 南侧，避开 S04
+FD_D240,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,4760,-1840,0,0,full,cover,中东排补段，接 FD_121 北侧
+FD_D241,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,4760,-2200,0,0,full,cover,中东排补段，接 FD_121 南侧，避开 D19
+FD_D242,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,5150,-1980,0,0,full,cover,东排补段，接 FD_122 北侧，避开 S05
+FD_D243,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,5150,-2360,0,0,full,cover,东排南段，避开 FD_123 托盘和 D19
+FD_D244,货物仓,FPS_Controller,SM_Shelv,SM_Shelv,5520,-2100,0,0,full,cover,东墙货架，避开 S05 和东北托盘
+FD_D245,货物仓,FPS_Controller,SM_Palet,SM_Palet,5480,-1520,0,0,half,cover,东北托盘组，避开 S05、D17 和 FD_125
+FD_D246,货物仓,Factory,wooden_crate,SM_CargoCrate_01,5480,-1520,22,0,none,decor,码在新托盘上的木箱，有意叠放
+FD_D247,货物仓,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,4300,-2460,0,0,half,cover,南墙油桶，避开 D19 和 S04
+FD_D248,货物仓,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,4380,-2460,0,0,half,cover,南墙第二只油桶，并排不穿插
+FD_D249,货物仓,Factory,wooden_crate,SM_CargoCrate_01,4550,-2460,0,0,none,decor,南墙木箱组
+FD_D250,货物仓,Factory,wooden_crate,SM_CargoCrate_01,4615,-2460,0,0,none,decor,南墙并排木箱
+FD_D251,货物仓,Factory,cable_reel,cable_reel,5200,-1550,0,0,none,decor,北墙东段线盘，避开 D17 和 S05
+FD_D252,货物仓,FPS_Controller,parts_box,SM_Wooden_Box_01,5000,-1550,0,0,none,decor,北墙零件箱，避开 D17
+FD_D253,货物仓,FPS_Controller,tool_cart,SM_PlatformCart,4200,-1550,0,0,none,decor,北墙西段工具车，避开 D17/D18
+FD_D254,货物仓,Factory,warning_sign,SM_Caution_01_Decal,4600,-2588,160,90,none,wall_hang,南墙警示牌，D19 以西，避开门框
+FD_D255,货物仓,Factory,warning_sign,SM_Caution_01_Decal,5300,-2588,160,90,none,wall_hang,南墙东段警示牌
+FD_D256,货物仓,Factory,cable_tray_factory,SM_CableTray,4300,-2584,220,0,none,wall_hang,南墙线槽 2m
+FD_D257,货物仓,InteriorKit,SM_ElecCabinet_Tall,SM_ElecCabinet_Tall,5520,-2460,0,180,full,cover,东南角高配电柜，InteriorKit 原尺寸，不放大
+FD_D258,零件库,FPS_Controller,SM_Shelv,SM_Shelv,1920,-3885,0,90,full,cover,南墙补货架段，插在现有两架之间，原尺寸不放大
+FD_D259,零件库,FPS_Controller,SM_Shelv,SM_Shelv,2510,-3885,0,90,full,cover,南墙补货架段，第二、三架之间
+FD_D260,零件库,FPS_Controller,SM_Shelv,SM_Shelv,1480,-3700,0,90,full,cover,西墙货架，避开 D25 和现有金属桌
+FD_D261,零件库,FPS_Controller,SM_Shelv,SM_Shelv,1480,-3840,0,90,full,cover,西墙南段货架，与南排留出通道
+FD_D262,零件库,Factory,wooden_crate,SM_CargoCrate_01,2000,-3360,0,0,none,decor,北墙木箱，D25 以东，避开 S20
+FD_D263,零件库,Factory,wooden_crate,SM_CargoCrate_01,2070,-3360,0,0,none,decor,北墙并排木箱
+FD_D264,零件库,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,2500,-3360,0,0,half,cover,北墙油桶，避开 S20 和 D26
+FD_D265,零件库,FPS_Controller,parts_box,SM_Wooden_Box_01,2700,-3360,0,0,none,decor,北墙零件箱
+FD_D266,零件库,FPS_Controller,tool_cart,SM_PlatformCart,3100,-3360,0,270,none,decor,东北角工具车，避开 D26 和现有托盘
+FD_D267,零件库,FPS_Controller,SM_Tool_Box_01,SM_Tool_Box_01,3100,-3840,0,0,none,decor,东南角工具箱，现有托盘南侧
+FD_D268,零件库,Factory,cable_reel,cable_reel,2360,-3360,0,0,none,decor,北墙线盘
+FD_D269,零件库,Factory,warning_sign,SM_Caution_01_Decal,2000,-3988,160,90,none,wall_hang,南墙警示牌，货架上方墙面，避开窗洞
+FD_D270,零件库,FPS_Controller,wall_tools,wall_tools,1414,-3600,150,0,none,wall_hang,西墙挂工具，避开 D25
+FD_D271,零件库,FPS_Controller,SM_Hammer,SM_Hammer,1580,-3500,85,0,none,desk_clutter,现有金属桌上的扳手/工具
+FD_D272,零件库,FPS_Controller,parts_box,SM_Wooden_Box_01,1580,-3450,85,0,none,desk_clutter,金属桌面上的零件盒，有意叠放
+FD_D273,弹药间,FPS_Controller,SM_Shelv,SM_Shelv,3360,-3920,0,90,full,cover,南墙西段货架，避开军械笼和 S21
+FD_D274,弹药间,FPS_Controller,SM_Shelv,SM_Shelv,3700,-3920,0,90,full,cover,南墙中段货架，原尺寸不放大
+FD_D275,弹药间,FPS_Controller,SM_Shelv,SM_Shelv,4040,-3920,0,90,full,cover,南墙东段货架，避开现有武器箱
+FD_D276,弹药间,Factory,wooden_crate,SM_CargoCrate_01,3360,-2640,0,0,none,decor,北墙西段木箱，避开 D22 和 S19
+FD_D277,弹药间,Factory,wooden_crate,SM_CargoCrate_01,3440,-2640,0,0,none,decor,北墙并排木箱，离 D22 ≥160cm
+FD_D278,弹药间,FPS_Controller,SM_Ammo_Box_03,SM_Ammo_Box_03,4000,-2640,0,0,half,cover,北墙东段弹药箱，避开 D22/S19
+FD_D279,弹药间,FPS_Controller,SM_Ammo_Box_03,SM_Ammo_Box_03,4050,-2640,0,90,half,cover,北墙东段第二只弹药箱，并排不穿插
+FD_D280,弹药间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,4100,-3600,0,0,half,cover,东墙油桶，避开 D27 和 S21
+FD_D281,弹药间,FPS_Controller,tool_cart,SM_PlatformCart,3360,-3200,0,90,none,decor,西墙工具车，D24 与 D26 之间，避开工作台
+FD_D282,弹药间,FPS_Controller,parts_box,SM_Wooden_Box_01,3360,-3320,0,0,none,decor,西墙零件箱
+FD_D283,弹药间,FPS_Controller,wall_tools,wall_tools,3214,-3320,150,0,none,wall_hang,西墙挂工具，两门之间，避开门框
+FD_D284,弹药间,Factory,warning_sign,SM_Caution_01_Decal,3900,-3988,160,90,none,wall_hang,南墙警示牌
+FD_D285,弹药间,FPS_Controller,SM_Hammer,SM_Hammer,3700,-3100,85,0,none,desk_clutter,工作台 W3 上的工具，不要移动工作台
+FD_D286,弹药间,FPS_Controller,parts_box,SM_Wooden_Box_01,3740,-3100,85,0,none,desk_clutter,工作台面上的零件盒
+FD_D287,弹药间,FPS_Controller,SM_Ammo_Box,SM_Ammo_Box,3360,-3100,0,0,half,cover,工作台西侧地面弹药箱，离门和 S19 足够远
+FD_D288,改装间,FPS_Controller,SM_Shelv,SM_Shelv,1480,-3220,0,90,full,cover,西墙南段补货架，与现有南墙货架同高，原尺寸不放大
+FD_D289,改装间,FPS_Controller,SM_Shelv,SM_Shelv,1480,-3050,0,90,full,cover,西墙货架第 2 段，避开现有折叠桌和工具箱
+FD_D290,改装间,Factory,wooden_crate,SM_CargoCrate_01,1480,-2740,0,0,none,decor,西北角木箱，避开 D20 和现有弹药箱
+FD_D291,改装间,FPS_Controller,parts_box,SM_Wooden_Box_01,1600,-2640,0,0,none,decor,北墙零件箱，D20 以西
+FD_D292,改装间,FPS_Controller,tool_cart,SM_PlatformCart,2200,-2780,0,270,none,decor,东墙工具车，避开 D23、货架和工作台
+FD_D293,改装间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,2180,-2680,0,0,half,cover,东北角油桶，避开 D20/D23，离墙 10cm 以上
+FD_D294,改装间,FPS_Controller,wall_tools,wall_tools,1414,-2900,150,0,none,wall_hang,西墙挂工具，贴墙避开门框
+FD_D295,改装间,Factory,warning_sign,SM_Caution_01_Decal,2000,-3288,160,90,none,wall_hang,南墙警示牌
+FD_D296,改装间,FPS_Controller,SM_Hammer,SM_Hammer,1850,-3050,85,0,none,desk_clutter,工作台 W1 桌面工具（已有一把在 1520，此处补在台面上）
+FD_D297,改装间,FPS_Controller,parts_box,SM_Wooden_Box_01,1850,-3100,85,0,none,desk_clutter,工作台面零件盒，有意叠放
+FD_D298,组装间,FPS_Controller,SM_Shelv,SM_Shelv,2380,-3220,0,90,full,cover,西墙南段补货架，原尺寸不放大
+FD_D299,组装间,FPS_Controller,SM_Shelv,SM_Shelv,2380,-2750,0,90,full,cover,西墙北段货架，D23 以北，避开金属桌和门
+FD_D300,组装间,Factory,wooden_crate,SM_CargoCrate_01,2680,-2760,0,0,none,decor,房间中北木箱，避开 D21、货架和现有弹药箱
+FD_D301,组装间,FPS_Controller,parts_box,SM_Wooden_Box_01,2500,-2640,0,0,none,decor,北墙零件箱，D21 以西
+FD_D302,组装间,FPS_Controller,tool_cart,SM_PlatformCart,3100,-2780,0,270,none,decor,东墙工具车，避开 D24、货架和工作台
+FD_D303,组装间,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,3080,-2680,0,0,half,cover,东北角油桶，避开 D21/D24，离墙 10cm 以上
+FD_D304,组装间,FPS_Controller,wall_tools,wall_tools,2314,-3100,150,0,none,wall_hang,西墙挂工具，D23 以南，避开门框
+FD_D305,组装间,Factory,warning_sign,SM_Caution_01_Decal,2800,-3288,160,90,none,wall_hang,南墙警示牌
+FD_D306,组装间,FPS_Controller,parts_box,SM_Wooden_Box_01,2750,-3100,85,0,none,desk_clutter,工作台 W2 桌面零件盒
+FD_D307,组装间,FPS_Controller,SM_Hammer,SM_Hammer,2780,-3080,85,0,none,desk_clutter,工作台面工具
+FD_D308,锅炉房,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,4360,-2840,0,0,half,cover,北侧已有油桶旁再补一只，并排不穿插，避开 D19
+FD_D309,锅炉房,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,4360,-2740,0,0,half,cover,西墙北段油桶组
+FD_D310,锅炉房,Factory,wooden_crate,SM_CargoCrate_01,4360,-3840,0,0,none,decor,西南角木箱，现有工具箱附近，避开锅炉
+FD_D311,锅炉房,Factory,wooden_crate,SM_CargoCrate_01,4420,-3840,0,0,none,decor,西南角并排木箱
+FD_D312,锅炉房,FPS_Controller,tool_cart,SM_PlatformCart,4680,-3840,0,0,none,decor,锅炉西侧工具车，不要挡锅炉和管线接口
+FD_D313,锅炉房,FPS_Controller,SM_Tool_Box_01,SM_Tool_Box_01,4680,-3760,0,0,none,decor,工具车旁工具箱
+FD_D314,锅炉房,Factory,pump,SM_Gas_Pump,4480,-3500,0,0,none,decor,西侧泵，作为西墙管路可见设备端点，原尺寸
+FD_D315,锅炉房,Factory,cable_reel,cable_reel,5520,-3840,0,0,none,decor,东南角线盘，锅炉以东，避开楼梯
+FD_D316,锅炉房,FPS_Controller,parts_box,SM_Wooden_Box_01,5520,-3740,0,0,none,decor,东南角零件箱
+FD_D317,锅炉房,Factory,warning_sign,SM_Caution_01_Decal,4500,-2612,160,270,none,wall_hang,南墙（货物仓一侧）警示牌，D19 以西，避开门框
+FD_D318,锅炉房,Factory,warning_sign,SM_Caution_01_Decal,4212,-3500,160,0,none,wall_hang,西墙警示牌，避开 D27
+FD_D319,锅炉房,Factory,cable_tray_factory,SM_CableTray,4400,-3984,220,0,none,wall_hang,北墙线槽，与北墙管路平行
+FD_D320,锅炉房,InteriorKit,SM_ElecCabinet_Low,SM_ElecCabinet_Low,5520,-3500,0,90,half,cover,东墙落地矮柜，InteriorKit，避开楼梯和 FD_180
+FD_D321,装卸平台,Factory,wooden_crate,SM_CargoCrate_01,3860,-200,0,0,none,decor,西墙南段木箱，避开 E1 净空和现有托盘
+FD_D322,装卸平台,Factory,wooden_crate,SM_CargoCrate_01,3860,-260,0,0,none,decor,西墙并排木箱，不要穿插集装箱
+FD_D323,装卸平台,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,3860,-500,0,0,half,cover,西墙油桶，D16 以南、离 S01 足够远
+FD_D324,装卸平台,Factory,cable_reel,cable_reel,3860,-1280,0,90,none,decor,西南/西墙北段线盘，D16 以北、D17 附近留空
+FD_D325,装卸平台,FPS_Controller,parts_box,SM_Wooden_Box_01,4000,-1280,0,0,none,decor,北墙零件箱，避开 D17 和托盘 FD_104
+FD_D326,装卸平台,FPS_Controller,tool_cart,SM_PlatformCart,4900,-200,0,270,none,decor,东墙南段工具车，避开 E1 和 D14
+FD_D327,装卸平台,FPS_Controller,SM_Tool_Box_01,SM_Tool_Box_01,4800,-1280,0,0,none,decor,北墙东段工具箱，避开现有 FD_105
+FD_D328,装卸平台,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,4900,-1100,0,0,half,cover,东墙油桶，避开 S02 和 D14
+FD_D329,装卸平台,Factory,warning_sign,SM_Caution_01_Decal,3812,-400,160,0,none,wall_hang,西墙警示牌，D16 以南，避开门框
+FD_D330,装卸平台,Factory,warning_sign,SM_Caution_01_Decal,4988,-200,160,180,none,wall_hang,东墙警示牌，避开 D14
+FD_D331,装卸平台,Factory,wooden_crate,SM_CargoCrate_01,4900,-600,0,0,none,decor,东墙中段木箱，集装箱以东，不要穿插
+FD_D332,楼梯间,UndergroundTunnel,iron_rack,SM_MetalShelf01a,4300,-2750,-400,0,none,decor,西段铁架，靠南墙附近，装饰用，不当掩体柜
+FD_D333,楼梯间,UndergroundTunnel,iron_rack,SM_MetalShelf01a,6100,-2750,-400,0,none,decor,东段铁架，避开现有弹药箱替代件
+FD_D334,楼梯间,Factory,wooden_crate,SM_CargoCrate_01,4450,-2750,-400,0,none,decor,西段杂物箱，避开 D28 方向
+FD_D335,楼梯间,FPS_Controller,parts_box,SM_Wooden_Box_01,6000,-2750,-400,0,none,decor,东段零件箱
+FD_D336,楼梯间,UndergroundTunnel,Sm_ElectricalBox01a,Sm_ElectricalBox02a,4500,-2640,-300,270,none,wall_hang,南墙挂墙电箱，原点在底部，贴墙，避开门框和楼梯
+FD_D337,楼梯间,UndergroundTunnel,Sm_ElectricalBox01a,Sm_ElectricalBox02a,5900,-2640,-300,270,none,wall_hang,南墙东段挂墙电箱，UndergroundTunnel，不当落地掩体
+FD_D338,楼梯间,UndergroundTunnel,rubble_decal,rubble_decal,5100,-2800,-399,30,none,decal,地面碎石贴花，不挡通道
+FD_D339,楼梯间,Factory,warning_sign,SM_Caution_01_Decal,5000,-2612,-250,270,none,wall_hang,南墙警示牌，贴墙
+FD_D340,泵房,UndergroundTunnel,iron_rack,SM_MetalShelf01a,4350,-3600,-400,0,none,decor,西墙铁架，FD_197 以南、避开 D28 和 S23
+FD_D341,泵房,UndergroundTunnel,iron_rack,SM_MetalShelf01a,5050,-4200,-400,90,none,decor,北墙以南铁架，不要挡住落地柜
+FD_D342,泵房,Factory,wooden_crate,SM_CargoCrate_01,4350,-4200,-400,0,none,decor,西墙中段木箱，靠墙
+FD_D343,泵房,Factory,wooden_crate,SM_CargoCrate_01,4410,-4200,-400,0,none,decor,西墙并排木箱
+FD_D344,泵房,FPS_Controller,parts_box,SM_Wooden_Box_01,5050,-3600,-400,0,none,decor,东墙零件箱，避开 D29 和 S23
+FD_D345,泵房,FPS_Controller,SM_Barrel_55gl,SM_Barrel_55gl,5050,-3480,-400,0,half,cover,东南/东墙油桶，避开 D29
+FD_D346,泵房,UndergroundTunnel,Sm_ElectricalBox01a,Sm_ElectricalBox02a,4240,-3320,-300,0,none,wall_hang,西墙挂墙电箱，原点底部，避开西墙管路
+FD_D347,泵房,UndergroundTunnel,Sm_ElectricalBox01a,Sm_ElectricalBox02a,5160,-4300,-300,180,none,wall_hang,东墙挂墙电箱，避开 D29 和现有电箱 FD_202
+FD_D348,泵房,UndergroundTunnel,rubble_decal,rubble_decal,4600,-4300,-399,10,none,decal,泵房地面碎石贴花
+FD_D349,泵房,UndergroundTunnel,rubble_decal,rubble_decal,4900,-3700,-399,40,none,decal,泵房中部碎石贴花，不压柜子
+FD_D350,泵房,Factory,warning_sign,SM_Caution_01_Decal,4700,-4588,-250,90,none,wall_hang,北墙警示牌
+FD_D351,泵房,Factory,pump,SM_Gas_Pump,4550,-4450,-400,0,none,decor,北侧泵，原尺寸，作为北墙管路可见设备端点，不要穿进落地柜
+FD_D352,配电室,UndergroundTunnel,iron_rack,SM_MetalShelf01a,5350,-4300,-400,0,none,decor,西侧铁架，避开落地柜和 S24
+FD_D353,配电室,UndergroundTunnel,iron_rack,SM_MetalShelf01a,6100,-4300,-400,90,none,decor,东墙铁架，避开高柜和矮柜
+FD_D354,配电室,Factory,wooden_crate,SM_CargoCrate_01,5350,-3700,-400,0,none,decor,西墙木箱，避开 D29、S24 和矮柜 FD_208
+FD_D355,配电室,FPS_Controller,parts_box,SM_Wooden_Box_01,5800,-3360,-400,0,none,decor,北门 D30 以南零件箱，离门 ≥160cm
+FD_D356,配电室,UndergroundTunnel,Sm_ElectricalBox01a,Sm_ElectricalBox02a,5350,-3240,-300,270,none,wall_hang,南墙挂墙电箱，避开 D30 门框
+FD_D357,配电室,UndergroundTunnel,Sm_ElectricalBox01a,Sm_ElectricalBox02a,6160,-4300,-300,180,none,wall_hang,东墙挂墙电箱，避开现有 FD_209
+FD_D358,配电室,UndergroundTunnel,rubble_decal,rubble_decal,5600,-4000,-399,20,none,decal,配电室地面碎石贴花
+FD_D359,配电室,UndergroundTunnel,rubble_decal,rubble_decal,5900,-3500,-399,35,none,decal,配电室北侧碎石贴花，不压柜子
+FD_D360,配电室,Factory,warning_sign,SM_Caution_01_Decal,5600,-4588,-250,90,none,wall_hang,北墙警示牌
+FD_D361,配电室,Factory,cable_reel,cable_reel,5800,-4450,-400,0,none,decor,两台高柜之间偏南的线盘，不要挡住柜门

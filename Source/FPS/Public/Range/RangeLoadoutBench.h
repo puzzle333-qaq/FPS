@@ -32,6 +32,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	AActor* GetBenchViewTarget() const;
+ virtual void CalcCamera(float DeltaTime,struct FMinimalViewInfo& OutResult) override;
 	USkeletalMeshComponent* GetPreviewMesh() const;
 
 	// 服务器：把预览枪挂到人物手上。配件由武器自己同步。

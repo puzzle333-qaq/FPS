@@ -27,6 +27,10 @@ class FPS_API UWarehouseLoadoutSaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
+ UPROPERTY(SaveGame) FText PresetName;
+ UPROPERTY(SaveGame) bool bIncludesProtection=false;
+ UPROPERTY(SaveGame) EPoliceFaceProtection FaceProtection=EPoliceFaceProtection::FlashGoggles;
+ UPROPERTY(SaveGame) EBodyArmorType BodyArmor=EBodyArmorType::Light;
 	UPROPERTY(SaveGame)
 	int32 Version = 1;
 

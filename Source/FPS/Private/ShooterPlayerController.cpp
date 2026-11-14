@@ -39,10 +39,16 @@
 #include "Game/ShooterGameState.h"
 #include "Game/CoopCqbGameState.h"
 #include "Game/AINoiseEvent.h"
+#include "Game/MissionRadioComponent.h"
+#include "World/FactoryMissionObjective.h"
 #include "GameFramework/GameStateBase.h"
 #include "Interface/Interactable.h"
 #include "Range/RangeLoadoutBench.h"
 #include "Ui/RangeLoadoutWidget.h"
+#include "Ui/FullScreenLoadoutWidget.h"
+#include "Ui/MissionFlowWidget.h"
+#include "Character/PoliceAppearanceComponent.h"
+#include "Loadout/PouchInventoryComponent.h"
 #include "CollisionQueryParams.h"
 #include "World/BreakableDoor.h"
 #include "World/TripwireTrap.h"
@@ -651,10 +657,16 @@ void AShooterPlayerController::Client_StopSprint_Implementation()
 }
 void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadoutPreset& Loadout)
 {
+ if(!HasAuthority())return;
+ auto* Operator=Cast<AShooterCharacter>(GetPawn());
+ if(Operator&&Operator->PoliceAppearance&&Loadout.bIncludesProtection&&UPoliceAppearanceComponent::IsValidSelection(Loadout.FaceProtection,Loadout.BodyArmor))
+  Operator->PoliceAppearance->Server_SetProtection_Implementation(Loadout.FaceProtection,Loadout.BodyArmor);
+ int32 Available=Operator&&Operator->GetPouch()?Operator->GetPouch()->GetSlotCount():UPouchInventoryComponent::SlotCount;
 	// 客户端发来的不可信：只保留合法的枪，每类最多一把，配件交给 EquipAttachment 再校验白名单
 	FLoadoutPreset Clean;
 	Clean.Name = Loadout.Name;
 	Clean.bReplaceThrowables = Loadout.bReplaceThrowables;
+ if(Operator){Clean.bIncludesProtection=true;Clean.BodyArmor=Operator->GetBodyArmor();if(Operator->PoliceAppearance)Clean.FaceProtection=Operator->PoliceAppearance->FaceProtection;}
 	TSet<EWeaponKind> SeenKinds;
 	int32 LongGunCount = 0;
 	int32 ThrowableCount = 0;
@@ -694,7 +706,7 @@ void AShooterPlayerController::Server_SubmitLoadout_Implementation(const FLoadou
 
 		FWeaponPreset CleanPreset;
 		CleanPreset.WeaponClass = Preset.WeaponClass;
-		CleanPreset.StackCount = FMath::Clamp(Preset.StackCount, 0, 13);
+		CleanPreset.StackCount = FMath::Clamp(Preset.StackCount, 0, Available);Available-=CleanPreset.StackCount;
 		for (UAttachmentData* Data : Preset.Attachments)
 		{
 			if (IsValid(Data) && CDO->CanEquipAttachment(Data))
@@ -920,7 +932,8 @@ void AShooterPlayerController::EnsureCombatHudKeepAlive()
 	EnsureTutorialPromptWidget();
  const auto* Flow=GetWorld()->GetGameState<ACoopCqbGameState>();
  const bool bRecon=Flow&&!Flow->bRangeHub&&(Flow->GetCoopPhase()==ECoopCqbPhase::Waiting||Flow->GetCoopPhase()==ECoopCqbPhase::Briefing);
- const ESlateVisibility CombatVisibility=bRecon?ESlateVisibility::Collapsed:ESlateVisibility::HitTestInvisible;
+ const bool bFullScreen=bRangeBenchOpen||(Flow&&Flow->GetCoopPhase()==ECoopCqbPhase::PostMission);
+ const ESlateVisibility CombatVisibility=(bRecon||bFullScreen)?ESlateVisibility::Collapsed:ESlateVisibility::HitTestInvisible;
  for(UUserWidget* Widget:{static_cast<UUserWidget*>(PartyRoster.Get()),static_cast<UUserWidget*>(InteractPrompt.Get()),
   static_cast<UUserWidget*>(MagInspect.Get()),static_cast<UUserWidget*>(ControlHints.Get()),static_cast<UUserWidget*>(ScreenEffectOverlay.Get())})
   if(IsValid(Widget))Widget->SetVisibility(CombatVisibility);
@@ -1006,7 +1019,7 @@ void AShooterPlayerController::Input_Interact_Started()
 		LeaveRangeBench();
 		return;
 	}
-	if (AActor* Target = TraceInteractable())
+	if (AActor* Target = TraceInteractable(true))
 	{
 		Server_Interact(Target);
 	}
@@ -1019,13 +1032,15 @@ void AShooterPlayerController::Input_Interact_Started()
 void AShooterPlayerController::Server_SurrenderWarning_Implementation()
 {
 	if (!bPawnAlive || IsMovementLocked()) return;
+ if(TraceInteractable(true))return;
 	UWorld* World = GetWorld();
 	APawn* MyPawn = GetPawn();
 	if (!World || !MyPawn) return;
 
 	const float Now = World->GetTimeSeconds();
 	if (Now < NextSurrenderWarningTime) return;
-	NextSurrenderWarningTime = Now + FMath::Max(0.25f, SurrenderWarningCooldown);
+ const EMissionVoiceCue Warning=MissionVoice::NextWarning(PreviousWarningIndex);
+ NextSurrenderWarningTime=Now+FMath::Max(SurrenderWarningCooldown,MissionVoice::Duration(Warning)+.15f);
 
 	FVector Loc = MyPawn->GetActorLocation();
 	if (const AController* Self = this)
@@ -1037,6 +1052,8 @@ void AShooterPlayerController::Server_SurrenderWarning_Implementation()
 	}
 
 	AINoiseEvent::Report(World, Loc, 1.f, MyPawn, AINoiseEvent::EKind::SurrenderWarning);
+ if(auto* GS=World->GetGameState<ACoopCqbGameState>();GS&&!GS->bRangeHub&&GS->IsMissionLive()&&GS->MissionRadio)
+  GS->MissionRadio->Multicast_OperatorWarning(MyPawn,Warning);
 	UE_LOG(LogTemp, Log, TEXT("[Interact] %s surrender warning"), *GetNameSafe(this));
 }
 
@@ -1072,7 +1089,7 @@ void AShooterPlayerController::EnterRangeBench(ARangeLoadoutBench* Bench)
 {
 	if (!IsLocalController() || !IsValid(Bench) || bRangeBenchOpen) return;
 
-	const TSubclassOf<URangeLoadoutWidget> WidgetClass = Bench->LoadoutWidgetClass;
+	const TSubclassOf<URangeLoadoutWidget> WidgetClass = UFullScreenLoadoutWidget::StaticClass();
 	if (!WidgetClass || WidgetClass == URangeLoadoutWidget::StaticClass())
 	{
 		UE_LOG(LogTemp, Error, TEXT("[RangeBench] %s 没有改枪界面。做一个父类是 RangeLoadoutWidget 的 Widget Blueprint，填到改枪台的 Loadout Widget Class。"), *GetNameSafe(Bench));
@@ -1081,6 +1098,7 @@ void AShooterPlayerController::EnterRangeBench(ARangeLoadoutBench* Bench)
 	}
 
 	bRangeBenchOpen = true;
+ EnsureCombatHudKeepAlive();
 	SetViewTargetWithBlend(Bench->GetBenchViewTarget(), 0.35f);
 	SetIgnoreMoveInput(true);
 	SetIgnoreLookInput(true);
@@ -1114,7 +1132,7 @@ void AShooterPlayerController::EnterRangeBench(ARangeLoadoutBench* Bench)
 		return;
 	}
 	RangeLoadoutWidget->Init(Bench);
-	RangeLoadoutWidget->AddToViewport(30);
+	RangeLoadoutWidget->AddToViewport(400);
 	RangeLoadoutWidget->NotifyBenchReady();
 
 	FInputModeGameAndUI Mode;
@@ -1129,6 +1147,7 @@ void AShooterPlayerController::LeaveRangeBench()
 {
 	if (!bRangeBenchOpen) return;
 	bRangeBenchOpen = false;
+ EnsureCombatHudKeepAlive();
 
 	if (IsValid(RangeLoadoutWidget))
 	{
@@ -1238,7 +1257,7 @@ void AShooterPlayerController::Client_GoToMainMenu_Implementation()
 
 
 
-AActor* AShooterPlayerController::TraceInteractable() const
+AActor* AShooterPlayerController::TraceInteractable(bool bIncludeUnavailable) const
 {
 	const APawn* MyPawn = GetPawn();
 	UWorld* World = GetWorld();
@@ -1258,15 +1277,16 @@ AActor* AShooterPlayerController::TraceInteractable() const
 	}
 	AActor* HitActor = Hit.GetActor();
 	if (!IsValid(HitActor) || !HitActor->GetClass()->ImplementsInterface(UInteractable::StaticClass())) return nullptr;
-	if (!IInteractable::Execute_CanInteract(HitActor, const_cast<APawn*>(MyPawn))) return nullptr;
+	if (!bIncludeUnavailable&&!IInteractable::Execute_CanInteract(HitActor, const_cast<APawn*>(MyPawn))) return nullptr;
 	return HitActor;
 }
 
 FText AShooterPlayerController::GetInteractPromptText() const
 {
 	if (!bPawnAlive || !GetPawn()) return FText::GetEmpty();
-	if (AActor* Target = TraceInteractable())
+	if (AActor* Target = TraceInteractable(true))
 	{
+		if (!IInteractable::Execute_CanInteract(Target, GetPawn()) && !Cast<AFactoryMissionObjective>(Target)) return FText::GetEmpty();
 		return IInteractable::Execute_GetInteractPrompt(Target, GetPawn());
 	}
 	return FText::GetEmpty();
@@ -1653,7 +1673,7 @@ void AShooterPlayerController::ShowSettings()
 		}
 	}
 	SettingsScreen->SetGraphicsLocked(bLockGraphics);
-	if (!SettingsScreen->IsInViewport()) SettingsScreen->AddToViewport(60);
+	if (!SettingsScreen->IsInViewport()) SettingsScreen->AddToViewport(600);
 	if (IsValid(PauseMenu) && PauseMenu->IsInViewport() && PauseMenu->GetVisibility() != ESlateVisibility::Collapsed)
 	{
 		PauseMenu->SetVisibility(ESlateVisibility::Collapsed);
@@ -1671,6 +1691,11 @@ void AShooterPlayerController::HideSettings()
 {
 	if (IsValid(SettingsScreen) && SettingsScreen->IsInViewport()) SettingsScreen->RemoveFromParent();
 	if (!IsLocalController()) return;
+ if(MissionWidget&&MissionWidget->IsInViewport())
+ {
+  FInputModeGameAndUI Mode;Mode.SetWidgetToFocus(MissionWidget->TakeWidget());Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+  SetInputMode(Mode);bShowMouseCursor=true;return;
+ }
 	if (bPauseHiddenForSettings && IsValid(PauseMenu))
 	{
 		PauseMenu->SetVisibility(ESlateVisibility::Visible);

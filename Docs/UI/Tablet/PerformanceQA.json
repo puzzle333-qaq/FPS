@@ -1,0 +1,13 @@
+{
+  "closed": {
+    "median_frame_ms": 19.00229975581169,
+    "p95_frame_ms": 23.534998297691345,
+    "samples": 113
+  },
+  "open": {
+    "median_frame_ms": 19.571799784898758,
+    "p95_frame_ms": 24.23039823770523,
+    "samples": 125
+  },
+  "device_closed_at_end": true
+}

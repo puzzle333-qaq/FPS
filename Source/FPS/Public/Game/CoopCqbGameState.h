@@ -17,6 +17,8 @@ class FPS_API ACoopCqbGameState : public AShooterGameState
 	GENERATED_BODY()
 
 public:
+ ACoopCqbGameState();
+ UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Mission|Voice") TObjectPtr<class UMissionRadioComponent> MissionRadio;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|CoopCQB")
@@ -61,6 +63,9 @@ public:
 	virtual bool IsMovementLocked() const override { return !bRangeHub && CoopPhase != ECoopCqbPhase::InProgress; }
  virtual bool IsActionLocked() const override { return IsMovementLocked(); }
  UPROPERTY(ReplicatedUsing=OnRep_Mission, BlueprintReadOnly, Category="Mission") FMissionReport Report;
+ UPROPERTY(ReplicatedUsing=OnRep_Mission, BlueprintReadOnly, Category="Mission") TArray<FText> CompletedHiddenRecords;
+ UPROPERTY(ReplicatedUsing=OnRep_Mission, BlueprintReadOnly, Category="Mission") int32 HiddenRecordTotal = 0;
+ UPROPERTY(ReplicatedUsing=OnRep_Mission, BlueprintReadOnly, Category="Mission") float FinalMissionSeconds = 0;
  UPROPERTY(ReplicatedUsing=OnRep_Mission, BlueprintReadOnly, Category="Mission") TArray<FText> ObjectiveDescriptions;
  UPROPERTY(ReplicatedUsing=OnRep_Mission, BlueprintReadOnly, Category="Mission") bool bRangeHub = false;
  UPROPERTY(ReplicatedUsing=OnRep_Mission, BlueprintReadOnly, Category="Mission") int32 ExpectedOperators = 1;

@@ -1,0 +1,67 @@
+[
+  {
+    "asset": "T_Icon_Glowstick.png",
+    "source": "Code-authored SVG geometric placeholder",
+    "license": "Project-authored",
+    "state": "replaceable placeholder",
+    "size": [
+      24,
+      24
+    ],
+    "logical_stroke_px": 1.5,
+    "alpha": true,
+    "sha256": "dd2a5e0e9c1992f07fae917d7be8f8f055a1fcb343038a4f752de945b5172e79"
+  },
+  {
+    "asset": "T_Icon_NVG.png",
+    "source": "Code-authored SVG geometric placeholder",
+    "license": "Project-authored",
+    "state": "replaceable placeholder",
+    "size": [
+      24,
+      24
+    ],
+    "logical_stroke_px": 1.5,
+    "alpha": true,
+    "sha256": "2974ecaac882acc501a6429ca42e59f0da04a8ae2592de5e739cce5256298421"
+  },
+  {
+    "asset": "T_Icon_Flashlight.png",
+    "source": "Code-authored SVG geometric placeholder",
+    "license": "Project-authored",
+    "state": "replaceable placeholder",
+    "size": [
+      24,
+      24
+    ],
+    "logical_stroke_px": 1.5,
+    "alpha": true,
+    "sha256": "1f307bfc7b382ac90289a6c0ba5635e7c00a475f6b41deb90573d093073227e4"
+  },
+  {
+    "asset": "T_Icon_Laser.png",
+    "source": "Code-authored SVG geometric placeholder",
+    "license": "Project-authored",
+    "state": "replaceable placeholder",
+    "size": [
+      24,
+      24
+    ],
+    "logical_stroke_px": 1.5,
+    "alpha": true,
+    "sha256": "0eaad89ac022307021a90948b2c24f6ce7e34edbffa1e428602a3d16c14a9b8e"
+  },
+  {
+    "asset": "T_Icon_Keycap.png",
+    "source": "Code-authored SVG geometric placeholder",
+    "license": "Project-authored",
+    "state": "replaceable placeholder",
+    "size": [
+      24,
+      24
+    ],
+    "logical_stroke_px": 1.5,
+    "alpha": true,
+    "sha256": "e011dc15591d812a2c84a8d96f6898a5ed879410374b7d192ef027b8362b8de9"
+  }
+]

@@ -1,0 +1,113 @@
+{
+  "method": "10cm grid, 55cm radius (110cm clear channel), conservative true render AABB inflation, open door assumption; stairs/hole excluded from ground floor; this is a route precheck, not full gameplay traversal",
+  "floors": [
+    {
+      "floor_z": 0,
+      "reachable_cells": 222794,
+      "targets": {
+        "前台": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "财务室": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "档案室": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "办公走廊": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "开放办公室": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "会议室": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "经理室": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "休息室": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "主车间": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "装卸平台": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "调度室": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "货物仓": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 30.0
+        },
+        "改装间": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 10.0
+        },
+        "组装间": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "弹药间": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "零件库": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "锅炉房": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "部署B": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "账本L1": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 70.0
+        },
+        "账本L2": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 70.0
+        },
+        "账本L3": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        }
+      }
+    },
+    {
+      "floor_z": -400,
+      "reachable_cells": 20131,
+      "targets": {
+        "楼梯间": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "泵房": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        },
+        "配电室": {
+          "reachable_within_150cm_of_marker": true,
+          "nearest_free_cm": 0.0
+        }
+      }
+    }
+  ]
+}

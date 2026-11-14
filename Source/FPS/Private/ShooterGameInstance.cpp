@@ -2,6 +2,8 @@
 #include "Online/PartySubsystem.h"
 
 #include "Engine/Engine.h"
+#include "Engine/NetDriver.h"
+#include "IPAddress.h"
 #include "HAL/IConsoleManager.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerController.h"
@@ -161,7 +163,16 @@ bool UShooterGameInstance::TravelSquadTo(const TSoftObjectPtr<UWorld>& Map, cons
  if (!GameMode.IsNull()) Options.Add(FString::Printf(TEXT("game=%s"), *GameMode.ToSoftObjectPath().ToString()));
  // Fresh controllers deliberately acknowledge possession and streaming in the destination.
  if (auto* CurrentMode = World->GetAuthGameMode()) CurrentMode->bUseSeamlessTravel = false;
- return World->ServerTravel(Map.ToSoftObjectPath().GetLongPackageName() + TEXT("?") + FString::Join(Options, TEXT("?")), true);
+ // Use the bound port, which can differ from World.URL.Port in PIE. Feed a
+ // clean base to relative travel so old options (especially RangeHub) cannot leak.
+ // ServerTravel forbids explicit host:port in its map argument.
+ FURL Base(nullptr);
+ Base.Port=World->URL.Port;
+ if(auto* Driver=World->GetNetDriver())
+  if(const auto Address=Driver->GetLocalAddr();Address.IsValid())Base.Port=Address->GetPort();
+ auto& Context=GEngine->GetWorldContextFromWorldChecked(World);
+ TGuardValue<FURL> CleanTravelBase(Context.LastURL,Base);
+ return World->ServerTravel(Map.ToSoftObjectPath().GetLongPackageName()+TEXT("?")+FString::Join(Options,TEXT("?")),false);
 }
 
 bool UShooterGameInstance::JoinByIP(const FString& Address)

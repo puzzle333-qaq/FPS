@@ -1,0 +1,1571 @@
+{
+  "placements": [
+    {
+      "label": "ART_RoofSeal_Wall_000_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        -10.0,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_000_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        390.0,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_000_0_2",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        790.0,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_000_0_3",
+      "variant": "SM_FA_Factory_W210_H60",
+      "location": [
+        1190.0,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_000_1_0",
+      "variant": "SM_FA_Factory_W300_H60",
+      "location": [
+        3800,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_001_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4700.0,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_001_0_1",
+      "variant": "SM_FA_Factory_W145_H60",
+      "location": [
+        5100.0,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_002_0_0",
+      "variant": "SM_FA_Factory_W255_H60",
+      "location": [
+        5355.0,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_003_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        -10.0,
+        -400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_003_0_1",
+      "variant": "SM_FA_Factory_W155_H60",
+      "location": [
+        390.0,
+        -400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_004_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        655.0,
+        -400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_004_0_1",
+      "variant": "SM_FA_Factory_W355_H60",
+      "location": [
+        1055.0,
+        -400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_005_0_0",
+      "variant": "SM_FA_Factory_W205_H60",
+      "location": [
+        -9.999999999999986,
+        -1100.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_006_0_0",
+      "variant": "SM_FA_Factory_W205_H60",
+      "location": [
+        305.0,
+        -1100.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_007_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        -10.0,
+        -1900.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_007_0_1",
+      "variant": "SM_FA_Factory_W155_H60",
+      "location": [
+        390.0,
+        -1900.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_008_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        655.0,
+        -1900.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_008_0_1",
+      "variant": "SM_FA_Factory_W355_H60",
+      "location": [
+        1055.0,
+        -1900.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_009_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        690.0,
+        -1000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_009_0_1",
+      "variant": "SM_FA_Factory_W320_H60",
+      "location": [
+        1090.0,
+        -1000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_010_0_0",
+      "variant": "SM_FA_Factory_W355_H60",
+      "location": [
+        690.0,
+        -1500.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_011_0_0",
+      "variant": "SM_FA_Factory_W255_H60",
+      "location": [
+        1155.0,
+        -1500.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_012_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        -10.0,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_012_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        390.0,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_012_0_2",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        790.0,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_012_0_3",
+      "variant": "SM_FA_Factory_W210_H60",
+      "location": [
+        1190.0,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_015_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3800,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_015_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4200,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_015_0_2",
+      "variant": "SM_FA_Factory_W245_H60",
+      "location": [
+        4600,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_016_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4955.0,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_016_0_1",
+      "variant": "SM_FA_Factory_W255_H60",
+      "location": [
+        5355.0,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_017_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3790.0,
+        -1400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_017_0_1",
+      "variant": "SM_FA_Factory_W155_H60",
+      "location": [
+        4190.0,
+        -1400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_018_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4455.0,
+        -1400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_018_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4855.0,
+        -1400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_018_0_2",
+      "variant": "SM_FA_Factory_W355_H60",
+      "location": [
+        5255.0,
+        -1400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_019_0_0",
+      "variant": "SM_FA_Factory_W355_H60",
+      "location": [
+        1390.0,
+        -3300.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_020_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1855.0,
+        -3300.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_020_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2255.0,
+        -3300.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_020_0_2",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2655.0,
+        -3300.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_020_0_3",
+      "variant": "SM_FA_Factory_W155_H60",
+      "location": [
+        3055.0,
+        -3300.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1390.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1790.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_2",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2190.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_3",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2590.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_4",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2990.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_5",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3390.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_6",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3790.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_7",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4190.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_8",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4590.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_9",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4990.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_021_0_10",
+      "variant": "SM_FA_Factory_W220_H60",
+      "location": [
+        5390.0,
+        -4000.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Wall_022_0_0",
+      "variant": "SM_FA_Factory_W155_H60",
+      "location": [
+        0.0,
+        -145.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_023_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        0.0,
+        -2610.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_023_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        0.0,
+        -2210.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_023_0_2",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        0.0,
+        -1810.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_023_0_3",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        0.0,
+        -1410.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_023_0_4",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        0.0,
+        -1010.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_023_0_5",
+      "variant": "SM_FA_Factory_W355_H60",
+      "location": [
+        0.0,
+        -610.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_024_0_0",
+      "variant": "SM_FA_Factory_W10_H60",
+      "location": [
+        1400.0,
+        0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_027_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400.0,
+        -4010.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_027_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400.0,
+        -3610.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_027_0_2",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400.0,
+        -3210.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_027_0_3",
+      "variant": "SM_FA_Factory_W210_H60",
+      "location": [
+        1400.0,
+        -2810.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_028_0_0",
+      "variant": "SM_FA_Factory_W355_H60",
+      "location": [
+        500.0,
+        -745.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_029_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        500.0,
+        -1545.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_029_0_1",
+      "variant": "SM_FA_Factory_W290_H60",
+      "location": [
+        500.0,
+        -1145.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_030_0_0",
+      "variant": "SM_FA_Factory_W255_H60",
+      "location": [
+        500.0,
+        -1910.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_031_0_0",
+      "variant": "SM_FA_Factory_W155_H60",
+      "location": [
+        700.0,
+        -545.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_032_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        700.0,
+        -1195.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_032_0_1",
+      "variant": "SM_FA_Factory_W140_H60",
+      "location": [
+        700.0,
+        -795.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_033_0_0",
+      "variant": "SM_FA_Factory_W340_H60",
+      "location": [
+        700.0,
+        -1645.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_034_0_0",
+      "variant": "SM_FA_Factory_W155_H60",
+      "location": [
+        700.0,
+        -1910.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_035_0_0",
+      "variant": "SM_FA_Factory_W10_H60",
+      "location": [
+        3800.0,
+        0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_037_0_0",
+      "variant": "SM_FA_Factory_W10_H60",
+      "location": [
+        3800.0,
+        -2610.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_038_0_0",
+      "variant": "SM_FA_Factory_W355_H60",
+      "location": [
+        5000.0,
+        -345.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_039_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5000.0,
+        -1410.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_039_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5000.0,
+        -1010.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_039_0_2",
+      "variant": "SM_FA_Factory_W155_H60",
+      "location": [
+        5000.0,
+        -610.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -4010.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_1",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -3610.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_2",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -3210.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_3",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -2810.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_4",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -2410.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_5",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -2010.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_6",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -1610.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_7",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -1210.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_8",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -810.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_9",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        5600.0,
+        -410.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_040_0_10",
+      "variant": "SM_FA_Factory_W20_H60",
+      "location": [
+        5600.0,
+        -10.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_041_0_0",
+      "variant": "SM_FA_Factory_W305_H60",
+      "location": [
+        2300.0,
+        -2895.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_042_0_0",
+      "variant": "SM_FA_Factory_W305_H60",
+      "location": [
+        2300.0,
+        -3310.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_043_0_0",
+      "variant": "SM_FA_Factory_W305_H60",
+      "location": [
+        3200.0,
+        -2895.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_044_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3200.0,
+        -3645.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_044_0_1",
+      "variant": "SM_FA_Factory_W240_H60",
+      "location": [
+        3200.0,
+        -3245.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_045_0_0",
+      "variant": "SM_FA_Factory_W255_H60",
+      "location": [
+        3200.0,
+        -4010.0000000000005,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_046_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4200.0,
+        -3245.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_046_0_1",
+      "variant": "SM_FA_Factory_W255_H60",
+      "location": [
+        4200.0,
+        -2845.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_047_0_0",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        4200.0,
+        -4010.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Wall_047_0_1",
+      "variant": "SM_FA_Factory_W255_H60",
+      "location": [
+        4200.0,
+        -3610.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_000_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        5245.0,
+        0.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_002_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        545.0,
+        -400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_003_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        195.0,
+        -1100.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_004_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        545.0,
+        -1900.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_005_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        1045.0,
+        -1500.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_006_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        4845.0,
+        -2600.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_010_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        4345.0,
+        -1400.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_011_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        1745.0,
+        -3300.0,
+        500
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_012_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        0.0,
+        -255.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_016_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        500.0,
+        -855.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_017_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        500.0,
+        -1655.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_018_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        700.0,
+        -655.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_019_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        700.0,
+        -1305.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_020_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        700.0,
+        -1755.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_023_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        5000.0,
+        -455.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_024_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        2300.0,
+        -3005.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_025_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        3200.0,
+        -3005.0,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_026_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        3200.0,
+        -3754.9999999999995,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_Lintel_027_0_0",
+      "variant": "SM_FA_Factory_W110_H60",
+      "location": [
+        4200.0,
+        -3354.9999999999995,
+        500
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainN_00",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1390,
+        -2600,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainN_01",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1790,
+        -2600,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainN_02",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2190,
+        -2600,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainN_03",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2590,
+        -2600,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainN_04",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2990,
+        -2600,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainN_05",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3390,
+        -2600,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainN_06",
+      "variant": "SM_FA_Factory_W20_H60",
+      "location": [
+        3790,
+        -2600,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainS_00",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1390,
+        0,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainS_01",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1790,
+        0,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainS_02",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2190,
+        0,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainS_03",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2590,
+        0,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainS_04",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        2990,
+        0,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainS_05",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3390,
+        0,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainS_06",
+      "variant": "SM_FA_Factory_W20_H60",
+      "location": [
+        3790,
+        0,
+        650
+      ],
+      "yaw": 0
+    },
+    {
+      "label": "ART_RoofSeal_MainW_00",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400,
+        -2610,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainW_01",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400,
+        -2210,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainW_02",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400,
+        -1810,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainW_03",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400,
+        -1410,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainW_04",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400,
+        -1010,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainW_05",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        1400,
+        -610,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainW_06",
+      "variant": "SM_FA_Factory_W220_H60",
+      "location": [
+        1400,
+        -210,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainE_00",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3800,
+        -2610,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainE_01",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3800,
+        -2210,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainE_02",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3800,
+        -1810,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainE_03",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3800,
+        -1410,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainE_04",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3800,
+        -1010,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainE_05",
+      "variant": "SM_FA_Factory_W400_H60",
+      "location": [
+        3800,
+        -610,
+        650
+      ],
+      "yaw": 90
+    },
+    {
+      "label": "ART_RoofSeal_MainE_06",
+      "variant": "SM_FA_Factory_W220_H60",
+      "location": [
+        3800,
+        -210,
+        650
+      ],
+      "yaw": 90
+    }
+  ],
+  "variants": {
+    "SM_FA_Factory_W400_H60": {
+      "family": "Factory",
+      "width": 400,
+      "height": 60
+    },
+    "SM_FA_Factory_W210_H60": {
+      "family": "Factory",
+      "width": 210.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W300_H60": {
+      "family": "Factory",
+      "width": 300.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W145_H60": {
+      "family": "Factory",
+      "width": 145.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W255_H60": {
+      "family": "Factory",
+      "width": 255.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W155_H60": {
+      "family": "Factory",
+      "width": 155.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W355_H60": {
+      "family": "Factory",
+      "width": 355.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W205_H60": {
+      "family": "Factory",
+      "width": 205.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W320_H60": {
+      "family": "Factory",
+      "width": 320.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W245_H60": {
+      "family": "Factory",
+      "width": 245.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W220_H60": {
+      "family": "Factory",
+      "width": 220,
+      "height": 60
+    },
+    "SM_FA_Factory_W10_H60": {
+      "family": "Factory",
+      "width": 10.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W290_H60": {
+      "family": "Factory",
+      "width": 290.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W140_H60": {
+      "family": "Factory",
+      "width": 140.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W340_H60": {
+      "family": "Factory",
+      "width": 340.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W20_H60": {
+      "family": "Factory",
+      "width": 20,
+      "height": 60
+    },
+    "SM_FA_Factory_W305_H60": {
+      "family": "Factory",
+      "width": 305.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W240_H60": {
+      "family": "Factory",
+      "width": 240.0,
+      "height": 60
+    },
+    "SM_FA_Factory_W110_H60": {
+      "family": "Factory",
+      "width": 109.99999999999909,
+      "height": 60
+    }
+  }
+}

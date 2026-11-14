@@ -22,6 +22,30 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "UObject/UObjectGlobals.h"
+#include "EngineUtils.h"
+#include "Character/PoliceAppearanceComponent.h"
+#include "ShooterCharacter.h"
+#include "ShooterGameInstance.h"
+
+void AShooterPlayerController::Server_DebriefAction_Implementation(bool bRetry)
+{
+ if(!HasAuthority())return;
+ GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this,[this,bRetry]()
+ {
+  if(!HasAuthority()||!IsLocalController())return;
+  auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();
+  auto* GM=GetWorld()->GetAuthGameMode<ACoopCqbGameMode>();
+  if(!GS||!GM||!GS->IsDebriefOpen())return;
+  if(bRetry)GM->Auth_RetryMission();else GM->Auth_ReturnToRange();
+ }));
+}
+
+void AShooterPlayerController::Server_SetPoliceProtection_Implementation(EPoliceFaceProtection Face,EBodyArmorType Armor)
+{
+ if(!HasAuthority())return;
+ if(auto* Operator=Cast<AShooterCharacter>(GetPawn());Operator&&Operator->PoliceAppearance)
+  Operator->PoliceAppearance->Server_SetProtection_Implementation(Face,Armor);
+}
 
 #if WITH_EDITOR
 static TAutoConsoleVariable<float> UIReadyDelay(TEXT("fps.UI.ReadyDelay"),0.f,TEXT("QA only: local readiness delay in seconds."),ECVF_Cheat);
@@ -38,6 +62,9 @@ void AShooterPlayerController::InitializeMissionInput()
   TabletAction->ValueType = EInputActionValueType::Boolean;
   TabletIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_MissionTablet"));
   TabletIMC->MapKey(TabletAction, EKeys::Tab);
+  MissionReadyAction=NewObject<UInputAction>(this,TEXT("IA_MissionReady"));
+  MissionReadyAction->ValueType=EInputActionValueType::Boolean;
+  TabletIMC->MapKey(MissionReadyAction,EKeys::Y);
   TabletScrollUpAction=NewObject<UInputAction>(this,TEXT("IA_TabletScrollUp"));
   TabletScrollDownAction=NewObject<UInputAction>(this,TEXT("IA_TabletScrollDown"));
   TabletScrollUpAction->ValueType=TabletScrollDownAction->ValueType=EInputActionValueType::Boolean;
@@ -52,6 +79,7 @@ void AShooterPlayerController::InitializeMissionInput()
  if (auto* Input = Cast<UEnhancedInputComponent>(InputComponent))
  {
   Input->BindAction(TabletAction, ETriggerEvent::Started, this, &ThisClass::ToggleMissionTablet);
+  Input->BindAction(MissionReadyAction,ETriggerEvent::Started,this,&ThisClass::ToggleMissionReady);
   Input->BindAction(TabletScrollUpAction,ETriggerEvent::Started,this,&ThisClass::ScrollTabletUp);
   Input->BindAction(TabletScrollDownAction,ETriggerEvent::Started,this,&ThisClass::ScrollTabletDown);
  }
@@ -146,6 +174,7 @@ void AShooterPlayerController::ShowMissionPanel(uint8 Panel, AMissionDeployPoint
  if (!IsLocalController()) return;
  if (bRangeBenchOpen) LeaveRangeBench();
  const auto NewPanel = EMissionPanel(Panel);
+ if(NewPanel==EMissionPanel::Debrief)EnsureCombatHudKeepAlive();
  if(NewPanel==EMissionPanel::Tablet)
  {
   if(MissionTablet){MissionTablet->RefreshMission();return;}
@@ -161,6 +190,7 @@ void AShooterPlayerController::ShowMissionPanel(uint8 Panel, AMissionDeployPoint
  else if(MissionTablet)CloseMissionPanel();
  if(NewPanel!=EMissionPanel::Tablet)
  {
+ if(MissionWidget&&MissionWidget->Panel!=NewPanel){MissionWidget->RemoveFromParent();MissionWidget=nullptr;}
  if (MissionWidget && MissionWidget->Panel == NewPanel && MissionWidget->Deploy == Deploy)
  {
   MissionWidget->Refresh(); return;
@@ -222,6 +252,20 @@ void AShooterPlayerController::Server_SelectMission_Implementation(AMissionDeplo
 void AShooterPlayerController::Server_CancelMissionDeploy_Implementation(AMissionDeployPoint* Deploy)
 {
  if (IsValid(Deploy)) Deploy->Auth_Cancel(this);
+}
+void AShooterPlayerController::ToggleMissionReady()
+{
+ if(!IsLocalController())return;
+ if(MissionWidget&&MissionWidget->Panel==EMissionPanel::Selection&&IsValid(MissionWidget->Deploy))
+ {
+  Server_ToggleMissionReady(MissionWidget->Deploy);return;
+ }
+ for(TActorIterator<AMissionDeployPoint> It(GetWorld());It;++It)
+  if(It->SelectedMission!=INDEX_NONE){Server_ToggleMissionReady(*It);return;}
+}
+void AShooterPlayerController::Server_ToggleMissionReady_Implementation(AMissionDeployPoint* Deploy)
+{
+ if(bPawnAlive&&IsValid(Deploy))Deploy->Auth_ToggleReady(this);
 }
 
 void AShooterPlayerController::Server_DeploymentViewReady_Implementation()
