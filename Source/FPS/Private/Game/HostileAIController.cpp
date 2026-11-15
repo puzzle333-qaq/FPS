@@ -155,15 +155,7 @@ void AHostileAIController::HearNoise(const FVector& Location, float Loudness, AA
 
 	if (Kind == AINoiseEvent::EKind::SurrenderWarning)
 	{
-		const float MaxRange = AINoiseEvent::GetRadius(GetWorld(), Kind) * FMath::Clamp(Loudness, 0.05f, 1.f);
-		const float Dist = FVector::Dist(Me->GetActorLocation(), Location);
-		if (Dist > MaxRange) return;
-		if (!Me->IsInFlashSurrenderWindow()) return;
-
-		Me->SetMorale(EHostileMorale::Surrender);
-		SetCrouch(true);
-		SetState(EHostileBrainState::Surrender);
-		UE_LOG(LogTemp, Log, TEXT("[Hostile] %s heard surrender warning -> Surrender"), *GetNameSafe(Me));
+		// Compliance warnings are resolved by the issuing controller's server ray.
 		return;
 	}
 

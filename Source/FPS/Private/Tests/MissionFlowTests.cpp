@@ -8,8 +8,10 @@
 #include "World/MissionObjective.h"
 #include "World/MissionDeployPoint.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/DefaultPawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMissionScoreTest, "FPS.Mission.Score", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FMissionScoreTest::RunTest(const FString& Parameters)
@@ -41,24 +43,30 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMissionObjectiveFlowTest, "FPS.Mission.Objecti
 bool FMissionObjectiveFlowTest::RunTest(const FString& Parameters)
 {
  UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+ GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
  auto* GS = World->SpawnActor<ACoopCqbGameState>();
  World->SetGameState(GS);
  auto* GM = World->SpawnActor<ACoopCqbGameMode>();
  GM->GameState = GS;
- auto* Suspect = World->SpawnActor<AHostileAICharacter>();
+ auto* Suspect = World->SpawnActor<AHostileAICharacter>(FVector(1000,0,100),FRotator::ZeroRotator);
  auto* Hostage = World->SpawnActor<AHostageActor>();
- auto* Marked = World->SpawnActor<AMissionObjective>();
- auto* Hidden = World->SpawnActor<AMissionObjective>(); Hidden->bHiddenObjective = true;
- auto* Operator = World->SpawnActor<APawn>();
- if (!TestNotNull(TEXT("Suspect spawned"), Suspect)) { World->DestroyWorld(false); return false; }
+ auto* Marked = World->SpawnActor<AMissionObjective>(FVector(2000,0,0),FRotator::ZeroRotator);
+ auto* Hidden = World->SpawnActor<AMissionObjective>(FVector(2500,0,0),FRotator::ZeroRotator); Hidden->bHiddenObjective = true;
+ auto* Operator = World->SpawnActor<ADefaultPawn>(FVector(-100,0,0),FRotator::ZeroRotator);
+ if (!TestNotNull(TEXT("Suspect spawned"), Suspect)) { World->DestroyWorld(false); GEngine->DestroyWorldContext(World); return false; }
  GS->SetCoopPhase(ECoopCqbPhase::InProgress);
  GM->MissionSuspects.Add(Suspect); GM->MissionHostages.Add(Hostage);
  GM->MissionObjectives = {Marked, Hidden};
  GM->Auth_RefreshObjectives();
  TestFalse(TEXT("Unfinished tasks do not end mission"), GM->bMissionEnded);
+ Hostage->Auth_ReceiveWarning(Operator);
+ for(int32 I=0;I<70;++I){World->Tick(LEVELTICK_All,.1f);Hostage->UpdateBehavior();}
+ Operator->SetActorLocation(Hostage->GetActorLocation()-Hostage->GetActorForwardVector()*100.f);
  const FVector HostageLocation = Hostage->GetActorLocation();
  Hostage->Interact_Implementation(Operator);
- TestTrue(TEXT("Interaction rescues hostage"), Hostage->IsRescued());
+ TestFalse(TEXT("Rescue waits for binding completion"),Hostage->IsRescued());
+ for(int32 I=0;I<40;++I){World->Tick(LEVELTICK_All,.1f);Hostage->UpdateBehavior();}
+ TestTrue(TEXT("Completed binding rescues hostage"), Hostage->IsRescued());
  TestTrue(TEXT("Rescued hostage stays exactly in place"), Hostage->GetActorLocation().Equals(HostageLocation));
  Hostage->Interact_Implementation(Operator);
  GM->UpdateReport();
@@ -72,9 +80,13 @@ bool FMissionObjectiveFlowTest::RunTest(const FString& Parameters)
  GM->Auth_RefreshObjectives();
  TestFalse(TEXT("Surrender alone cannot finish the mission"), GM->bMissionEnded);
  TestEqual(TEXT("Surrendered suspect remains unresolved"), GS->GetHostileAliveCount(), 1);
+ for(int32 I=0;I<70;++I)World->Tick(LEVELTICK_All,.1f);
+ Operator->SetActorLocation(Suspect->GetActorLocation()-Suspect->GetActorForwardVector()*100.f);
  const FVector SuspectLocation = Suspect->GetActorLocation();
  Suspect->Interact_Implementation(Operator);
- TestTrue(TEXT("Surrendered suspect can be arrested"), Suspect->IsArrested());
+ TestFalse(TEXT("Surrendered suspect is unresolved during binding"),Suspect->IsArrested());
+ for(int32 I=0;I<40;++I){World->Tick(LEVELTICK_All,.1f);Suspect->UpdateRestraint();}
+ TestTrue(TEXT("Completed binding arrests surrendered suspect"), Suspect->IsArrested());
  TestTrue(TEXT("Arrest stays in place"), Suspect->GetActorLocation().Equals(SuspectLocation));
  GM->Auth_RefreshObjectives();
  TestTrue(TEXT("All required tasks complete ends mission"), GM->bMissionEnded);
@@ -87,6 +99,7 @@ bool FMissionObjectiveFlowTest::RunTest(const FString& Parameters)
  TestTrue(TEXT("Debrief waits for host instead of automatic travel"),GS->ReturnEndServerTime<0);
  TestFalse(TEXT("Postmission interaction is blocked"), Hostage->CanInteract_Implementation(Operator));
  World->DestroyWorld(false);
+ GEngine->DestroyWorldContext(World);
  return true;
 }
 

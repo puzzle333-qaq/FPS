@@ -1,7 +1,10 @@
+#include "Game/DoorGestureComponent.h"
 #include "ShooterPlayerController.h"
 #include "Ui/DeploymentDroneComponent.h"
 #include "UObject/UObjectIterator.h"
 #include "Game/HostageActor.h"
+#include "Game/HostileAICharacter.h"
+#include "Game/RestraintActionComponent.h"
 #include "Game/ShooterPlayerState.h"
 #include "ShooterCharacter.h"
 
@@ -1013,7 +1016,9 @@ void AShooterPlayerController::EnsureInteractInput()
 
 void AShooterPlayerController::Input_Interact_Started()
 {
+ if(GetPawn())if(auto* Door=GetPawn()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	if (!bPawnAlive) return;
+ if(GetPawn())if(auto* Action=GetPawn()->FindComponentByClass<URestraintActionComponent>();Action&&Action->IsActive()){Action->CancelForCombatAction();return;}
 	if (bRangeBenchOpen)
 	{
 		LeaveRangeBench();
@@ -1021,7 +1026,8 @@ void AShooterPlayerController::Input_Interact_Started()
 	}
 	if (AActor* Target = TraceInteractable(true))
 	{
-		Server_Interact(Target);
+  if(IInteractable::Execute_CanInteract(Target,GetPawn()))Server_Interact(Target);
+  else if(Cast<AHostageActor>(Target)||Cast<AHostileAICharacter>(Target))Server_SurrenderWarning();
 	}
 	else
 	{
@@ -1031,11 +1037,14 @@ void AShooterPlayerController::Input_Interact_Started()
 
 void AShooterPlayerController::Server_SurrenderWarning_Implementation()
 {
+ if(GetPawn())if(auto* Door=GetPawn()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	if (!bPawnAlive || IsMovementLocked()) return;
- if(TraceInteractable(true))return;
+ if(auto* Target=TraceInteractable(true))if(IInteractable::Execute_CanInteract(Target,GetPawn())||(!Cast<AHostageActor>(Target)&&!Cast<AHostileAICharacter>(Target)))return;
 	UWorld* World = GetWorld();
 	APawn* MyPawn = GetPawn();
 	if (!World || !MyPawn) return;
+ const auto* Flow=World->GetGameState<ACoopCqbGameState>();
+ if(!Flow||Flow->bRangeHub||!Flow->IsMissionLive())return;
 
 	const float Now = World->GetTimeSeconds();
 	if (Now < NextSurrenderWarningTime) return;
@@ -1051,7 +1060,12 @@ void AShooterPlayerController::Server_SurrenderWarning_Implementation()
 		Loc = ViewLoc;
 	}
 
-	AINoiseEvent::Report(World, Loc, 1.f, MyPawn, AINoiseEvent::EKind::SurrenderWarning);
+ // Spoken audio is spatial, but compliance is directed only at the unobstructed ray target.
+ if(auto* Target=TraceWarningTarget())
+ {
+  if(auto* Hostage=Cast<AHostageActor>(Target))Hostage->Auth_ReceiveWarning(MyPawn);
+  else if(auto* Hostile=Cast<AHostileAICharacter>(Target))Hostile->Auth_ReceiveWarning(MyPawn);
+ }
  if(auto* GS=World->GetGameState<ACoopCqbGameState>();GS&&!GS->bRangeHub&&GS->IsMissionLive()&&GS->MissionRadio)
   GS->MissionRadio->Multicast_OperatorWarning(MyPawn,Warning);
 	UE_LOG(LogTemp, Log, TEXT("[Interact] %s surrender warning"), *GetNameSafe(this));
@@ -1257,6 +1271,16 @@ void AShooterPlayerController::Client_GoToMainMenu_Implementation()
 
 
 
+AActor* AShooterPlayerController::TraceWarningTarget() const
+{
+ if(!GetPawn()||!GetWorld())return nullptr;
+ FVector Start;FRotator Aim;GetPlayerViewPoint(Start,Aim);
+ FCollisionQueryParams Q(SCENE_QUERY_STAT(DirectedWarning),false,GetPawn());
+ TArray<AActor*> Attached;GetPawn()->GetAttachedActors(Attached,true,true);Q.AddIgnoredActors(Attached);
+ FHitResult Hit;
+ if(!GetWorld()->LineTraceSingleByChannel(Hit,Start,Start+Aim.Vector()*WarningDistance,ECC_Visibility,Q))return nullptr;
+ return (Cast<AHostageActor>(Hit.GetActor())||Cast<AHostileAICharacter>(Hit.GetActor()))?Hit.GetActor():nullptr;
+}
 AActor* AShooterPlayerController::TraceInteractable(bool bIncludeUnavailable) const
 {
 	const APawn* MyPawn = GetPawn();
@@ -1284,22 +1308,27 @@ AActor* AShooterPlayerController::TraceInteractable(bool bIncludeUnavailable) co
 FText AShooterPlayerController::GetInteractPromptText() const
 {
 	if (!bPawnAlive || !GetPawn()) return FText::GetEmpty();
+ if(auto* Action=GetPawn()->FindComponentByClass<URestraintActionComponent>();Action&&Action->IsActive())return NSLOCTEXT("Interaction","RestraintProgress","正在捆绑（F 取消）");
 	if (AActor* Target = TraceInteractable(true))
 	{
-		if (!IInteractable::Execute_CanInteract(Target, GetPawn()) && !Cast<AFactoryMissionObjective>(Target)) return FText::GetEmpty();
+		if (!IInteractable::Execute_CanInteract(Target, GetPawn()) && !Cast<AFactoryMissionObjective>(Target)&&!Cast<AHostageActor>(Target)&&!Cast<AHostileAICharacter>(Target)) return FText::GetEmpty();
 		return IInteractable::Execute_GetInteractPrompt(Target, GetPawn());
 	}
-	return FText::GetEmpty();
+ if(auto* H=Cast<AHostageActor>(TraceWarningTarget()))return H->GetInteractPrompt_Implementation(GetPawn());
+ return FText::GetEmpty();
 }
 
 void AShooterPlayerController::Server_Interact_Implementation(AActor* Target)
 {
+ if(GetPawn())if(auto* Door=GetPawn()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	APawn* MyPawn = GetPawn();
 	if (!bPawnAlive || IsMovementLocked() || !IsValid(MyPawn) || !IsValid(Target)) return;
 	if (!Target->GetClass()->ImplementsInterface(UInteractable::StaticClass())) return;
 	// 服务器距离校验（相机到 Actor 中心有偏差，放宽一些）
 	if (FVector::Dist(MyPawn->GetActorLocation(), Target->GetActorLocation()) > InteractDistance + 200.f) return;
 	if (!IInteractable::Execute_CanInteract(Target, MyPawn)) return;
+ // Match the authoritative aim trace as well as the object's own distance/side checks.
+ if(TraceInteractable(true)!=Target)return;
 	UE_LOG(LogTemp, Log, TEXT("[Interact] %s -> %s"), *GetNameSafe(this), *GetNameSafe(Target));
 	IInteractable::Execute_Interact(Target, MyPawn);
 }

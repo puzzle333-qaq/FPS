@@ -1,3 +1,5 @@
+#include "Game/DoorGestureComponent.h"
+#include "Game/RestraintActionComponent.h"
 #include "CombatComponent.h"
 
 
@@ -190,6 +192,8 @@ UCombatComponent::UCombatComponent()
 
 void UCombatComponent::Equip(AWeapon* Weapon)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	if (!IsValid(Weapon)) return;
 
 	if (IsValid(CurrentWeapon) && CurrentWeapon != Weapon)
@@ -916,12 +920,12 @@ bool UCombatComponent::HasStrafeWalkingAnim() const
 	return HasWalk(WeaponData->ThirdPersonAnims) || HasWalk(WeaponData->FirstPersonAnims);
 }
 
-void UCombatComponent::RefreshAnimsAfterMesh3PSwap()
+void UCombatComponent::RefreshAnimsAfterMesh3PSwap(bool bReattachWeapon)
 {
 	if (IsValid(CurrentWeapon))
 	{
 		// Mesh3P skeletal asset just changed (Bandits) — rebind gun before anim push.
-		CurrentWeapon->AttachToOwingPawn();
+		if(bReattachWeapon)CurrentWeapon->AttachToOwingPawn();
 		ApplyEquippedWeaponAnim(CurrentWeapon);
 	}
 }
@@ -1374,6 +1378,8 @@ void UCombatComponent::Multicast_CycleWeapon_Implementation(int32 WeaponIndex)
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	CancelInspect();
 	if (StopFireIfWeaponBlocked()) return;
 	if (const AShooterCharacter* Self = Cast<AShooterCharacter>(GetOwner()))
@@ -1821,6 +1827,8 @@ namespace FPSBallistics
 
 void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>& Hits)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	if (StopFireIfWeaponBlocked()) return;
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->WeaponKind == EWeaponKind::Bomb) return;
@@ -2065,6 +2073,8 @@ void UCombatComponent::PlayDryFireClick()
 
 void UCombatComponent::Initiate_ReloadWeapon(bool bFastDrop)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	CancelInspect();
 	BurstShotsRemaining = 0;
 	if (!IsValid(CurrentWeapon)) return;
@@ -2406,6 +2416,8 @@ void UCombatComponent::Client_ReloadWeapon_Implementation(AWeapon* ReloadedWeapo
 
 void UCombatComponent::Server_ReloadWeapon_Implementation(EReloadType ReloadType, bool bFastDrop)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	if (!IsValid(CurrentWeapon)) return;
 
 	APawn* OwningPawn = Cast<APawn>(GetOwner());
@@ -2543,6 +2555,7 @@ void UCombatComponent::Multicast_ReloadWeapon_Implementation(EReloadType ReloadT
 
 void UCombatComponent::Initiate_CycleZoom()
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	if (!bAiming || !IsValid(CurrentWeapon)) return;
 	const int32 Count = CurrentWeapon->GetZoomLevelCount();
 	if (Count < 2) return;
@@ -2562,6 +2575,7 @@ bool UCombatComponent::CanSwitchFireMode() const
 
 void UCombatComponent::Initiate_SwitchFireMode()
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	if (!CanSwitchFireMode()) return;
 
 	const EFireType NewFireType = CurrentWeapon->GetNextFireMode();
@@ -2587,6 +2601,8 @@ void UCombatComponent::Server_SetFireMode_Implementation(EFireType NewFireType)
 
 void UCombatComponent::Initiate_Throw(bool bHighThrow)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	CancelInspect();
 	if (const UWorld* World = GetWorld())
 	{
@@ -2960,6 +2976,8 @@ void UCombatComponent::EquipFallbackAfterThrow()
 
 void UCombatComponent::Server_BeginThrow_Implementation(bool bHighThrow)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	if (!IsValid(CurrentWeapon) || CurrentWeapon->WeaponKind != EWeaponKind::Throwable) return;
 	if (CurrentWeapon->Ammo <= 0) return;
 	if (const AShooterGameState* GS = GetWorld() ? GetWorld()->GetGameState<AShooterGameState>() : nullptr)
@@ -3118,6 +3136,7 @@ void UCombatComponent::OnAdsBufferElapsed()
 
 void UCombatComponent::Initiate_Aim_Pressed()
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	CancelInspect();
 	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponKind == EWeaponKind::Throwable)
 	{
@@ -3247,6 +3266,7 @@ AWeapon* UCombatComponent::FindWeaponForSlot(EWeaponSlot Slot) const
 
 void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	CancelInspect();
 	if (bThrowInProgress)
 	{
@@ -3281,6 +3301,7 @@ void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 
 void UCombatComponent::Server_EquipSlot_Implementation(EWeaponSlot Slot)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	AWeapon* Weapon = FindWeaponForSlot(Slot);
 	if (!IsValid(Weapon)) return;
 
@@ -3318,6 +3339,7 @@ void UCombatComponent::Initiate_EquipThrowableWeapon()
 
 void UCombatComponent::Initiate_EquipOrCycleThrowable()
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	CancelInspect();
 	if (bThrowInProgress) return;
 
@@ -3357,6 +3379,8 @@ void UCombatComponent::Initiate_EquipOrCycleThrowable()
 
 bool UCombatComponent::AllowsHeal() const
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return false;
+ if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>();Action&&Action->IsActive())return false;
 	return true;
 }
 
@@ -3505,6 +3529,7 @@ static UAnimMontage* ResolveMagCheckMontage(UAnimMontage* InspectMontage, bool b
 
 void UCombatComponent::Initiate_VersionWeapon()
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
 	// Mag check only while idle (hold-R). Free inspect key removed.
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Idle) return;
@@ -3637,6 +3662,7 @@ void UCombatComponent::Notify_ReloadWeapon()
 
 void UCombatComponent::Server_Aim_Implementation(bool bPressed)
 {
+ if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
 	Local_Aim(bPressed);
 }
 

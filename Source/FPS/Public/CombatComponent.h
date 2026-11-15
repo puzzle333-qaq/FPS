@@ -71,7 +71,7 @@ public:
 	void Initiate_ReloadWeapon(bool bFastDrop = false);
 
 	/** After FactionLook swaps Mesh3P skeletal mesh, re-push idle/locomotion onto AnimBPs. */
-	void RefreshAnimsAfterMesh3PSwap();
+	void RefreshAnimsAfterMesh3PSwap(bool bReattachWeapon=true);
 
 	/** After FactionLook swaps Mesh1P (Bandits arms), refresh cached default arms so OverrideArms restore keeps Bandits. */
 	void RecacheDefaultFirstPersonArms();

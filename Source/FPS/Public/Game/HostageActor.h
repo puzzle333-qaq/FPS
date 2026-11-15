@@ -10,6 +10,8 @@
 class UCapsuleComponent;
 class USkeletalMeshComponent;
 class UStaticMeshComponent;
+UENUM(BlueprintType)
+enum class EHostageBehavior : uint8 { Calm, Scared, SeekingCover, EnteringCover, Hiding, Emerging, Complying, Compliant, Binding, Secured };
 
 /**
  * Placeable hostage stub. Tag "Hostage" + IHostageProtectInterface (muzzle dip).
@@ -19,11 +21,24 @@ UCLASS()
 class FPS_API AHostageActor : public AActor, public IHostageProtectInterface, public IInteractable, public IPlayerInterface
 {
 	GENERATED_BODY()
+ friend class FDirectedComplianceTest;
+ friend class FMissionObjectiveFlowTest;
 
 public:
 	AHostageActor();
 
 	virtual void BeginPlay() override;
+ virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+ UFUNCTION(BlueprintCallable,Category="FPS|Hostage") void Auth_ReceiveWarning(APawn* Speaker);
+ void Auth_Frighten(const FVector& Threat);
+ UFUNCTION(BlueprintPure,Category="FPS|Hostage") EHostageBehavior GetBehavior()const{return Behavior;}
+ UFUNCTION(BlueprintPure,Category="FPS|Hostage") bool IsBehindAndClose(const APawn* Pawn) const;
+ UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="FPS|Hostage") TObjectPtr<class UCompliancePoseComponent> CompliancePose;
+ UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="FPS|Hostage") TObjectPtr<class AHostageHidePoint> PreferredHidePoint;
+ UPROPERTY(EditAnywhere,Category="FPS|Hostage",meta=(ClampMin="3",ClampMax="4")) float BindDuration=3.6f;
+ UPROPERTY(EditAnywhere,Category="FPS|Hostage") float WarningGraceSeconds=1.8f;
+ UPROPERTY(ReplicatedUsing=OnRep_Behavior,BlueprintReadOnly,Category="FPS|Hostage") EHostageBehavior Behavior=EHostageBehavior::Calm;
+ UFUNCTION() void OnRep_Behavior();
  virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
  UFUNCTION(BlueprintPure, Category="Mission") bool IsRescued() const { return bRescued; }
  UPROPERTY(ReplicatedUsing=OnRep_RescueState, BlueprintReadOnly, Category="Mission") bool bRescued = false;
@@ -74,4 +89,20 @@ protected:
 	TWeakObjectPtr<APawn> FollowTarget;
 
 	void Die(AActor* Killer);
+ void UpdateBehavior();
+ void StartCompliance();
+ bool FindCoverPath();
+ bool AdvancePath(float Speed);
+ void SetBehavior(EHostageBehavior Next);
+ void SetLowProfile(bool bLow);
+ bool bLowProfile=false;
+ float StateDeadline=0.f;
+ float PathBlockedSeconds=0.f;
+ FVector LastThreat=FVector::ZeroVector;
+ TArray<FVector> EscapePath;
+ int32 PathIndex=0;
+ UPROPERTY(Transient) TWeakObjectPtr<APawn> WarningSpeaker;
+ UPROPERTY(Transient) TWeakObjectPtr<APawn> BindingOfficer;
+ UPROPERTY(Transient) TWeakObjectPtr<AHostageHidePoint> ActiveHidePoint;
+ FTimerHandle BehaviorTimer;
 };

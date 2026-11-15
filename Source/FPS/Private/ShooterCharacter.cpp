@@ -6,6 +6,8 @@
 #include "Vision/NightVisionProfile.h"
 #include "Game/CoopCqbGameState.h"
 #include "Game/AINoiseEvent.h"
+#include "Game/RestraintActionComponent.h"
+#include "Game/DoorGestureComponent.h"
 #include "Combat/HitZoneVitalsComponent.h"
 #include "World/BloodPool.h"
 #include "ShooterGameModeBase.h"
@@ -238,6 +240,8 @@ AShooterCharacter::AShooterCharacter()
 
 	// CharGen modular 3P parts (LeaderPose followers). Hidden until Police look.
  PoliceAppearance=CreateDefaultSubobject<UPoliceAppearanceComponent>(TEXT("PoliceAppearance"));
+ CreateDefaultSubobject<URestraintActionComponent>(TEXT("RestraintAction"));
+ CreateDefaultSubobject<UDoorGestureComponent>(TEXT("DoorGesture"));
 	Mesh3P_Head = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P_Head"));
 	Mesh3P_Head->SetupAttachment(GetMesh());
 	Mesh3P_Head->bOnlyOwnerSee = false;
@@ -438,6 +442,11 @@ bool AShooterCharacter::HasCurrentWeapon() const
 void AShooterCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+ if(auto* Action=FindComponentByClass<URestraintActionComponent>();Action&&Action->IsActive())
+ {
+  UpdateTacticalVision(DeltaTime);
+  return; // The paired action owns the arms and camera until completion/cancellation.
+ }
 	// 被观战的远端角色：用复制的瞄准方向（RemoteViewPitch）驱动镜头，上下看也跟着
 	if (bFirstPersonViewedLocally && !IsLocallyControlled() && IsValid(SpringArm))
 	{

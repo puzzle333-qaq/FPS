@@ -194,6 +194,8 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Interact", meta = (ClampMin = "0.25"))
 	float SurrenderWarningCooldown = 2.5f;
+ UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="FPS|Interact") float WarningDistance=1500.f;
+ UFUNCTION(BlueprintPure,Category="FPS|Interact") AActor* TraceWarningTarget() const;
 
 	// 本地：准星对着的可交互物（没有返回 nullptr）
 	UFUNCTION(BlueprintPure, Category = "FPS|Interact")

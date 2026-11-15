@@ -2,6 +2,7 @@
 
 #include "Game/CoopCqbGameMode.h"
 #include "Game/HostileAIController.h"
+#include "Game/HostageActor.h"
 #include "Weapon/AttachmentData.h"
 #include "Weapon/Weapon.h"
 #include "ShooterGamePlayTags.h"
@@ -118,6 +119,15 @@ void AINoiseEvent::Report(UWorld* World, const FVector& Location, float Loudness
 	const float ClampedLoudness = FMath::Clamp(Loudness, 0.05f, 1.f);
 	const float Radius = GetRadius(World, Kind) * ClampedLoudness;
 	if (Radius <= 1.f) return;
+ if(Kind==EKind::SurrenderWarning)return;
+ if(IsLoud(Kind))for(TActorIterator<AHostageActor> It(World);It;++It)
+ {
+  if(FVector::DistSquared(It->GetActorLocation(),Location)>FMath::Square(Radius))continue;
+  FHitResult Hit;FCollisionQueryParams Q(SCENE_QUERY_STAT(CivilianFright),false,NoiseInstigator);Q.AddIgnoredActor(*It);
+  // Occluded sounds only frighten a civilian at short range, not across the entire map.
+  const bool Blocked=World->LineTraceSingleByChannel(Hit,Location,It->GetActorLocation(),ECC_Visibility,Q);
+  if(!Blocked||FVector::DistSquared(It->GetActorLocation(),Location)<FMath::Square(500.f))It->Auth_Frighten(Location);
+ }
 
 	UAISense_Hearing::ReportNoiseEvent(World, Location, 1.f, NoiseInstigator, Radius, TagFor(Kind));
 

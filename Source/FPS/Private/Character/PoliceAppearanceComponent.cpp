@@ -1,4 +1,4 @@
-﻿#include "Character/PoliceAppearanceComponent.h"
+#include "Character/PoliceAppearanceComponent.h"
 #include "Character/PoliceAppearanceSaveGame.h"
 #include "Loadout/PouchInventoryComponent.h"
 #include "ShooterCharacter.h"
@@ -173,7 +173,7 @@ void UPoliceAppearanceComponent::RefreshAppearance()
    if(OriginalPreviewAnim)Body->SetAnimInstanceClass(OriginalPreviewAnim);
    else if(auto* Idle=LoadObject<UAnimationAsset>(nullptr,TEXT("/Game/FPS/Characters/Police/A_Police_LoadoutPose.A_Police_LoadoutPose")))Body->PlayAnimation(Idle,true);
   }
- if(Body->GetSkeletalMeshAsset()!=Data->BaseMesh.Get())return;
+ if(!Body->GetSkeletalMeshAsset()||Body->GetSkeletalMeshAsset()!=Data->BaseMesh.Get())return;
  const EBodyArmorType Armor=PreviewTarget?PreviewArmor:Character->GetBodyArmor();
  const auto& Materials=Body->GetSkeletalMeshAsset()->GetMaterials();
  for(int32 LOD=0;LOD<Body->GetSkeletalMeshAsset()->GetLODNum();++LOD)

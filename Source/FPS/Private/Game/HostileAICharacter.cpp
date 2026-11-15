@@ -19,6 +19,9 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/SkeletalMesh.h"
 #include "Weapon/Weapon.h"
+#include "Game/CompliancePoseComponent.h"
+#include "Game/DroppedHostileWeapon.h"
+#include "Game/RestraintActionComponent.h"
 
 FName AHostileAICharacter::HostileTag(TEXT("FPS_Hostile"));
 
@@ -27,6 +30,7 @@ AHostileAICharacter::AHostileAICharacter(const FObjectInitializer& ObjectInitial
 {
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
+ CompliancePose=CreateDefaultSubobject<UCompliancePoseComponent>(TEXT("CompliancePose"));
 	SetReplicateMovement(true);
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	AIControllerClass = AHostileAIController::StaticClass();
@@ -66,6 +70,7 @@ void AHostileAICharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(AHostileAICharacter, bDead);
 	DOREPLIFETIME(AHostileAICharacter, Morale);
 	DOREPLIFETIME(AHostileAICharacter, bArrested);
+ DOREPLIFETIME(AHostileAICharacter,bBeingRestrained);
 	DOREPLIFETIME(AHostileAICharacter, bArmInjured);
 	DOREPLIFETIME(AHostileAICharacter, bLegInjured);
 	DOREPLIFETIME(AHostileAICharacter, BodyArmor);
@@ -95,6 +100,8 @@ void AHostileAICharacter::BeginPlay()
 	}
 	ApplyBodyMesh();
 	AttachCarriedWeapon();
+ CompliancePose->SetMesh(GetMesh());
+ OnRep_Morale();
  RefreshDeploymentVisibility();
 }
 
@@ -107,6 +114,7 @@ void AHostileAICharacter::OnRep_BodyMesh()
 {
 	ApplyBodyMesh();
 	AttachCarriedWeapon();
+ CompliancePose->SetMesh(GetMesh());
 }
 
 void AHostileAICharacter::OnRep_CarriedWeapon()
@@ -208,13 +216,37 @@ void AHostileAICharacter::SetMorale(EHostileMorale NewMorale)
 {
 	if (!HasAuthority()) return;
 	if (bArrested) return;
+ if(!IsHostileAlive()||Morale==NewMorale||Morale==EHostileMorale::Surrender)return;
  Morale = NewMorale;
  if (Morale == EHostileMorale::Surrender)
  {
-  Crouch();
+  DropCarriedWeapon();
+  CompliancePose->SetPose(ECompliancePose::HandsUp);
   GetCharacterMovement()->StopMovementImmediately();
  }
  ForceNetUpdate();
+}
+
+void AHostileAICharacter::Auth_ReceiveWarning(APawn* Speaker)
+{
+ if(HasAuthority()&&IsValid(Speaker)&&IsInFlashSurrenderWindow())SetMorale(EHostileMorale::Surrender);
+}
+void AHostileAICharacter::DropCarriedWeapon()
+{
+ if(!HasAuthority()||!CarriedWeapon)return;
+ auto* GunVisual=CarriedWeapon->GetMesh3P();
+ if(GunVisual&&GunVisual->GetSkeletalMeshAsset())
+ {
+  FActorSpawnParameters P;P.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  if(auto* Drop=GetWorld()->SpawnActor<ADroppedHostileWeapon>(GunVisual->GetComponentLocation()+GetActorForwardVector()*35.f,GunVisual->GetComponentRotation(),P))Drop->Initialize(GunVisual,GetActorForwardVector());
+ }
+ CarriedWeapon->Destroy();CarriedWeapon=nullptr;ForceNetUpdate();
+}
+void AHostileAICharacter::OnRep_Morale()
+{
+ if(Morale!=EHostileMorale::Surrender)return;
+ GetCharacterMovement()->StopMovementImmediately();
+ if(auto* Brain=Cast<AHostileAIController>(GetController()))Brain->StopMovement();
 }
 
 void AHostileAICharacter::Multicast_HostileFired_Implementation(FVector Muzzle, FVector Impact)
@@ -263,6 +295,7 @@ void AHostileAICharacter::Auth_Die(AActor* Killer)
 {
 	if (!HasAuthority() || bDead) return;
 	bDead = true;
+ CompliancePose->SetPose(ECompliancePose::None);
 	if (Stats)
 	{
 		Stats->DeathState = EDeathState::DeadFinished;
@@ -327,18 +360,46 @@ void AHostileAICharacter::ApplyDeadVisual()
 bool AHostileAICharacter::CanInteract_Implementation(APawn* Pawn) const
 {
  const auto* GS = GetWorld()->GetGameState<ACoopCqbGameState>();
- return IsValid(Pawn) && IsHostileAlive() && !bArrested && Morale == EHostileMorale::Surrender
-  && GS && GS->IsMissionLive() && !GS->bRangeHub;
+ return CanOfficerRestrain(Pawn) && IsHostileAlive() && !bArrested && !bBeingRestrained && Morale == EHostileMorale::Surrender
+  && CompliancePose->IsHandsUpSettled() && GS && GS->IsMissionLive() && !GS->bRangeHub;
 }
 FText AHostileAICharacter::GetInteractPrompt_Implementation(APawn* Pawn) const
 {
+ if(bArrested||!IsHostileAlive())return FText::GetEmpty();
+ if(bBeingRestrained)return NSLOCTEXT("Mission","ArrestProgress","正在捆绑嫌疑人");
+ if(Morale!=EHostileMorale::Surrender||!CompliancePose->IsHandsUpSettled())return FText::GetEmpty();
+ if(!CanOfficerRestrain(Pawn))return FText::GetEmpty();
  return NSLOCTEXT("Mission", "Arrest", "按 F 拘捕嫌疑人");
 }
 void AHostileAICharacter::Interact_Implementation(APawn* Pawn)
 {
  if (!HasAuthority() || !CanInteract_Implementation(Pawn)) return;
+ float Duration=3.6f;
+ if(auto* Action=Pawn->FindComponentByClass<URestraintActionComponent>()){if(!Action->BeginRestraint(this,Duration))return;Duration=Action->GetDuration();}
+ RestrainingOfficer=Pawn;bBeingRestrained=true;RestraintCompleteAt=GetWorld()->GetTimeSeconds()+Duration;CompliancePose->SetPose(ECompliancePose::Binding,CompliancePose->GetBindingDuration()/Duration);ForceNetUpdate();
+}
+bool AHostileAICharacter::CanOfficerRestrain(const APawn* Pawn)const
+{
+ if(!IsValid(Pawn)||FVector::DistSquared2D(Pawn->GetActorLocation(),GetActorLocation())>FMath::Square(155.f)||FMath::Abs(Pawn->GetActorLocation().Z-GetActorLocation().Z)>120.f)return false;
+ if(FVector::DotProduct(GetActorForwardVector(),(Pawn->GetActorLocation()-GetActorLocation()).GetSafeNormal2D())>-.35f)return false;
+ if(const auto* S=UStatsComponent::FindStatsComponent(Pawn);S&&S->DeathState!=EDeathState::NotDead)return false;
+ FHitResult Hit;FCollisionQueryParams Q(SCENE_QUERY_STAT(SuspectBind),false,this);Q.AddIgnoredActor(Pawn);
+ return !GetWorld()->LineTraceSingleByChannel(Hit,Pawn->GetActorLocation(),GetActorLocation(),ECC_Visibility,Q);
+}
+void AHostileAICharacter::UpdateRestraint()
+{
+ if(!HasAuthority()||!bBeingRestrained)return;
+ auto* Officer=RestrainingOfficer.Get();auto* Action=Officer?Officer->FindComponentByClass<URestraintActionComponent>():nullptr;
+ const auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();
+ if(!IsHostileAlive()||!GS||!GS->IsMissionLive()||!CanOfficerRestrain(Officer)||(Action&&!Action->IsActive()))
+ {
+  if(Action)Action->EndRestraint();RestrainingOfficer.Reset();bBeingRestrained=false;CompliancePose->SetPose(IsHostileAlive()?ECompliancePose::Kneel:ECompliancePose::None);ForceNetUpdate();return;
+ }
+ if(GetWorld()->GetTimeSeconds()<RestraintCompleteAt)return;
+ if(Action)Action->EndRestraint();RestrainingOfficer.Reset();bBeingRestrained=false;
  bArrested = true;
- if(auto* GS=GetWorld()->GetGameState<ACoopCqbGameState>();GS&&GS->MissionRadio)GS->MissionRadio->QueueCue(EMissionVoiceCue::TargetSecured);
+ DropCarriedWeapon();CompliancePose->SetPose(ECompliancePose::Bound);
+ if(GS&&GS->MissionRadio)GS->MissionRadio->QueueCue(EMissionVoiceCue::TargetSecured);
  Crouch();
  OnRep_Arrested();
  ForceNetUpdate();
@@ -360,6 +421,7 @@ void AHostileAICharacter::OnRep_Arrested()
 void AHostileAICharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+ UpdateRestraint();
  RefreshDeploymentVisibility();
 	if (GetNetMode() == NM_DedicatedServer) return;
 	if (bDead || BloodyFootstepsRemaining <= 0) return;
@@ -471,6 +533,7 @@ void AHostileAICharacter::Auth_BeginFlashSurrenderWindow(float WindowMinSeconds,
 	if (!World) return;
 	const float Now = World->GetTimeSeconds();
 	FlashSurrenderWindowUntil = FMath::Max(FlashSurrenderWindowUntil, Now + Duration);
+ SetMorale(EHostileMorale::Surrender);
 }
 
 bool AHostileAICharacter::IsInFlashSurrenderWindow() const

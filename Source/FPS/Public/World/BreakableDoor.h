@@ -83,6 +83,11 @@ public:
 	/** Spawn a test door in front of Pawn (PIE). */
 	static ABreakableDoor* SpawnInFrontOf(APawn* Pawn, float DistCm = 180.f);
 
+	bool IsAimedAtBy(APawn* Pawn) const;
+	bool ReserveInteraction(APawn* Pawn);
+	void ReleaseInteraction(APawn* Pawn);
+	void CommitAnimatedInteraction(APawn* Pawn, bool bKick, bool bClosing, float RemainingSeconds=0.f);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -247,6 +252,13 @@ protected:
 	void Auth_SetTargetOpenSigned(float SignedDegrees, float InterpSpeed, USoundBase* Sound, float VolumeMultiplier, float NoiseLoudness, AActor* NoiseInstigator, bool bKickNoise);
 
 	float CurrentYaw = 0.f;
+	UPROPERTY(Replicated) TObjectPtr<APawn> InteractionOperator;
+	UPROPERTY(Replicated) bool bInteractionCommitted = false;
+	UPROPERTY(Replicated) float ReplicatedInterpSpeed = 2.2f;
+ UPROPERTY(Replicated) float SwingStartTime = 0.f;
+ UPROPERTY(Replicated) float SwingDuration = 0.f;
+ UPROPERTY(Replicated) float SwingFromYaw = 0.f;
+	UFUNCTION(NetMulticast, Reliable) void Multicast_ContactSound(USoundBase* Sound, float Volume);
 	float TargetYaw = 0.f;
 	float ActiveInterpSpeed = 6.f;
 };

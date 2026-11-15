@@ -21,6 +21,7 @@ UCLASS()
 class FPS_API AHostileAICharacter : public ACharacter, public IPlayerInterface, public IInteractable
 {
 	GENERATED_BODY()
+ friend class FMissionObjectiveFlowTest;
  bool bDeploymentHidden=false;
  void RefreshDeploymentVisibility();
 
@@ -81,6 +82,15 @@ public:
 	EHostileMorale GetMorale() const { return Morale; }
 
 	void SetMorale(EHostileMorale NewMorale);
+ void Auth_ReceiveWarning(APawn* Speaker);
+ UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="FPS|Hostile") TObjectPtr<class UCompliancePoseComponent> CompliancePose;
+ void DropCarriedWeapon();
+ UFUNCTION()void OnRep_Morale();
+ UPROPERTY(Replicated,BlueprintReadOnly,Category=Mission) bool bBeingRestrained=false;
+ UPROPERTY(Transient) TWeakObjectPtr<APawn> RestrainingOfficer;
+ float RestraintCompleteAt=0.f;
+ bool CanOfficerRestrain(const APawn* Pawn)const;
+ void UpdateRestraint();
  bool IsArrested() const { return bArrested; }
  virtual bool CanInteract_Implementation(APawn* Pawn) const override;
  virtual FText GetInteractPrompt_Implementation(APawn* Pawn) const override;
@@ -166,7 +176,7 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_Dead)
 	bool bDead = false;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "FPS|Hostile")
+	UPROPERTY(ReplicatedUsing=OnRep_Morale, BlueprintReadOnly, Category = "FPS|Hostile")
 	EHostileMorale Morale = EHostileMorale::Fighting;
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "FPS|Hostile")
