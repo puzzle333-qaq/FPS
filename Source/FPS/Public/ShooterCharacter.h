@@ -273,9 +273,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
 	void ToggleNVG();
 
-	// Tap N toggles the tubes. Hold N swaps dual housing and fullscreen quad.
+	// Tap N toggles tubes, hold N switches housing, Alt+N toggles local IR assist.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
 	void CycleNVGHousing();
+ UFUNCTION(BlueprintCallable, Category="FPS|Vision") void ToggleNVGInfrared();
+ UFUNCTION(BlueprintPure, Category="FPS|Vision") bool IsNVGInfraredEnabled()const{return bNVGInfraredEnabled&&TacticalVisionMode==ETacticalVisionMode::NVG&&VisionBatterySeconds>0.f;}
+ float GetVisionBatteryDrainMultiplier()const{return TacticalVisionMode==ETacticalVisionMode::NVG&&NVGHousing==ENVGHousing::Quad?1.5f:1.f;}
+
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Vision")
 	ETacticalVisionMode GetTacticalVisionMode() const { return TacticalVisionMode; }
@@ -362,6 +366,7 @@ public:
 	/** Local infrared assist: never replicated and enabled only for the owning NVG view. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Vision")
 	TObjectPtr<class USpotLightComponent> NVGIlluminator;
+ UPROPERTY(Transient) bool bNVGInfraredEnabled=false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Vision")
 	ETacticalVisionMode TacticalVisionMode = ETacticalVisionMode::Off;

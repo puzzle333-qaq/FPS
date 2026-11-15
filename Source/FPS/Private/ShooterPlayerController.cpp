@@ -1,5 +1,5 @@
-#include "Game/DoorGestureComponent.h"
 #include "ShooterPlayerController.h"
+#include "Game/DoorGestureComponent.h"
 #include "Ui/DeploymentDroneComponent.h"
 #include "UObject/UObjectIterator.h"
 #include "Game/HostageActor.h"
@@ -320,6 +320,12 @@ void AShooterPlayerController::Input_ToggleNVG()
 void AShooterPlayerController::Input_NVG_Started()
 {
 	if (!bPawnAlive || IsMovementLocked()) return;
+ if(IsInputKeyDown(EKeys::LeftAlt)||IsInputKeyDown(EKeys::RightAlt))
+ {
+  bNVGHoldFired=true;
+  if(auto* VisionPawn=Cast<AShooterCharacter>(GetPawn()))VisionPawn->ToggleNVGInfrared();
+  return;
+ }
 	bNVGHoldFired = false;
 	if (UWorld* World = GetWorld())
 	{
@@ -929,7 +935,7 @@ void AShooterPlayerController::EnsureCombatHudKeepAlive()
 	if (IsValid(NVGMask) && !NVGMask->IsInViewport())
 	{
 		NVGMask->SetVisibility(ESlateVisibility::Collapsed);
-		NVGMask->AddToViewport(245);
+		NVGMask->AddToViewport(190); // Scene housing stays beneath equipment/HUD indicators.
 	}
 
 	EnsureTutorialPromptWidget();

@@ -35,11 +35,11 @@ protected:
  TWeakObjectPtr<UCombatComponent> Combat;
  TWeakObjectPtr<AWeapon> Weapon;
  TSharedPtr<SHorizontalBox> Root;
- TSharedPtr<STextBlock> Labels[4], Dots[4];
- TSharedPtr<SWidget> Groups[4];
- bool States[4]={false,false,false,false};
- float FlashRemaining[4]={0,0,0,0};
+ TSharedPtr<STextBlock> Labels[5], Dots[5];
+ TSharedPtr<SWidget> Groups[5];
+ bool States[5]={false,false,false,false,false};
+ float FlashRemaining[5]={0,0,0,0,0};
  bool bInitialized=false;
- FSlateBrush Icons[4];
+ FSlateBrush Icons[5];
  UPROPERTY() TArray<TObjectPtr<UTexture2D>> IconTextures;
 };

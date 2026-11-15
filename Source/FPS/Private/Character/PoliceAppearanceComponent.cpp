@@ -208,6 +208,7 @@ void UPoliceAppearanceComponent::RefreshAppearance()
   Part->SetLeaderPoseComponent(Mesh?Body:nullptr);
   Part->SetVisibility(Mesh&&Body->IsVisible());Part->SetHiddenInGame(!Mesh||Body->bHiddenInGame);
   Part->SetOwnerNoSee(Body->bOwnerNoSee);Part->SetOnlyOwnerSee(Body->bOnlyOwnerSee);
+  Part->SetLightingChannels(Body->LightingChannels.bChannel0,Body->LightingChannels.bChannel1,Body->LightingChannels.bChannel2);
  }
 }
 void UPoliceAppearanceComponent::ClearParts()

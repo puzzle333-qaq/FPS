@@ -2,6 +2,7 @@
 
 
 #include "Weapon/Weapon.h"
+#include "Vision/NightVisionLightFloor.h"
 #include "WeaponData.h"
 #include "CombatComponent.h"
 #include "FPSTraceChannels.h"
@@ -1093,6 +1094,8 @@ void AWeapon::AttachToOwingPawn()
 	ForceChamberSocketBones(Mesh3P);
 	BindChamberShellNotifies();
 	ApplyChamberShellVisibility();
+
+ ANightVisionLightFloor::PrepareInfraredReceiver(this);
 }
 
 void AWeapon::AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName)
@@ -4118,6 +4121,8 @@ void AWeapon::RebuildAttachmentVisuals()
 	}
 	ApplyFlashlightState();
 	ApplyLaserState();
+
+ ANightVisionLightFloor::PrepareInfraredReceiver(this);
 }
 
 USpotLightComponent* AWeapon::CreateFlashlightLight(USceneComponent* AttachParent)

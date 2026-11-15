@@ -2,6 +2,8 @@
 
 
 #include "ShooterCharacter.h"
+#include "HAL/IConsoleManager.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Character/PoliceAppearanceComponent.h"
 #include "Vision/NightVisionProfile.h"
 #include "Game/CoopCqbGameState.h"
@@ -73,6 +75,9 @@
 #include "GameFramework/Pawn.h"
 #include "EngineUtils.h"
 #include "Range/TargetDummy.h"
+
+static TAutoConsoleVariable<float> CVarNVGRealFOV(TEXT("fps.NVG.RealFOV"),0.f,
+ TEXT("Optional dual-tube FOV: 0 disables, otherwise clamps to 60-70 degrees."),ECVF_Default);
 
 namespace
 {
@@ -197,16 +202,18 @@ AShooterCharacter::AShooterCharacter()
 	FirstPersonCamera->SetupAttachment(SpringArm);
 	NVGIlluminator = CreateDefaultSubobject<USpotLightComponent>(TEXT("NVGIlluminator"));
 	NVGIlluminator->SetupAttachment(FirstPersonCamera);
-	NVGIlluminator->SetRelativeLocation(FVector(25.f, 0.f, 0.f));
+	NVGIlluminator->SetRelativeLocation(FVector(70.f, 0.f, -5.f));
 	NVGIlluminator->SetMobility(EComponentMobility::Movable);
 	NVGIlluminator->SetIntensityUnits(ELightUnits::Candelas);
-	NVGIlluminator->SetIntensity(3.f);
-	NVGIlluminator->SetAttenuationRadius(4000.f);
+	NVGIlluminator->SetIntensity(8.f);
+	NVGIlluminator->SetAttenuationRadius(3000.f);
 	NVGIlluminator->SetInnerConeAngle(50.f);
 	NVGIlluminator->SetOuterConeAngle(65.f);
 	NVGIlluminator->SetIndirectLightingIntensity(0.f);
 	NVGIlluminator->SetVolumetricScatteringIntensity(0.f);
-	NVGIlluminator->SetCastShadows(true);
+	NVGIlluminator->SetCastShadows(false);
+ NVGIlluminator->SetLightingChannels(false,true,false);
+ NVGIlluminator->SetIsReplicated(false);
 	NVGIlluminator->SetVisibility(false);
 	FirstPersonCamera->bUsePawnControlRotation = false;
 
@@ -858,7 +865,10 @@ void AShooterCharacter::UpdateAimFieldOfView(float DeltaTime)
 	}
 
 	// 最终 FOV = 默认 FOV 和开镜 FOV 按开镜进度混合（死亡、关镜、切枪时开镜进度会回到 0）
-	const float NewFOV = FMath::Lerp(DefaultFOV, SmoothedAimFOV, AimAlignAlpha);
+	float NewFOV = FMath::Lerp(DefaultFOV, SmoothedAimFOV, AimAlignAlpha);
+ const float TubeFOV=CVarNVGRealFOV.GetValueOnGameThread();
+ if(TacticalVisionMode==ETacticalVisionMode::NVG&&NVGHousing==ENVGHousing::Dual&&TubeFOV>0.f)
+  NewFOV=FMath::Min(NewFOV,FMath::Clamp(TubeFOV,60.f,70.f));
 	if (!FMath::IsNearlyEqual(FirstPersonCamera->FieldOfView, NewFOV, 0.001f))
 	{
 		FirstPersonCamera->SetFieldOfView(NewFOV);
@@ -4221,6 +4231,8 @@ void AShooterCharacter::CycleNVGHousing()
 		return;
 	}
 	NVGHousing = NVGHousing == ENVGHousing::Quad ? ENVGHousing::Dual : ENVGHousing::Quad;
+ OnEquipmentHudChanged.Broadcast();
+ ApplyTacticalVisionEffects();
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(99203, 1.6f, FColor::Green,
@@ -4228,6 +4240,13 @@ void AShooterCharacter::CycleNVGHousing()
 	}
 }
 
+
+void AShooterCharacter::ToggleNVGInfrared()
+{
+ if(!IsLocallyControlled()||TacticalVisionMode!=ETacticalVisionMode::NVG||VisionBatterySeconds<=0.f)return;
+ bNVGInfraredEnabled=!bNVGInfraredEnabled;
+ ApplyTacticalVisionEffects();OnEquipmentHudChanged.Broadcast();
+}
 
 void AShooterCharacter::SetTacticalVisionMode(ETacticalVisionMode NewMode)
 {
@@ -4249,6 +4268,7 @@ void AShooterCharacter::SetTacticalVisionMode(ETacticalVisionMode NewMode)
 		return;
 	}
 	TacticalVisionMode = NewMode;
+ if(NewMode!=ETacticalVisionMode::NVG)bNVGInfraredEnabled=false;
 	OnEquipmentHudChanged.Broadcast();
 	ApplyTacticalVisionEffects();
 	// Equipment status is presented by the HUD; diagnostics stay in the log.
@@ -4374,6 +4394,7 @@ void AShooterCharacter::ClearTacticalVisionEffects()
 	PPS.bOverride_BloomThreshold = false;
 	PPS.bOverride_LocalExposureMethod = false;
 	PPS.bOverride_LocalExposureHighlightContrastScale = false;
+ PPS.bOverride_LocalExposureShadowContrastScale = false;
 	FirstPersonCamera->PostProcessBlendWeight = 1.f;
 	AppliedVisionMode = ETacticalVisionMode::Off;
 }
@@ -4394,7 +4415,7 @@ void AShooterCharacter::ApplyTacticalVisionEffects()
 	}
 	if (NVGIlluminator)
 	{
-		NVGIlluminator->SetVisibility(TacticalVisionMode == ETacticalVisionMode::NVG && VisionBatterySeconds > 0.f);
+		NVGIlluminator->SetVisibility(IsNVGInfraredEnabled());
 	}
 
 	if (TacticalVisionMode == ETacticalVisionMode::Off)
@@ -4408,8 +4429,7 @@ void AShooterCharacter::ApplyTacticalVisionEffects()
 
 	if (TacticalVisionMode == ETacticalVisionMode::NVG)
 	{
-		// Phosphor tube. The material turns the picture green and blows out lights.
-		// Dual housing is a screen mask; quad leaves the whole frame open.
+		// Passive tube amplification with gated highlights; both housings have a masked field.
 		NightVisionProfile::Apply(PPS,Batt,Wash);
 
 		if (bModeChanged)
@@ -4421,34 +4441,41 @@ void AShooterCharacter::ApplyTacticalVisionEffects()
 			}
 			if (NVGMat)
 			{
-				FirstPersonCamera->AddOrUpdateBlendable(NVGMat, 1.f);
-				ActiveVisionBlendable = NVGMat;
+				auto* Dynamic=UMaterialInstanceDynamic::Create(NVGMat,this);
+ FirstPersonCamera->AddOrUpdateBlendable(Dynamic, 1.f);
+ ActiveVisionBlendable = Dynamic;
 			}
 		}
 
+		  if(auto* Dynamic=Cast<UMaterialInstanceDynamic>(ActiveVisionBlendable.Get()))
+		  {
+		   Dynamic->SetScalarParameterValue(TEXT("Battery"),Batt);
+		   Dynamic->SetScalarParameterValue(TEXT("Quad"),NVGHousing==ENVGHousing::Quad?1.f:0.f);
+		  }
+
 		if (!ActiveVisionBlendable.IsValid())
 		{
-			// No phosphor material yet: force green and flatten highlight detail.
+			// Graceful material fallback: retain highlight detail without HDR overdrive.
 			PPS.bOverride_ColorSaturation = true;
 			PPS.ColorSaturation = FVector4(0.f, 0.f, 0.f, 1.f);
 			PPS.bOverride_ColorGain = true;
-			PPS.ColorGain = FVector4(0.10f, 1.55f, 0.08f, 1.f);
+			PPS.ColorGain = FVector4(.38f,1.f,.44f,1.f);
 			PPS.bOverride_SceneColorTint = true;
-			PPS.SceneColorTint = FLinearColor(0.04f, 1.f, 0.05f);
+			PPS.SceneColorTint = FLinearColor(.38f,1.f,.44f);
 			PPS.bOverride_ColorContrast = true;
 			PPS.ColorContrast = FVector4(1.2f, 1.2f, 1.2f, 1.f);
 			PPS.bOverride_ColorContrastHighlights = true;
-			PPS.ColorContrastHighlights = FVector4(0.02f, 0.02f, 0.02f, 1.f);
+			PPS.ColorContrastHighlights = FVector4(.65f,.65f,.65f,1.f);
 			PPS.bOverride_ColorGainHighlights = true;
-			PPS.ColorGainHighlights = FVector4(2.4f, 3.1f, 2.1f, 1.f);
+			PPS.ColorGainHighlights = FVector4(1.f,1.f,1.f,1.f);
 			PPS.bOverride_LocalExposureMethod = true;
 			PPS.LocalExposureMethod = ELocalExposureMethod::Bilateral;
 			PPS.bOverride_LocalExposureHighlightContrastScale = true;
-			PPS.LocalExposureHighlightContrastScale = 0.f;
-			PPS.BloomThreshold = 0.22f;
-			PPS.BloomIntensity = 3.4f + Wash * 8.f;
+			PPS.LocalExposureHighlightContrastScale = .6f;
+			PPS.BloomThreshold = 1.f;
+			PPS.BloomIntensity = 1.8f + Wash * 8.f;
 			PPS.bOverride_ColorOffset = true;
-			PPS.ColorOffset = FVector4(0.f, 0.012f, 0.f, 0.f);
+			PPS.ColorOffset = FVector4(0.f,0.f,0.f,0.f);
 		}
 	}
 	else if (TacticalVisionMode == ETacticalVisionMode::Thermal)
@@ -4505,10 +4532,11 @@ void AShooterCharacter::UpdateTacticalVision(float DeltaTime)
  const bool Preview=Flow&&!Flow->bRangeHub&&GetWorld()->GetMapName().Contains(TEXT("Factory"))&&(Flow->GetCoopPhase()==ECoopCqbPhase::Waiting||Flow->GetCoopPhase()==ECoopCqbPhase::Briefing);
 	if (TacticalVisionMode != ETacticalVisionMode::Off && !Preview)
 	{
-		VisionBatterySeconds = FMath::Max(0.f, VisionBatterySeconds - VisionBatteryDrainPerSecond * DeltaTime);
+		VisionBatterySeconds = FMath::Max(0.f, VisionBatterySeconds - VisionBatteryDrainPerSecond * GetVisionBatteryDrainMultiplier() * DeltaTime);
 		if (VisionBatterySeconds <= 0.f)
 		{
 			TacticalVisionMode = ETacticalVisionMode::Off;
+ bNVGInfraredEnabled=false;
 			OnEquipmentHudChanged.Broadcast();
 			if (GEngine)
 			{

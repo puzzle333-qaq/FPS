@@ -14,11 +14,11 @@ UControlHintWidget::UControlHintWidget(const FObjectInitializer& O):Super(O) { b
 TSharedRef<SWidget> UControlHintWidget::RebuildWidget()
 {
  IconTextures.Reset();
- const TCHAR* Names[]={TEXT("Glowstick"),TEXT("NVG"),TEXT("Flashlight"),TEXT("Laser")};
+ const TCHAR* Names[]={TEXT("Glowstick"),TEXT("NVG"),TEXT("Flashlight"),TEXT("Laser"),TEXT("Flashlight")};
  auto Overlay=SNew(SOverlay).Visibility(EVisibility::SelfHitTestInvisible);
  Overlay->AddSlot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(FMargin(48,0,0,40))
  [SAssignNew(Root,SHorizontalBox)];
- for(int32 i=0;i<4;++i)
+ for(int32 i=0;i<5;++i)
  {
   UTexture2D* T=LoadObject<UTexture2D>(nullptr,*FString::Printf(TEXT("/Game/FPS/UI/Icons/T_Icon_%s.T_Icon_%s"),Names[i],Names[i]));
   IconTextures.Add(T);Icons[i].SetResourceObject(T);Icons[i].DrawAs=ESlateBrushDrawType::Image;Icons[i].ImageSize=FVector2D(20,20);
@@ -75,9 +75,9 @@ void UControlHintWidget::RefreshEquipment()
  if(!Character.IsValid()) return;
  BindWeapon();
  bool Next[]={Character->GetGlowStickCount()>0,Character->GetTacticalVisionMode()==ETacticalVisionMode::NVG,
-  Weapon.IsValid()&&Weapon->HasFlashlight()&&Weapon->IsFlashlightOn(),Weapon.IsValid()&&Weapon->HasLaser()&&Weapon->IsLaserOn()};
- const FString Texts[]={FString::Printf(TEXT("×%d"),Character->GetGlowStickCount()),TEXT("夜视"),TEXT("手电"),TEXT("镭射")};
- for(int32 i=0;i<4;++i)
+  Weapon.IsValid()&&Weapon->HasFlashlight()&&Weapon->IsFlashlightOn(),Weapon.IsValid()&&Weapon->HasLaser()&&Weapon->IsLaserOn(),Character->IsNVGInfraredEnabled()};
+ const FString Texts[]={FString::Printf(TEXT("×%d"),Character->GetGlowStickCount()),(Character->GetNVGHousing()==ENVGHousing::Quad?TEXT("夜视 ····"):TEXT("夜视 ··")),TEXT("手电"),TEXT("镭射"),TEXT("IR")};
+ for(int32 i=0;i<5;++i)
  {
   if(bInitialized&&Next[i]!=States[i]) FlashRemaining[i]=0.3f;
   States[i]=Next[i];Labels[i]->SetText(FText::FromString(Texts[i]));
@@ -91,7 +91,7 @@ void UControlHintWidget::NativeTick(const FGeometry& G,float D)
 {
  Super::NativeTick(G,D);
  // Only animate a received state change; no gameplay-state polling.
- for(int32 i=0;i<4;++i) if(Groups[i])
+ for(int32 i=0;i<5;++i) if(Groups[i])
  {
   FlashRemaining[i]=FMath::Max(0.f,FlashRemaining[i]-D);
   const FLinearColor C=(States[i]||FlashRemaining[i]>0.f)?FOperationUIStyle::Text:FOperationUIStyle::Dim;
@@ -106,5 +106,5 @@ void UControlHintWidget::NativeDestruct()
 void UControlHintWidget::ReleaseSlateResources(bool B)
 {
  Super::ReleaseSlateResources(B);Root.Reset();
- for(int32 i=0;i<4;++i) {Labels[i].Reset();Dots[i].Reset();Groups[i].Reset();}
+ for(int32 i=0;i<5;++i) {Labels[i].Reset();Dots[i].Reset();Groups[i].Reset();}
 }
