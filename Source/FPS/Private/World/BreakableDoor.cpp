@@ -1,5 +1,5 @@
-#include "Game/DoorGestureComponent.h"
 #include "World/BreakableDoor.h"
+#include "Game/DoorGestureComponent.h"
 #include "ShooterCharacter.h"
 
 #include "Components/ArrowComponent.h"
@@ -241,7 +241,11 @@ float ABreakableDoor::ResolveOpenDirectionAwayFrom(APawn* InteractingPawn) const
  const FVector Pivot=Hinge?Hinge->GetComponentLocation():GetActorLocation();
  const FVector Center=DoorLeaf?DoorLeaf->Bounds.Origin:GetActorLocation()+GetActorRightVector();
  const FVector PositiveSwing=FVector::CrossProduct(FVector::UpVector,Center-Pivot);
- return FVector::DotProduct(PositiveSwing,InteractingPawn->GetActorLocation()-Center)>0.f?-1.f:1.f;
+ const float result = FVector::DotProduct(PositiveSwing,InteractingPawn->GetActorLocation()-Center)>0.f?-1.f:1.f;
+ UE_LOG(LogTemp,Log,TEXT("[DoorDir] Pivot=%s Center=%s Swing=%s Pawn=%s Ret=%.0f")
+ , *Pivot.ToString(),*Center.ToString(),
+ *PositiveSwing.ToString(), *InteractingPawn->GetActorLocation().ToString(), result);
+ return result;
 }
 
 bool ABreakableDoor::CanInteract_Implementation(APawn* InteractingPawn) const
@@ -353,7 +357,13 @@ void ABreakableDoor::CommitAnimatedInteraction(APawn* Pawn,bool bKick,bool bClos
  if(bClosing)Auth_SetTargetOpenSigned(0.f,CloseInterpSpeed,CloseSound.Get(),PushSoundVolume,0.f,Pawn,false);
  else Auth_SetTargetOpenSigned(OpenAngleDegrees*ResolveOpenDirectionAwayFrom(Pawn),bKick?KickInterpSpeed:PushInterpSpeed,
   bKick?KickSound.Get():PushSound.Get(),bKick?KickSoundVolume:PushSoundVolume,bKick?KickNoiseLoudness:PushNoiseLoudness,Pawn,bKick);
- if(RemainingSeconds>0.f){SwingFromYaw=CurrentYaw;SwingStartTime=GetWorld()->GetTimeSeconds();SwingDuration=FMath::Max(.08f,RemainingSeconds);ForceNetUpdate();}
+ // A kick is an impact: keep the wind-up, then throw the leaf open immediately.
+ // Quiet opening/closing continues to follow the remaining hand-animation time.
+ if(bKick||RemainingSeconds>0.f)
+ {
+  SwingFromYaw=CurrentYaw;SwingStartTime=GetWorld()->GetTimeSeconds();
+  SwingDuration=bKick?.12f:FMath::Max(.08f,RemainingSeconds);ForceNetUpdate();
+ }
 }
 void ABreakableDoor::Multicast_ContactSound_Implementation(USoundBase* Sound,float Volume)
 {

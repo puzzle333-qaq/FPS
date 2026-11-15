@@ -16,6 +16,8 @@
 - `A_OperatorKneelBind1P`、`A_OperatorKneelBind3P`、`A_TargetKneelBind` 为当前捆绑三条资源。旧的 `A_OperatorBind*`、`A_TargetBind`、`SKM_Police_BindSleeves` 不再作为默认资源。
 - `URestraintActionComponent.OperatorAlignment`：目标局部坐标 (-45.6933, 1.8707, 0) cm。
 - `A_DoorOpenLeft3P` / `A_DoorOpenRight3P` / `A_DoorKick3P` 为门动作。普通开关门默认 1 秒，踹门默认 2.2 秒。
+- 工厂全部门实例与 `/Game/InteriorKit/Blueprints/BP_FactoryDoor` 的默认值启用 `bAutoOpenAwayFromPlayer`。同步此修复时须包含该蓝图资源、工厂地图和 `FixFactoryDoorOpeningDirection.py`。
+- 踹门维持原动画接触时刻，在接触后 0.12 秒内快速弹开；普通开关门仍在 1 秒动作内完成。
 - `UDoorGestureComponent.HandleContactTime=0.8`、`KickContactTime=2.166667` 是原动画时间，实际按播放速度换算。关门倒放开门动作，相应倒算接触时刻。
 
 ## 关卡
