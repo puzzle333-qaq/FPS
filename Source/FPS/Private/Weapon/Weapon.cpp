@@ -1,8 +1,8 @@
-
-
-
 #include "Weapon/Weapon.h"
 #include "Vision/NightVisionLightFloor.h"
+
+
+
 #include "WeaponData.h"
 #include "CombatComponent.h"
 #include "FPSTraceChannels.h"
@@ -622,36 +622,7 @@ UAnimSequence* AWeapon::GetGripPoseAnim() const
 
 void AWeapon::ApplyAuthoredArmAnims(FPlayerAnim& InOut) const
 {
-	// Overlay BP/DA-authored sequences only — no hardcoded asset path tables.
-	UAnimSequence* Idle = ArmsIdleSequence.Get();
-	UAnimSequence* AimIdle = ArmsAimIdleSequence.Get();
-	UAnimSequence* Sprint = ArmsSprintSequence.Get();
-
-	if (IsValid(Idle))
-	{
-		InOut.IdleAnim = Idle;
-	}
-	if (IsValid(AimIdle))
-	{
-		InOut.AimIdleAnim = AimIdle;
-	}
-	else if (IsValid(Idle) && !IsValid(InOut.AimIdleAnim))
-	{
-		InOut.AimIdleAnim = Idle;
-	}
-	if (IsValid(Sprint))
-	{
-		InOut.SprintAnim = Sprint;
-	}
-	else if (IsValid(Idle) && !IsValid(InOut.SprintAnim))
-	{
-		InOut.SprintAnim = Idle;
-	}
-	if (UAnimSequence* GripPose = GetGripPoseAnim())
-	{
-		InOut.IdleAnim_Grab = GripPose;
-		InOut.LeftHandHoldPose_Grab = GripPose;
-	}
+ // Idle/aim belong to the weapon category, not the individual weapon.
 }
 
 bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) const
@@ -664,7 +635,7 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 		WeaponMesh->UpdateComponentToWorld();
 	}
 
-	auto TryGripComponent = [&OutWorld](USceneComponent* GripComp, const UAttachmentData* Data) -> bool
+	auto TryGripComponent = [&OutWorld,bFirstPerson](USceneComponent* GripComp, const UAttachmentData* Data) -> bool
 	{
 		if (!IsValid(GripComp) || !IsValid(Data))
 		{
@@ -679,6 +650,8 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 			return false;
 		}
 
+		if(bFirstPerson && !Data->FirstPersonFabrikSocketName.IsNone() && GripComp->DoesSocketExist(Data->FirstPersonFabrikSocketName))
+ { OutWorld=GripComp->GetSocketTransform(Data->FirstPersonFabrikSocketName,RTS_World);return true; }
 		static const FName GripHandNames[] = {
 			NAME_None, // filled with Data->FabrikSocketName
 			TEXT("GripSocket"), TEXT("FABRIK"), TEXT("ik_hand_l"), TEXT("LeftHandSocket")
@@ -708,6 +681,13 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 		}
 	}
 
+ // TR15's shared RAR idle needs a handguard target even without a foregrip.
+ if(bFirstPerson && bHasThirdPersonLeftHandGrip && IsValid(WeaponMesh)
+    && GetClass()->GetName().Contains(TEXT("Weapon_TR15")))
+ {
+  OutWorld=ThirdPersonLeftHandGrip*WeaponMesh->GetComponentTransform();
+  return true;
+ }
 	// Authored left-hand sockets on the weapon body when no foregrip is mounted.
 	const FName FabrikNames[] = {
 		FabrikSocketName, TEXT("GripSocket"), TEXT("FABRIK"), TEXT("LeftHandSocket"), TEXT("lefthand"),
@@ -879,7 +859,8 @@ void AWeapon::ApplyMeshAttachRelative(USkeletalMeshComponent* WeaponMesh, bool b
 
 	// Bandits FP arms: Ironbelly-tuned rifle Mesh1P sits ~90° yaw left on Epic hand_r.
 	// Custom Mesh1PAttachSocket mounts already carry their own correction — do not yaw them.
-	if (bFirstPerson && !UsesCustomMesh1PAttach() && WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Rifle))
+	if (bFirstPerson && !UsesCustomMesh1PAttach() && WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Rifle)
+  && !GetClass()->GetName().Contains(TEXT("Weapon_TR15")))
 	{
 		if (const USkeletalMeshComponent* ParentMesh = Cast<USkeletalMeshComponent>(WeaponMesh->GetAttachParent()))
 		{

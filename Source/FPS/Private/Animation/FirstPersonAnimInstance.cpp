@@ -24,6 +24,7 @@ namespace RarGripAimPose_Private
 
 	static bool IsRAR(const AWeapon* Weapon)
 	{
+ if(Weapon && Weapon->WeaponKind==EWeaponKind::LongGun)return true;
 		if (Weapon->GetClass()->GetPathName().Contains(TEXT("RealisticAssaultRifle"))) return true;
 		TInlineComponentArray<USkeletalMeshComponent*> Meshes(Weapon);
 		for (const USkeletalMeshComponent* M : Meshes)
@@ -71,6 +72,7 @@ namespace GripBodyPose_Private
 	static bool UsesRarArms(const USkeletalMeshComponent* Arms, const AWeapon* Weapon)
 	{
 		const USkeletalMesh* Mesh = IsValid(Arms) ? Arms->GetSkeletalMeshAsset() : nullptr;
+		if (Weapon && Weapon->WeaponKind==EWeaponKind::LongGun) return true;
 		if (IsValid(Mesh))
 		{
 			const FString Path = Mesh->GetPathName();
@@ -173,8 +175,10 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		return;
 	}
 
+ // Inspection owns the support hand; never pin its animated motion to the foregrip.
+ if(Combat->IsInspecting()) FABRIK_Alpha1P=0.f;
 	FPlayerAnim AnimCopy;
-	if (const FPlayerAnim* WeaponAnim = Combat->WeaponData->FirstPersonAnims.Find(Combat->ResolveAnimTag(Combat->CurrentWeapon)))
+	if (const FPlayerAnim* WeaponAnim = Combat->WeaponData->FirstPersonAnims.Find(Combat->ResolveHoldPoseTag(Combat->CurrentWeapon)))
 	{
 		AnimCopy = *WeaponAnim;
 	}
@@ -198,8 +202,9 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	LeftHandHoldPose = nullptr;
 	bUseLeftHandHoldPose = false;
 	GripBodyPose = GripBodyPose_Private::Resolve(GetSkelMeshComponent(), Combat->CurrentWeapon, Style);
-	GripAimPose = nullptr;
+	GripAimPose = DesiredAimIdle;
 	GripPoseWeight = FMath::Clamp(1.f - GetCurveValue(TEXT("Mask_Grip")), 0.f, 1.f);
+ FABRIK_Alpha1P *= GripPoseWeight;
 	ActiveIdleAnim = DesiredIdle;
 	bRestoreFlashIdle1P = Combat->CurrentWeapon->WeaponKind == EWeaponKind::Throwable
 		&& Combat->CurrentWeapon->WeaponType.MatchesTagExact(ShooterTags::Tag_WeaponType_Flash);
@@ -253,7 +258,7 @@ void UFirstPersonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 void UFirstPersonAnimInstance::ApplyResolvedGripPose()
 {
-	if (bRestoreFlashIdle1P || GripHoldStyle == EGripHoldStyle::None || !IsValid(GripBodyPose))
+	if (bRestoreFlashIdle1P || !IsValid(ActiveIdleAnim))
 	{
 		return;
 	}
@@ -271,8 +276,8 @@ void UFirstPersonAnimInstance::ApplyResolvedGripPose()
 	{
 		return;
 	}
-	Currenr->IdleAnim = GripBodyPose;
-	Currenr->AimIdleAnim = IsValid(GripAimPose) ? GripAimPose.Get() : GripBodyPose.Get();
+	Currenr->IdleAnim = IsValid(GripBodyPose) ? GripBodyPose.Get() : ActiveIdleAnim.Get();
+	Currenr->AimIdleAnim = IsValid(GripAimPose) ? GripAimPose.Get() : ActiveIdleAnim.Get();
 	bUseLeftHandHoldPose = false;
 	LeftHandHoldPose = nullptr;
 }

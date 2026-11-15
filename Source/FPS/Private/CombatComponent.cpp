@@ -1,10 +1,9 @@
+#include "CombatComponent.h"
 #include "Game/DoorGestureComponent.h"
 #include "Game/RestraintActionComponent.h"
-#include "CombatComponent.h"
 
 
 
-#include "CombatComponent.h"
 #include "Game/AINoiseEvent.h"
 #include "FPSTraceChannels.h"
 #include "Kismet/GameplayStatics.h"
@@ -810,83 +809,9 @@ void UCombatComponent::RecacheDefaultFirstPersonArms()
 
 void UCombatComponent::ApplyFirstPersonArmsForWeapon(AWeapon* Weapon)
 {
-	AActor* Owner = GetOwner();
-	if (!IsValid(Owner) || !Owner->Implements<UPlayerInterface>()) return;
-	USkeletalMeshComponent* Arms = IPlayerInterface::Execute_GetMesh1P(Owner);
-	if (!IsValid(Arms)) return;
-
-	CacheDefaultFirstPersonArms();
-	if (!bCachedDefaultArms) return;
-
- // Local arms must advance even while the deployment camera cannot see them.
- // Otherwise a lowered draw pose can cull itself and never reach the view.
- if(const APawn* Pawn=Cast<APawn>(Owner);Pawn&&Pawn->IsLocallyControlled())
+ CacheDefaultFirstPersonArms();
+ if(auto* Arms=IPlayerInterface::Execute_GetMesh1P(GetOwner()))
   Arms->VisibilityBasedAnimTickOption=EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-
-	// Bandits faction look owns Mesh1P gloves + patched grip sockets. Do not let weapon OverrideArms
-	// swap back to Ironbelly/pack arms (that drops sockets and breaks rifle/pistol 1P mount).
-	// Pack guns stay on the shared RAR/AK arms ABP; set anim sequences on the weapon BP instead.
-	bool bLockBanditsFactionArms = false;
-	if (const AShooterCharacter* Shooter = Cast<AShooterCharacter>(Owner))
-	{
-		bLockBanditsFactionArms = Shooter->IsUsingBanditsFirstPersonArms();
-	}
-
-	// Only swap mesh / AnimBP when weapon sets OverrideArms*. Null = keep character Mesh1P (Ironbelly).
-	// Do NOT touch relative location or rotation (user requirement).
-	// Only PSR keeps pack OverrideArms; knife_viper / cg_pas always share default arms.
-	const FString WeaponTypeStr = IsValid(Weapon) ? Weapon->WeaponType.ToString() : FString();
-	const bool bForceDefaultArms =
-		bLockBanditsFactionArms
-		|| WeaponTypeStr.Contains(TEXT("knife_viper"), ESearchCase::IgnoreCase)
-		|| WeaponTypeStr.Contains(TEXT("cg_pas"), ESearchCase::IgnoreCase);
-
-	USkeletalMesh* WantMesh = (!bForceDefaultArms && IsValid(Weapon) && IsValid(Weapon->OverrideArmsMesh1P))
-		? Weapon->OverrideArmsMesh1P.Get()
-		: DefaultArmsMesh1P.Get();
-	TSubclassOf<UAnimInstance> WantAnim = (!bForceDefaultArms && IsValid(Weapon) && Weapon->OverrideArmsAnimClass)
-		? Weapon->OverrideArmsAnimClass
-		: DefaultArmsAnimClass;
-
-	// Pack demo ABPs cast to pack Character/Weapon BPs -> Accessed None. Remap those only (PSR pack).
-	const FString WantAnimName = WantAnim ? WantAnim->GetName() : FString();
-	if (WantAnim && (WantAnimName.StartsWith(TEXT("BP_PSR_Arms_AnimBlueprint"))
-		|| WantAnimName.Contains(TEXT("AnimBP_Arms"))))
-	{
-		WantAnim = UPSRArmsAnimInstance::StaticClass();
-	}
-
-	if (IsValid(WantMesh) && Arms->GetSkeletalMeshAsset() && WantMesh->GetSkeleton() && Arms->GetSkeletalMeshAsset()->GetSkeleton())
-	{
-		USkeleton* WantSkel = WantMesh->GetSkeleton();
-		USkeleton* CurSkel = Arms->GetSkeletalMeshAsset()->GetSkeleton();
-		if (WantSkel != CurSkel)
-		{
-			WantSkel->AddCompatibleSkeletonSoft(CurSkel);
-			CurSkel->AddCompatibleSkeletonSoft(WantSkel);
-		}
-	}
-
-	const bool bMeshChanged = Arms->GetSkeletalMeshAsset() != WantMesh;
-	if (bMeshChanged && IsValid(WantMesh))
-	{
-		Arms->SetSkeletalMesh(WantMesh, true);
-	}
-	if (Arms->GetAnimClass() != WantAnim)
-	{
-		Arms->SetAnimInstanceClass(WantAnim);
-		if (UAnimInstance* AnimInst = Arms->GetAnimInstance())
-		{
-			AnimInst->InitializeAnimation(true);
-		}
-	}
-	else if (bMeshChanged)
-	{
-		if (UAnimInstance* AnimInst = Arms->GetAnimInstance())
-		{
-			AnimInst->InitializeAnimation(true);
-		}
-	}
 }
 void UCombatComponent::ApplyEquippedWeaponAnim(AWeapon* Weapon)
 {
@@ -986,7 +911,7 @@ void UCombatComponent::RefreshLocomotionBlendSpaces(bool bUseWalkGait)
 			? WeaponData->FirstPersonAnims
 			: WeaponData->ThirdPersonAnims;
 		const FGameplayTag AnimTag = bFirstPerson
-			? ResolveAnimTag(CurrentWeapon)
+			? ResolveHoldPoseTag(CurrentWeapon)
 			: ResolveThirdPersonPoseTag(WeaponData, CurrentWeapon);
 		const FPlayerAnim* WeaponAnim = Anims.Find(AnimTag);
 		FPlayerAnim AnimCopy;
@@ -1124,7 +1049,7 @@ void UCombatComponent::PlayEquipMontage(AWeapon* Weapon, bool bFirstPerson)
 
 	const bool bFirstDraw = !Weapon->bHasEquippedOnce;
 	const FGameplayTag MontageTag = bFirstPerson
-		? ResolveAnimTag(Weapon)
+		? ResolveHoldPoseTag(Weapon)
 		: ResolveThirdPersonPoseTag(WeaponData, Weapon);
 	const FMontageData* MontageData = ViewMontages.Find(MontageTag);
 	UAnimMontage* EquipMontage = MontageData ? MontageData->ResolveEquipMontage(bFirstDraw) : nullptr;
@@ -1513,7 +1438,7 @@ void UCombatComponent::Local_FireWeapon()
 	if (CurrentWeapon->WeaponStatus == EWeaponStatus::Reloading) return;
 
 	bool bPlayedArmsFire = false;
-	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon)))
+	if (const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(ResolveHoldPoseTag(CurrentWeapon)))
 	{
 		UAnimMontage* Montage1P = MontageData->ResolveFireMontage();
 		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
@@ -3953,4 +3878,13 @@ bool UCombatComponent::IsDeploymentRaisePlaying()const
 {
  return ActiveEquipAnim[0].IsValid()&&ActiveEquipMontage[0].IsValid()
   &&ActiveEquipAnim[0]->Montage_IsActive(ActiveEquipMontage[0].Get());
+}
+
+FGameplayTag UCombatComponent::ResolveHoldPoseTag(const AWeapon* Weapon) const
+{
+ if(!Weapon)return FGameplayTag();
+ if(Weapon->WeaponKind==EWeaponKind::LongGun)return ShooterTags::Tag_WeaponType_Rifle;
+ if(Weapon->WeaponKind==EWeaponKind::Pistol)return ShooterTags::Tag_WeaponType_X24;
+ if(Weapon->WeaponKind==EWeaponKind::Melee)return ShooterTags::Tag_WeaponType_Melee;
+ return ResolveAnimTag(Weapon);
 }

@@ -872,7 +872,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
 	float WeaponBlockRaisePitch = 85.f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
-	float WeaponBlockRetract = 4.f;
+	float WeaponBlockRetract = -36.f;
+ UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+ float WeaponBlockSideOffset = 32.f;
+ UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+ float WeaponBlockLowerOffset = 34.f;
+ UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+ float WeaponBlockRoll = 0.f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
 	float WeaponBlockInterpSpeed = 10.f;
 
@@ -1247,6 +1253,7 @@ private:
 	void CalculateTurnInPlaceParameters(float DeltaTime);
 	void TurnInPlace(float DeltaTime);
 	void ConfigureAimTickOrder();
+ void RefreshHybridBodyVisibility();
 	void UpdateAimSocketAlignment(float DeltaTime);
 	float GetAimTimelineAlpha(float DeltaTime);
 	// 本地玩家每帧把镜头 FOV 插值到开镜目标或默认值

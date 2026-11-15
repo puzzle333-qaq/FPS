@@ -136,6 +136,7 @@ public:
 
 	// 动作表按武器类型查。闪光弹没有单独的行，手持和投掷都用手雷那一套。
 	FGameplayTag ResolveAnimTag(const AWeapon* Weapon) const;
+ FGameplayTag ResolveHoldPoseTag(const AWeapon* Weapon) const;
 
 	// 数字键 1-5：5 留给治疗（返回 false 让角色走 HealPlayer）。
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")

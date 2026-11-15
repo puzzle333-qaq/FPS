@@ -96,6 +96,14 @@ bool FWeaponObstaclePivotTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Muzzle rises substantially"), RaisedMuzzle.Z > Muzzle.Z + 40.f);
 	TestTrue(TEXT("Raised muzzle needs less forward space"), RaisedMuzzle.X < Muzzle.X - 25.f);
 	TestTrue(TEXT("No residual offset when clear"), WeaponObstacle::PivotCorrection(Root, Grip, FQuat::Identity).IsNearlyZero());
+ // A nearby protected person dips the muzzle before barrel obstruction starts.
+ // That transition must not lunge the grip forward either.
+ for(float PitchValue : {-12.f,-6.f,25.f,55.f,85.f})
+ {
+  const FQuat Pose=FRotator(PitchValue,0.f,-30.f*FMath::Max(0.f,PitchValue)/85.f).Quaternion();
+  const FVector PoseRoot=Root+WeaponObstacle::PivotCorrection(Root,Grip,Pose);
+  TestTrue(TEXT("Safety dip and compact high-ready keep the grip anchored"),(PoseRoot+Pose.RotateVector(Grip-Root)).Equals(Grip,.001f));
+ }
 	UClass* PlayerClass = LoadClass<AShooterCharacter>(nullptr, TEXT("/Game/FPS/Character/BP_ShooterCharacter.BP_ShooterCharacter_C"));
 	if (TestNotNull(TEXT("Player blueprint loads with the new pose settings"), PlayerClass))
 	{
@@ -105,7 +113,7 @@ bool FWeaponObstaclePivotTest::RunTest(const FString& Parameters)
 		if (Pitch && Retract)
 		{
 			TestTrue(TEXT("Blueprint uses the higher high-ready angle"), Pitch->GetPropertyValue_InContainer(Defaults) >= 80.f);
-			TestTrue(TEXT("Blueprint only retracts slightly"), Retract->GetPropertyValue_InContainer(Defaults) <= 6.f);
+			TestTrue(TEXT("Blueprint preserves the reviewed viewmodel depth"), FMath::IsNearlyEqual(Retract->GetPropertyValue_InContainer(Defaults),-36.f));
 		}
 		else AddError(TEXT("Obstacle pose properties missing from player class"));
 	}

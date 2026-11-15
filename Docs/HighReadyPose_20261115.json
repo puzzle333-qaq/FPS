@@ -1,0 +1,10 @@
+{
+  "WeaponBlockRaisePitch": 85.0,
+  "WeaponBlockRetract": -36.0,
+  "WeaponBlockSideOffset": 32.0,
+  "WeaponBlockLowerOffset": 34.0,
+  "WeaponBlockRoll": 0.0,
+  "MaximumVisualBlend": 0.606315,
+  "Reference": "codex-clipboard-fa470c72-5369-4ae6-ba70-282eba629f21.png",
+  "FinalAdjustment": "Horizontal placement only: side offset 36 -> 32. Preserve the user-reviewed angle and height."
+}

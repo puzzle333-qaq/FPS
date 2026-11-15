@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
@@ -124,6 +124,8 @@ public:
 	// 在握把 StaticMesh 的 Socket Manager 里加同名 Socket，放在手应该握住的位置。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")
 	FName FabrikSocketName = TEXT("FABRIK");
+ UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="FPS|Attachment|Grip")
+ FName FirstPersonFabrikSocketName = NAME_None;
 
 	// 左手手指/持姿序列（如 F_GripPose）。空则继续用 WeaponData 的 Cradle/Grab hold。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Attachment|Grip")

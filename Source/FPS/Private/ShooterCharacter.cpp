@@ -1,9 +1,9 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "ShooterCharacter.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
+// Fill out your copyright notice in the Description page of Project Settings.
+
+
 #include "Character/PoliceAppearanceComponent.h"
 #include "Vision/NightVisionProfile.h"
 #include "Game/CoopCqbGameState.h"
@@ -400,6 +400,7 @@ void AShooterCharacter::BeginPlay()
 	}
 
 	ConfigureAimTickOrder();
+ RefreshHybridBodyVisibility();
 
 	if (IsValid(Combat))
 	{
@@ -459,6 +460,7 @@ void AShooterCharacter::Tick(float DeltaTime)
 	{
 		SpringArm->SetWorldRotation(GetFixedAimRotation());
 	}
+	RefreshHybridBodyVisibility();
 	UpdateLocomotionGait(true);
 	UpdateFootsteps(DeltaTime);
 
@@ -641,12 +643,10 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 	const float Blend = FMath::Clamp(LeftHandIKBlendSpeed * DeltaTime, 0.f, 1.f);
 	FABRIK_Alpha = FMath::Lerp(FABRIK_Alpha, WantAlpha, Blend);
 
-	// First-person: snap the left hand only when a foregrip is mounted.
-	// Pack idle poses often already place both hands; FABRIK without a grip can fight that pose.
+	// Use the foregrip target, or the weapon's authored handguard hold when no grip is fitted.
 	FTransform SocketWorld1P;
 	float WantAlpha1P = 0.f;
-	const bool bWantGripSnap1P =
-		Combat->CurrentWeapon->GetAttachmentInSlot(ShooterTags::Tag_Attachment_Slot_Grip) != nullptr;
+	const bool bWantGripSnap1P = !Combat->IsInspecting();
 	if (bWantGripSnap1P && Combat->CurrentWeapon->GetFabrikWorldTransform(true, SocketWorld1P) && IsValid(Mesh1P))
 	{
 		FABRIK_SocketTransform1P = SocketWorld1P.GetRelativeTransform(Mesh1P->GetComponentTransform());
@@ -680,7 +680,7 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 		}
 	}
 
-	FABRIK_Alpha1P = FMath::Lerp(FABRIK_Alpha1P, WantAlpha1P, Blend);
+	FABRIK_Alpha1P = Combat->IsInspecting() ? 0.f : FMath::Lerp(FABRIK_Alpha1P, WantAlpha1P, Blend);
 }
 
 void AShooterCharacter::DrawWeaponAttachDebug() const
@@ -939,8 +939,11 @@ void AShooterCharacter::ApplyVisualRecoilToMesh(float DeltaTime)
 
 	// 后坐 + 晃动 + 枪管顶墙抬枪（都是镜头空间）
 	// [RecoilFeel2] exclude VisualRecoilLoc/Rot — only sway + barrel-block remain on Mesh1P
-	const FQuat OtherRotation = (SwayRotCurrent + MuzzleDipRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f)).Quaternion();
-	const FQuat BlockRotation = WeaponBlockRotCurrent.Quaternion();
+	const FQuat OtherRotation = (SwayRotCurrent + FRotator(SwayDipZ * 0.4f, 0.f, 0.f)).Quaternion();
+ // Both safety dip and high-ready rotate about the grip. Rotating the dip about
+ // an imported root below the camera pushes the hands/barrel forward at people.
+ const float RaisedAlpha=FMath::Clamp(WeaponBlockAlpha/.65f,0.f,.606315f);
+ const FQuat BlockRotation = (MuzzleDipRotCurrent*(1.f-RaisedAlpha)).Quaternion()*WeaponBlockRotCurrent.Quaternion();
 	const FQuat TotalRotation = OtherRotation * BlockRotation;
 	const FTransform& CameraTransform = FirstPersonCamera->GetComponentTransform();
 	const FVector MeshOrigin = CameraTransform.InverseTransformPosition(Mesh1P->GetComponentLocation());
@@ -3056,13 +3059,14 @@ void AShooterCharacter::SetDebugThirdPerson(bool bThirdPerson)
 	auto SetBodyOwnerSee = [bThirdPerson](USkeletalMeshComponent* Comp)
 	{
 		if (!IsValid(Comp)) return;
-		Comp->SetOwnerNoSee(!bThirdPerson); // FP: owner no see body; 3P: owner sees body
+		Comp->SetOwnerNoSee(false); // FP: owner no see body; 3P: owner sees body
 	};
 	SetBodyOwnerSee(GetMesh());
 	SetBodyOwnerSee(Mesh3P_Head.Get());
 	SetBodyOwnerSee(Mesh3P_BodyUp.Get());
 	SetBodyOwnerSee(Mesh3P_Pants.Get());
 	SetBodyOwnerSee(Mesh3P_Jacket.Get());
+ RefreshHybridBodyVisibility();
  if(PoliceAppearance)PoliceAppearance->RefreshAppearance();
 
 	if (IsValid(Combat))
@@ -3353,9 +3357,14 @@ void AShooterCharacter::UpdateWeaponObstacle(float DeltaTime)
 	// three interpolation delays on alpha, location and rotation.
 	const float Blend = WeaponBlockInterpSpeed > 0.f ? 1.f - FMath::Exp(-WeaponBlockInterpSpeed * DeltaTime) : 1.f;
 	WeaponBlockAlpha = FMath::Lerp(WeaponBlockAlpha, TargetAlpha, Blend);
-	WeaponBlockLocCurrent = FVector(-WeaponBlockRetract * WeaponBlockAlpha, 0.f, 0.f);
-	const float RaisedPoseAlpha = FMath::Clamp(WeaponBlockAlpha / 0.65f, 0.f, 1.f);
-	WeaponBlockRotCurrent = FRotator(WeaponBlockRaisePitch * RaisedPoseAlpha, 0.f, 0.f);
+	// The reviewed screenshot is the pose at this blend. Stop here even at full
+ // intrusion instead of continuing into the screen-filling vertical arm pose.
+ const float RaisedPoseAlpha = FMath::Clamp(WeaponBlockAlpha / 0.65f, 0.f, .606315f);
+ // Preserve the reviewed high-ready pose, shifted to the right edge.
+ // This is a viewmodel offset only; collision/fire checks remain camera based.
+ WeaponBlockLocCurrent = FVector(-WeaponBlockRetract * (.65f*RaisedPoseAlpha),
+  WeaponBlockSideOffset*RaisedPoseAlpha,-WeaponBlockLowerOffset*RaisedPoseAlpha);
+ WeaponBlockRotCurrent = FRotator(WeaponBlockRaisePitch * RaisedPoseAlpha, 0.f, WeaponBlockRoll*RaisedPoseAlpha);
 
 	// Auto drop ADS when jammed.
 	if (IsWeaponBlocked() && IsValid(Combat) && Combat->bAiming)
@@ -3874,7 +3883,8 @@ void AShooterCharacter::ApplyFactionLookMeshes()
 					*GetNameSafe(W), *GetNameSafe(Self->GetMesh() ? Self->GetMesh()->GetSkeletalMeshAsset() : nullptr));
 			}));
 		}
-		// Re-apply debug 3P visibility after mesh/anim reinits.
+		RefreshHybridBodyVisibility();
+	// Re-apply debug 3P visibility after mesh/anim reinits.
 		if (bDebugThirdPerson && IsLocallyControlled())
 		{
 			const bool bOn = bDebugThirdPerson;
@@ -4447,11 +4457,11 @@ void AShooterCharacter::ApplyTacticalVisionEffects()
 			}
 		}
 
-		  if(auto* Dynamic=Cast<UMaterialInstanceDynamic>(ActiveVisionBlendable.Get()))
-		  {
-		   Dynamic->SetScalarParameterValue(TEXT("Battery"),Batt);
-		   Dynamic->SetScalarParameterValue(TEXT("Quad"),NVGHousing==ENVGHousing::Quad?1.f:0.f);
-		  }
+  if(auto* Dynamic=Cast<UMaterialInstanceDynamic>(ActiveVisionBlendable.Get()))
+  {
+   Dynamic->SetScalarParameterValue(TEXT("Battery"),Batt);
+   Dynamic->SetScalarParameterValue(TEXT("Quad"),NVGHousing==ENVGHousing::Quad?1.f:0.f);
+  }
 
 		if (!ActiveVisionBlendable.IsValid())
 		{
@@ -5576,4 +5586,17 @@ void AShooterCharacter::Auth_OnHitZoneDamaged(AActor* DamageInstigator, bool bLe
 		if (Vitals) Vitals->NoteCombatEvent();
 		if (ShooterGM) ShooterGM->OnPlayerKilled(InstigatorController, GetController());
 	}
+}
+
+void AShooterCharacter::RefreshHybridBodyVisibility()
+{
+ const bool HideBody=(IsLocallyControlled()||bFirstPersonViewedLocally)&&!bDebugThirdPerson&&(!Stats||Stats->DeathState==EDeathState::NotDead);
+ TInlineComponentArray<USkeletalMeshComponent*> Parts(this);
+ for(auto* Part:Parts)
+ {
+  if(!Part || Part==Mesh1P || Part==Mesh1P_Sleeves)continue;
+  Part->SetOwnerNoSee(HideBody);
+ }
+ // Undo the old lower-body-only bone mask; visibility is now entirely view-based.
+ if(GetMesh())GetMesh()->UnHideBoneByName(TEXT("spine_01"));
 }

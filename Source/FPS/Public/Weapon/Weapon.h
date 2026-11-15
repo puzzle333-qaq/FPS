@@ -79,7 +79,7 @@ struct FWeaponAttachmentSlot
 	bool bRequired = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Hip")
-	float HipFireSpread;
+	float HipFireSpread = 0.f;
 };
 
 // 配件变化时广播，UI 可以绑它刷新
