@@ -89,6 +89,7 @@ public:
 	AShooterCharacter();
 
 	virtual void Tick(float DeltaTime) override;
+	virtual void CalcCamera(float DeltaTime, struct FMinimalViewInfo& OutResult) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual bool IsLocallyControlled() const override;
@@ -151,6 +152,12 @@ public:
 	// 第三人称左手 FABRIK 强度。近战为 0，ABP 的 FABRIK Alpha 应绑这个。
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|FABRIK")
 	float FABRIK_Alpha = 0.f;
+ UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody|ADS") FTransform BodyAdsRightHand;
+ UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody|ADS") float BodyAdsAlpha=0.f;
+ UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody|ADS") float BodySupportHandAlpha=0.f;
+ UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody") float BodyFirstPersonPoseAlpha=0.f;
+ bool CanUseFirstPersonBodyPose() const;
+ void UpdateBodyAdsTarget();
 
 	// 动画曲线名。手臂蒙太奇里这条曲线为 1 时左手 IK 完全关掉（让左手去拿弹匣/拉栓），0 时正常扶枪
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FABRIK")
@@ -361,7 +368,23 @@ public:
 
 	// Local-only debug third-person camera (not replicated).
 	bool bDebugThirdPerson = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Debug")
 	bool bUseSingleBodyPilot = false;
+
+ // neck_01 remains a stable positional anchor when its hidden descendants are scaled to zero.
+ UPROPERTY(EditDefaultsOnly, Category = "FPS|SingleBody|Camera")
+ FName SingleBodyCameraAnchorBone = TEXT("neck_01");
+ /** Eye offset in actor space; bone rotation must never rotate the player's view. Units: cm. */
+ UPROPERTY(EditDefaultsOnly, Category = "FPS|SingleBody|Camera")
+ FVector SingleBodyCameraEyeOffset = FVector(0.f, 0.f, 14.f);
+ UPROPERTY(EditDefaultsOnly, Category = "FPS|SingleBody|Camera", meta = (ClampMin = "0", Units = "cm"))
+ float SingleBodyCameraProbeRadius = 4.f;
+
+ void UpdateSingleBodyCameraLocation();
+ bool bSingleBodyCameraFollowing = false;
+ FVector SingleBodyCameraRestoreLocation = FVector::ZeroVector;
+ FVector SingleBodyCameraLastLocation = FVector::ZeroVector;
+
 	float DebugThirdPersonArmLength = 250.f;
 	float SavedSpringArmLength = 0.f;
 	bool bSavedSpringArmLength = false;
@@ -1238,6 +1261,9 @@ private:
 	void Input_EquipPistolWeapon();
 	void Input_Heal();
 	void Input_VersionWeapon();
+ void Input_BodyInspect();
+ UPROPERTY(Transient) TObjectPtr<UInputAction> BodyInspectAction;
+ UPROPERTY(Transient) TObjectPtr<UInputMappingContext> BodyInspectIMC;
 	bool PlayHealMontage(USkeletalMeshComponent* HealMesh, bool bBindEnd);
 	void OnHealMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void HideEquippedWeaponForHeal();

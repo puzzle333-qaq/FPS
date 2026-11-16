@@ -398,13 +398,17 @@ bool AWeapon::HasAimSocket() const
 
 bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 {
+ FTransform Sight;
+ if (!GetAimSocketWorldTransform(Sight, true)) return false;
+ OutLocation = Sight.GetLocation(); return true;
+}
+
+bool AWeapon::GetAimSocketWorldTransform(FTransform& OutTransform, bool bFirstPerson) const
+{
 	// 1) 瞄具 SightSocket：开镜对准红点/全息中心
 	if (const FAttachmentVisual* Optic = FindVisual(ShooterTags::Tag_Attachment_Slot_Optic))
 	{
-		USceneComponent* OpticComp =
-			IsValid(Optic->Mesh1P)
-			? static_cast<USceneComponent*>(Optic->Mesh1P.Get())
-			: static_cast<USceneComponent*>(Optic->SkelMesh1P.Get());
+		USceneComponent* OpticComp = AttachmentViewComponent(*Optic, bFirstPerson);
 		if (IsValid(OpticComp) && IsValid(Optic->Data))
 		{
 			// DA 填的名字优先；模型上没有时试常见命名（PCC 红点只有 Sight_ZeroPoint_*，SOP 有 Camera_sckt）
@@ -414,7 +418,7 @@ bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 			{
 				if (!Candidate.IsNone() && OpticComp->DoesSocketExist(Candidate))
 				{
-					OutLocation = OpticComp->GetSocketLocation(Candidate);
+					OutTransform = OpticComp->GetSocketTransform(Candidate, RTS_World);
 					return true;
 				}
 			}
@@ -424,20 +428,15 @@ bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 	// 2) 机瞄 AimSocket 可能在配件上（常见：枪管）。先枪管，再其它配件的 1P 模型
 	if (!AimSocketName.IsNone())
 	{
-		auto TryAttachmentAim = [this, &OutLocation](const FGameplayTag& SlotTag) -> bool
+		auto TryAttachmentAim = [this, &OutTransform, bFirstPerson](const FGameplayTag& SlotTag) -> bool
 		{
 			const FAttachmentVisual* Visual = FindVisual(SlotTag);
-			USceneComponent* AimComp =
-				Visual
-				? (IsValid(Visual->Mesh1P)
-					? static_cast<USceneComponent*>(Visual->Mesh1P.Get())
-					: static_cast<USceneComponent*>(Visual->SkelMesh1P.Get()))
-				: nullptr;
+			USceneComponent* AimComp = Visual ? AttachmentViewComponent(*Visual, bFirstPerson) : nullptr;
 			if (!Visual || !IsValid(AimComp) || !AimComp->DoesSocketExist(AimSocketName))
 			{
 				return false;
 			}
-			OutLocation = AimComp->GetSocketLocation(AimSocketName);
+			OutTransform = AimComp->GetSocketTransform(AimSocketName, RTS_World);
 			return true;
 		};
 
@@ -448,10 +447,7 @@ bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 
 		for (const FAttachmentVisual& Visual : AttachmentVisuals)
 		{
-			USceneComponent* AimComp =
-				IsValid(Visual.Mesh1P)
-				? static_cast<USceneComponent*>(Visual.Mesh1P.Get())
-				: static_cast<USceneComponent*>(Visual.SkelMesh1P.Get());
+			USceneComponent* AimComp = AttachmentViewComponent(Visual, bFirstPerson);
 			if (!IsValid(Visual.Data) || !IsValid(AimComp))
 			{
 				continue;
@@ -464,19 +460,20 @@ bool AWeapon::GetAimSocketWorldLocation(FVector& OutLocation) const
 			}
 			if (AimComp->DoesSocketExist(AimSocketName))
 			{
-				OutLocation = AimComp->GetSocketLocation(AimSocketName);
+				OutTransform = AimComp->GetSocketTransform(AimSocketName, RTS_World);
 				return true;
 			}
 		}
 	}
 
 	// 3) 退回枪 Mesh1P 上的 AimSocket
-	if (!IsValid(Mesh1P) || AimSocketName.IsNone() || !Mesh1P->DoesSocketExist(AimSocketName))
+	USkeletalMeshComponent* ViewMesh = bFirstPerson ? Mesh1P.Get() : Mesh3P.Get();
+	if (!IsValid(ViewMesh) || AimSocketName.IsNone() || !ViewMesh->DoesSocketExist(AimSocketName))
 	{
 		return false;
 	}
 
-	OutLocation = Mesh1P->GetSocketLocation(AimSocketName);
+	OutTransform = ViewMesh->GetSocketTransform(AimSocketName, RTS_World);
 	return true;
 }
 
@@ -635,7 +632,9 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 		WeaponMesh->UpdateComponentToWorld();
 	}
 
-	auto TryGripComponent = [&OutWorld,bFirstPerson](USceneComponent* GripComp, const UAttachmentData* Data) -> bool
+	const auto* GripOwner=Cast<AShooterCharacter>(GetOwner());
+ const bool bUseAuthoredFPAnchor=bFirstPerson||(GripOwner&&GripOwner->IsSingleBodyPilot());
+ auto TryGripComponent = [&OutWorld,bUseAuthoredFPAnchor](USceneComponent* GripComp, const UAttachmentData* Data) -> bool
 	{
 		if (!IsValid(GripComp) || !IsValid(Data))
 		{
@@ -650,7 +649,7 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
 			return false;
 		}
 
-		if(bFirstPerson && !Data->FirstPersonFabrikSocketName.IsNone() && GripComp->DoesSocketExist(Data->FirstPersonFabrikSocketName))
+		if(bUseAuthoredFPAnchor && !Data->FirstPersonFabrikSocketName.IsNone() && GripComp->DoesSocketExist(Data->FirstPersonFabrikSocketName))
  { OutWorld=GripComp->GetSocketTransform(Data->FirstPersonFabrikSocketName,RTS_World);return true; }
 		static const FName GripHandNames[] = {
 			NAME_None, // filled with Data->FabrikSocketName
@@ -688,6 +687,8 @@ bool AWeapon::GetFabrikWorldTransform(bool bFirstPerson, FTransform& OutWorld) c
   OutWorld=ThirdPersonLeftHandGrip*WeaponMesh->GetComponentTransform();
   return true;
  }
+ if(!bFirstPerson && bUseAuthoredFPAnchor && bHasThirdPersonLeftHandGrip && IsValid(WeaponMesh))
+ {OutWorld=ThirdPersonLeftHandGrip*WeaponMesh->GetComponentTransform();return true;}
 	// Authored left-hand sockets on the weapon body when no foregrip is mounted.
 	const FName FabrikNames[] = {
 		FabrikSocketName, TEXT("GripSocket"), TEXT("FABRIK"), TEXT("LeftHandSocket"), TEXT("lefthand"),
@@ -933,6 +934,42 @@ namespace
 			*Requested.ToString(), *GetNameSafe(Mesh->GetSkeletalMeshAsset()));
 		return Requested;
 	}
+}
+
+void AWeapon::SyncBodyToFirstPerson(bool bEnabled)
+{
+ const auto* Shooter=Cast<AShooterCharacter>(GetOwner());
+ auto* Arms=Shooter?IPlayerInterface::Execute_GetMesh1P(const_cast<AShooterCharacter*>(Shooter)):nullptr;
+ auto* Body=Shooter?Shooter->GetMesh():nullptr;
+ if (!Arms || !Body || !Mesh1P || !Mesh3P) return;
+ if (!bEnabled)
+ {
+  if (bBodyFollowingFirstPerson)
+  {
+   bBodyFollowingFirstPerson=false;
+   Mesh3P->SetLeaderPoseComponent(nullptr);
+   ApplyMeshAttachRelative(Mesh3P,false);
+   for (auto& V:AttachmentVisuals) if (V.SkelMesh3P) V.SkelMesh3P->SetLeaderPoseComponent(nullptr);
+  }
+  return;
+ }
+ bBodyFollowingFirstPerson=true;
+ Mesh1P->UpdateComponentToWorld();
+ // Use the evaluated 1P weapon-to-hand relationship, including animated gun bones,
+ // socket offsets, re-grips and the current weapon definition. No guessed mount.
+ if (Mesh3P->GetAttachParent()!=Body || Mesh3P->GetAttachSocketName()!=FName(TEXT("hand_r")))
+  Mesh3P->AttachToComponent(Body,FAttachmentTransformRules::SnapToTargetNotIncludingScale,TEXT("hand_r"));
+ const FTransform Mount=Mesh1P->GetComponentTransform().GetRelativeTransform(Arms->GetSocketTransform(TEXT("hand_r"),RTS_World));
+ Mesh3P->SetRelativeTransform(Mount);
+ if (Mesh1P->GetSkeletalMeshAsset() && Mesh3P->GetSkeletalMeshAsset() &&
+     Mesh1P->GetSkeletalMeshAsset()->GetSkeleton()==Mesh3P->GetSkeletalMeshAsset()->GetSkeleton() &&
+     Mesh3P->LeaderPoseComponent.Get()!=Mesh1P)
+  Mesh3P->SetLeaderPoseComponent(Mesh1P,true);
+ for (auto& V:AttachmentVisuals)
+ {
+  if (V.SkelMesh1P && V.SkelMesh3P && V.SkelMesh1P->GetSkeletalMeshAsset()==V.SkelMesh3P->GetSkeletalMeshAsset())
+   V.SkelMesh3P->SetLeaderPoseComponent(V.SkelMesh1P);
+ }
 }
 
 void AWeapon::AttachToOwingPawn()
@@ -3043,6 +3080,12 @@ UStaticMeshComponent* AWeapon::GetOpticMesh1P() const
 {
 	const FAttachmentVisual* Optic = FindVisual(ShooterTags::Tag_Attachment_Slot_Optic);
 	return Optic ? Optic->Mesh1P.Get() : nullptr;
+}
+
+UStaticMeshComponent* AWeapon::GetOpticMesh3P() const
+{
+ const FAttachmentVisual* Optic=FindVisual(ShooterTags::Tag_Attachment_Slot_Optic);
+ return Optic?Optic->Mesh3P.Get():nullptr;
 }
 
 bool AWeapon::GetCantedSight(UStaticMeshComponent*& OutMesh, const UAttachmentData*& OutData) const

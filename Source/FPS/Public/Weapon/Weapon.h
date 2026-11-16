@@ -223,6 +223,7 @@ public:
 
 	// 瞄具在第一人称枪上生成的模型。画中画只替换它的画面槽材质。
 	UStaticMeshComponent* GetOpticMesh1P() const;
+ UStaticMeshComponent* GetOpticMesh3P() const;
 
 	// 第 10/12 步：装了侧瞄（bProvidesCantedSight 或 bProvidesLaser，且模型上有 CantedSightSocketName）就返回 true
 	bool GetCantedSight(UStaticMeshComponent*& OutMesh, const UAttachmentData*& OutData) const;
@@ -281,6 +282,7 @@ public:
 
 
 	void AttachToOwingPawn();
+ void SyncBodyToFirstPerson(bool bEnabled);
 	void AttachToPawnSocket(USkeletalMeshComponent* PawnMesh, FName SocketName);
 
 	/** True when Mesh1PAttachSocket is set (data-driven 1P mount, not GripPoints). */
@@ -528,6 +530,7 @@ public:
 
 	bool HasAimSocket() const;
 	bool GetAimSocketWorldLocation(FVector& OutLocation) const;
+ bool GetAimSocketWorldTransform(FTransform& OutTransform, bool bFirstPerson) const;
 
 	// 扶枪点的世界变换。bFirstPerson 用 1P 枪和握把，否则用 3P。
 	// 握把挂住且模型上有 FabrikSocketName 时用握把，否则用枪骨骼上的 FABRIK。
@@ -762,6 +765,7 @@ protected:
 	TObjectPtr<USkeletalMeshComponent> Mesh3P;
 
 private:
+ bool bBodyFollowingFirstPerson=false;
 
 
 	void SetMeshVisibility(APawn* OwningPawn);

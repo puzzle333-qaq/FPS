@@ -490,6 +490,8 @@ void AShooterCharacter::Tick(float DeltaTime)
 	{
 		OpticScope->UpdateView();
 	}
+ // Read the source after its ADS, sway and recoil component offsets are applied.
+ if (BodyFirstPersonPoseAlpha>0.f) UpdateBodyAdsTarget();
 }
 
 void AShooterCharacter::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
@@ -538,7 +540,7 @@ void AShooterCharacter::UpdateSingleBodyCameraLocation()
    const FVector Forward = FirstPersonCamera->GetForwardVector();
    const FVector ToSight = Sight.GetLocation() - Eye;
    const FVector LateralError = ToSight - Forward * FVector::DotProduct(ToSight, Forward);
-   Eye += LateralError * BodyAdsAlpha;
+   Eye += LateralError * (BodyFirstPersonPoseAlpha>0.f?AimAlignAlpha:BodyAdsAlpha);
   }
  }
  if (SingleBodyCameraProbeRadius > 0.f && GetWorld())
@@ -1169,7 +1171,7 @@ float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
 void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 {
  UpdateBodyAdsTarget();
- if (IsSingleBodyPilot()) return; // Visible arms are now on the body; never solve ADS on hidden Mesh1P.
+ if (IsSingleBodyPilot() && BodyFirstPersonPoseAlpha==0.f) return;
 
 	if (!IsLocallyControlled() || !IsValid(Mesh1P) || !IsValid(FirstPersonCamera) || !IsValid(Combat))
 	{
@@ -1221,13 +1223,55 @@ void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 	}
 }
 
+bool AShooterCharacter::CanUseFirstPersonBodyPose() const
+{
+ if (!IsSingleBodyPilot() || !IsLocallyControlled() || !Combat || !Combat->CurrentWeapon || !Combat->WeaponData ||
+     !Mesh1P || !Mesh1P->GetAnimInstance() || !GetMesh()) return false;
+ for (const FName Bone : {FName(TEXT("spine_01")), FName(TEXT("upperarm_r")), FName(TEXT("hand_r")), FName(TEXT("hand_l"))})
+  if (Mesh1P->GetBoneIndex(Bone)==INDEX_NONE || GetMesh()->GetBoneIndex(Bone)==INDEX_NONE) return false;
+ const AWeapon* W=Combat->CurrentWeapon;
+ FPlayerAnim Pose;
+ if (const auto* Row=Combat->WeaponData->FirstPersonAnims.Find(W->WeaponType)) Pose=*Row;
+ W->ApplyAuthoredArmAnims(Pose);
+ if (!Pose.IdleAnim) return false;
+ if (const auto* PC=Cast<AShooterPlayerController>(GetController()); PC && PC->IsSprinting() && !Pose.SprintAnim) return false;
+ if (Combat->bAiming && !Pose.AimIdleAnim) return false;
+ const auto* Actions=Combat->WeaponData->FirstPersonMontages.Find(W->WeaponType);
+ if (Combat->IsInspecting()) return Actions && Actions->InspectMontage1P;
+ switch (W->WeaponStatus)
+ {
+ case EWeaponStatus::Firing: return W->ArmsFireSequence || W->ArmsFireAimSequence || (Actions && Actions->FireMontage);
+ case EWeaponStatus::Reloading:
+  return W->ArmsReloadEmptySequence || W->ArmsReloadTacticalSequence ||
+   (Actions && Actions->ResolveReloadMontage(W->Ammo<=0?EReloadType::Empty:EReloadType::Tactical,W->GetGripHoldStyle()));
+ case EWeaponStatus::Cycling: return W->ArmsEquipSequence || (Actions && (Actions->EquipMontage || Actions->FirstEquipMontage));
+ case EWeaponStatus::UnEquipped: return false;
+ default: return true;
+ }
+}
+
 void AShooterCharacter::UpdateBodyAdsTarget()
 {
+ BodyFirstPersonPoseAlpha=CanUseFirstPersonBodyPose()?1.f:0.f;
  BodyAdsAlpha=0.f; BodySupportHandAlpha=0.f;
+ if (Combat && Combat->CurrentWeapon && !IsSingleBodyPilot()) Combat->CurrentWeapon->SyncBodyToFirstPerson(false);
  if (!IsSingleBodyPilot() || !Combat || !Combat->CurrentWeapon || !GetMesh()) return;
  AWeapon* Weapon=Combat->CurrentWeapon;
+ Weapon->SyncBodyToFirstPerson(BodyFirstPersonPoseAlpha>0.f);
+ if (BodyFirstPersonPoseAlpha>0.f)
+ {
+  // Retarget the evaluated hands in camera/world space. Camera-authored 1P
+  // spine transforms cannot be copied onto a body whose eye follows the neck.
+  BodyAdsRightHand=Mesh1P->GetSocketTransform(TEXT("hand_r"),RTS_World).GetRelativeTransform(GetMesh()->GetComponentTransform());
+  BodyAdsRightHand.SetScale3D(FVector::OneVector);
+  FABRIK_SocketTransform=Mesh1P->GetSocketTransform(TEXT("hand_l"),RTS_World).GetRelativeTransform(Mesh1P->GetSocketTransform(TEXT("hand_r"),RTS_World));
+  FABRIK_SocketTransform.SetScale3D(FVector::OneVector);
+  BodyAdsAlpha=1.f; BodySupportHandAlpha=1.f;
+  return;
+ }
  const bool bFreeHands=(Weapon->WeaponStatus==EWeaponStatus::Idle || Weapon->WeaponStatus==EWeaponStatus::Firing) && !Combat->IsInspecting();
- BodySupportHandAlpha=bFreeHands?FABRIK_Alpha:0.f;
+ // The copied source already contains its authored support-hand/finger pose.
+ BodySupportHandAlpha=bFreeHands && BodyFirstPersonPoseAlpha==0.f?FABRIK_Alpha:0.f;
  if (!bFreeHands || (IsLocallyControlled()?AimAlignAlpha<=KINDA_SMALL_NUMBER:!Combat->bAiming) || !GetMesh()->DoesSocketExist(TEXT("hand_r"))) return;
  FTransform Sight;
  if (!Weapon->GetAimSocketWorldTransform(Sight,false)) return;

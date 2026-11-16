@@ -46,7 +46,8 @@ void UOpticScopeComponent::UpdateView()
 	UCombatComponent* Combat = IsValid(Character) ? Character->GetCombatComponent() : nullptr;
 	AWeapon* Weapon = IsValid(Combat) ? Combat->CurrentWeapon.Get() : nullptr;
 	const UAttachmentData* Optic = IsValid(Weapon) ? Weapon->GetOpticAttachment() : nullptr;
-	UStaticMeshComponent* OpticMesh = IsValid(Weapon) ? Weapon->GetOpticMesh1P() : nullptr;
+	const bool bBodyView=IsValid(Character)&&Character->IsSingleBodyPilot()&&!Character->IsDebugThirdPerson();
+ UStaticMeshComponent* OpticMesh = IsValid(Weapon) ? (bBodyView?Weapon->GetOpticMesh3P():Weapon->GetOpticMesh1P()) : nullptr;
 
 	// 条件全部满足才开：本地玩家、正在开镜、瞄具要画中画（Variable / 配了镜片的 Magnified）。
 	// 按瞄具类型判断，不再看武器是不是狙击

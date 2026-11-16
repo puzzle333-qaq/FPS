@@ -3534,7 +3534,11 @@ void UCombatComponent::StartInspection(bool bMagazineCheck)
 	if (IsInspecting()) return;
 
 	const auto* Shooter=Cast<AShooterCharacter>(GetOwner());
- const bool bBody=Shooter&&Shooter->IsSingleBodyPilot();
+ // Keep the original 1P inspection as the source whenever it exists. The body
+ // consumes that evaluated pose; only missing 1P actions use a body montage.
+ const auto* FirstPerson=WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon));
+ const bool bHasFirstPerson=FirstPerson && FirstPerson->InspectMontage1P;
+ const bool bBody=Shooter&&Shooter->IsSingleBodyPilot()&&!bHasFirstPerson;
  const FMontageData* MontageData=bBody?WeaponData->ThirdPersonMontages.Find(ResolveThirdPersonPoseTag(WeaponData,CurrentWeapon)):WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon));
 	UAnimMontage* InspectMontage = MontageData ? MontageData->InspectMontage1P.Get() : nullptr;
 	USkeletalMeshComponent* Mesh1P = bBody?IPlayerInterface::Execute_GetMesh3P(GetOwner()):IPlayerInterface::Execute_GetMesh1P(GetOwner());

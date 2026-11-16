@@ -149,6 +149,8 @@ public:
 	// 第 9 步：检视武器。只在本地第一人称播放，不走网络
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void Initiate_VersionWeapon();
+ UFUNCTION(BlueprintCallable, Category="FPS|Weapon") void Initiate_InspectWeapon();
+ void StartInspection(bool bMagazineCheck);
 
 	// 打断检视（开火、开镜、换弹、切枪、冲刺都会调用）。没在检视时什么都不做
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
@@ -363,6 +365,11 @@ private:
 	TWeakObjectPtr<UAnimMontage> ActiveInspectMontage;
 	TWeakObjectPtr<UAnimMontage> ActiveInspectWeaponMontage;
 	TWeakObjectPtr<AWeapon> InspectWeapon;
+ TWeakObjectPtr<UAnimInstance> InspectAnimInstance;
+ TWeakObjectPtr<USkeletalMeshComponent> InspectGunMesh;
+ bool bInspectionUsesBody=false;
+ UFUNCTION(Server,Reliable) void Server_BodyInspection(bool bStop,bool bMagazineCheck);
+ UFUNCTION(NetMulticast,Reliable) void Multicast_BodyInspection(UAnimMontage* Montage,bool bStop);
 	void OnReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void OnObservedReloadMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
