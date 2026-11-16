@@ -348,10 +348,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Blood")
 	void MarkBloodyFeet(int32 ExtraSteps = -1);
 
-	// Hit spray + floor blood stain (Niagara + decal). Call on every machine that saw the hit.
-	UFUNCTION(BlueprintCallable, Category = "FPS|Blood")
-	void PlayBloodHitFX(FVector ImpactPoint, FVector ImpactNormal);
-
 	// Same FX for dummies / any hit location (no character required).
 	static void SpawnBloodImpactFX(UObject* WorldContext, FVector ImpactPoint, FVector ImpactNormal, AActor* IgnoreActor = nullptr);
 
@@ -710,9 +706,6 @@ public:
 
 	void ClearHitZoneMarks();
 
-	// Scale ballistic torso damage by armor. Explosives/fire should call DoDamage directly (no armor).
-	float ScaleDamageByArmor(float Damage, EHitZone Zone, bool bPistolOrShotgun) const;
-
 	// PIE/debug: 0=None 1=Light 2=Heavy. Replicated via Server_SetBodyArmor.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Armor")
 	void SetBodyArmorLocal(EBodyArmorType NewArmor);
@@ -817,14 +810,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
 	bool bDebugWeaponObstacle = false;
 
-	// Multipliers applied to torso (chest/abdomen) ballistic damage only.
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.05", ClampMax = "1"))
-	float LightArmorTorsoMultiplier = 0.65f;
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.05", ClampMax = "1"))
-	float HeavyArmorTorsoMultiplier = 0.50f;
-	// Heavy vs pistol / shotgun torso (much stronger).
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.05", ClampMax = "1"))
-	float HeavyArmorPistolShotgunTorsoMultiplier = 0.25f;
+	
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Armor", meta = (ClampMin = "0.2", ClampMax = "1"))
 	float HeavyArmorMoveSpeedMultiplier = 0.78f;
  UPROPERTY(EditDefaultsOnly,Category="FPS|Armor",meta=(ClampMin="0.2",ClampMax="1"))
@@ -1261,8 +1247,6 @@ private:
 	void Input_EquipSeconedaryWeapon();
 	void Input_EquipMeleeWeapon();
 	void Input_EquipPistolWeapon();
-	void Input_Heal();
-	void Input_VersionWeapon();
  void Input_BodyInspect();
  UPROPERTY(Transient) TObjectPtr<UInputAction> BodyInspectAction;
  UPROPERTY(Transient) TObjectPtr<UInputMappingContext> BodyInspectIMC;
@@ -1287,7 +1271,6 @@ private:
 	void ConfigureAimTickOrder();
  void RefreshHybridBodyVisibility();
 	void UpdateAimSocketAlignment(float DeltaTime);
-	float GetAimTimelineAlpha(float DeltaTime);
 	// 本地玩家每帧把镜头 FOV 插值到开镜目标或默认值
 	void UpdateAimFieldOfView(float DeltaTime);
 

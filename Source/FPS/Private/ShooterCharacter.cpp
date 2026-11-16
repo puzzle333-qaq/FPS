@@ -179,9 +179,8 @@ AShooterCharacter::AShooterCharacter()
 	SpringArm->bEnableCameraLag = false;   // 第一人称位置延迟会让高速移动/滑铲时手臂和镜头"拖在身后"
 	SpringArm->CameraLagSpeed = 15.f;
 
-	SlideDuration = 0.75f;
-	SlideSpeedBoost = 200.f;
-	SlideEndSpeed = 350.f;
+
+
 	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
 	{
 		CMC->AirControl = 0.4f;
@@ -880,9 +879,6 @@ void AShooterCharacter::UpdateAimAlpha(float DeltaTime)
 	}
 
 	// 开镜和关镜都用同一个时间；时间为 0 就瞬间到位
-	float AdsTime = IsValid(Weapon) ? Weapon->GetEffectiveAdsTime() : 0.2f;
-	// 用 bIsSliding 作目标，平滑追过去--不要跟 SlideAlpha 绑死（滑铲结束/开镜中途倍率突变会让枪卡一下）
-	float DesiredAdsScale = bIsSliding ? SlideAdsTimeMultiplier : 1.f;
 	if (bArmInjured) DesiredAdsScale *= ArmInjuryAdsTimeMultiplier;
 	if (BodyArmor == EBodyArmorType::Heavy) DesiredAdsScale *= HeavyArmorAdsTimeMultiplier;
 	AdsTimeScaleCurrent = FMath::FInterpTo(AdsTimeScaleCurrent, DesiredAdsScale, DeltaTime, 6.f);
@@ -1097,7 +1093,6 @@ void AShooterCharacter::UpdateWeaponSway(float DeltaTime)
 		FMath::Clamp(-PitchRate * SwayLookLocationScale, -SwayMaxLocation, SwayMaxLocation));
 
 	// 2) 走路晃动：地面移动时按速度推进相位，竖直走 2 倍频（左右各一步）
-	const bool bGrounded = IsValid(CMC) && CMC->IsMovingOnGround() && !bIsSliding;
 	const float SpeedRatio = bGrounded ? FMath::Clamp(GetVelocity().Size2D() / FMath::Max(1.f, BobReferenceSpeed), 0.f, 1.8f) : 0.f;
 	BobWeight = FMath::FInterpTo(BobWeight, SpeedRatio, DeltaTime, 6.f);
 	BobPhase = FMath::Fmod(BobPhase + DeltaTime * BobFrequency * FMath::Max(0.6f, SpeedRatio), 2.f * PI);
@@ -1140,12 +1135,6 @@ void AShooterCharacter::Landed(const FHitResult& Hit)
 	}
 }
 
-float AShooterCharacter::GetLandingSpeedMultiplier() const
-{
-	const UWorld* World = GetWorld();
-	if (!World || LandingSlowUntil < 0.f) return 1.f;
-	return World->GetTimeSeconds() < LandingSlowUntil ? LandingSlowMultiplier : 1.f;
-}
 
 float AShooterCharacter::GetInjurySpeedMultiplier() const
 {
@@ -1672,7 +1661,6 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME_CONDITION(AShooterCharacter, LeanTarget, COND_SkipOwner);
 	DOREPLIFETIME(AShooterCharacter, bIsProne);
-	DOREPLIFETIME(AShooterCharacter, bIsSliding);
 	DOREPLIFETIME(AShooterCharacter, bArmInjured);
 	DOREPLIFETIME(AShooterCharacter, bLegInjured);
 	DOREPLIFETIME(AShooterCharacter, BodyArmor);
@@ -1853,50 +1841,6 @@ void AShooterCharacter::ApplyProneWeaponVisibility()
 	}
 }
 
-void AShooterCharacter::UpdateProne(float DeltaTime)
-{
-	bProneCrawling = bIsProne && GetVelocity().Size2D() > ProneCrawlSpeedThreshold;
-
-	const float Target = bIsProne ? 1.f : 0.f;
-	ProneAlpha = ProneCameraInterpSpeed > 0.f ? FMath::FInterpTo(ProneAlpha, Target, DeltaTime, ProneCameraInterpSpeed) : Target;
-	if (FMath::IsNearlyEqual(ProneAlpha, Target, 0.001f)) ProneAlpha = Target;
-
-	if (IsLocallyControlled() && bSpringArmBaseCaptured && IsValid(SpringArm))
-	{
-		CrouchCameraOffsetZ = CrouchCameraInterpSpeed > 0.f ? FMath::FInterpTo(CrouchCameraOffsetZ, 0.f, DeltaTime, CrouchCameraInterpSpeed) : 0.f;
-		if (FMath::Abs(CrouchCameraOffsetZ) < 0.01f) CrouchCameraOffsetZ = 0.f;
-		// 滑铲镜头下沉会把挂在相机上的 Mesh1P 一起带下来，开镜时手臂更容易挡视野；开镜进度起来淡出下沉
-		const float SlideDip = SlideCameraZOffset * SlideAlpha * (1.f - FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
-		const FVector Desired = SpringArmBaseLocation + FVector(0.f, 0.f, ProneCameraZOffset * ProneAlpha + SlideDip + CrouchCameraOffsetZ);
-		if (!SpringArm->GetRelativeLocation().Equals(Desired, 0.01f))
-		{
-			SpringArm->SetRelativeLocation(Desired);
-		}
-	}
-}
-
-// ===== 滑铲 (Slide) =====
-bool AShooterCharacter::CanStartSlide(float SpeedScale) const
-{
-	if (!bEnableSlide) return false; // tactical mode: slide fully gated
-	const UCharacterMovementComponent* CMC = GetCharacterMovement();
-	if (!IsValid(CMC) || bIsSliding || bIsProne || bIsHealing) return false;
-	if (!CMC->IsMovingOnGround()) return false;
-	return GetVelocity().Size2D() > SlideMinSpeed * SpeedScale;
-}
-
-bool AShooterCharacter::TryStartSlide()
-{
-	return false;
-}
-
-void AShooterCharacter::CancelSlideToStand()
-{
-	if (!bIsSliding) return;
-	bSlideEndCrouch = false;
-	EndSlideLocal();
-}
-
 void AShooterCharacter::EndSlideLocal()
 {
 	ApplySlideState(false);
@@ -1911,223 +1855,12 @@ void AShooterCharacter::EndSlideLocal()
 	}
 }
 
-void AShooterCharacter::Server_SetSliding_Implementation(bool bNewSliding)
-{
-	if (bNewSliding == bIsSliding) return;
-	if (bNewSliding && !CanStartSlide(0.75f))   // small tolerance for client/server speed drift
-	{
-		Client_SlideRejected();
-		return;
-	}
-	ApplySlideState(bNewSliding);
-}
-
-void AShooterCharacter::Client_SlideRejected_Implementation()
-{
-	if (bIsSliding)
-	{
-		ApplySlideState(false);   // stays crouched (bWantsToCrouch already true)
-	}
-}
-
-void AShooterCharacter::OnRep_IsSliding(bool bOldSliding)
-{
-	const bool bNew = bIsSliding;
-	bIsSliding = bOldSliding;
-	if (bNew != bOldSliding)
-	{
-		ApplySlideState(bNew);
-	}
-	else
-	{
-		bIsSliding = bNew;
-	}
-}
-
-
-float AShooterCharacter::GetSlideAdsSettleRemaining() const
-{
-	if (!bSlideAdsDelayEnabled || !bIsSliding) return 0.f;
-	const float Delay = (SlideToAdsDelay > KINDA_SMALL_NUMBER)
-		? SlideToAdsDelay
-		: (0.5f * FMath::Max(0.1f, SlideDuration));
-	return FMath::Max(0.f, Delay - SlideElapsed);
-}
-
-void AShooterCharacter::ApplySlideState(bool bNewSliding)
-{
-	UCharacterMovementComponent* CMC = GetCharacterMovement();
-	if (!IsValid(CMC)) return;
-	const bool bWas = bIsSliding;
-	bIsSliding = bNewSliding;
-	if (bWas == bNewSliding) return;
-
-	const bool bSimulates = IsLocallyControlled() || HasAuthority();
-	if (bNewSliding)
-	{
-		SlideElapsed = 0.f;
-		if (!bSlideSavedMovement)
-		{
-			SavedGroundFriction = CMC->GroundFriction;
-			SavedBrakingDecelWalking = CMC->BrakingDecelerationWalking;
-			bSlideSavedMovement = true;
-		}
-		// No input acceleration while sliding (controller skips move input) -> CMC brakes linearly by this.
-		FrictionRecoverElapsed = -1.f;
-		CarriedSpeed = 0.f;
-		CMC->GroundFriction = 0.f;
-		// 滑铲无移动输入时 CMC 走刹车分支；开了 bUseSeparateBrakingFriction 会用 BrakingFriction 而不是 GroundFriction。
-		// 若不置 0，BrakingFriction=6 会一帧刹停，速度立刻 < SlideEndSpeed，滑铲当场结束。
-		CMC->BrakingFriction = 0.f;
-		CMC->BrakingDecelerationWalking = SlideDecelEarly;
-		CMC->bWantsToCrouch = true;   // low capsule = normal crouch height
-		if (bSimulates)
-		{
-			FVector Vel2D = CMC->Velocity;
-			Vel2D.Z = 0.f;
-			const FVector Dir = Vel2D.GetSafeNormal();
-			CMC->Velocity += Dir * SlideSpeedBoost;
-		}
-		LeanInputDir = 0;
-		bLeanLeftHeld = bLeanRightHeld = false;
-	}
-	else if (bSlideSavedMovement)
-	{
-		// 摩擦力不瞬间恢复：UpdateMomentumCarry 里 SlideFrictionRecoverTime 秒内插值回去
-		CMC->BrakingDecelerationWalking = SavedBrakingDecelWalking;
-		FrictionRecoverElapsed = 0.f;
-		// 保留滑铲出口速度（站起/滑铲跳不掉速），落地后再衰减
-		CarriedSpeed = CMC->Velocity.Size2D();
-	}
-
-	PlaySlideAnim(bNewSliding);
-	RefreshControllerMovementSpeed();   // slide cancels sprint, raises the crouched speed cap
-	RefreshLocomotionGait();
-}
-
-void AShooterCharacter::PlaySlideAnim(bool bPlay)
-{
-	if (GetNetMode() == NM_DedicatedServer) return;
-
-	UAnimInstance* Anim3P = IsValid(GetMesh()) ? GetMesh()->GetAnimInstance() : nullptr;
-	UAnimInstance* Anim1P = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
-
-	if (bPlay)
-	{
-		if (Anim3P)
-		{
-			if (SlideMontage)
-			{
-				Anim3P->Montage_Play(SlideMontage);
-				ActiveSlideMontage = SlideMontage;
-			}
-			else if (UAnimSequenceBase* Seq = SlideAnim.LoadSynchronous())
-			{
-				const float Rate = FMath::Max(0.1f, Seq->GetPlayLength() / SlideDuration);
-				ActiveSlideMontage = Anim3P->PlaySlotAnimationAsDynamicMontage(Seq, SlideSlotName, 0.15f, 0.25f, Rate, 1);
-			}
-		}
-		if (Anim1P && SlideMontage1P && IsLocallyControlled())
-		{
-			Anim1P->Montage_Play(SlideMontage1P);
-		}
-	}
-	else
-	{
-		if (Anim3P && IsValid(ActiveSlideMontage))
-		{
-			Anim3P->Montage_Stop(0.25f, ActiveSlideMontage);
-		}
-		ActiveSlideMontage = nullptr;
-		if (Anim1P && SlideMontage1P)
-		{
-			Anim1P->Montage_Stop(0.2f, SlideMontage1P);
-		}
-	}
-}
-
-void AShooterCharacter::UpdateMomentumCarry(float DeltaTime)
-{
-	UCharacterMovementComponent* CMC = GetCharacterMovement();
-	if (!IsValid(CMC)) return;
-
-	if (FrictionRecoverElapsed >= 0.f && bSlideSavedMovement && !bIsSliding)
-	{
-		FrictionRecoverElapsed += DeltaTime;
-		const float A = SlideFrictionRecoverTime > 0.f ? FMath::Clamp(FrictionRecoverElapsed / SlideFrictionRecoverTime, 0.f, 1.f) : 1.f;
-		CMC->GroundFriction = FMath::Lerp(0.f, SavedGroundFriction, A);
-		// 与 GroundFriction 同步恢复（COD 默认 BrakingFriction=6）
-		CMC->BrakingFriction = FMath::Lerp(0.f, 6.f, A);
-		if (A >= 1.f)
-		{
-			CMC->GroundFriction = SavedGroundFriction;
-			CMC->BrakingFriction = 6.f;
-			bSlideSavedMovement = false;
-			FrictionRecoverElapsed = -1.f;
-		}
-	}
-
-	if (CarriedSpeed <= 0.f) return;
-	if (bIsSliding) { CarriedSpeed = 0.f; return; }
-	// 空中保持；落地后按 MomentumCarryDecayTime 线性衰减到当前速度上限以下
-	if (!CMC->IsFalling())
-	{
-		const float Rate = FMath::Max(100.f, CarriedSpeed / FMath::Max(0.05f, MomentumCarryDecayTime));
-		CarriedSpeed = FMath::Max(0.f, CarriedSpeed - Rate * DeltaTime);
-	}
-	RefreshControllerMovementSpeed();
-}
-
 void AShooterCharacter::OnStartCrouchCameraFix(float ScaledHalfHeightAdjust)
 {
 	// 胶囊体变矮整体下移 → 镜头会瞬间掉一截。先反向补回，再在 UpdateProne 里平滑回 0
 	if (IsLocallyControlled()) CrouchCameraOffsetZ += ScaledHalfHeightAdjust;
 }
 
-void AShooterCharacter::UpdateSlide(float DeltaTime)
-{
-	const float Target = bIsSliding ? 1.f : 0.f;
-	SlideAlpha = FMath::FInterpTo(SlideAlpha, Target, DeltaTime, 10.f);
-	if (FMath::IsNearlyEqual(SlideAlpha, Target, 0.001f)) SlideAlpha = Target;
-
-	if (!bIsSliding) return;
-	SlideElapsed += DeltaTime;
-
-	UCharacterMovementComponent* CMC = GetCharacterMovement();
-	if (IsValid(CMC) && (IsLocallyControlled() || HasAuthority()))
-	{
-		CMC->BrakingDecelerationWalking = SlideElapsed < SlideDecelSwitchTime ? SlideDecelEarly : SlideDecelLate;
-		// 视角转向：速度方向向视角 Yaw 靠拢（限角速度，且只在 100° 以内转）
-		if (SlideSteerRate > 0.f && CMC->IsMovingOnGround())
-		{
-			FVector V = CMC->Velocity; const float Z = V.Z; V.Z = 0.f;
-			const float Speed = V.Size();
-			if (Speed > 1.f)
-			{
-				const float VelYaw = V.Rotation().Yaw;
-				const float Delta = FMath::FindDeltaAngleDegrees(VelYaw, GetControlRotation().Yaw);
-				if (FMath::Abs(Delta) < 100.f)
-				{
-					const float Step = FMath::Clamp(Delta, -SlideSteerRate * DeltaTime, SlideSteerRate * DeltaTime);
-					const FVector NewDir = FRotator(0.f, VelYaw + Step, 0.f).Vector();
-					CMC->Velocity = NewDir * Speed + FVector(0.f, 0.f, Z);
-				}
-			}
-		}
-	}
-	const bool bDone = SlideElapsed >= SlideDuration
-		|| GetVelocity().Size2D() < SlideEndSpeed
-		|| (IsValid(CMC) && !CMC->IsMovingOnGround());
-
-	if (IsLocallyControlled())
-	{
-		if (bDone) EndSlideLocal();
-	}
-	else if (HasAuthority() && SlideElapsed >= SlideDuration + 0.5f)
-	{
-		ApplySlideState(false);   // safety: owner's end RPC never arrived
-	}
-}
 
 // ===== 左右探头 =====
 void AShooterCharacter::EnsureFireModeInput(UEnhancedInputComponent* InputComp)
@@ -2232,10 +1965,6 @@ void AShooterCharacter::UpdateAltPeek()
 	const bool bWasPeek = bAltPeekCrouch;
 	bAltPeekCrouch = false;
 	AltPeekDir = 0;
-	if (!IsLocallyControlled() || bIsProne || bIsSliding) 
-	{
-		// fall through to release crouch if a peek was active
-	}
 	else if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
 	{
 		const bool bAlt = PC->IsInputKeyDown(EKeys::LeftAlt) || PC->IsInputKeyDown(EKeys::RightAlt);
@@ -2264,7 +1993,6 @@ void AShooterCharacter::UpdateAltPeek()
 		Vel.Y = 0.f;
 		CMC->Velocity = Vel;
 	}
-	else if (bWasPeek && !bIsProne && !bIsSliding)
 	{
 		const AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController());
 		if (!PC || !PC->IsCrouchHeld())
@@ -2347,7 +2075,6 @@ bool AShooterCharacter::IsLeanBlocked() const
 	{
 		if (PC->IsSprinting() && GetVelocity().Size2D() > 10.f) return true;
 	}
-	return bIsProne || bIsSliding;   // no leaning while lying down / sliding
 }
 
 void AShooterCharacter::Server_SetLeanTarget_Implementation(float NewTarget)
@@ -2414,11 +2141,7 @@ void AShooterCharacter::UpdateLean(float DeltaTime)
 
  // The pilot's evaluated neck anchor owns translation. Keep its last evaluated
  // position available to gameplay traces until CalcCamera updates the next pose.
- if (!bSingleBodyCameraFollowing)
-	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * LeanDistanceScale * OffsetScale, 0.f));
-	// 侧倾手感保留：开镜时收到 SlideCameraRollAds，不整段清零
-	const float SlideRoll = SlideAlpha * FMath::Lerp(SlideCameraRoll, SlideCameraRollAds, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
-	FirstPersonCamera->SetRelativeRotation(CameraBaseRotation + FRotator(0.f, 0.f, LeanAlpha * LeanRollDegrees + SlideRoll));
+
 }
 
 void AShooterCharacter::Input_SwitchZoom()
@@ -3265,7 +2988,6 @@ void AShooterCharacter::UpdateFootsteps(float DeltaTime)
 	}
 
 	UCharacterMovementComponent* CMC = GetCharacterMovement();
-	if (!IsValid(CMC) || !CMC->IsMovingOnGround() || CMC->IsFalling() || bIsSliding)
 	{
 		FootstepDistanceAccum = 0.f;
 		return;

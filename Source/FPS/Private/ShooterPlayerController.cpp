@@ -1,5 +1,6 @@
 #include "ShooterPlayerController.h"
 #include "Game/DoorGestureComponent.h"
+#include "Game/DoorToolComponent.h"
 #include "Ui/DeploymentDroneComponent.h"
 #include "UObject/UObjectIterator.h"
 #include "Game/HostageActor.h"
@@ -150,6 +151,7 @@ void AShooterPlayerController::BeginPlay()
 	}
 	EnsureCrouchInput();
 	EnsureNVGInput();
+ EnsureMirrorInput();
 	// Watch input intentionally unbound; implementation retained.
 }
 
@@ -213,6 +215,13 @@ void AShooterPlayerController::SetupInputComponent()
 		// Watch gesture disabled for the in-mission UI revision.
 	}
 	EnsureSpectateInput();
+ EnsureMirrorInput();
+ if(MirrorAction)
+ {
+  ShooterInputComponent->BindAction(MirrorAction,ETriggerEvent::Started,this,&ThisClass::Input_Mirror_Started);
+  ShooterInputComponent->BindAction(MirrorAction,ETriggerEvent::Completed,this,&ThisClass::Input_Mirror_Completed);
+  ShooterInputComponent->BindAction(MirrorAction,ETriggerEvent::Canceled,this,&ThisClass::Input_Mirror_Completed);
+ }
 	EnsureInteractInput();
 	if (InteractAction)
 	{
@@ -1022,7 +1031,12 @@ void AShooterPlayerController::EnsureInteractInput()
 
 void AShooterPlayerController::Input_Interact_Started()
 {
- if(GetPawn())if(auto* Door=GetPawn()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(IsInputKeyDown(EKeys::LeftAlt)||IsInputKeyDown(EKeys::RightAlt))
+ {
+  if(GetPawn())if(auto* Tools=GetPawn()->FindComponentByClass<UDoorToolComponent>())Tools->SlowPressed(Cast<ABreakableDoor>(TraceInteractable(true)));
+  return;
+ }
+ if(GetPawn())if(auto* Tools=GetPawn()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
 	if (!bPawnAlive) return;
  if(GetPawn())if(auto* Action=GetPawn()->FindComponentByClass<URestraintActionComponent>();Action&&Action->IsActive()){Action->CancelForCombatAction();return;}
 	if (bRangeBenchOpen)
@@ -1043,7 +1057,7 @@ void AShooterPlayerController::Input_Interact_Started()
 
 void AShooterPlayerController::Server_SurrenderWarning_Implementation()
 {
- if(GetPawn())if(auto* Door=GetPawn()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetPawn())if(auto* Tools=GetPawn()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
 	if (!bPawnAlive || IsMovementLocked()) return;
  if(auto* Target=TraceInteractable(true))if(IInteractable::Execute_CanInteract(Target,GetPawn())||(!Cast<AHostageActor>(Target)&&!Cast<AHostileAICharacter>(Target)))return;
 	UWorld* World = GetWorld();
@@ -1238,6 +1252,7 @@ void AShooterPlayerController::Server_EndRangeBench_Implementation()
 
 void AShooterPlayerController::Input_Interact_Completed()
 {
+ if(GetPawn())if(auto* Tools=GetPawn()->FindComponentByClass<UDoorToolComponent>())Tools->SlowReleased();
 }
 
 
@@ -1313,6 +1328,11 @@ AActor* AShooterPlayerController::TraceInteractable(bool bIncludeUnavailable) co
 
 FText AShooterPlayerController::GetInteractPromptText() const
 {
+ if(GetPawn())if(auto* T=GetPawn()->FindComponentByClass<UDoorToolComponent>())
+ {
+  const FText Status=T->GetStatusText();if(!Status.IsEmpty())return Status;
+  if(T->IsProbeActive())return NSLOCTEXT("Mirror","Progress","镜枪部署中 · 松开 M / 武器键收起");
+ }
 	if (!bPawnAlive || !GetPawn()) return FText::GetEmpty();
  if(auto* Action=GetPawn()->FindComponentByClass<URestraintActionComponent>();Action&&Action->IsActive())return NSLOCTEXT("Interaction","RestraintProgress","正在捆绑（F 取消）");
 	if (AActor* Target = TraceInteractable(true))
@@ -1326,7 +1346,7 @@ FText AShooterPlayerController::GetInteractPromptText() const
 
 void AShooterPlayerController::Server_Interact_Implementation(AActor* Target)
 {
- if(GetPawn())if(auto* Door=GetPawn()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetPawn())if(auto* Tools=GetPawn()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
 	APawn* MyPawn = GetPawn();
 	if (!bPawnAlive || IsMovementLocked() || !IsValid(MyPawn) || !IsValid(Target)) return;
 	if (!Target->GetClass()->ImplementsInterface(UInteractable::StaticClass())) return;
@@ -2177,3 +2197,20 @@ void AShooterPlayerController::EnsureTutorialPromptWidget()
 	}
 }
 
+
+void AShooterPlayerController::EnsureMirrorInput()
+{
+ if(!IsLocalController())return;
+ if(!MirrorAction){MirrorAction=NewObject<UInputAction>(this,TEXT("IA_Mirror"));MirrorAction->ValueType=EInputActionValueType::Boolean;}
+ if(!MirrorIMC){MirrorIMC=NewObject<UInputMappingContext>(this,TEXT("IMC_Mirror"));MirrorIMC->MapKey(MirrorAction,EKeys::M);}
+ if(auto* S=ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer());S&&!S->HasMappingContext(MirrorIMC))S->AddMappingContext(MirrorIMC,1);
+}
+void AShooterPlayerController::Input_Mirror_Started()
+{
+ if(!bPawnAlive)return;
+ if(GetPawn())if(auto* T=GetPawn()->FindComponentByClass<UDoorToolComponent>())T->DeployPressed();
+}
+void AShooterPlayerController::Input_Mirror_Completed()
+{
+ if(GetPawn())if(auto* T=GetPawn()->FindComponentByClass<UDoorToolComponent>())T->DeployReleased();
+}
