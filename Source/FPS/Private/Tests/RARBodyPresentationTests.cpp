@@ -11,6 +11,7 @@
 #include "Engine/Engine.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
@@ -30,6 +31,22 @@ bool FRARBodyPresentationTest::RunTest(const FString&)
  C->GetMesh()->SetSkeletalMesh(Mesh);C->GetMesh()->SetAnimInstanceClass(LoadClass<UAnimInstance>(nullptr,TEXT("/Game/FPS/Character/ABP_ThirdPerson.ABP_ThirdPerson_C")));
  C->bUseSingleBodyPilot=true;C->SingleBodyCameraProbeRadius=0;
  auto* Combat=C->GetCombatComponent();Combat->WeaponData=LoadObject<UWeaponData>(nullptr,TEXT("/Game/FPS/Data/DA_WeaponData.DA_WeaponData"));Gun->SetOwner(C);Gun->SetInstigator(C);Gun->DispatchBeginPlay();Combat->Equip(Gun);Gun->WeaponStatus=EWeaponStatus::Idle;
+ // Primary magazines must follow the visible gun in idle and inspection; the
+ // spare magazine has a separate reload-only visibility rule.
+ auto CheckPrimaryMagazine=[&](bool bOwnerHidden)
+ {
+  TArray<UPrimitiveComponent*> Parts;Gun->GetComponents(Parts);int32 Found=0;
+  for(auto* Part:Parts)
+   if(Part->IsAttachedTo(Gun->GetMesh3P()) && Part->GetAttachSocketName()==FName(TEXT("SOCKET_Magazine")))
+   {
+    ++Found;TestEqual(TEXT("Primary magazine follows gun owner visibility"),bool(Part->bOwnerNoSee),bOwnerHidden);
+    if(!bOwnerHidden)TestFalse(TEXT("Body primary magazine is not hidden in game"),bool(Part->bHiddenInGame));
+   }
+  TestTrue(TEXT("RAR has an actual third-person primary magazine"),Found>0);
+ };
+ CheckPrimaryMagazine(false);
+ C->bUseSingleBodyPilot=false;Gun->AttachToOwingPawn();CheckPrimaryMagazine(true);
+ C->bUseSingleBodyPilot=true;Gun->AttachToOwingPawn();CheckPrimaryMagazine(false);
  FTransform Sight;
  TestTrue(TEXT("Visible third-person weapon exposes its own sight socket"),Gun->GetAimSocketWorldTransform(Sight,false));
  TestEqual(TEXT("Gun stays attached to physical right hand"),Gun->GetMesh3P()->GetAttachSocketName(),FName(TEXT("hand_r")));
@@ -68,6 +85,7 @@ bool FRARBodyPresentationTest::RunTest(const FString&)
  Gun->WeaponStatus=EWeaponStatus::Idle;
  Combat->Initiate_Aim_Pressed();Gun->WeaponStatus=EWeaponStatus::Idle;Combat->Initiate_VersionWeapon();
  TestTrue(TEXT("Hold-R inspection actually plays on the body"),Combat->IsInspecting());
+ CheckPrimaryMagazine(false);
  Combat->CancelInspect();TestFalse(TEXT("Combat interruption stops body inspection"),Combat->IsInspecting());
  Combat->Initiate_InspectWeapon();TestTrue(TEXT("Ordinary inspection plays on body"),Combat->IsInspecting());Combat->CancelInspect();
  C->bUseSingleBodyPilot=false;C->UpdateBodyAdsTarget();TestEqual(TEXT("Legacy arms mode disables body IK"),C->BodyAdsAlpha,0.f);

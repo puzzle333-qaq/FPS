@@ -3967,13 +3967,13 @@ void AWeapon::ResolveMagazineVisualDuplicates()
 	};
 	if (IsValid(Mag->SkelMesh3P.Get()))
 	{
-		Mag->SkelMesh3P->SetOwnerNoSee(true);
+		Mag->SkelMesh3P->SetOwnerNoSee(Mesh3P->bOwnerNoSee);
 		Mag->SkelMesh3P->SetUsingAbsoluteScale(true);
 		Mag->SkelMesh3P->SetRelativeScale3D(FVector::OneVector);
 	}
 	if (IsValid(Mag->Mesh3P.Get()))
 	{
-		Mag->Mesh3P->SetOwnerNoSee(true);
+		Mag->Mesh3P->SetOwnerNoSee(Mesh3P->bOwnerNoSee);
 		Mag->Mesh3P->SetUsingAbsoluteScale(true);
 		Mag->Mesh3P->SetRelativeScale3D(FVector::OneVector);
 	}
@@ -4309,9 +4309,9 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn)
 	for (const FAttachmentVisual& Visual : AttachmentVisuals)
 	{
 		if (IsValid(Visual.SkelMesh1P)) { Visual.SkelMesh1P->SetHiddenInGame(!bLocal, true); }
-		if (IsValid(Visual.SkelMesh3P)) { Visual.SkelMesh3P->SetHiddenInGame(bLocal, true); }
+		if (IsValid(Visual.SkelMesh3P)) { Visual.SkelMesh3P->SetOwnerNoSee(bLocal); Visual.SkelMesh3P->SetHiddenInGame(bLocal, true); }
 		if (IsValid(Visual.Mesh1P)) { Visual.Mesh1P->SetHiddenInGame(!bLocal, true); }
-		if (IsValid(Visual.Mesh3P)) { Visual.Mesh3P->SetHiddenInGame(bLocal, true); }
+		if (IsValid(Visual.Mesh3P)) { Visual.Mesh3P->SetOwnerNoSee(bLocal); Visual.Mesh3P->SetHiddenInGame(bLocal, true); }
 	}
 
 	// 父网格传播会把备用弹夹重新打开。平时只留枪里那一只。

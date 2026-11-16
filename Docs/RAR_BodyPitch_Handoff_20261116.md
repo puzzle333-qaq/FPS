@@ -140,3 +140,11 @@
 本次实际 PIE 检查：运行警察身体，启用试点后观察腰射左臂外形、空仓换弹中间帧及 AM_RAR_MagCheck 中间帧。手位测量：腰射左手相对 1P 误差约 0.00006 cm；弹匣检视约 0.00011 cm。主/备用弹匣 Socket 的 1P/3P 组件空间姿势一致。报告在 Saved/RARVisual/arm_hip_check.json、arm_reload_mid.json、arm_magcheck_mid.json。数值只说明目标一致，不覆盖所有视角、服装蒙皮与联机远端表现；不声明所有中间帧零穿模。
 
 动作结束结果（Saved/RARVisual/arm_finish.json）：Ammo=30，IsInspecting=false，IsReloading=false，恢复持枪；隐藏源枪为 AlwaysTickPoseAndRefreshBones，1P 与 3P 均有备用弹匣实例。修复保留在检查点之后的工作区，未追加提交或推送。
+
+## 主弹匣正常持枪/检视时不可见（2026-11-16 后续）
+
+用户确认换弹有弹匣且可用后，先提交检查点 d2c13dc，再修本项。根因：ResolveMagazineVisualDuplicates 将 3P 主弹匣的 OwnerNoSee 写死为 true，而备用弹匣没有这个标记，因此本地单身体只有换弹时能看到备用匣。
+
+修正：主弹匣初始化的 OwnerNoSee 继承父枪 Mesh3P；SetMeshVisibility 同时更新静态/骨骼 3P 配件的 OwnerNoSee 与隐藏状态，支持试点开关切换。备用匣的换弹显示条件不变。增加真实 RAR 配件回归断言，检查主弹匣确实存在，并覆盖正常身体视角、切回旧 1P、重新开启试点和弹匣检视期间的 OwnerNoSee/HiddenInGame。
+
+验证：FPSEditor Win64 Development 构建成功（Saved/RARVisual/mag_visibility_build.log）；扩展后的 FPS.SingleBody.RARBodyPresentation 通过（Saved/Logs/RARMagazineVisibilityTests.log），包括真实主弹匣存在、闲置/检视可见和开关回归断言。此项未进行额外渲染 PIE 验收。修复保留在 d2c13dc 之后的工作区。
