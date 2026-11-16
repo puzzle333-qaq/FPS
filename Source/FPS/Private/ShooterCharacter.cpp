@@ -343,10 +343,7 @@ void AShooterCharacter::BeginPlay()
 		SpringArmBaseLocation = SpringArm->GetRelativeLocation();
 		bSpringArmBaseCaptured = true;
 	}
-	if (UCharacterMovementComponent* ProneCMC = GetCharacterMovement())
-	{
-		DefaultCrouchedHalfHeight = ProneCMC->GetCrouchedHalfHeight();
-	}
+
 
 	StartingAimRotation = FRotator(0.f, GetBaseAimRotation().Yaw, 0.f);
 
@@ -678,7 +675,7 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 	if (bHaveFabrik)
 	{
 		WriteHandSpace(GetMesh(), SocketWorld, FABRIK_SocketTransform);
-		WantAlpha = bProneCrawling ? 0.f : 1.f;
+		WantAlpha = 1.f;
 	}
 	else
 	{
@@ -1662,7 +1659,6 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME_CONDITION(AShooterCharacter, LeanTarget, COND_SkipOwner);
-	DOREPLIFETIME(AShooterCharacter, bIsProne);
 	DOREPLIFETIME(AShooterCharacter, bArmInjured);
 	DOREPLIFETIME(AShooterCharacter, bLegInjured);
 	DOREPLIFETIME(AShooterCharacter, BodyArmor);
@@ -1670,177 +1666,6 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(AShooterCharacter, bHasRadar);
 	DOREPLIFETIME(AShooterCharacter, bHasFlashGoggles);
 	DOREPLIFETIME(AShooterCharacter, GlowStickCount);
-}
-
-// ===== 趴下 / 趴行 (Prone) =====
-void AShooterCharacter::EnsureProneInput()
-{
-	if (ProneAction) return;
-
-	// 没配资产：运行时建 IA + 小 IMC（Z 键），同 Lean 的做法
-	if (!ProneRuntimeIMC)
-	{
-		ProneRuntimeIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Prone_Runtime"));
-	}
-	ProneAction = NewObject<UInputAction>(this, TEXT("IA_Prone_Runtime"));
-	ProneAction->ValueType = EInputActionValueType::Boolean;
-	ProneRuntimeIMC->MapKey(ProneAction, EKeys::Z);
-
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		if (ULocalPlayer* LP = PC->GetLocalPlayer())
-		{
-			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
-			{
-				if (Subsystem->HasMappingContext(ProneRuntimeIMC))
-				{
-					Subsystem->RemoveMappingContext(ProneRuntimeIMC);
-				}
-				Subsystem->AddMappingContext(ProneRuntimeIMC, 1);
-			}
-		}
-	}
-}
-
-void AShooterCharacter::Input_Prone()
-{
-	if (!IsLocallyControlled()) return;
-	RequestSetProne(!bIsProne, false);
-}
-
-bool AShooterCharacter::CanEnterProne() const
-{
-	const UCharacterMovementComponent* CMC = GetCharacterMovement();
-	return IsValid(CMC) && CMC->IsMovingOnGround() && !bIsHealing;
-}
-
-bool AShooterCharacter::CanExitProne(bool bToCrouch) const
-{
-	const UCapsuleComponent* Capsule = GetCapsuleComponent();
-	const UCharacterMovementComponent* CMC = GetCharacterMovement();
-	if (!IsValid(Capsule) || !IsValid(CMC) || !GetWorld()) return false;
-
-	const ACharacter* DefaultChar = GetClass()->GetDefaultObject<ACharacter>();
-	const float StandHalf = DefaultChar && DefaultChar->GetCapsuleComponent()
-		? DefaultChar->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()
-		: 88.f;
-	const float CrouchHalf = DefaultCrouchedHalfHeight > 0.f ? DefaultCrouchedHalfHeight : CMC->GetCrouchedHalfHeight();
-	const float Scale = Capsule->GetShapeScale();
-	const float TargetHalf = (bToCrouch ? CrouchHalf : StandHalf) * Scale;
-	const float CurrentHalf = Capsule->GetScaledCapsuleHalfHeight();
-	if (TargetHalf <= CurrentHalf) return true;
-
-	// Keep the feet where they are: the taller capsule's centre rises by the height difference.
-	const FVector TestLocation = GetActorLocation() + FVector(0.f, 0.f, TargetHalf - CurrentHalf + 1.f);
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ProneStandUp), false, this);
-	FCollisionResponseParams ResponseParams;
-	CMC->InitCollisionParams(Params, ResponseParams);
-	const FCollisionShape Shape = FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius() - 1.f, TargetHalf);
-	return !GetWorld()->OverlapBlockingTestByChannel(TestLocation, FQuat::Identity, Capsule->GetCollisionObjectType(), Shape, Params, ResponseParams);
-}
-
-void AShooterCharacter::RequestSetProne(bool bNewProne, bool bExitToCrouch)
-{
-	(void)bNewProne;
-	(void)bExitToCrouch;
-}
-
-void AShooterCharacter::Server_SetProne_Implementation(bool bNewProne, bool bExitToCrouch)
-{
-	if (bNewProne == bIsProne) return;
-	const bool bAllowed = bNewProne ? CanEnterProne() : CanExitProne(bExitToCrouch);
-	if (!bAllowed)
-	{
-		Client_ProneRejected(bIsProne);
-		return;
-	}
-	ApplyProneState(bNewProne, bExitToCrouch);
-}
-
-void AShooterCharacter::Client_ProneRejected_Implementation(bool bServerProne)
-{
-	if (bServerProne != bIsProne)
-	{
-		ApplyProneState(bServerProne, false);
-	}
-}
-
-void AShooterCharacter::OnRep_IsProne(bool bOldProne)
-{
-	// The owner already applied its prediction; only react if the server value really differs.
-	const bool bNew = bIsProne;
-	bIsProne = bOldProne;
-	if (bNew != bOldProne)
-	{
-		ApplyProneState(bNew, false);
-	}
-	else
-	{
-		bIsProne = bNew;
-	}
-}
-
-void AShooterCharacter::ApplyProneState(bool bNewProne, bool bExitToCrouch)
-{
-	UCharacterMovementComponent* CMC = GetCharacterMovement();
-	if (!IsValid(CMC)) return;
-
-	if (DefaultCrouchedHalfHeight <= 0.f)
-	{
-		DefaultCrouchedHalfHeight = CMC->GetCrouchedHalfHeight();
-	}
-
-	const bool bSimProxy = GetLocalRole() == ROLE_SimulatedProxy;
-	const bool bWasProne = bIsProne;
-	bIsProne = bNewProne;
-
-	if (bNewProne)
-	{
-		// Already crouched (normal crouch height): release it so the next crouch uses the prone height.
-		if (bIsCrouched && !bWasProne)
-		{
-			CMC->UnCrouch(bSimProxy);
-		}
-		CMC->SetCrouchedHalfHeight(ProneCapsuleHalfHeight);
-		CMC->bWantsToCrouch = true;
-		if (bSimProxy && bIsCrouched)
-		{
-			CMC->Crouch(true);
-		}
-	}
-	else
-	{
-		CMC->SetCrouchedHalfHeight(DefaultCrouchedHalfHeight);
-		if (bIsCrouched)
-		{
-			CMC->UnCrouch(bSimProxy);
-		}
-		CMC->bWantsToCrouch = bExitToCrouch;
-		if (bSimProxy && bIsCrouched)
-		{
-			// Replicated bIsCrouched still true (prone -> crouch): re-crouch at normal height.
-			CMC->Crouch(true);
-		}
-	}
-
-	if (bNewProne)
-	{
-		LeanInputDir = 0;
-		bLeanLeftHeld = bLeanRightHeld = false;
-	}
-
-	ApplyProneWeaponVisibility();
-	RefreshControllerMovementSpeed();   // prone cancels sprint and switches to crawl speed
-	RefreshLocomotionGait();
-}
-
-void AShooterCharacter::ApplyProneWeaponVisibility()
-{
-	if (!bHideWeapon3PWhileProne || !IsValid(Combat) || !IsValid(Combat->CurrentWeapon)) return;
-	if (USkeletalMeshComponent* WeaponMesh3P = Combat->CurrentWeapon->GetMesh3P())
-	{
-		WeaponMesh3P->SetHiddenInGame(bIsProne);
-	}
 }
 
 
@@ -1954,7 +1779,7 @@ void AShooterCharacter::UpdateAltPeek()
 	const bool bWasPeek = bAltPeekCrouch;
 	bAltPeekCrouch = false;
 	AltPeekDir = 0;
-	if (!IsLocallyControlled() || bIsProne)
+	if (!IsLocallyControlled())
 	{
 		//111
 	}
@@ -2068,7 +1893,7 @@ bool AShooterCharacter::IsLeanBlocked() const
 	{
 		if (PC->IsSprinting() && GetVelocity().Size2D() > 10.f) return true;
 	}
-	return bIsProne;
+	return false;
 }
 
 void AShooterCharacter::UpdateMomentumCarry(float DeltaTime)
@@ -2700,11 +2525,8 @@ void AShooterCharacter::UpdateLocomotionGait(bool bNotifyCombat)
 	// of the BlendSpace that is ACTUALLY playing (not the gait we wish we had).
 	// Formula: LocomotionPlayRate = Clamp(GroundSpeed / RefSpeed, Min, Max)
 	float RefSpeed;
-	if (bIsProne)
-	{
-		RefSpeed = ProneAnimReferenceSpeed; // Prone crawl BlendSpace
-	}
-	else if (bIsCrouched)
+	
+	if (bIsCrouched)
 	{
 		RefSpeed = CrouchAnimReferenceSpeed; // Strafe_Crouching
 	}
@@ -3016,12 +2838,7 @@ void AShooterCharacter::UpdateFootsteps(float DeltaTime)
 
 	float StepDist = FootstepDistanceRun;
 	float Volume = FootstepVolumeRun;
-	if (bIsProne)
-	{
-		StepDist = FootstepDistanceProne;
-		Volume = FootstepVolumeProne;
-	}
-	else if (bIsCrouched)
+	if (bIsCrouched)
 	{
 		StepDist = FootstepDistanceCrouch;
 		Volume = FootstepVolumeCrouch;
@@ -3048,7 +2865,7 @@ void AShooterCharacter::UpdateFootsteps(float DeltaTime)
 	if (HasAuthority())
 	{
 		AINoiseEvent::EKind StepKind = AINoiseEvent::EKind::WalkFootstep;
-		if (bIsProne || bIsCrouched || bUseWalkGait)
+		if (bIsCrouched || bUseWalkGait)
 		{
 			StepKind = AINoiseEvent::EKind::CrouchFootstep;
 		}

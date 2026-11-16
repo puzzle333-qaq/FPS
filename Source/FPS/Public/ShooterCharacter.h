@@ -533,18 +533,7 @@ public:
 	TObjectPtr<UInputAction> LeanRightAction;
 
 	// ===== Prone (趴下/趴行) =====
-	// Server-authoritative: the owner predicts locally, the server validates and replicates bIsProne.
 	// Prone = CMC crouch with a smaller CrouchedHalfHeight, so capsule/network move prediction reuse crouch.
-	UFUNCTION(BlueprintPure, Category = "FPS|Prone")
-	bool IsProne() const { return bIsProne; }
-
-	// bExitToCrouch: when leaving prone, go to crouch instead of standing.
-	UFUNCTION(BlueprintCallable, Category = "FPS|Prone")
-	void RequestSetProne(bool bNewProne, bool bExitToCrouch = false);
-
-	// True while prone (replicated to everyone). 3P ABP: drive the Prone state from this.
-	UPROPERTY(ReplicatedUsing = OnRep_IsProne, BlueprintReadOnly, Category = "FPS|Prone")
-	bool bIsProne = false;
 
 	// Smoothed 0..1 prone blend (all machines). Use for camera / optional ABP blends.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Prone")
@@ -552,29 +541,10 @@ public:
 
 	// Prone AND moving (ground speed > ProneCrawlSpeedThreshold). ABP: crawl full-body BS_Prone when true;
 	// when false (prone, stopped) use prone idle body + layered upper-body gun hold. 3P FABRIK only off while crawling.
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Prone")
-	bool bProneCrawling = false;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone", meta = (ClampMin = "0.0"))
-	float ProneCrawlSpeedThreshold = 10.f;
 
 	// Empty = runtime IA bound to Z (like Lean Q/E).
-	UPROPERTY(EditAnywhere, Category = "FPS|Input")
-	TObjectPtr<UInputAction> ProneAction;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone", meta = (ClampMin = "10.0"))
-	float ProneCapsuleHalfHeight = 34.f;
-
-	// Extra 1P camera drop while prone (SpringArm relative Z), on top of the capsule shrinking.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone")
-	float ProneCameraZOffset = -50.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone", meta = (ClampMin = "0.0"))
-	float ProneCameraInterpSpeed = 6.f;
 
 	// Authored crawl speed of the prone BlendSpace (LocomotionPlayRate = GroundSpeed / this).
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Locomotion", meta = (ClampMin = "1.0"))
-	float ProneAnimReferenceSpeed = 100.f;
 
 	// Third-person: hide the weapon while prone (UnarmedProne anims hold no gun). False = keep it in hand, FABRIK off.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone")
@@ -981,9 +951,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "10"))
 	float FootstepDistanceCrouch = 95.f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "10"))
-	float FootstepDistanceProne = 70.f;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
 	float FootstepVolumeRun = 0.85f;
 
@@ -996,8 +963,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
 	float FootstepVolumeCrouch = 0.35f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps", meta = (ClampMin = "0"))
-	float FootstepVolumeProne = 0.22f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Footsteps")
 	bool bEnableFootsteps = true;
@@ -1031,30 +996,12 @@ private:
 	void Server_SetLeanTarget(float NewTarget);
 
 	// ---- Prone ----
-	UFUNCTION()
-	void OnRep_IsProne(bool bOldProne);
-
-	UFUNCTION(Server, Reliable)
-	void Server_SetProne(bool bNewProne, bool bExitToCrouch);
 
 	// Server refused a predicted change: snap the owner back to the server value.
-	UFUNCTION(Client, Reliable)
-	void Client_ProneRejected(bool bServerProne);
-
-	void ApplyProneState(bool bNewProne, bool bExitToCrouch);
-	bool CanEnterProne() const;
-	bool CanExitProne(bool bToCrouch) const;
-	void Input_Prone();
-	void EnsureProneInput();
-	void UpdateProne(float DeltaTime);
-	void ApplyProneWeaponVisibility();
-
 	float CrouchCameraOffsetZ = 0.f;
 	float CarriedSpeed = 0.f;	
 	void UpdateMomentumCarry(float DeltaTime);
 	void OnStartCrouchCameraFix(float ScaledHalfHeightAdjust);
-	UPROPERTY(Transient)
-	TObjectPtr<UInputMappingContext> ProneRuntimeIMC;
 
 	float DefaultCrouchedHalfHeight = 0.f;
 	FVector SpringArmBaseLocation = FVector::ZeroVector;
