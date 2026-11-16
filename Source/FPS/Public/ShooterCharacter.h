@@ -580,89 +580,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Prone")
 	bool bHideWeapon3PWhileProne = false;
 
-	// ===== Slide (滑铲) =====
-	// Pressing a crouch key (Ctrl hold / C toggle) above SlideMinSpeed slides instead of crouching.
-	// Server-authoritative like prone: owner predicts, Server_SetSliding validates, bIsSliding replicates.
-	UFUNCTION(BlueprintPure, Category = "FPS|Slide")
-	bool IsSliding() const { return bIsSliding; }
-
-	// Called by the controller on a crouch key press. Returns true if a slide started (then do not crouch).
-	bool TryStartSlide();
-
-	// Whether the slide should end crouched (C, or Ctrl still held) or standing (Ctrl released).
-	void SetSlideEndCrouch(bool bCrouch) { bSlideEndCrouch = bCrouch; }
-
-	// Jump while sliding: end the slide and stand up.
-	void CancelSlideToStand();
-
-	UPROPERTY(ReplicatedUsing = OnRep_IsSliding, BlueprintReadOnly, Category = "FPS|Slide")
-	bool bIsSliding = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideAlpha = 0.f;
-
-	// Tactical mode: slide disabled. Leave code paths intact for possible future modes.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	bool bEnableSlide = false;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideMinSpeed = 600.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide", meta = (ClampMin = "0.1"))
-	float SlideDuration = 0.9f;
-
-	// Extra horizontal speed added at slide start (cm/s).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideSpeedBoost = 150.f;
-
-	// Linear deceleration while sliding (cm/s^2). ~ (800+150)/0.9 ≈ 1000 stops near the end.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideDeceleration = 800.f;
-
-	// The slide ends early below this speed.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideEndSpeed = 200.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideCameraZOffset = -15.f;
-
-	// COD 式两段减速：前 SlideDecelSwitchTime 秒用 Early（保速冲出去），之后用 Late（干脆收尾）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideDecelEarly = 300.f;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideDecelLate = 1200.f;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideDecelSwitchTime = 0.25f;
-	// 滑铲中速度方向朝视角转的最大角速度（度/秒），0 = 不能转向
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideSteerRate = 75.f;
-	// 滑铲中开镜时间倍率
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideAdsTimeMultiplier = 1.3f;
-
-	// Option A：滑铲前半段禁止立刻开镜（冲刺姿势还在混合）；按键预输入，到期自动开镜。默认开。
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Slide|ADS")
-	bool bSlideAdsDelayEnabled = false;   // 默认关：用 ABP 混合缩短（方案 B）；需要时再开
-
-	// 滑铲开始后多久才能开镜。<=0 则用 0.5 * SlideDuration。默认 0.35。
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Slide|ADS", meta = (ClampMin = "0", EditCondition = "bSlideAdsDelayEnabled"))
-	float SlideToAdsDelay = 0.35f;
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Slide|ADS")
-	float GetSlideAdsSettleRemaining() const;
-	// 滑铲镜头侧倾（度），开镜时减到 SlideCameraRollAds
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideCameraRoll = -4.f;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideCameraRollAds = -1.5f;
-	// 滑铲结束后摩擦力恢复用时（秒）
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float SlideFrictionRecoverTime = 0.2f;
-	// 滑铲结束/滑铲跳后保留的惯性，落地后在这么多秒内衰减回正常速度
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Slide")
-	float MomentumCarryDecayTime = 0.35f;
-	// 蹲下/站起时镜头高度平滑速度
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
-	float CrouchCameraInterpSpeed = 14.f;
+	float MomentumCarryDecayTime = 0.35f;
 
 	// 控制器读：滑铲后保留的速度上限（0 = 没有）
 	float GetCarriedSpeed() const { return CarriedSpeed; }
@@ -888,12 +807,12 @@ public:
 	float WeaponBlockRaisePitch = 85.f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
 	float WeaponBlockRetract = -36.f;
- UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
- float WeaponBlockSideOffset = 32.f;
- UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
- float WeaponBlockLowerOffset = 34.f;
- UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
- float WeaponBlockRoll = 0.f;
+ 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+ 	float WeaponBlockSideOffset = 32.f;
+ 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+ 	float WeaponBlockLowerOffset = 34.f;
+ 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
+ 	float WeaponBlockRoll = 0.f;
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Obstacle")
 	float WeaponBlockInterpSpeed = 10.f;
 
@@ -905,24 +824,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|MuzzleDip")
 	float MuzzleDipInterpSpeed = 12.f;
 
-	// 开镜时间倍率（滑铲中慢慢靠到 SlideAdsTimeMultiplier，避免中途突变卡枪）
+	// 开镜时间倍率
 	float AdsTimeScaleCurrent = 1.f;
-
-	// 3P full-body slide. Montage wins if set; else SlideAnim is played as a dynamic montage in SlideSlotName.
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
-	TObjectPtr<UAnimMontage> SlideMontage;
-
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
-	TSoftObjectPtr<UAnimSequenceBase> SlideAnim;
-
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
-	// Body-only slot: ABP must layer arms/spine back from locomotion/weapon pose (see CrouchSlide_REPORT.md).
-	FName SlideSlotName = TEXT("BodySlot");
-
-	// Optional 1P arms montage. Design rule: arms keep weapon hold during slide -> leave EMPTY.
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Slide")
-	TObjectPtr<UAnimMontage> SlideMontage1P;
-
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Health")
 	TObjectPtr<UStatsComponent>Stats;
@@ -1146,35 +1049,10 @@ private:
 	void UpdateProne(float DeltaTime);
 	void ApplyProneWeaponVisibility();
 
-	// ---- Slide ----
-	UFUNCTION()
-	void OnRep_IsSliding(bool bOldSliding);
-
-	UFUNCTION(Server, Reliable)
-	void Server_SetSliding(bool bNewSliding);
-
-	UFUNCTION(Client, Reliable)
-	void Client_SlideRejected();
-
-	bool CanStartSlide(float SpeedScale) const;
-	void ApplySlideState(bool bNewSliding);
-	void EndSlideLocal();
-	void UpdateSlide(float DeltaTime);
-	void PlaySlideAnim(bool bPlay);
-
-	bool bSlideEndCrouch = true;
-	float SlideElapsed = 0.f;
-	float SavedGroundFriction = 8.f;
-	float SavedBrakingDecelWalking = 2048.f;
-	bool bSlideSavedMovement = false;
-	float CarriedSpeed = 0.f;
-	float FrictionRecoverElapsed = -1.f;
 	float CrouchCameraOffsetZ = 0.f;
+	float CarriedSpeed = 0.f;	
 	void UpdateMomentumCarry(float DeltaTime);
 	void OnStartCrouchCameraFix(float ScaledHalfHeightAdjust);
-	UPROPERTY(Transient)
-	TObjectPtr<UAnimMontage> ActiveSlideMontage;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> ProneRuntimeIMC;
 

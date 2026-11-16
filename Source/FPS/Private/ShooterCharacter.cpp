@@ -164,7 +164,6 @@ namespace
 AShooterCharacter::AShooterCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	SlideAnim = TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(TEXT("/Game/FreeAnimationLibrary/Animations/Slide/anim_Slide_L.anim_Slide_L")));
 
 	// 默认脚步 Cue（FPS_Controller）。BP 可覆盖；Wood/Glass 暂无 Default。
 	FootstepSounds.Default = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/FPS_Controller/Audio/Footsteps/SC_Footsteps_Generic_Stereo.SC_Footsteps_Generic_Stereo")));
@@ -879,6 +878,8 @@ void AShooterCharacter::UpdateAimAlpha(float DeltaTime)
 	}
 
 	// 开镜和关镜都用同一个时间；时间为 0 就瞬间到位
+	float AdsTime = IsValid(Weapon) ? Weapon->GetEffectiveAdsTime() : 0.2f;
+	float DesiredAdsScale = 1.f;
 	if (bArmInjured) DesiredAdsScale *= ArmInjuryAdsTimeMultiplier;
 	if (BodyArmor == EBodyArmorType::Heavy) DesiredAdsScale *= HeavyArmorAdsTimeMultiplier;
 	AdsTimeScaleCurrent = FMath::FInterpTo(AdsTimeScaleCurrent, DesiredAdsScale, DeltaTime, 6.f);
@@ -1091,8 +1092,9 @@ void AShooterCharacter::UpdateWeaponSway(float DeltaTime)
 	FVector TargetLoc(0.f,
 		FMath::Clamp(-YawRate * SwayLookLocationScale, -SwayMaxLocation, SwayMaxLocation),
 		FMath::Clamp(-PitchRate * SwayLookLocationScale, -SwayMaxLocation, SwayMaxLocation));
-
+	
 	// 2) 走路晃动：地面移动时按速度推进相位，竖直走 2 倍频（左右各一步）
+	const bool bGrounded = IsValid(CMC) && CMC->IsMovingOnGround();
 	const float SpeedRatio = bGrounded ? FMath::Clamp(GetVelocity().Size2D() / FMath::Max(1.f, BobReferenceSpeed), 0.f, 1.8f) : 0.f;
 	BobWeight = FMath::FInterpTo(BobWeight, SpeedRatio, DeltaTime, 6.f);
 	BobPhase = FMath::Fmod(BobPhase + DeltaTime * BobFrequency * FMath::Max(0.6f, SpeedRatio), 2.f * PI);
@@ -1841,19 +1843,6 @@ void AShooterCharacter::ApplyProneWeaponVisibility()
 	}
 }
 
-void AShooterCharacter::EndSlideLocal()
-{
-	ApplySlideState(false);
-	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
-	{
-		// Owner drives crouch via its move flags; if blocked overhead CMC stays crouched until clear.
-		CMC->bWantsToCrouch = bSlideEndCrouch;
-	}
-	if (!HasAuthority())
-	{
-		Server_SetSliding(false);
-	}
-}
 
 void AShooterCharacter::OnStartCrouchCameraFix(float ScaledHalfHeightAdjust)
 {
@@ -1965,6 +1954,10 @@ void AShooterCharacter::UpdateAltPeek()
 	const bool bWasPeek = bAltPeekCrouch;
 	bAltPeekCrouch = false;
 	AltPeekDir = 0;
+	if (!IsLocallyControlled() || bIsProne)
+	{
+		//111
+	}
 	else if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetController()))
 	{
 		const bool bAlt = PC->IsInputKeyDown(EKeys::LeftAlt) || PC->IsInputKeyDown(EKeys::RightAlt);
@@ -2075,8 +2068,23 @@ bool AShooterCharacter::IsLeanBlocked() const
 	{
 		if (PC->IsSprinting() && GetVelocity().Size2D() > 10.f) return true;
 	}
+	return bIsProne;
 }
 
+void AShooterCharacter::UpdateMomentumCarry(float DeltaTime)
+{
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(CMC)) return;
+
+	if (CarriedSpeed <= 0.f) return;
+	// 空中保持；落地后按 MomentumCarryDecayTime 线性衰减到当前速度上限以下
+	if (!CMC->IsFalling())
+	{
+		const float Rate = FMath::Max(100.f, CarriedSpeed / FMath::Max(0.05f, MomentumCarryDecayTime));
+		CarriedSpeed = FMath::Max(0.f, CarriedSpeed - Rate * DeltaTime);
+	}
+	RefreshControllerMovementSpeed();
+}
 void AShooterCharacter::Server_SetLeanTarget_Implementation(float NewTarget)
 {
 	LeanTarget = FMath::Clamp(NewTarget, -1.f, 1.f);
