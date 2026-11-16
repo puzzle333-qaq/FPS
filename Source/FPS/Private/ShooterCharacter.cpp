@@ -1163,11 +1163,6 @@ float AShooterCharacter::GetArmorSpeedMultiplier() const
  return Armor*(PoliceAppearance&&PoliceAppearance->FaceProtection==EPoliceFaceProtection::GogglesAndMask?BallisticMaskMoveSpeedMultiplier:1.f);
 }
 
-float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
-{
-	return AimAlignAlpha;
-}
-
 void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 {
  UpdateBodyAdsTarget();
@@ -2869,20 +2864,6 @@ void AShooterCharacter::Input_EquipPistolWeapon()
 	if (IsValid(Combat)) Combat->Initiate_Hotkey(4);
 }
 
-void AShooterCharacter::Input_Heal()
-{
-	if (IsValid(Combat) && Combat->Initiate_Hotkey(5))
-	{
-		return;
-	}
-	// HP heal path removed — bandage (hold) clears limb injuries only.
-}
-
-void AShooterCharacter::Input_VersionWeapon()
-{
-	// Free inspect disabled. Mag check is hold-R.
-}
-
 void AShooterCharacter::OnDeathStarted()
 {
 	ClearHitZoneMarks();
@@ -3601,24 +3582,6 @@ void AShooterCharacter::UpdateMuzzleDip(float DeltaTime)
 		MuzzleDipAlpha = 0.f;
 		MuzzleDipRotCurrent = FRotator::ZeroRotator;
 	}
-}
-
-float AShooterCharacter::ScaleDamageByArmor(float Damage, EHitZone Zone, bool bPistolOrShotgun) const
-{
-	if (BodyArmor == EBodyArmorType::None || Zone != EHitZone::Torso)
-	{
-		return Damage;
-	}
-	float Mul = 1.f;
-	if (BodyArmor == EBodyArmorType::Light)
-	{
-		Mul = LightArmorTorsoMultiplier;
-	}
-	else // Heavy
-	{
-		Mul = bPistolOrShotgun ? HeavyArmorPistolShotgunTorsoMultiplier : HeavyArmorTorsoMultiplier;
-	}
-	return Damage * Mul;
 }
 
 void AShooterCharacter::SetBodyArmorLocal(EBodyArmorType NewArmor)
@@ -4815,10 +4778,6 @@ void AShooterCharacter::Multicast_NotifyBloodyFeet_Implementation()
 
 
 
-void AShooterCharacter::PlayBloodHitFX(FVector ImpactPoint, FVector ImpactNormal)
-{
-	SpawnBloodImpactFX(this, ImpactPoint, ImpactNormal, this);
-}
 
 void AShooterCharacter::SpawnBloodImpactFX(UObject* WorldContext, FVector ImpactPoint, FVector ImpactNormal, AActor* IgnoreActor)
 {
