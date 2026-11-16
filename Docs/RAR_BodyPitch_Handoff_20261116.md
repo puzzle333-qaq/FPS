@@ -124,3 +124,19 @@
 - 新资源位于仓库当前忽略的 Content/FPS/Animation/ 目录；资源已在本地磁盘生成。以后提交或迁移本包时需要明确包含 RARBody 子目录。
 
 最终自动化结果：FPS.SingleBody.CameraFollowsEvaluatedAnchor 与 FPS.SingleBody.RARBodyPresentation 均成功。测试姿势中右手目标误差 0.0077 cm，最终瞄具相机空间 (20.002, 0.000, 0.000) cm，左手握点误差 0.0001 cm。代理检视打断同时停止身体与枪械蒙太奇并清理引用；双客户端视觉仍待验收。
+
+## 2026-11-16 检查点后的左臂、弹匣修复
+
+检查点提交 242c3bf：用户确认 RAR 左手手位、开镜正确，但左臂变形、换弹和弹匣检视仍不完整。提交只包含本任务相关代码、蓝图及生成的 RARBody 资源，未包含门、任务平板、TR15 等其他工作；仅本地提交，未推送。
+
+后续工作区变更：
+- 复制 1P 的范围缩小到 hand_l/hand_r 及手指，保留身体上臂、前臂与扭转骨的局部变换。左臂新增 TwoBoneIK，使用本帧 1P 肘部位置作为 Joint Target；禁止拉伸和无约束扭转，再单独还原正确的 1P 手腕组件空间旋转。右手目标与已确认的 ADS 逻辑不变。
+- 单身体以隐藏 Mesh1P 枪为动画源时，强制该枪与骨骼配件 AlwaysTickPoseAndRefreshBones，避免可见 3P 枪和弹匣读取停滞的骨骼。
+- RAR 备用弹匣原先只给 1P 创建，现同时为有备用插槽的 3P 枪创建。显示备用弹匣时按照父枪隐藏状态过滤，避免把隐藏 1P 的弹匣重新显示到单身体画面。
+- 构建日志 Saved/RARVisual/arm_build.log；动画图检查 Saved/RARVisual/arm_graph.json。此节不以编译或定位误差代替左臂外观、换弹和弹匣检视完整视觉验收。
+
+追加：检视选择 1P 时同时检查其动画实例是否存在；缺失时回退身体实例。最终原生构建通过；FPS.SingleBody.CameraFollowsEvaluatedAnchor、FPS.SingleBody.RARBodyPresentation 回归检查均通过（Saved/Logs/RARArmTests.log）。这两项不覆盖左臂蒙皮外观与全部换弹中间帧，视觉验收状态另行记录。
+
+本次实际 PIE 检查：运行警察身体，启用试点后观察腰射左臂外形、空仓换弹中间帧及 AM_RAR_MagCheck 中间帧。手位测量：腰射左手相对 1P 误差约 0.00006 cm；弹匣检视约 0.00011 cm。主/备用弹匣 Socket 的 1P/3P 组件空间姿势一致。报告在 Saved/RARVisual/arm_hip_check.json、arm_reload_mid.json、arm_magcheck_mid.json。数值只说明目标一致，不覆盖所有视角、服装蒙皮与联机远端表现；不声明所有中间帧零穿模。
+
+动作结束结果（Saved/RARVisual/arm_finish.json）：Ammo=30，IsInspecting=false，IsReloading=false，恢复持枪；隐藏源枪为 AlwaysTickPoseAndRefreshBones，1P 与 3P 均有备用弹匣实例。修复保留在检查点之后的工作区，未追加提交或推送。

@@ -156,6 +156,8 @@ public:
  UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody|ADS") float BodyAdsAlpha=0.f;
  UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody|ADS") float BodySupportHandAlpha=0.f;
  UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody") float BodyFirstPersonPoseAlpha=0.f;
+ UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody") FTransform BodyLeftHandTarget;
+ UPROPERTY(BlueprintReadOnly, Category="FPS|SingleBody") FVector BodyLeftElbowTarget;
  bool CanUseFirstPersonBodyPose() const;
  void UpdateBodyAdsTarget();
 

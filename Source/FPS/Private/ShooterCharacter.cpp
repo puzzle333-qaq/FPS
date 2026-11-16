@@ -1266,7 +1266,10 @@ void AShooterCharacter::UpdateBodyAdsTarget()
   BodyAdsRightHand.SetScale3D(FVector::OneVector);
   FABRIK_SocketTransform=Mesh1P->GetSocketTransform(TEXT("hand_l"),RTS_World).GetRelativeTransform(Mesh1P->GetSocketTransform(TEXT("hand_r"),RTS_World));
   FABRIK_SocketTransform.SetScale3D(FVector::OneVector);
-  BodyAdsAlpha=1.f; BodySupportHandAlpha=1.f;
+  BodyLeftHandTarget=Mesh1P->GetSocketTransform(TEXT("hand_l"),RTS_World).GetRelativeTransform(GetMesh()->GetComponentTransform());
+  BodyLeftHandTarget.SetScale3D(FVector::OneVector);
+  BodyLeftElbowTarget=GetMesh()->GetComponentTransform().InverseTransformPosition(Mesh1P->GetSocketLocation(TEXT("lowerarm_l")));
+  BodyAdsAlpha=1.f; BodySupportHandAlpha=0.f; // The source arm uses pole-constrained TwoBoneIK instead.
   return;
  }
  const bool bFreeHands=(Weapon->WeaponStatus==EWeaponStatus::Idle || Weapon->WeaponStatus==EWeaponStatus::Firing) && !Combat->IsInspecting();

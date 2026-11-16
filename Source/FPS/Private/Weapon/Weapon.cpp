@@ -954,6 +954,8 @@ void AWeapon::SyncBodyToFirstPerson(bool bEnabled)
   return;
  }
  bBodyFollowingFirstPerson=true;
+ // Hidden source meshes still drive the visible gun and magazine bones.
+ Mesh1P->VisibilityBasedAnimTickOption=EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
  Mesh1P->UpdateComponentToWorld();
  // Use the evaluated 1P weapon-to-hand relationship, including animated gun bones,
  // socket offsets, re-grips and the current weapon definition. No guessed mount.
@@ -968,7 +970,10 @@ void AWeapon::SyncBodyToFirstPerson(bool bEnabled)
  for (auto& V:AttachmentVisuals)
  {
   if (V.SkelMesh1P && V.SkelMesh3P && V.SkelMesh1P->GetSkeletalMeshAsset()==V.SkelMesh3P->GetSkeletalMeshAsset())
+  {
+   V.SkelMesh1P->VisibilityBasedAnimTickOption=EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
    V.SkelMesh3P->SetLeaderPoseComponent(V.SkelMesh1P);
+  }
  }
 }
 
@@ -3538,8 +3543,7 @@ UStaticMeshComponent* AWeapon::SpawnAttachmentMesh(USkeletalMeshComponent* Paren
 	}
 
 	// 第一人称换弹要两只弹夹。装回去的那只挂在备用骨上，动画把它送进弹仓。
-	if (bFirstPerson
-		&& Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine
+	if (Data->SlotTag == ShooterTags::Tag_Attachment_Slot_Magazine
 		&& Parent->DoesSocketExist(ReserveMagazineSocketName))
 	{
 		UStaticMeshComponent* Reserve = NewObject<UStaticMeshComponent>(this);
@@ -3792,8 +3796,10 @@ void AWeapon::ShowReserveMagazineForReload()
 	for (UStaticMeshComponent* Mesh : Meshes)
 	{
 		if (!IsValid(Mesh) || Mesh->GetAttachSocketName() != ReserveMagazineSocketName) continue;
-		Mesh->SetHiddenInGame(false);
-		Mesh->SetVisibility(true);
+		const bool bHiddenSource=(Mesh->IsAttachedTo(Mesh1P)&&Mesh1P->bHiddenInGame)
+   || (Mesh->IsAttachedTo(Mesh3P)&&Mesh3P->bHiddenInGame);
+		Mesh->SetHiddenInGame(bHiddenSource);
+		Mesh->SetVisibility(!bHiddenSource);
 		bHasReserve = true;
 	}
 
