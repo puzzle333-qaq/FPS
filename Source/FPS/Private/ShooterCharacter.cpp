@@ -492,6 +492,70 @@ void AShooterCharacter::Tick(float DeltaTime)
 	}
 }
 
+void AShooterCharacter::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
+{
+ // CameraManager asks after skeletal/physics updates. Read the evaluated anchor here,
+ // not in the character's earlier Tick, which would follow last frame's pose.
+ UpdateSingleBodyCameraLocation();
+ Super::CalcCamera(DeltaTime, OutResult);
+}
+
+void AShooterCharacter::UpdateSingleBodyCameraLocation()
+{
+ if (!IsValid(FirstPersonCamera)) return;
+ USkeletalMeshComponent* Body = GetMesh();
+ const bool bAttachedView = FirstPersonCamera->GetAttachParent() && !FirstPersonCamera->IsUsingAbsoluteLocation();
+ const bool bAlive = !Stats || Stats->DeathState == EDeathState::NotDead;
+ const auto* Restraint = FindComponentByClass<URestraintActionComponent>();
+ const bool bFollow = IsSingleBodyPilot() && UsesFirstPersonVisuals() && !bDebugThirdPerson && bAlive &&
+     bAttachedView && !(Restraint && Restraint->IsActive()) && IsValid(Body) && Body->DoesSocketExist(SingleBodyCameraAnchorBone);
+ if (!bFollow)
+ {
+  // If the normal lean/crouch path already placed the camera this frame, keep it.
+  // Detached death cameras own their transform and must never be restored here.
+  if (bSingleBodyCameraFollowing && bAttachedView && bAlive && !(Restraint && Restraint->IsActive()) &&
+      FirstPersonCamera->GetRelativeLocation().Equals(SingleBodyCameraLastLocation, .01f))
+   FirstPersonCamera->SetRelativeLocation(SingleBodyCameraRestoreLocation);
+  bSingleBodyCameraFollowing = false;
+  return;
+ }
+ if (!bSingleBodyCameraFollowing)
+ {
+  SingleBodyCameraRestoreLocation = FirstPersonCamera->GetRelativeLocation();
+  bSingleBodyCameraFollowing = true;
+ }
+ Body->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+ // The pilot hides neck_01 and the head. Use the anchor's position, never its scale,
+ // and keep the existing SpringArm/controller rotation (including lean roll).
+ FVector Eye = Body->GetSocketLocation(SingleBodyCameraAnchorBone) + GetActorQuat().RotateVector(SingleBodyCameraEyeOffset);
+ // The hand IK target is computed before animation evaluates. Remove the remaining
+ // same-frame head bob from the sight line after evaluation, fading with ADS.
+ if (BodyAdsAlpha > KINDA_SMALL_NUMBER && Combat && Combat->CurrentWeapon)
+ {
+  FTransform Sight;
+  if (Combat->CurrentWeapon->GetAimSocketWorldTransform(Sight, false))
+  {
+   const FVector Forward = FirstPersonCamera->GetForwardVector();
+   const FVector ToSight = Sight.GetLocation() - Eye;
+   const FVector LateralError = ToSight - Forward * FVector::DotProduct(ToSight, Forward);
+   Eye += LateralError * BodyAdsAlpha;
+  }
+ }
+ if (SingleBodyCameraProbeRadius > 0.f && GetWorld())
+ {
+  FCollisionQueryParams Query(SCENE_QUERY_STAT(SingleBodyCamera), false, this);
+  TArray<AActor*> Attached;
+  GetAttachedActors(Attached, true, true);
+  Query.AddIgnoredActors(Attached);
+  FHitResult Hit;
+  if (GetWorld()->SweepSingleByChannel(Hit, GetActorLocation(), Eye, FQuat::Identity, ECC_Camera,
+      FCollisionShape::MakeSphere(SingleBodyCameraProbeRadius), Query))
+   Eye = Hit.Location;
+ }
+ FirstPersonCamera->SetWorldLocation(Eye);
+ SingleBodyCameraLastLocation = FirstPersonCamera->GetRelativeLocation();
+}
+
 void AShooterCharacter::CalculateTurnInPlaceParameters(float DeltaTime)
 {
 	FVector Velocity = GetVelocity();
@@ -627,6 +691,7 @@ void AShooterCharacter::CalculateFABRIKSocket(float DeltaTime)
 	{
 		WantAlpha = 0.f;
 	}
+	if (IsSingleBodyPilot() && Combat->IsInspecting()) WantAlpha=0.f;
 	if (!DisableLeftHandIKCurveName.IsNone())
 	{
 		if (USkeletalMeshComponent* Body = GetMesh())
@@ -766,6 +831,7 @@ void AShooterCharacter::DrawWeaponAttachDebug() const
 }
 void AShooterCharacter::ConfigureAimTickOrder()
 {
+ if(GetMesh())GetMesh()->PrimaryComponentTick.AddPrerequisite(this,PrimaryActorTick);
 	// The aim socket follows the arm bones, so read it after Mesh1P animates.
 	if (IsValid(Mesh1P))
 	{
@@ -1102,6 +1168,9 @@ float AShooterCharacter::GetAimTimelineAlpha(float /*DeltaTime*/)
 
 void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 {
+ UpdateBodyAdsTarget();
+ if (IsSingleBodyPilot()) return; // Visible arms are now on the body; never solve ADS on hidden Mesh1P.
+
 	if (!IsLocallyControlled() || !IsValid(Mesh1P) || !IsValid(FirstPersonCamera) || !IsValid(Combat))
 	{
 		return;
@@ -1150,6 +1219,31 @@ void AShooterCharacter::UpdateAimSocketAlignment(float /*DeltaTime*/)
 	{
 		*AdsLocationProperty = AdsLocation;
 	}
+}
+
+void AShooterCharacter::UpdateBodyAdsTarget()
+{
+ BodyAdsAlpha=0.f; BodySupportHandAlpha=0.f;
+ if (!IsSingleBodyPilot() || !Combat || !Combat->CurrentWeapon || !GetMesh()) return;
+ AWeapon* Weapon=Combat->CurrentWeapon;
+ const bool bFreeHands=(Weapon->WeaponStatus==EWeaponStatus::Idle || Weapon->WeaponStatus==EWeaponStatus::Firing) && !Combat->IsInspecting();
+ BodySupportHandAlpha=bFreeHands?FABRIK_Alpha:0.f;
+ if (!bFreeHands || (IsLocallyControlled()?AimAlignAlpha<=KINDA_SMALL_NUMBER:!Combat->bAiming) || !GetMesh()->DoesSocketExist(TEXT("hand_r"))) return;
+ FTransform Sight;
+ if (!Weapon->GetAimSocketWorldTransform(Sight,false)) return;
+ const FTransform Hand=GetMesh()->GetSocketTransform(TEXT("hand_r"),RTS_World);
+ const FTransform SightInHand=Sight.GetRelativeTransform(Hand);
+ float EyeDistance=Weapon->AdsEyeDistance;
+ if (const UAttachmentData* Optic=Weapon->GetOpticAttachment();Optic && Optic->bOverridesEyeDistance) EyeDistance=Optic->EyeDistance;
+ if (EyeDistance<=0.f) EyeDistance=20.f;
+ const FQuat ViewRotation=GetBaseAimRotation().Quaternion();
+ // Use the same eye anchor as CalcCamera, preserving the user's tuned hip camera.
+ const FVector Eye=GetMesh()->GetSocketLocation(SingleBodyCameraAnchorBone)+GetActorQuat().RotateVector(SingleBodyCameraEyeOffset);
+ const FTransform DesiredSight(ViewRotation,Eye+ViewRotation.GetForwardVector()*EyeDistance);
+ const FTransform DesiredHand=SightInHand.Inverse()*DesiredSight;
+ BodyAdsRightHand=DesiredHand.GetRelativeTransform(GetMesh()->GetComponentTransform());
+ BodyAdsRightHand.SetScale3D(FVector::OneVector);
+ BodyAdsAlpha=IsLocallyControlled()?FMath::Clamp(AimAlignAlpha,0.f,1.f):1.f;
 }
 
 bool AShooterCharacter::ComputeAdsMeshLocation(FVector& OutLocation)
@@ -1272,6 +1366,11 @@ void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCo
 	}
 	// Free inspect removed: mag check is hold-R (see Input_ReloadWeapon_*).
 	// VersionWeaponAction intentionally unbound.
+ if(!BodyInspectAction){BodyInspectAction=NewObject<UInputAction>(this);BodyInspectAction->ValueType=EInputActionValueType::Boolean;}
+ if(!BodyInspectIMC){BodyInspectIMC=NewObject<UInputMappingContext>(this);BodyInspectIMC->MapKey(BodyInspectAction,EKeys::I);}
+ if(auto* PC=Cast<APlayerController>(GetController()))if(auto* Local=PC->GetLocalPlayer())
+  if(auto* Subsystem=Local->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();Subsystem&&!Subsystem->HasMappingContext(BodyInspectIMC))Subsystem->AddMappingContext(BodyInspectIMC,1);
+ ShooterInputComponent->BindAction(BodyInspectAction,ETriggerEvent::Started,this,&ThisClass::Input_BodyInspect);
 
 }
 
@@ -2271,6 +2370,9 @@ void AShooterCharacter::UpdateLean(float DeltaTime)
 		}
 	}
 
+ // The pilot's evaluated neck anchor owns translation. Keep its last evaluated
+ // position available to gameplay traces until CalcCamera updates the next pose.
+ if (!bSingleBodyCameraFollowing)
 	FirstPersonCamera->SetRelativeLocation(CameraBaseLocation + FVector(0.f, LeanAlpha * LeanCameraOffset * LeanDistanceScale * OffsetScale, 0.f));
 	// 侧倾手感保留：开镜时收到 SlideCameraRollAds，不整段清零
 	const float SlideRoll = SlideAlpha * FMath::Lerp(SlideCameraRoll, SlideCameraRollAds, FMath::Clamp(AimAlignAlpha, 0.f, 1.f));
@@ -5626,3 +5728,5 @@ void AShooterCharacter::RefreshHybridBodyVisibility()
 	
  }
 }
+
+void AShooterCharacter::Input_BodyInspect(){if(IsSingleBodyPilot()&&Combat)Combat->Initiate_InspectWeapon();}

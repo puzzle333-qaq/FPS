@@ -1,5 +1,6 @@
 #include "CombatComponent.h"
 #include "Game/DoorGestureComponent.h"
+#include "Game/DoorToolComponent.h"
 #include "Game/RestraintActionComponent.h"
 
 
@@ -191,7 +192,11 @@ UCombatComponent::UCombatComponent()
 
 void UCombatComponent::Equip(AWeapon* Weapon)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
  if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	if (!IsValid(Weapon)) return;
 
@@ -1303,7 +1308,11 @@ void UCombatComponent::Multicast_CycleWeapon_Implementation(int32 WeaponIndex)
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
  if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	CancelInspect();
 	if (StopFireIfWeaponBlocked()) return;
@@ -1424,6 +1433,10 @@ void UCombatComponent::PlayOwnerThirdPersonFireMontage()
 	{
 		AnimInstance3P->Montage_Play(Montage3P);
 	}
+ if(const auto* Shooter=Cast<AShooterCharacter>(Owner);Shooter&&Shooter->IsSingleBodyPilot())
+  if(const auto* W=WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
+   if(auto* Fire=W->ResolveFireMontage())AWeapon::PlayWeaponMontageOrSequence(CurrentWeapon->GetMesh3P(),Fire);
+
 }
 
 void UCombatComponent::Local_FireWeapon()
@@ -1752,7 +1765,11 @@ namespace FPSBallistics
 
 void UCombatComponent::Server_FireWeapon_Implementation(const TArray<FHitResult>& Hits)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
  if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	if (StopFireIfWeaponBlocked()) return;
 	if (!IsValid(CurrentWeapon)) return;
@@ -1911,6 +1928,8 @@ void UCombatComponent::Multicast_FireWeapon_Implementation(const TArray<FHitResu
 		}
 	}
 
+ if(const auto* Shooter=Cast<AShooterCharacter>(GetOwner());Shooter&&Shooter->IsSingleBodyPilot())PlayOwnerThirdPersonFireMontage();
+ else
 	if (const FMontageData* MontageData = WeaponData->ThirdPersonMontages.Find(ResolveAnimTag(CurrentWeapon)))
 	{
 		UAnimMontage* Montage3P = MontageData->ResolveFireMontage();
@@ -1998,7 +2017,11 @@ void UCombatComponent::PlayDryFireClick()
 
 void UCombatComponent::Initiate_ReloadWeapon(bool bFastDrop)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
  if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	CancelInspect();
 	BurstShotsRemaining = 0;
@@ -2224,7 +2247,7 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson, EReloadType ReloadTy
 
 	// The gun reload moves the magazine on the weapon mesh. Play it only on the
 	// owning first-person mesh; the third-person gun leaves the magazine floating.
-	if (bFirstPerson)
+	if (bFirstPerson || (Cast<AShooterCharacter>(GetOwner()) && Cast<AShooterCharacter>(GetOwner())->IsSingleBodyPilot()))
 	{
 		if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
 		{
@@ -2236,7 +2259,7 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson, EReloadType ReloadTy
 			}
 			const EGripHoldStyle WeaponGripStyle = IsValid(CurrentWeapon) ? CurrentWeapon->GetGripHoldStyle() : EGripHoldStyle::Cradle;
 			UAnimMontage* WeaponReloadMontage = WeaponMontageData->ResolveReloadMontage(WeaponReloadType, WeaponGripStyle);
-			USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
+			USkeletalMeshComponent* WeaponMesh = bFirstPerson?CurrentWeapon->GetMesh1P():CurrentWeapon->GetMesh3P();
 			UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
 			if (IsValid(WeaponReloadMontage))
 			{
@@ -2248,7 +2271,7 @@ bool UCombatComponent::PlayReloadMontage(bool bFirstPerson, EReloadType ReloadTy
 		{
 			MagReloadType = CurrentWeapon->Ammo <= 0 ? EReloadType::Empty : EReloadType::Tactical;
 		}
-		CurrentWeapon->PlayMagazineReload(MagReloadType);
+		if(bFirstPerson)CurrentWeapon->PlayMagazineReload(MagReloadType);
 	}
 
 	// The owner's 1P montage owns the Reloading lock. The 3P montage is only what other people see.
@@ -2341,7 +2364,11 @@ void UCombatComponent::Client_ReloadWeapon_Implementation(AWeapon* ReloadedWeapo
 
 void UCombatComponent::Server_ReloadWeapon_Implementation(EReloadType ReloadType, bool bFastDrop)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
  if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	if (!IsValid(CurrentWeapon)) return;
 
@@ -2480,7 +2507,11 @@ void UCombatComponent::Multicast_ReloadWeapon_Implementation(EReloadType ReloadT
 
 void UCombatComponent::Initiate_CycleZoom()
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
 	if (!bAiming || !IsValid(CurrentWeapon)) return;
 	const int32 Count = CurrentWeapon->GetZoomLevelCount();
 	if (Count < 2) return;
@@ -2500,7 +2531,11 @@ bool UCombatComponent::CanSwitchFireMode() const
 
 void UCombatComponent::Initiate_SwitchFireMode()
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
 	if (!CanSwitchFireMode()) return;
 
 	const EFireType NewFireType = CurrentWeapon->GetNextFireMode();
@@ -2526,7 +2561,11 @@ void UCombatComponent::Server_SetFireMode_Implementation(EFireType NewFireType)
 
 void UCombatComponent::Initiate_Throw(bool bHighThrow)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
  if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	CancelInspect();
 	if (const UWorld* World = GetWorld())
@@ -2901,7 +2940,11 @@ void UCombatComponent::EquipFallbackAfterThrow()
 
 void UCombatComponent::Server_BeginThrow_Implementation(bool bHighThrow)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
  if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>())Action->CancelForCombatAction();
 	if (!IsValid(CurrentWeapon) || CurrentWeapon->WeaponKind != EWeaponKind::Throwable) return;
 	if (CurrentWeapon->Ammo <= 0) return;
@@ -3061,7 +3104,11 @@ void UCombatComponent::OnAdsBufferElapsed()
 
 void UCombatComponent::Initiate_Aim_Pressed()
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
 	CancelInspect();
 	if (IsValid(CurrentWeapon) && CurrentWeapon->WeaponKind == EWeaponKind::Throwable)
 	{
@@ -3191,7 +3238,12 @@ AWeapon* UCombatComponent::FindWeaponForSlot(EWeaponSlot Slot) const
 
 void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsProbeActive()){Tools->DeployReleased();return;}
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
 	CancelInspect();
 	if (bThrowInProgress)
 	{
@@ -3226,7 +3278,11 @@ void UCombatComponent::Initiate_EquipSlot(EWeaponSlot Slot)
 
 void UCombatComponent::Server_EquipSlot_Implementation(EWeaponSlot Slot)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
 	AWeapon* Weapon = FindWeaponForSlot(Slot);
 	if (!IsValid(Weapon)) return;
 
@@ -3264,7 +3320,12 @@ void UCombatComponent::Initiate_EquipThrowableWeapon()
 
 void UCombatComponent::Initiate_EquipOrCycleThrowable()
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsProbeActive()){Tools->DeployReleased();return;}
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
 	CancelInspect();
 	if (bThrowInProgress) return;
 
@@ -3304,7 +3365,11 @@ void UCombatComponent::Initiate_EquipOrCycleThrowable()
 
 bool UCombatComponent::AllowsHeal() const
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return false;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return false;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
  if(GetOwner())if(auto* Action=GetOwner()->FindComponentByClass<URestraintActionComponent>();Action&&Action->IsActive())return false;
 	return true;
 }
@@ -3452,9 +3517,15 @@ static UAnimMontage* ResolveMagCheckMontage(UAnimMontage* InspectMontage, bool b
 	return nullptr;
 }
 
-void UCombatComponent::Initiate_VersionWeapon()
+void UCombatComponent::Initiate_VersionWeapon(){StartInspection(true);}
+void UCombatComponent::Initiate_InspectWeapon(){StartInspection(false);}
+void UCombatComponent::StartInspection(bool bMagazineCheck)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
 	if (!IsValid(CurrentWeapon) || !IsValid(WeaponData)) return;
 	// Mag check only while idle (hold-R). Free inspect key removed.
 	if (CurrentWeapon->WeaponStatus != EWeaponStatus::Idle) return;
@@ -3462,15 +3533,17 @@ void UCombatComponent::Initiate_VersionWeapon()
 	if (bAiming || bTriggerPressed) return;
 	if (IsInspecting()) return;
 
-	const FMontageData* MontageData = WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon));
+	const auto* Shooter=Cast<AShooterCharacter>(GetOwner());
+ const bool bBody=Shooter&&Shooter->IsSingleBodyPilot();
+ const FMontageData* MontageData=bBody?WeaponData->ThirdPersonMontages.Find(ResolveThirdPersonPoseTag(WeaponData,CurrentWeapon)):WeaponData->FirstPersonMontages.Find(ResolveAnimTag(CurrentWeapon));
 	UAnimMontage* InspectMontage = MontageData ? MontageData->InspectMontage1P.Get() : nullptr;
-	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
+	USkeletalMeshComponent* Mesh1P = bBody?IPlayerInterface::Execute_GetMesh3P(GetOwner()):IPlayerInterface::Execute_GetMesh1P(GetOwner());
 	UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
 	if (!IsValid(AnimInstance)) return;
 
 	// KIN retargeted Mag_Check on shared arms DefaultSlot first; RAR Inspect/MagCheck fallback second.
-	UAnimMontage* MagCheckMontage = ResolveKinMagCheckMontage(CurrentWeapon, false);
-	if (!IsValid(MagCheckMontage))
+	UAnimMontage* MagCheckMontage = !bMagazineCheck?InspectMontage:(bBody?nullptr:ResolveKinMagCheckMontage(CurrentWeapon, false));
+	if (bMagazineCheck && !IsValid(MagCheckMontage))
 	{
 		MagCheckMontage = ResolveMagCheckMontage(InspectMontage, false);
 	}
@@ -3489,6 +3562,7 @@ void UCombatComponent::Initiate_VersionWeapon()
 
 	CurrentWeapon->UpdateMagazineAmmoVisuals();
 	ActiveInspectMontage = MagCheckMontage;
+ InspectAnimInstance=AnimInstance;bInspectionUsesBody=bBody;
 	OnInspectionChanged.Broadcast(true);
 	InspectWeapon = CurrentWeapon;
 	ActiveInspectWeaponMontage = nullptr;
@@ -3496,13 +3570,14 @@ void UCombatComponent::Initiate_VersionWeapon()
 	{
 		// RAR-like: drive Mesh1P Mag socket/bone; Mag DA stays attached (no hand reparent).
 		// Use PlayWeaponMontageOrSequence so guns without AnimBP still PlayAnimation the sequence.
-		USkeletalMeshComponent* WeaponMesh = CurrentWeapon->GetMesh1P();
-		UAnimMontage* WeaponMagCheck = ResolveKinMagCheckMontage(CurrentWeapon, true);
+		USkeletalMeshComponent* WeaponMesh = bBody?CurrentWeapon->GetMesh3P():CurrentWeapon->GetMesh1P();
+  InspectGunMesh=WeaponMesh;
+		UAnimMontage* WeaponMagCheck = bMagazineCheck?ResolveKinMagCheckMontage(CurrentWeapon, true):nullptr;
 		if (!IsValid(WeaponMagCheck))
 		{
 			if (const FMontageData* WeaponMontageData = WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
 			{
-				WeaponMagCheck = ResolveMagCheckMontage(WeaponMontageData->InspectMontage1P.Get(), true);
+				WeaponMagCheck = bMagazineCheck?ResolveMagCheckMontage(WeaponMontageData->InspectMontage1P.Get(), true):WeaponMontageData->InspectMontage1P.Get();
 			}
 		}
 		if (IsValid(WeaponMagCheck) && IsValid(WeaponMesh))
@@ -3516,6 +3591,7 @@ void UCombatComponent::Initiate_VersionWeapon()
 			UE_LOG(LogTemp, Warning, TEXT("[MagCheck] no weapon MagCheck anim for %s"), *GetNameSafe(CurrentWeapon));
 		}
 	}
+	if(bBody)Server_BodyInspection(false,bMagazineCheck);
 	UE_LOG(LogTemp, Log, TEXT("[MagCheck] playing %s (%.2fs)"), *MagCheckMontage->GetName(), Played);
 }
 
@@ -3523,8 +3599,7 @@ bool UCombatComponent::IsInspecting() const
 {
 	UAnimMontage* Montage = ActiveInspectMontage.Get();
 	if (!IsValid(Montage)) return false;
-	USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
-	UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+	UAnimInstance* AnimInstance = InspectAnimInstance.Get();
 	return IsValid(AnimInstance) && AnimInstance->Montage_IsPlaying(Montage);
 }
 
@@ -3535,8 +3610,7 @@ void UCombatComponent::CancelInspect()
 
 	if (UAnimMontage* Montage = ActiveInspectMontage.Get())
 	{
-		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(GetOwner());
-		UAnimInstance* AnimInstance = IsValid(Mesh1P) ? Mesh1P->GetAnimInstance() : nullptr;
+		UAnimInstance* AnimInstance = InspectAnimInstance.Get();
 		if (IsValid(AnimInstance) && AnimInstance->Montage_IsPlaying(Montage))
 		{
 			AnimInstance->Montage_Stop(InspectBlendOut, Montage);
@@ -3545,13 +3619,15 @@ void UCombatComponent::CancelInspect()
 	if (UAnimMontage* WeaponMontage = ActiveInspectWeaponMontage.Get())
 	{
 		AWeapon* Weapon = InspectWeapon.Get();
-		USkeletalMeshComponent* WeaponMesh = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
+		USkeletalMeshComponent* WeaponMesh = InspectGunMesh.Get();
 		UAnimInstance* WeaponAnim = IsValid(WeaponMesh) ? WeaponMesh->GetAnimInstance() : nullptr;
 		if (IsValid(WeaponAnim) && WeaponAnim->Montage_IsPlaying(WeaponMontage))
 		{
 			WeaponAnim->Montage_Stop(InspectBlendOut, WeaponMontage);
 		}
 	}
+	if(bHadInspection&&bInspectionUsesBody)Server_BodyInspection(true,true);
+ InspectAnimInstance.Reset();InspectGunMesh.Reset();bInspectionUsesBody=false;
 	ActiveInspectMontage = nullptr;
 	ActiveInspectWeaponMontage = nullptr;
 	InspectWeapon = nullptr;
@@ -3587,7 +3663,11 @@ void UCombatComponent::Notify_ReloadWeapon()
 
 void UCombatComponent::Server_Aim_Implementation(bool bPressed)
 {
- if(GetOwner())if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>();Door&&Door->IsActive())return;
+ if(GetOwner())
+ {
+  if(auto* Tools=GetOwner()->FindComponentByClass<UDoorToolComponent>();Tools&&Tools->IsBusy())return;
+  if(auto* Door=GetOwner()->FindComponentByClass<UDoorGestureComponent>())Door->StopGesture();
+ }
 	Local_Aim(bPressed);
 }
 
@@ -3887,4 +3967,39 @@ FGameplayTag UCombatComponent::ResolveHoldPoseTag(const AWeapon* Weapon) const
  if(Weapon->WeaponKind==EWeaponKind::Pistol)return ShooterTags::Tag_WeaponType_X24;
  if(Weapon->WeaponKind==EWeaponKind::Melee)return ShooterTags::Tag_WeaponType_Melee;
  return ResolveAnimTag(Weapon);
+}
+
+void UCombatComponent::Server_BodyInspection_Implementation(bool bStop,bool bMagazineCheck)
+{
+ if(bStop){Multicast_BodyInspection(nullptr,true);return;}
+ if(!CurrentWeapon||!WeaponData||CurrentWeapon->WeaponStatus!=EWeaponStatus::Idle||bAiming)return;
+ const auto* Row=WeaponData->ThirdPersonMontages.Find(ResolveThirdPersonPoseTag(WeaponData,CurrentWeapon));
+ UAnimMontage* M=Row?Row->InspectMontage1P.Get():nullptr;
+ if(bMagazineCheck)M=ResolveMagCheckMontage(M,false);
+ if(M)Multicast_BodyInspection(M,false);
+}
+void UCombatComponent::Multicast_BodyInspection_Implementation(UAnimMontage* Montage,bool bStop)
+{
+ const auto* Pawn=Cast<APawn>(GetOwner());
+ if(Pawn&&Pawn->IsLocallyControlled())return;
+ auto* Mesh=IPlayerInterface::Execute_GetMesh3P(GetOwner());auto* Anim=Mesh?Mesh->GetAnimInstance():nullptr;
+ if(!Anim)return;
+ if(bStop)
+ {
+  if(ActiveInspectMontage.IsValid())Anim->Montage_Stop(.15f,ActiveInspectMontage.Get());
+  if(auto* GunMesh=InspectGunMesh.Get())if(auto* GunAnim=GunMesh->GetAnimInstance())
+   if(ActiveInspectWeaponMontage.IsValid())GunAnim->Montage_Stop(.15f,ActiveInspectWeaponMontage.Get());
+  ActiveInspectMontage=nullptr;ActiveInspectWeaponMontage=nullptr;
+  InspectAnimInstance.Reset();InspectGunMesh.Reset();bInspectionUsesBody=false;
+  return;
+ }
+ if(Montage)
+ {
+  Anim->Montage_Play(Montage);ActiveInspectMontage=Montage;InspectAnimInstance=Anim;bInspectionUsesBody=true;
+  if(CurrentWeapon&&WeaponData)if(const auto* W=WeaponData->WeaponMontages.Find(ResolveAnimTag(CurrentWeapon)))
+  {
+   UAnimMontage* GunMontage=Montage->GetName().Contains(TEXT("MagCheck"))?ResolveMagCheckMontage(W->InspectMontage1P.Get(),true):W->InspectMontage1P.Get();
+   if(GunMontage){InspectGunMesh=CurrentWeapon->GetMesh3P();ActiveInspectWeaponMontage=GunMontage;AWeapon::PlayWeaponMontageOrSequence(InspectGunMesh.Get(),GunMontage);}
+  }
+ }
 }
