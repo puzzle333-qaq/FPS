@@ -1987,6 +1987,72 @@ void AWeapon::EnsureKinemationSharedArmsAssets()
 		return;
 	}
 
+	if(IsValid(Definition))
+	{
+		if(Definition->WeaponType != WeaponType)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[WeaponDef] %s: definition tag mismatch"), *GetName());
+		}
+		if(!IsValid(ArmsIdleSequence.Get()) && IsValid(Definition->ArmsIdle))
+		{
+			ArmsIdleSequence = Definition->ArmsIdle;
+		}
+		if(!IsValid(ArmsEquipSequence.Get()) && IsValid(Definition->ArmsEquip))
+		{
+			ArmsEquipSequence = Definition->ArmsEquip;
+		}
+		if(!IsValid(ArmsReloadEmptySequence.Get()) && IsValid(Definition->ArmsReloadEmpty))
+		{
+			ArmsReloadEmptySequence = Definition->ArmsReloadEmpty;
+		}
+		if(!IsValid(ArmsReloadTacticalSequence.Get()) && IsValid(Definition->ArmsReloadTactical))
+		{
+			ArmsReloadTacticalSequence = Definition->ArmsReloadTactical;
+		}
+		if(!IsValid(ArmsFireSequence.Get()) && IsValid(Definition->ArmsFire))
+		{
+			ArmsFireSequence = Definition->ArmsFire;
+		}
+		if(!IsValid(ArmsAimIdleSequence.Get()) && IsValid(Definition->ArmsAimIdle))
+		{
+			ArmsAimIdleSequence = Definition->ArmsAimIdle;
+		}
+		if(!IsValid(ArmsFireAimSequence.Get()) && IsValid(Definition->ArmsFireAim))
+		{
+			ArmsFireAimSequence = Definition->ArmsFireAim;
+		}
+		if(!IsValid(WeaponFireSequence.Get()) && IsValid(Definition->WeaponFire))
+		{
+			WeaponFireSequence = Definition->WeaponFire;
+		}
+		if(!IsValid(WeaponReloadEmptySequence.Get()) && IsValid(Definition->WeaponReloadEmpty))
+		{
+			WeaponReloadEmptySequence = Definition->WeaponReloadEmpty;
+		}
+		if(!IsValid(WeaponReloadTacticalSequence.Get()) && IsValid(Definition->WeaponReloadTactical))
+		{
+			WeaponReloadTacticalSequence = Definition->WeaponReloadTactical;
+		}
+		if(!IsValid(WeaponEquipSequence.Get()) && IsValid(Definition->WeaponEquip))
+		{
+			WeaponEquipSequence = Definition->WeaponEquip;
+		}
+		if(IsValid(Definition->WeaponMesh))
+		{
+			if (IsValid(Mesh1P) && !Mesh1P->GetSkeletalMeshAsset())
+			{
+				Mesh1P->SetSkeletalMesh(Definition->WeaponMesh);
+			}
+			if (IsValid(Mesh3P) && !Mesh3P->GetSkeletalMeshAsset())
+			{
+				Mesh3P->SetSkeletalMesh(Definition->WeaponMesh);
+			}
+		}
+		if(WeaponFireSequences.Num() == 0 && IsValid(Definition->WeaponFire))
+		{
+			WeaponFireSequences.Add(Definition->WeaponFire);
+		}
+	}
 	// Dual-mag Infima reserve path: KIN meshes don't have SOCKET_Magazine_Reserve.
 	ReserveMagazineSocketName = NAME_None;
 
@@ -4185,7 +4251,7 @@ void AWeapon::SetMeshVisibility(APawn* OwningPawn)
 
 	const AShooterCharacter* ShooterOwner = Cast<AShooterCharacter>(OwningPawn);
 	const bool bLocal = (OwningPawn->IsLocallyControlled() || (ShooterOwner && ShooterOwner->IsFirstPersonViewedLocally()))
-  && !(ShooterOwner && ShooterOwner->IsDebugThirdPerson());
+  && !(ShooterOwner && ShooterOwner->IsDebugThirdPerson())&&!(ShooterOwner && ShooterOwner->IsSingleBodyPilot());
 	Mesh3P->SetOwnerNoSee(bLocal);
 	Mesh1P->SetHiddenInGame(!bLocal, true);
 	Mesh3P->SetHiddenInGame(bLocal, true);

@@ -263,6 +263,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Debug")
 	bool IsDebugThirdPerson() const { return bDebugThirdPerson; }
 
+	UFUNCTION(BlueprintPure, Category = "FPS|Debug")
+	bool IsSingleBodyPilot() const { return bUseSingleBodyPilot; }
+
 	// PIE/debug: Off / NVG / Thermal camera post-process (+ battery). Console Vision / CycleVision.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Vision")
 	void SetTacticalVisionMode(ETacticalVisionMode NewMode);
@@ -358,6 +361,7 @@ public:
 
 	// Local-only debug third-person camera (not replicated).
 	bool bDebugThirdPerson = false;
+	bool bUseSingleBodyPilot = false;
 	float DebugThirdPersonArmLength = 250.f;
 	float SavedSpringArmLength = 0.f;
 	bool bSavedSpringArmLength = false;

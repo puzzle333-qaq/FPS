@@ -10,6 +10,7 @@
 #include "Game/AINoiseEvent.h"
 #include "Game/RestraintActionComponent.h"
 #include "Game/DoorGestureComponent.h"
+#include "Game/DoorToolComponent.h"
 #include "Combat/HitZoneVitalsComponent.h"
 #include "World/BloodPool.h"
 #include "ShooterGameModeBase.h"
@@ -249,6 +250,7 @@ AShooterCharacter::AShooterCharacter()
  PoliceAppearance=CreateDefaultSubobject<UPoliceAppearanceComponent>(TEXT("PoliceAppearance"));
  CreateDefaultSubobject<URestraintActionComponent>(TEXT("RestraintAction"));
  CreateDefaultSubobject<UDoorGestureComponent>(TEXT("DoorGesture"));
+ CreateDefaultSubobject<UDoorToolComponent>(TEXT("DoorTools"));
 	Mesh3P_Head = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P_Head"));
 	Mesh3P_Head->SetupAttachment(GetMesh());
 	Mesh3P_Head->bOnlyOwnerSee = false;
@@ -5591,12 +5593,36 @@ void AShooterCharacter::Auth_OnHitZoneDamaged(AActor* DamageInstigator, bool bLe
 void AShooterCharacter::RefreshHybridBodyVisibility()
 {
  const bool HideBody=(IsLocallyControlled()||bFirstPersonViewedLocally)&&!bDebugThirdPerson&&(!Stats||Stats->DeathState==EDeathState::NotDead);
+ const bool bUseSingleBody = IsSingleBodyPilot() && HideBody;
+
  TInlineComponentArray<USkeletalMeshComponent*> Parts(this);
+ if(IsSingleBodyPilot()) 
+ {
+	Mesh1P->SetHiddenInGame(bUseSingleBody);
+	Mesh1P_Sleeves->SetHiddenInGame(bUseSingleBody);
+ }
+
  for(auto* Part:Parts)
  {
   if(!Part || Part==Mesh1P || Part==Mesh1P_Sleeves)continue;
+  if(Part == GetMesh() && bUseSingleBody)
+  {
+	Part->SetOwnerNoSee(false); 
+	continue;
+  } 
   Part->SetOwnerNoSee(HideBody);
  }
  // Undo the old lower-body-only bone mask; visibility is now entirely view-based.
  if(GetMesh())GetMesh()->UnHideBoneByName(TEXT("spine_01"));
+ if(IsSingleBodyPilot() && GetMesh())  
+ {
+	if(bUseSingleBody)
+	{
+		GetMesh()->HideBoneByName(TEXT("neck_01"),EPhysBodyOp::PBO_None);
+	}else
+	{
+		GetMesh()->UnHideBoneByName(TEXT("neck_01"));
+	}
+	
+ }
 }

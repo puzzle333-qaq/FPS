@@ -9,6 +9,7 @@
 #include "Engine/Texture2D.h"
 #include "Interface/RecoilModifierInterface.h"
 #include "Weapon/AttachmentData.h"
+#include "Weapon/WeaponDefinition.h"
 #include "WeaponData.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Weapon.generated.h"
@@ -433,6 +434,9 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
 	TObjectPtr<UAnimSequence> ArmsSprintSequence;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Definition")
+	TObjectPtr<UWeaponDefinition> Definition;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|FirstPerson|Sequences")
 	TObjectPtr<UAnimSequence> ArmsFireSequence;
