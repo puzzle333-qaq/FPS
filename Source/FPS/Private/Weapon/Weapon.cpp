@@ -842,13 +842,26 @@ void AWeapon::ApplyMeshAttachRelative(USkeletalMeshComponent* WeaponMesh, bool b
 	const FTransform& Authored = bFirstPerson ? AuthoredMesh1PRelative : AuthoredMesh3PRelative;
 	FVector Loc = Authored.GetLocation();
 	FQuat Rot = Authored.GetRotation();
-	if (!bFirstPerson && !Mesh3PAttachSocket.IsNone()
-		&& WeaponMesh->GetAttachSocketName() == Mesh3PAttachSocket)
+	if (!bFirstPerson && !Mesh3PAttachSocket.IsNone())
 	{
-		// This is a complete socket-local mount, not a correction to the preview
-		// component transform. In particular, never substitute the Trigger bone.
-		WeaponMesh->SetRelativeTransform(Mesh3PAttachTransform);
-		return;
+		const FName CurrentSocket = WeaponMesh->GetAttachSocketName();
+		USkeletalMeshComponent* ParentMesh = Cast<USkeletalMeshComponent>(WeaponMesh->GetAttachParent());
+		// AuthoredMesh3PRelative is the Mesh1P-child preview pose (often a 90-degree
+		// layout offset). Never use it as a socket-local 3P mount. If the attach did
+		// not bind Mesh3PAttachSocket, retry that socket and still write the calibration.
+		// Leave intentional transfers (hand_l, holster) alone.
+		if (CurrentSocket == Mesh3PAttachSocket)
+		{
+			WeaponMesh->SetRelativeTransform(Mesh3PAttachTransform);
+			return;
+		}
+		if (CurrentSocket.IsNone() && IsValid(ParentMesh)
+			&& (ParentMesh->GetSocketByName(Mesh3PAttachSocket) || ParentMesh->GetBoneIndex(Mesh3PAttachSocket) != INDEX_NONE))
+		{
+			WeaponMesh->AttachToComponent(ParentMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Mesh3PAttachSocket);
+			WeaponMesh->SetRelativeTransform(Mesh3PAttachTransform);
+			return;
+		}
 	}
 	if (bUseMeshAttachRelativeRotation)
 	{
@@ -980,6 +993,10 @@ void AWeapon::SyncBodyToFirstPerson(bool bEnabled)
 void AWeapon::AttachToOwingPawn()
 {
 	APawn* OwningPawn = GetInstigator();
+	if (!IsValid(OwningPawn))
+	{
+		OwningPawn = Cast<APawn>(GetOwner());
+	}
 	if (!IsValid(OwningPawn) || !OwningPawn->Implements<UPlayerInterface>()) return;
 
 	// 3P 换弹蒙太奇结束也会进这里。战术换弹还在播时不能把备用匣藏掉。
@@ -1078,12 +1095,24 @@ void AWeapon::AttachToOwingPawn()
 	}
 
 	Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	Mesh3P->SetLeaderPoseComponent(nullptr);
+	bBodyFollowingFirstPerson = false;
 	Mesh3P->AttachToComponent(PawnMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Attach3P);
 	ApplyMeshAttachRelative(Mesh3P, false);
 	if (bCustom3P)
 	{
+		if (Mesh3P->GetAttachParent() != PawnMesh3P
+			|| Mesh3P->GetAttachSocketName() != Attach3P
+			|| !Mesh3P->GetRelativeTransform().Equals(Mesh3PAttachTransform, 0.001f))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[WeaponAttach] %s 3P mount mismatch (parent=%s sock=%s); retrying calibrated hand_r."),
+				*GetName(), *GetNameSafe(Mesh3P->GetAttachParent()), *Mesh3P->GetAttachSocketName().ToString());
+			Mesh3P->AttachToComponent(PawnMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Attach3P);
+			Mesh3P->SetRelativeTransform(Mesh3PAttachTransform);
+		}
 		UE_LOG(LogTemp, Log, TEXT("[WeaponAttach] %s calibrated 3P sock=%s loc=%s rot=%s"),
-			*GetName(), *Attach3P.ToString(),
+			*GetName(), *Mesh3P->GetAttachSocketName().ToString(),
 			*Mesh3P->GetRelativeLocation().ToString(),
 			*Mesh3P->GetRelativeRotation().ToString());
 	}
@@ -1208,6 +1237,8 @@ void AWeapon::DetachFromPawn()
 
 	if (IsValid(Mesh3P))
 	{
+		Mesh3P->SetLeaderPoseComponent(nullptr);
+		bBodyFollowingFirstPerson = false;
 		Mesh3P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 		if (Mesh3P->GetAttachParent())
 		{

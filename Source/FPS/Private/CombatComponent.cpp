@@ -217,6 +217,13 @@ void UCombatComponent::Equip(AWeapon* Weapon)
 	CurrentWeapon->WeaponStatus = EWeaponStatus::Idle;
 	// Arms override BEFORE attach so GripPoints/WeaponSocket resolve on the correct 1P skeleton.
 	ApplyFirstPersonArmsForWeapon(CurrentWeapon);
+	if (!IsValid(CurrentWeapon->GetInstigator()))
+	{
+		if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			CurrentWeapon->SetInstigator(OwnerPawn);
+		}
+	}
 	CurrentWeapon->AttachToOwingPawn();
 	StopActiveThrowMontages();
 	bThrowInProgress = false;
@@ -606,6 +613,13 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 
 	CurrentWeapon->SetActorHiddenInGame(false);
 	ApplyFirstPersonArmsForWeapon(CurrentWeapon);
+	if (!IsValid(CurrentWeapon->GetInstigator()))
+	{
+		if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			CurrentWeapon->SetInstigator(OwnerPawn);
+		}
+	}
 	CurrentWeapon->AttachToOwingPawn();
 	ApplyEquippedWeaponAnim(CurrentWeapon);
 	ResetRecoilPattern();
@@ -1185,6 +1199,13 @@ void UCombatComponent::OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrup
 	// Grip notifies during equip can leave a KeepWorld-relative offset; snap back to authored attach.
 	if (IsValid(Weapon) && Weapon == CurrentWeapon)
 	{
+		if (!IsValid(Weapon->GetInstigator()))
+		{
+			if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+			{
+				Weapon->SetInstigator(OwnerPawn);
+			}
+		}
 		Weapon->AttachToOwingPawn();
 	}
 }
